@@ -93,6 +93,7 @@ export function MiningTab() {
           <label className="text-[11.5px] text-muted-foreground">数据源
             <select className={inputCls + " mt-1 w-full"} value={source} onChange={(e) => setSource(e.target.value as "em" | "demo")}>
               <option value="em">em 真实行情</option>
+              <option value="mcp">mcp (china-stock-mcp)</option>
               <option value="demo">demo 演示</option>
             </select>
           </label>
