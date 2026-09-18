@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { FactorsTab } from "./quant/FactorsTab";
 import { MiningTab } from "./quant/MiningTab";
+import { BacktestTab, SelectionTab, ExperimentsTab, KnowledgeTab, ResearchTab } from "./quant/LabTabs";
 
 interface Health {
   ok: boolean;
@@ -46,10 +47,11 @@ const PHASED_TABS: { key: string; label: string; phase: string; ready: boolean }
   { key: "overview", label: "实验室状态", phase: "P1", ready: true },
   { key: "factors", label: "因子库", phase: "P3", ready: true },
   { key: "mining", label: "因子挖掘", phase: "P2", ready: true },
-  { key: "selection", label: "选股引擎", phase: "P7", ready: false },
-  { key: "backtest", label: "回测", phase: "P5", ready: false },
-  { key: "experiments", label: "实验跟踪", phase: "P9", ready: false },
-  { key: "knowledge", label: "知识库", phase: "P10", ready: false },
+  { key: "selection", label: "选股引擎", phase: "P7", ready: true },
+  { key: "backtest", label: "回测", phase: "P5", ready: true },
+  { key: "experiments", label: "实验跟踪", phase: "P9", ready: true },
+  { key: "knowledge", label: "知识库", phase: "P10", ready: true },
+  { key: "research", label: "自主研究", phase: "P11", ready: true },
 ];
 
 function StatusBadge({ status }: { status: string }) {
@@ -278,6 +280,11 @@ export default function QuantPage() {
 
         <TabsContent value="factors" className="pt-0"><FactorsTab /></TabsContent>
         <TabsContent value="mining" className="pt-0"><MiningTab /></TabsContent>
+        <TabsContent value="selection" className="pt-0"><SelectionTab /></TabsContent>
+        <TabsContent value="backtest" className="pt-0"><BacktestTab /></TabsContent>
+        <TabsContent value="experiments" className="pt-0"><ExperimentsTab /></TabsContent>
+        <TabsContent value="knowledge" className="pt-0"><KnowledgeTab /></TabsContent>
+        <TabsContent value="research" className="pt-0"><ResearchTab /></TabsContent>
 
         {PHASED_TABS.filter((t) => !t.ready).map((t) => (
           <TabsContent key={t.key} value={t.key} className="pt-6">
