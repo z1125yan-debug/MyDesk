@@ -99,15 +99,36 @@ export async function runSelection(runtime: SelectionRuntime): Promise<Selection
   const metas = await provider.listUniverse(request.universe, asOf);
   if (!metas.length) throw new Error("股票池为空（检查股票池配置与 asOf）");
 
+  // 1.5) 预过滤（无需K线的数据）：ST / 上市时间 / 市值快照
+  let preDropped = 0;
+  let pool = metas.filter((m) => {
+    if (filters.excludeST !== false && m.st) { preDropped++; return false; }
+    if (filters.minListDays && m.listDate) {
+      const days = (Date.parse(asOf) - Date.parse(m.listDate)) / 86400000;
+      if (days < filters.minListDays) { preDropped++; return false; }
+    }
+    if (filters.minMarketCap && m.marketCap && m.marketCap < filters.minMarketCap) { preDropped++; return false; }
+    if (filters.maxMarketCap && m.marketCap && m.marketCap > filters.maxMarketCap) { preDropped++; return false; }
+    return true;
+  });
+
+  // 1.6) K线子集上限：大池（全A）不逐只拉K线——按快照成交额取流动性前 K 只
+  //      （K线级过滤与因子计算只在该子集内做；超出部分没有K线，无法参与打分）
+  const maxKline = Math.max(20, request.maxKlineSymbols ?? 300);
+  if (pool.length > maxKline) {
+    pool = [...pool].sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0)).slice(0, maxKline);
+    warnings.push(`股票池 ${metas.length} 只超出K线子集上限 ${maxKline}：已按快照成交额取流动性前 ${maxKline} 只参与过滤与打分`);
+  }
+
   // 2) 拉取近期K线（严格 ≤ asOf），用于价格/成交额/成交量过滤与因子计算
   const lookback = 120;
-  const barsReq: BarsRequest = { symbols: metas.map((m) => m.symbol), tf: "day", asOf, lookback };
+  const barsReq: BarsRequest = { symbols: pool.map((m) => m.symbol), tf: "day", asOf, lookback };
   const barsMap = await provider.getBars(barsReq);
 
   // 3) 数据可得性过滤（停牌 = asOf 当日无K线）
   const withBars: { meta: AssetMeta; bars: Bar[] }[] = [];
   let suspended = 0;
-  for (const m of metas) {
+  for (const m of pool) {
     const bars = barsMap.get(m.symbol) ?? [];
     const lastBar = bars.length ? bars[bars.length - 1] : null;
     if (!lastBar || lastBar.date.slice(0, 10) !== asOf) {
@@ -116,22 +137,15 @@ export async function runSelection(runtime: SelectionRuntime): Promise<Selection
     withBars.push({ meta: m, bars });
   }
 
-  // 4) 硬性过滤（ST/上市时间/市值/价格/成交额/换手/成交量）
+  // 4) K线级过滤（价格/成交额/换手/成交量——均为 asOf 当日真实值，无未来数据）
   const preFiltered: { meta: AssetMeta; bars: Bar[] }[] = [];
   let filterDropped = 0;
   const floatCapOf = (m: AssetMeta): number | null => (typeof m.floatCap === "number" ? m.floatCap : null);
   for (const { meta, bars } of withBars) {
-    if (filters.excludeST !== false && meta.st) { filterDropped++; continue; }
     const lastBar = bars[bars.length - 1];
     const price = lastBar?.c;
     const amount = lastBar?.amount ?? null;
     const volume = lastBar?.v ?? null;
-    if (filters.minListDays && meta.listDate) {
-      const days = (Date.parse(asOf) - Date.parse(meta.listDate)) / 86400000;
-      if (days < filters.minListDays) { filterDropped++; continue; }
-    }
-    if (filters.minMarketCap && meta.marketCap && meta.marketCap < filters.minMarketCap) { filterDropped++; continue; }
-    if (filters.maxMarketCap && meta.marketCap && meta.marketCap > filters.maxMarketCap) { filterDropped++; continue; }
     if (filters.minPrice && (price ?? 0) < filters.minPrice) { filterDropped++; continue; }
     if (filters.maxPrice && price !== null && price > filters.maxPrice) { filterDropped++; continue; }
     if (filters.minAmount && (amount ?? 0) < filters.minAmount) { filterDropped++; continue; }
@@ -148,6 +162,7 @@ export async function runSelection(runtime: SelectionRuntime): Promise<Selection
     }
     preFiltered.push({ meta, bars });
   }
+  filterDropped += preDropped;
 
   // 5) 规则模式 / 因子模式 / 多因子模式
   const survivors: { symbol: string; name: string; triggered: string[]; reasons: string[] }[] = [];

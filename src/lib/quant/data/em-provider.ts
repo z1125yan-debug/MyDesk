@@ -258,6 +258,7 @@ export const emProvider: DataProvider = {
 
   async getBars(req: BarsRequest): Promise<Map<string, Bar[]>> {
     const out = new Map<string, Bar[]>();
+    let consecutiveEmpty = 0;
     for (const sym of req.symbols) {
       try {
         // 节流：相邻请求至少间隔 100ms，防触发数据源限流殃及现有功能
@@ -270,8 +271,16 @@ export const emProvider: DataProvider = {
         else bars = await fetchMinuteBarsTc(sym, req.tf, req.asOf, req.lookback);
         const cut = (bars ?? []).filter((b) => b.date.slice(0, 10) <= req.asOf);
         out.set(sym, cut.slice(-req.lookback));
-      } catch {
+        consecutiveEmpty = cut.length ? 0 : consecutiveEmpty + 1;
+        // 熔断：批量拉取时连续空返回大概率意味着被数据源限流，
+        // 继续只会加重封锁并污染结果——立即中止，让调用方拿到明确错误。
+        if (consecutiveEmpty >= 10 && req.symbols.length > 10) {
+          throw new Error("数据源连续 10 只无K线返回，疑似被限流（WAF），已中止本次批量拉取；请稍后重试或缩小样本");
+        }
+      } catch (e) {
+        if ((e as Error).message.includes("疑似被限流")) throw e;
         out.set(sym, []); // 单只失败不拖垮整批
+        consecutiveEmpty++;
       }
     }
     return out;
