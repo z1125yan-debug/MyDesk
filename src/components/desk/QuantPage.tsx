@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { FactorsTab } from "./quant/FactorsTab";
+import { MiningTab } from "./quant/MiningTab";
 
 interface Health {
   ok: boolean;
@@ -42,8 +44,8 @@ interface UniverseRow {
 
 const PHASED_TABS: { key: string; label: string; phase: string; ready: boolean }[] = [
   { key: "overview", label: "实验室状态", phase: "P1", ready: true },
-  { key: "factors", label: "因子库", phase: "P3", ready: false },
-  { key: "mining", label: "因子挖掘", phase: "P2", ready: false },
+  { key: "factors", label: "因子库", phase: "P3", ready: true },
+  { key: "mining", label: "因子挖掘", phase: "P2", ready: true },
   { key: "selection", label: "选股引擎", phase: "P7", ready: false },
   { key: "backtest", label: "回测", phase: "P5", ready: false },
   { key: "experiments", label: "实验跟踪", phase: "P9", ready: false },
@@ -273,6 +275,9 @@ export default function QuantPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="factors" className="pt-0"><FactorsTab /></TabsContent>
+        <TabsContent value="mining" className="pt-0"><MiningTab /></TabsContent>
 
         {PHASED_TABS.filter((t) => !t.ready).map((t) => (
           <TabsContent key={t.key} value={t.key} className="pt-6">
