@@ -5,6 +5,7 @@ import type { JobRecord, JobStatus } from "../types.ts";
 
 export interface JobCtx {
   jobId: string;
+  payload: Record<string, unknown>; // startJob 时传入的任务参数
   progress: (percent: number, stage?: string, message?: string) => void;
   paused: () => boolean;
   cancelled: () => boolean;
@@ -109,6 +110,7 @@ async function runJob(id: string): Promise<void> {
   const lastPersist = { at: 0, pct: -1 };
   const ctx: JobCtx = {
     jobId: id,
+    payload: job.payload,
     progress: (pct, stage, message) => {
       const p = Math.max(0, Math.min(100, Math.round(pct)));
       job.progress = p;
