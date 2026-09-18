@@ -7,6 +7,7 @@ export type PageKey =
   | "tracker"      // 追踪
   | "history"      // 历史
   | "copilot"      // 智能助手
+  | "quant"        // 量化研究实验室（Quant Research Lab，追加）
   | "extension"    // 扩展
   | "settings";    // 设置
 
@@ -137,6 +138,7 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   tracker: "追踪",
   history: "历史",
   copilot: "智能助手",
+  quant: "量化研究",
   extension: "扩展",
   settings: "设置",
 };

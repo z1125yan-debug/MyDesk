@@ -1,7 +1,7 @@
 "use client";
 import {
   LayoutDashboard, BarChart3, LineChart, Target, History,
-  Bot, Puzzle, Settings,
+  Bot, FlaskConical, Puzzle, Settings,
 } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import type { PageKey } from "@/lib/desk/types";
@@ -13,6 +13,7 @@ const NAV: { key: PageKey; label: string; icon: React.ComponentType<{ size?: num
   { key: "tracker", label: "追踪", icon: Target },
   { key: "history", label: "历史", icon: History },
   { key: "copilot", label: "智能助手", icon: Bot },
+  { key: "quant", label: "量化研究", icon: FlaskConical },
   { key: "extension", label: "扩展", icon: Puzzle },
   { key: "settings", label: "设置", icon: Settings },
 ];
