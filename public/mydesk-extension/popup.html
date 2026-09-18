@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body { font-family: system-ui, sans-serif; width: 300px; padding: 14px; background: #10151c; color: #e7ecf3; }
+    h1 { font-size: 14px; margin: 0 0 10px; }
+    label { display: block; font-size: 11.5px; color: #93a1b5; margin: 8px 0 3px; }
+    input { width: 100%; box-sizing: border-box; font-size: 12px; padding: 6px 8px; border-radius: 6px;
+            border: 1px solid #2a3646; background: #0b1017; color: #e7ecf3; }
+    button { margin-top: 12px; width: 100%; padding: 8px 0; border: 0; border-radius: 6px;
+             background: #0ea5e9; color: white; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    button:hover { background: #38bdf8; }
+    #status { margin-top: 8px; font-size: 11.5px; min-height: 15px; color: #93a1b5; }
+  </style>
+</head>
+<body>
+  <h1>MyDesk 行情助手</h1>
+  <label>回传地址</label>
+  <input id="endpoint" placeholder="http://localhost:3000/api/extension/pending" />
+  <label>配对码（在 MyDesk 扩展页查看）</label>
+  <input id="key" placeholder="mdk_…" />
+  <button id="send">发送当前品种到 MyDesk</button>
+  <button id="save" style="background:#22303f">保存配置</button>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

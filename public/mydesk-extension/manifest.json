@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "MyDesk 行情助手",
+  "version": "1.0.0",
+  "description": "把 TradingView 当前图表品种一键发送到本地 MyDesk 行情工作台。",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
+  "action": { "default_popup": "popup.html" },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.tradingview.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
