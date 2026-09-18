@@ -1,0 +1,17 @@
+#mydesk-float {
+  position: fixed;
+  right: 18px;
+  bottom: 88px;
+  z-index: 2147483000;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #0ea5e9;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: system-ui, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+#mydesk-float:hover { background: #38bdf8; }

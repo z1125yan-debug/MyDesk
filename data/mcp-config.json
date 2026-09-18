@@ -1,0 +1,13 @@
+{
+  "servers": [
+    {
+      "id": "demo-market",
+      "name": "demo-market",
+      "command": "py",
+      "args": [
+        "scripts/mcp/demo_market.py"
+      ],
+      "trusted": false
+    }
+  ]
+}
