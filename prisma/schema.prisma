@@ -30,3 +30,106 @@ model Post {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// ============================================================
+// Quant Research Lab（Phase 1 起追加模型；只增不改，不动上方 User/Post）
+// 复杂结果一律以 JSON 字符串存放在 *JSON 字段，SQLite 单机即可。
+// ============================================================
+
+// 因子库：insert-only 版本化，(factorKey, version) 唯一，禁止覆盖旧版本
+model QuantFactor {
+  id         String   @id @default(cuid())
+  factorKey  String // 稳定因子标识（如 mom_20）
+  version    Int // 从 1 递增
+  name       String
+  category   String // Price|Volume|Momentum|Trend|Reversal|Volatility|Fundamental|Microstructure|AI_Discovered
+  expression String // 序列化表达式（DSL 字符串）
+  params     String   @default("{}") // JSON
+  dataSource String   @default("em") // em|demo|...
+  dataRange  String   @default("") // 如 2025-01-01~2026-09-18
+  metrics    String   @default("{}") // JSON: ic/rankIc/icIr/groupReturn/longShortReturn/turnover/stability/decay/correlation...
+  status     String   @default("Candidate") // Candidate|Validated|Paper|Live|Degraded|Retired
+  note       String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([factorKey, version])
+  @@map("quant_factors")
+}
+
+// 策略库：同样版本化
+model QuantStrategy {
+  id            String   @id @default(cuid())
+  strategyKey   String
+  version       Int
+  name          String
+  kind          String   @default("multi_factor") // rule|factor|multi_factor|combo
+  factorRefs    String   @default("[]") // JSON [{factorKey,version,weight,direction}]
+  selection     String   @default("{}") // JSON 选股参数（股票池/过滤/评分/topN）
+  backtest      String   @default("{}") // JSON 回测参数
+  metrics       String   @default("{}") // JSON 绩效
+  status        String   @default("Candidate") // Candidate|Research|Validated|Paper|Live|Monitoring|Degraded|Retired
+  note          String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([strategyKey, version])
+  @@map("quant_strategies")
+}
+
+// 实验跟踪：fingerprint 唯一，避免重复执行完全相同的实验
+model QuantExperiment {
+  id                 String   @id @default(cuid())
+  fingerprint        String   @unique
+  kind               String   @default("backtest") // mining|validation|backtest|selection_replay|research
+  startedAt          DateTime @default(now())
+  dataRange          String   @default("")
+  stockPool          String   @default("{}") // JSON
+  factorVersions     String   @default("") // key@v 逗号分隔
+  strategyVersion    String   @default("")
+  parameters         String   @default("{}") // JSON
+  backtestParameters String   @default("{}") // JSON
+  transactionCost    String   @default("{}") // JSON
+  status             String   @default("running") // running|done|failed
+  result             String   @default("") // JSON 结果摘要
+  failureReason      String   @default("")
+  agentConclusion    String   @default("")
+  jobId              String   @default("")
+
+  @@map("quant_experiments")
+}
+
+// 研究知识库
+model QuantKnowledge {
+  id        String   @id @default(cuid())
+  kind      String // valid_factor|invalid_factor|tested_param|failed_strategy|retired_strategy|experiment_note|market_env|current_strategy
+  title     String
+  content   String   @default("")
+  refs      String   @default("[]") // JSON 关联对象 id
+  tags      String   @default("[]") // JSON
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("quant_knowledge")
+}
+
+// 长任务运行记录（内存为主，落库为快照/审计）
+model QuantJob {
+  id          String   @id
+  kind        String
+  fingerprint String   @default("")
+  status      String   @default("queued") // queued|running|paused|done|failed|cancelled
+  progress    Int      @default(0)
+  stage       String   @default("")
+  message     String   @default("")
+  error       String   @default("")
+  payload     String   @default("{}") // JSON
+  checkpoint  String   @default("{}") // JSON 断点（恢复用）
+  result      String   @default("") // JSON
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([kind, status])
+  @@map("quant_jobs")
+}

@@ -8,6 +8,7 @@ import AnalysisPage from "./pages/AnalysisPage";
 import TrackerPage from "./pages/TrackerPage";
 import HistoryPage from "./pages/HistoryPage";
 import CopilotPage from "./pages/AssistantPage";
+import QuantPage from "./QuantPage";
 import ExtensionPage from "./pages/ExtensionPage";
 import SettingsPage from "./pages/SettingsPage";
 import { useDesk } from "@/lib/desk/store";
@@ -42,6 +43,7 @@ export default function AppShell() {
           {page === "tracker" && <TrackerPage />}
           {page === "history" && <HistoryPage />}
           {page === "copilot" && <CopilotPage />}
+          {page === "quant" && <QuantPage />}
           {page === "extension" && <ExtensionPage />}
           {page === "settings" && <SettingsPage />}
         </main>
