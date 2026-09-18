@@ -187,6 +187,7 @@ export interface SelectionRequest {
   strategyKey?: string;
   strategyVersion?: number;
   dataSource?: string;
+  maxKlineSymbols?: number; // 大池K线子集上限（默认 300，按快照成交额取流动性最好的一批）
 }
 
 export interface SelectionRow {
