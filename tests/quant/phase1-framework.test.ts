@@ -77,6 +77,19 @@ test("交易日历：工作日序列", () => {
 
 // ---------- Job Registry ----------
 
+async function waitForJobStatus(id: string, want: string | string[], timeoutMs = 3000): Promise<void> {
+  const wants = Array.isArray(want) ? want : [want];
+  const start = Date.now();
+  for (;;) {
+    const job = getJob(id);
+    if (job && wants.includes(job.status)) return;
+    if (Date.now() - start > timeoutMs) {
+      assert.fail(`任务 ${id} 在 ${timeoutMs}ms 内未达到状态 ${wants.join("/")}（当前 ${job?.status}，error=${job?.error}）`);
+    }
+    await sleep(10);
+  }
+}
+
 test("job registry: 运行到完成，进度与结果落盘", async () => {
   registerRunner("test-finish", async (ctx: JobCtx) => {
     for (let i = 1; i <= 5; i++) {
@@ -88,9 +101,8 @@ test("job registry: 运行到完成，进度与结果落盘", async () => {
   });
   const { job, duplicate } = startJob({ kind: "test-finish", fingerprint: "fp-finish" });
   assert.equal(duplicate, false);
-  await sleep(80);
+  await waitForJobStatus(job.id, "done");
   const done = getJob(job.id)!;
-  assert.equal(done.status, "done");
   assert.equal(done.progress, 100);
   assert.deepEqual(done.result, { answer: 42 });
   assert.equal(done.stage, "step");
@@ -125,15 +137,13 @@ test("job registry: 暂停 → 断点保存 → 恢复 → 完成", async () => 
   const { job } = startJob({ kind: "test-pause", fingerprint: "fp-pause" });
   await sleep(45); // 跑 2~3 个分片
   assert.ok(pauseJob(job.id), "暂停请求应成功");
-  await sleep(60);
+  await waitForJobStatus(job.id, "paused");
   const paused = getJob(job.id)!;
-  assert.equal(paused.status, "paused");
   assert.ok(paused.progress > 0 && paused.progress < 100, `进度应停在中间：${paused.progress}`);
 
   assert.ok(await resumeJob(job.id), "恢复应成功");
-  await sleep(250);
+  await waitForJobStatus(job.id, "done");
   const done = getJob(job.id)!;
-  assert.equal(done.status, "done", `恢复后应完成（当前 ${done.status} ${done.error}）`);
   assert.equal(done.progress, 100);
   assert.equal(done.result.last, 10);
 });
@@ -143,9 +153,8 @@ test("job registry: 失败必须留下失败原因", async () => {
     throw new Error("数据不足：样本小于 60 根");
   });
   const { job } = startJob({ kind: "test-fail", fingerprint: "fp-fail" });
-  await sleep(30);
+  await waitForJobStatus(job.id, "failed");
   const failed = getJob(job.id)!;
-  assert.equal(failed.status, "failed");
   assert.ok(failed.error.includes("数据不足"), `error 应含原因：${failed.error}`);
 });
 
@@ -160,8 +169,7 @@ test("job registry: 取消", async () => {
   const { job } = startJob({ kind: "test-cancel", fingerprint: "fp-cancel" });
   await sleep(20);
   assert.ok(cancelJob(job.id));
-  await sleep(60);
-  assert.equal(getJob(job.id)!.status, "cancelled");
+  await waitForJobStatus(job.id, "cancelled");
 });
 
 test("job registry: findByFingerprint 与列表", async () => {
