@@ -273,7 +273,7 @@ export async function createExperiment(input: ExperimentRecord): Promise<Experim
 
 export async function finishExperiment(
   id: string,
-  patch: { status: "done" | "failed"; result?: Record<string, unknown>; failureReason?: string; agentConclusion?: string },
+  patch: { status: "done" | "failed" | "running"; result?: Record<string, unknown>; failureReason?: string; agentConclusion?: string },
 ): Promise<void> {
   await db.quantExperiment.update({
     where: { id },
