@@ -29,6 +29,23 @@ async function fetchJson<T>(url: string, timeoutMs = 6000): Promise<T> {
   }
 }
 
+// 多主机 fallback：同一路径在多个主机间依次尝试（腾讯主域被 WAF 时自动切代理域）
+async function fetchJsonMultiHost<T>(paths: string[], timeoutMs = 6000): Promise<T> {
+  let lastErr: unknown = new Error("no host");
+  for (const url of paths) {
+    try {
+      return await fetchJson<T>(url, timeoutMs);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
+}
+
+// 腾讯K线同接口多域名：主域被 WAF/限流时自动切代理域（同路径加 /ifzqgtimg 前缀）
+const TC_DAY_HOSTS = ["https://web.ifzq.gtimg.cn", "https://proxy.finance.qq.com/ifzqgtimg"];
+const TC_MINUTE_HOSTS = ["https://ifzq.gtimg.cn", "https://proxy.finance.qq.com/ifzqgtimg"];
+
 const cache = new Map<string, { at: number; data: unknown }>();
 const CACHE_TTL_MS: Record<string, number> = { universe: 300_000, bars: 600_000 };
 const inflight = new Map<string, Promise<unknown>>();
@@ -203,8 +220,8 @@ async function fetchDayBarsTc(symbol: string, asOf: string, lookback: number): P
     const startMs = Date.parse(asOf) - Math.max(60, lookback * 2) * 86400000;
     const start = new Date(Math.max(0, startMs)).toISOString().slice(0, 10);
     const count = Math.min(800, Math.max(40, Math.ceil(lookback * 1.6)));
-    const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tc},day,${start},${end},${count},qfq`;
-    const j = await fetchJson<{ data?: Record<string, Record<string, unknown>> }>(url);
+    const path = `/appstock/app/fqkline/get?param=${tc},day,${start},${end},${count},qfq`;
+    const j = await fetchJsonMultiHost<{ data?: Record<string, Record<string, unknown>> }>(TC_DAY_HOSTS.map((h) => h + path));
     const d = j?.data?.[tc] ?? {};
     const rows = ((d["qfqday"] ?? d["day"]) as TcRow[] | undefined) ?? [];
     return parseDayRows(rows);
@@ -216,8 +233,8 @@ async function fetchMinuteBarsTc(symbol: string, tf: Timeframe, asOf: string, lo
   const tc = symbolToTencent(symbol);
   if (!per || !tc) return null;
   return cached("bars", `${tc}:${per}:recent`, async () => {
-    const url = `https://ifzq.gtimg.cn/appstock/app/kline/mkline?param=${tc},${per},,${Math.min(800, Math.max(60, lookback))}`;
-    const j = await fetchJson<{ data?: Record<string, Record<string, unknown>> }>(url);
+    const path = `/appstock/app/kline/mkline?param=${tc},${per},,${Math.min(800, Math.max(60, lookback))}`;
+    const j = await fetchJsonMultiHost<{ data?: Record<string, Record<string, unknown>> }>(TC_MINUTE_HOSTS.map((h) => h + path));
     const rows = ((j?.data?.[tc]?.[per]) as TcRow[] | undefined) ?? [];
     return parseMinuteRows(rows);
   }).then((bars) => (bars ?? []).filter((b) => b.date.slice(0, 10) <= asOf).slice(-lookback));

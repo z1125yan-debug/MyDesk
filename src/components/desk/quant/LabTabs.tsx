@@ -115,6 +115,7 @@ export function BacktestTab() {
             <select className={inputCls + " mt-1 w-full"} value={source} onChange={(e) => setSource(e.target.value)}>
               <option value="demo">demo 演示</option>
               <option value="em">em 真实行情</option>
+              <option value="mcp">mcp (china-stock-mcp)</option>
             </select>
           </label>
           <label className="text-[11.5px] text-muted-foreground">TopN {topN}
@@ -239,6 +240,7 @@ export function SelectionTab() {
             <select className={inputCls + " mt-1 w-full"} value={source} onChange={(e) => setSource(e.target.value)}>
               <option value="demo">demo 演示</option>
               <option value="em">em 真实行情</option>
+              <option value="mcp">mcp (china-stock-mcp)</option>
             </select>
           </label>
           <label className="flex items-end gap-2 text-[12px]">
@@ -459,6 +461,7 @@ export function ResearchTab() {
           <select className={inputCls} value={source} onChange={(e) => setSource(e.target.value)}>
             <option value="demo">demo 演示</option>
             <option value="em">em 真实行情</option>
+              <option value="mcp">mcp (china-stock-mcp)</option>
           </select>
           <Button size="sm" disabled={busy} onClick={() => void start()}>{busy ? "启动中…" : "开始自主研究"}</Button>
         </CardContent>
