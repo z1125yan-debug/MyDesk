@@ -7,7 +7,13 @@ import { mcpUrl } from "./quant-config";
 
 // em-provider / mcp-provider 依赖服务端网络与 @/ 别名，动态引入以保持本模块在纯逻辑测试中可用
 type Loader = () => DataProvider | Promise<DataProvider>;
-const loaders: Record<string, Loader | null> = { em: null, mcp: null };
+
+// 注册表必须放在 globalThis：同一份 data/index 在生产构建里可能因说明符不同（"@/lib/quant/data/index" 与
+// "./data/index"）被打成两个模块实例，若 loaders 只是模块级常量，先注册的那个实例会把
+// quantBootstrap 的全局标记置位，后加载的实例（如某个 API 路由）就永远拿不到 Provider，
+// 症状是 "EM Provider 未注册（仅服务端可用）"（2026-09-19 切生产构建时实测到）。
+const G = globalThis as typeof globalThis & { __quantProviderLoaders?: Record<string, Loader | null> };
+const loaders: Record<string, Loader | null> = (G.__quantProviderLoaders ??= { em: null, mcp: null });
 
 export function registerProvider(id: "em" | "mcp", loader: Loader): void {
   loaders[id] = loader;

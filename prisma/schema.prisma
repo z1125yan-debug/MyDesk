@@ -210,3 +210,26 @@ model GlobalEvent {
   @@index([asOf])
   @@map("global_event")
 }
+
+// P2-自动化 后台任务运行记录：用于回答「到底有没有运行 / 什么时候运行 / 为什么失败」
+// 幂等口径：同一 (kind, tradeDate) 有 success 就不再重复执行（调度器只认「收盘窗口之后完成」的成功，
+// 盘中手动扫描不算收盘结果）；failure 允许重试但每日有限次；已确证休市的当日不再重试（见 scheduler/rules.ts）。
+// 服务边界：任务随服务端进程运行，进程未启动时不会执行——记录如实反映这一点，不宣称无人值守。
+model TaskRun {
+  id         String    @id @default(cuid())
+  kind       String // radar | events
+  tradeDate  String // 目标交易日 YYYY-MM-DD（北京时间）
+  status     String // running（执行中）| success | failure | skipped
+  trigger    String    @default("schedule") // schedule=调度器自动 | manual=接口/按钮触发
+  startedAt  DateTime
+  finishedAt DateTime?
+  scanned    Int       @default(0) // 扫描输入条数（快讯/板块等上游返回量）
+  results    Int       @default(0) // 实际落库条数
+  missing    String    @default("[]") // JSON 数组：本次的数据缺失口径
+  error      String    @default("") // failure=异常信息；skipped=机器可读原因 non_trading_day | trading_day_unconfirmed
+  basis      String    @default("") // 数据来源/判定依据（如「上证指数当日K线存在=交易日」）
+  note       String    @default("")
+
+  @@index([kind, tradeDate])
+  @@map("task_run")
+}

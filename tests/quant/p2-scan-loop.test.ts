@@ -1,10 +1,10 @@
 // P2 收尾：Radar / Events 真实闭环集成测试（默认跳过，需显式开启）
-// 开启条件：MYDESK_INTEGRATION=1，且本地 dev 服务指向本副本（MYDESK_BASE_URL，默认 http://127.0.0.1:3000）
+// 开启条件：MYDESK_INTEGRATION=1，且本地服务指向本副本（MYDESK_BASE_URL，默认 http://127.0.0.1:3000）
 //   例：MYDESK_INTEGRATION=1 MYDESK_BASE_URL=http://127.0.0.1:3010 node --test tests/quant/p2-scan-loop.test.ts
 // 为什么默认跳过：本文件会真实调用行情/快讯数据源并写库（当日覆盖），不属于无网络的常规回归；
 //   常规 `node --test tests/**/*.test.ts` 下它报 skipped 而不是 pass，避免把「没跑」当成「已通过」。
 // 覆盖：手动扫描→真实数据→规则计算→落库→接口读回→页面同源数据 的一致性、同日幂等（重扫不产生重复）、
-//       跨交易日历史不被破坏、以及 P2 五个接口的响应契约。
+//       跨交易日历史不被破坏、P2 五个接口的响应契约、以及自动化任务记录（task_run）闭环与幂等拦截。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
@@ -14,8 +14,13 @@ const BASE = (process.env.MYDESK_BASE_URL ?? "http://127.0.0.1:3000").replace(/\
 const SKIP_REASON = ENABLED ? false : "未设置 MYDESK_INTEGRATION=1（该用例需真实数据源 + 本地服务 + 写库）";
 const TIMEOUT_MS = 240_000;
 
-async function api(method: "GET" | "POST", p: string): Promise<{ status: number; json: any }> {
-  const res = await fetch(`${BASE}${p}`, { method, signal: AbortSignal.timeout(TIMEOUT_MS), headers: { "content-type": "application/json" } });
+async function api(method: "GET" | "POST", p: string, body?: unknown): Promise<{ status: number; json: any }> {
+  const res = await fetch(`${BASE}${p}`, {
+    method,
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+    headers: { "content-type": "application/json" },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
   const text = await res.text();
   let json: any = null;
   try { json = JSON.parse(text); } catch { /* 保留 null，由断言报出真实响应片段 */ }
@@ -48,6 +53,22 @@ async function perDay(table: "radar_finding" | "global_event"): Promise<Record<s
 function sameExceptToday(before: Record<string, number>, after: Record<string, number>, today: string) {
   const past = Object.entries(before).filter(([d]) => d !== today);
   for (const [d, n] of past) assert.equal(after[d], n, `历史交易日 ${d} 的行数被改动（${n} → ${after[d]}），当日扫描不得越界`);
+}
+
+// task_run 只读快照：自动化验收用（P2-自动化 13）
+async function taskRunRows(kind: string, tradeDate: string): Promise<{ status: string; trigger: string; results: number }[]> {
+  const { PrismaClient } = await import("@prisma/client");
+  const db = new PrismaClient({ datasourceUrl: `file:${DB_FILE.replace(/\\/g, "/")}` });
+  try {
+    // 裸 SQL 必须给每列 AS 别名，否则返回对象拿不到稳定键名；trigger 是 SQL 关键字，需加引号
+    const rows = (await db.$queryRawUnsafe(
+      `SELECT status AS st, "trigger" AS tg, results AS n FROM task_run WHERE kind = ? AND tradeDate = ? ORDER BY startedAt DESC`,
+      kind, tradeDate,
+    )) as { st: string; tg: string; n: number }[];
+    return rows.map((r) => ({ status: String(r.st), trigger: String(r.tg), results: Number(r.n) }));
+  } finally {
+    await db.$disconnect();
+  }
 }
 
 test("Radar 闭环：扫描→落库→读回 一致，且同日重扫不产生重复行", { skip: SKIP_REASON }, async () => {
@@ -160,4 +181,52 @@ test("P2 接口响应契约：risk / themes / radar / events / probability 均�
   assert.equal(typeof probJson.benchmark?.bars, "number");
   assert.ok(Array.isArray(probJson.warnings));
   void prob;
+});
+
+test("自动化任务记录闭环：手动扫描留 task_run 行，重复触发不产生新数据", { skip: SKIP_REASON }, async () => {
+  // 1) 状态接口本身必须可读且如实声明能力边界（不得出现「无人值守」式承诺）
+  const st = await api("GET", "/api/tasks/status");
+  assert.equal(st.json.ok, true, `状态接口失败：${st.json.error}`);
+  assert.equal(typeof st.json.enabled, "boolean", "必须如实说明调度器是否启用");
+  assert.equal(typeof st.json.running, "boolean", "必须如实说明本进程定时器是否在跑");
+  assert.match(String(st.json.today), /^\d{4}-\d{2}-\d{2}$/);
+  assert.ok(st.json.next && typeof st.json.next.at === "string", "必须给出下一次执行窗口，供人核对是否真会跑");
+  assert.equal(typeof st.json.boundary, "string");
+  assert.doesNotMatch(String(st.json.boundary), /无人值守|每天自动运行/, "边界文案不得承诺无人值守");
+  for (const k of ["radar", "events"]) {
+    const sum = (st.json.today_summary as any[]).find((s) => s.kind === k);
+    assert.ok(sum, `today_summary 缺少 ${k} 的汇总`);
+    assert.equal(typeof sum.settled, "boolean");
+  }
+
+  // 2) 手动扫描必须留下与之对应的 task_run 行（结果条数与接口返回一致）
+  const scan = await api("POST", "/api/radar");
+  assert.equal(scan.json.ok, true, `扫描失败：${scan.json.error}`);
+  const day = String(scan.json.trade_date);
+  assert.equal(scan.json.task?.status, "success", `扫描未记为成功：${JSON.stringify(scan.json.task)}`);
+  assert.equal(scan.json.task?.kind, "radar");
+  const rows = await taskRunRows("radar", day);
+  assert.ok(rows.length > 0, `扫描成功但 task_run 无记录（${day}）：无法回答「到底有没有运行」`);
+  const ok = rows.find((r) => r.status === "success");
+  assert.ok(ok, "task_run 无 success 行");
+  assert.equal(ok.trigger, "manual", "手动扫描记录的 trigger 必须是 manual，不得与自动混为一谈");
+  assert.equal(ok.results, (scan.json.items ?? []).length, "task_run 记录的落库条数与接口返回条数不一致");
+
+  // 3) 再次经任务接口触发（不带 force）：必须被幂等拦截，且不新增任何行
+  const before = (await taskRunRows("radar", day)).length;
+  const again = await api("POST", "/api/tasks/run", { kind: "radar" });
+  assert.equal(again.json.outcome.status, "skipped", `重复触发未被拦截：${JSON.stringify(again.json.outcome)}`);
+  assert.ok(["already_success", "non_trading_day", "running", "max_attempts"].includes(String(again.json.outcome.reason)),
+    `拦截原因必须是可枚举的机器码，实际：${again.json.outcome.reason}`);
+  const after = await taskRunRows("radar", day);
+  assert.equal(after.length, before, "被幂等拦截的触发仍写了记录，会产生无意义重复数据");
+  const readBack = await api("GET", "/api/radar");
+  assert.equal((readBack.json.items ?? []).length, (scan.json.items ?? []).length, "重复触发改变了当日结果条数");
+
+  // 4) 非当日日期不得被接受（避免用当前行情冒充历史结果）
+  const bad = await fetch(`${BASE}/api/tasks/run`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "radar", trade_date: "2000-01-01" }),
+  });
+  assert.equal(bad.status, 400, "历史日期的任务触发必须被拒绝");
 });

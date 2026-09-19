@@ -455,3 +455,26 @@ export async function scanEvents(): Promise<{
   if (!res.ok || !j.ok) throw new Error(j.error || "事件扫描失败");
   return j;
 }
+
+// ---- 后台任务运行记录（P2-自动化 13）：只读 /api/tasks/status，展示真实落库的 task_run 行 ----
+export interface TaskRunClient {
+  id: string; kind: string; trade_date: string; status: string; trigger: string;
+  started_at: string; finished_at: string | null; duration_ms: number | null;
+  scanned: number; results: number; missing: string[]; error: string; basis: string; note: string;
+}
+export interface TaskStatusClient {
+  as_of: string; enabled: boolean; running: boolean; tick_seconds: number;
+  config: { closeMinute: number; delayMinutes: number; maxAttempts: number };
+  today: string; due_now: boolean; slot_at: string | null;
+  next: { trade_date: string; at: string };
+  last_outcome: string; last_tick_at: string | null;
+  today_summary: { kind: string; settled: boolean; attempts: number; last_status: string; last_trigger: string; last_finished_at: string | null; last_error: string }[];
+  today_runs: TaskRunClient[]; recent_runs: TaskRunClient[];
+  boundary: string;
+}
+export async function fetchTaskStatus(): Promise<TaskStatusClient> {
+  const res = await fetch("/api/tasks/status");
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "任务记录读取失败");
+  return j;
+}

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Radar, Loader2, RefreshCw } from "lucide-react";
 import { SourceBadge } from "../SourceBadge";
+import { AutoTaskLine } from "../AutoTaskLine";
 import { fetchRadar, scanRadar, type RadarItemClient } from "@/lib/desk/quant-api";
 import { useDesk } from "@/lib/desk/store";
 
@@ -16,6 +17,7 @@ export default function RadarPage() {
   const [missing, setMissing] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [taskTick, setTaskTick] = useState(0); // 手动扫描后自增 → 让任务状态条重读 task_run
 
   const load = useCallback(async () => {
     try {
@@ -31,7 +33,7 @@ export default function RadarPage() {
       const j = await scanRadar();
       setItems(j.items); setAsOf(j.trade_date || j.as_of); setMissing(j.missing ?? []);
     } catch (e) { setError(String((e as Error).message || e)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setTaskTick((t) => t + 1); }
   };
 
   useEffect(() => { void load(); }, [load]);
@@ -41,17 +43,18 @@ export default function RadarPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Radar size={18} className="text-sky-400" /> AI 主动发现</div>
-          <div className="text-[11px] text-muted-foreground">规则扫描市场状态 / 主线 / 资金 / 映射事件 · 点「立即扫描」按交易日落库 · 当前无后台自动扫描</div>
+          <div className="text-[11px] text-muted-foreground">规则扫描市场状态 / 主线 / 资金 / 映射事件 · 服务进程内的调度器在交易日收盘后自动扫描，也可点「立即扫描」手动执行一次</div>
         </div>
         <div className="flex items-center gap-2">
-          {asOf && <SourceBadge status="HISTORICAL" source="radar" time={asOf.slice(0, 16)} />}
+          {asOf && <SourceBadge status="HISTORICAL" source="radar_finding 当日库行（自动/手动来源见下方任务状态）" time={asOf.slice(0, 16)} />}
           <button onClick={scan} className="flex items-center gap-1 rounded-md bg-sky-500 px-2.5 py-1.5 text-xs text-white hover:bg-sky-400">
             {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 立即扫描
           </button>
         </div>
       </div>
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
-      {!items.length && <div className="text-xs text-muted-foreground">今日尚未扫描。点击「立即扫描」生成发现列表（需真实行情源）。</div>}
+      <AutoTaskLine kind="radar" refreshKey={taskTick} />
+      {!items.length && <div className="text-xs text-muted-foreground">今日尚未扫描。交易日收盘后调度器会自动执行一次；也可点击「立即扫描」马上生成（需真实行情源）。</div>}
       <div className="space-y-2">
         {items.map((it) => (
           <button key={it.id ?? it.title} onClick={() => go(KIND_GO[it.kind] ?? "market")}
