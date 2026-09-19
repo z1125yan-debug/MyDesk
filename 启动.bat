@@ -4,17 +4,39 @@ title MyDesk 个人行情工作台
 
 cd /d "%~dp0"
 
+REM ============================================================
 
+REM  启动方式：常驻生产服务（next build + next start）
+
+REM  后台自动扫描（交易日收盘后自动跑 Radar / Events）挂在这个进程上：
+
+REM  浏览器可以关，本窗口不能关；关掉本窗口 = 服务与自动扫描一起停止。
+
+REM
+
+REM  用法：
+
+REM    双击 启动.bat          正常启动（已有构建产物则跳过构建）
+
+REM    启动.bat rebuild       改过代码后强制重新构建再启动
+
+REM    启动.bat dev           退回开发模式（改代码即时生效，自动化同样会跑）
+
+REM    启动.bat 3011          换一个端口启动
+
+REM ============================================================
+
+set "PORT=3010"
+
+if /i "%~1"=="rebuild" (set "MYDESK_FORCE_BUILD=1") else (if /i "%~1"=="dev" (set "MYDESK_MODE=dev") else (if not "%~1"=="" set "PORT=%~1"))
 
 echo ============================================
 
-echo    MyDesk 个人行情工作台 - 一键启动
+echo    MyDesk 个人行情工作台 - 一键启动（生产模式）
 
 echo ============================================
 
 echo.
-
-
 
 REM === 1. 检测 Node.js ===
 
@@ -42,8 +64,6 @@ if errorlevel 1 (
 
 for /f "tokens=*" %%v in ('node -v') do echo  [OK] 已检测到 Node.js %%v
 
-
-
 REM === 2. 确保 .env 存在 ===
 
 if not exist ".env" (
@@ -52,21 +72,17 @@ if not exist ".env" (
 
 )
 
-
-
 REM === 3. 配置国内 npm 镜像 ===
 
 call npm config set registry https://registry.npmmirror.com/
 
 echo  [OK] 已切换到国内 npm 镜像 npmmirror.com
 
-
-
 REM === 4. 安装依赖（首次需要几分钟）===
 
 if not exist "node_modules\next\package.json" (
 
-  echo  [1/4] 首次启动：正在安装依赖，需要几分钟，请勿关闭窗口...
+  echo  [1/5] 首次启动：正在安装依赖，需要几分钟，请勿关闭窗口...
 
   call npm install --no-audit --no-fund --registry=https://registry.npmmirror.com/
 
@@ -88,13 +104,11 @@ if not exist "node_modules\next\package.json" (
 
 )
 
-
-
 REM === 5. 生成 Prisma Client ===
 
 if not exist "node_modules\.prisma\client\index.js" (
 
-  echo  [2/4] 正在初始化数据库客户端（约 10 秒）...
+  echo  [2/5] 正在初始化数据库客户端（约 10 秒）...
 
   call npx prisma generate
 
@@ -116,57 +130,143 @@ if not exist "node_modules\.prisma\client\index.js" (
 
 )
 
+REM === 6. 构建生产包（开发模式不需要）===
 
+if "%MYDESK_MODE%"=="dev" goto skip_build
 
-REM === 6. 启动 Next.js 服务 ===
+if not exist ".next\BUILD_ID" set "MYDESK_FORCE_BUILD=1"
 
-echo.
+if defined MYDESK_FORCE_BUILD (
 
-echo  [3/4] 正在启动本地服务...
+  echo  [3/5] 正在构建生产包，首次约需 1~3 分钟，请勿关闭窗口...
 
-echo        - 看到 Ready 或 Local: 字样即启动成功
+  call npx next build
 
-echo        - 浏览器将自动打开 http://localhost:3000
+  if errorlevel 1 (
 
-echo        - 停止方法：直接关闭本窗口
+    echo  [!] 构建失败，请检查上方报错信息。
 
-echo.
+    echo      可先用「启动.bat dev」回到开发模式定位问题。
 
+    pause
 
+    exit /b 1
+
+  )
+
+  echo  [OK] 构建完成
+
+) else (
+
+  echo  [OK] 已有构建产物，跳过构建（改过代码请用「启动.bat rebuild」）
+
+)
+
+:skip_build
 
 REM === 境外AI接口走本机代理(v2rayN 等，默认混合端口 10808) ===
+
 REM 国内行情源(腾讯/东财/新浪)在 NO_PROXY 白名单里，保持直连不受影响
+
 REM 若代理端口不同请改 10808；不用代理则删除下面三行 set
+
 set NODE_USE_ENV_PROXY=1
+
 set HTTPS_PROXY=http://127.0.0.1:10808
+
 set HTTP_PROXY=http://127.0.0.1:10808
+
 set NO_PROXY=localhost,127.0.0.1,gtimg.cn,eastmoney.com,qq.com,sina.com.cn
 
 REM === 启动通达信(eltdx)行情网关（端口 8756，主行情源；未安装则自动跳过走腾讯/东财） ===
+
 set "TDX_EXE=%LocalAppData%\Programs\Python\Python314\Scripts\eltdx-http.exe"
+
 if exist "%TDX_EXE%" (
+
   netstat -ano | findstr ":8756 " | findstr "LISTENING" >nul 2>nul
+
   if errorlevel 1 (
+
     echo  [OK] 正在启动通达信行情网关 eltdx（端口 8756）...
+
     start "" /b "%TDX_EXE%" --host 127.0.0.1 --port 8756 --server-count 2 --connections-per-server 2
+
   ) else (
+
     echo  [OK] 通达信行情网关已在运行（端口 8756）
+
   )
+
 ) else (
+
   echo  [--] 未检测到 eltdx 网关，行情走腾讯/东财公开接口
+
 )
 
-start "" /b cmd /c "%SystemRoot%\System32\ping.exe -n 13 127.0.0.1 >nul & start "" http://localhost:3000"
+REM === 7. 端口占用检测：多半是本窗口重复双击，服务已在跑 ===
 
+netstat -ano | findstr ":%PORT% " | findstr "LISTENING" >nul 2>nul
 
+if not errorlevel 1 (
 
-echo  [4/4] 服务运行中（请勿关闭本窗口）
+  echo.
+
+  echo  [!] 端口 %PORT% 已经有服务在监听，不再重复启动。
+
+  echo      若那就是 MyDesk（多半如此），直接打开 http://localhost:%PORT% 即可；
+
+  echo      若要同时跑第二个实例，用「启动.bat 3011」换个端口。
+
+  echo      若端口被别的程序占了，先结束它或换端口。
+
+  echo.
+
+  pause
+
+  exit /b 0
+
+)
+
+REM === 8. 启动服务 ===
 
 echo.
 
-call npx next dev -p 3000
+if "%MYDESK_MODE%"=="dev" (
 
+  echo  [4/5] 开发模式启动（改代码即时生效；后台自动扫描同样会随本进程运行）
 
+) else (
+
+  echo  [4/5] 正在启动本地服务（生产模式 next start）
+
+)
+
+echo        - 看到 Ready 或 Local: 字样即启动成功
+
+echo        - 生产模式下若提示 output standalone 相关警告，可忽略，功能正常
+
+echo        - 浏览器将自动打开 http://localhost:%PORT%
+
+echo        - 停止方法：直接关闭本窗口（自动扫描也会随之停止）
+
+echo.
+
+start "" /b cmd /c "%SystemRoot%\System32\ping.exe -n 13 127.0.0.1 >nul & start "" http://localhost:%PORT%"
+
+echo  [5/5] 服务运行中（请勿关闭本窗口）
+
+echo.
+
+if "%MYDESK_MODE%"=="dev" (
+
+  call npx next dev -p %PORT%
+
+) else (
+
+  call npx next start -p %PORT%
+
+)
 
 echo.
 
