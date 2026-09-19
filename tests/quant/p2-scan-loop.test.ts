@@ -350,3 +350,129 @@ test("P3 Events 增量：重复扫描不重复入库，已入库事件的资金�
   assert.ok(texts.some((t) => t.status === "success" && t.basis.includes("口径 增量")),
     "事件任务的 task_run.basis 未记录增量口径");
 });
+
+// ---------- P4 历史查询（第四阶段）：全程只读真实服务 + 真实库，不触发任何扫描、不写一行数据 ----------
+// 这一组用例证明的是「读得到的东西与库里真的一致」，因此刻意不调用 POST：
+// 历史查询若依赖扫描才成立，那就还是「重算」，不是本阶段要验收的「回看已落库的真实历史」。
+test("P4 雷达历史：与今日视图同源一致、live/superseded 可分、无数据日期明确空且不回退今天", { skip: SKIP_REASON }, async () => {
+  const today = (await api("GET", "/api/radar")).json;
+  const day = String(today.as_of);
+  assert.match(day, /^\d{4}-\d{2}-\d{2}$/);
+
+  // 1) 今天这一天：历史接口按 state=live 取，必须与今日接口读到同一批库行（同源，不是两套数据）
+  const live = await api("GET", `/api/radar/history?date=${day}&state=live`);
+  assert.equal(live.status, 200);
+  assert.equal(live.json.ok, true);
+  assert.equal(live.json.date, day);
+  assert.equal(live.json.is_today, true);
+  assert.deepEqual(live.json.items.map((i: any) => i.title), (today.items ?? []).map((i: any) => i.title),
+    "历史接口与今日接口读同一批 asOf=今天的 live 行，标题序列必须一致");
+  assert.ok(live.json.items.every((i: any) => i.as_of === day), "返回行必须全部带所查日期的 asOf");
+  assert.ok(live.json.items.every((i: any) => i.state === "live"), "state=live 的查询里不得混入消失行");
+
+  // 2) 全部：rows = live + superseded 必须自洽（消失行保留、可查，不因页面显示而被抹掉）
+  const all = await api("GET", `/api/radar/history?date=${day}&state=all`);
+  assert.equal(all.json.counts.rows, all.json.counts.live + all.json.counts.superseded, "当日行数与 live/superseded 分开计数不自洽");
+  assert.equal(all.json.items.length, all.json.counts.rows, "state=all 返回的行数必须等于当日全部行");
+  assert.equal(all.json.items.filter((i: any) => i.superseded).length, all.json.counts.superseded);
+  assert.equal(Number(today.superseded_today ?? 0), all.json.counts.superseded, "今日接口报的消失条数与历史接口的消失行数必须一致");
+  const gone = all.json.items.filter((i: any) => i.state === "superseded");
+  for (const g of gone) assert.ok(String(g.state_label).includes("已标记消失"), "消失行必须带可读状态，不得伪装成成立中");
+
+  // 3) 口径文案：必须点名所查日期；历史视图不得自称实时，今日视图必须说明会被扫描改写（REAL_DATA_ONLY）
+  assert.ok(String(all.json.view_basis).includes(day), `口径说明必须写清查看的是哪一天：${all.json.view_basis}`);
+  assert.match(String(all.json.date_basis), /date=/);
+  if (all.json.is_today) {
+    assert.match(String(all.json.view_basis), /今日/);
+    assert.match(String(all.json.view_basis), /随每次扫描/);
+  } else {
+    assert.match(String(all.json.view_basis), /历史归档（只读）/);
+    assert.doesNotMatch(String(all.json.view_basis), /实时|LIVE/i, "历史归档不得被写成实时口径");
+  }
+
+  // 3.5) 运行记录：当日总数与「接口返回的最近若干条」必须分开报，页面才不会把少列当成没扫过
+  assert.ok(Number.isInteger(all.json.runs_total) && all.json.runs_total >= all.json.runs.length,
+    `runs_total(${all.json.runs_total}) 必须 ≥ 返回条数(${all.json.runs.length})：两者口径反了就是编数`);
+  assert.ok(all.json.runs.length <= 20, "接口按倒序最多返回最近 20 条，不得把整天的运行记录灌进页面");
+
+  // 4) 库里确实没有的一天：明确空结果 + 缺失说明，且不回退到今天
+  const none = await api("GET", "/api/radar/history?date=1990-01-02");
+  assert.equal(none.status, 200);
+  assert.equal(none.json.ok, true);
+  assert.equal(none.json.date, "1990-01-02", "无数据也必须回显所查日期，不能悄悄换成今天");
+  assert.equal(none.json.is_today, false);
+  assert.deepEqual(none.json.items, []);
+  assert.equal(none.json.counts.rows, 0);
+  assert.ok(String(none.json.missing.join(" ")).includes("库里没有 asOf=1990-01-02"), `无数据日期必须给出缺失口径：${JSON.stringify(none.json.missing)}`);
+  assert.ok(!String(none.json.missing.join(" ")).includes("今日"), "缺失说明不得夹带今天的口径");
+  assert.ok(!Array.isArray(none.json.available_dates) || !none.json.available_dates.some((b: any) => b.date === "1990-01-02"),
+    "1990-01-02 不在真实归档清单里：不能为了页面好看把它列成可查询日期");
+
+  // 5) 脏参数与未来日期：400 + 可读 JSON，不返回半套数据
+  for (const bad of ["1990-1-2", "not-a-date", "2999-01-01", "2026-02-30"]) {
+    const r = await api("GET", `/api/radar/history?date=${bad}`);
+    assert.equal(r.status, 400, `非法/未来日期必须被拒：${bad}`);
+    assert.equal(r.json.ok, false);
+    assert.ok(String(r.json.error).length > 4, "错误必须可读，不能空 body");
+  }
+  const badState = await api("GET", `/api/radar/history?date=${day}&state=nope`);
+  assert.equal(badState.status, 400, "state 脏值必须被拒，不能默认成某一种口径返回");
+
+  // 6) 真实库里的每个归档日各查一次：跨日不得串数据（id 集合互不相交）
+  const dates: string[] = (all.json.available_dates as any[]).filter((b) => b.rows > 0).map((b) => b.date).slice(0, 6);
+  assert.ok(dates.length >= 1 && dates.includes(day), `归档清单必须至少含今天（真实库现状）：${JSON.stringify(dates)}`);
+  const seen = new Map<string, string>();
+  for (const d of dates) {
+    const one = await api("GET", `/api/radar/history?date=${d}&state=all`);
+    assert.equal(one.json.date, d);
+    for (const it of one.json.items) {
+      assert.equal(it.as_of, d, `${d} 的查询里出现了 asOf=${it.as_of} 的行：跨日串数据`);
+      const prev = seen.get(String(it.id));
+      assert.ok(!prev, `行 ${it.id} 同时出现在 ${prev} 与 ${d} 的查询结果里：按日期过滤失效`);
+      seen.set(String(it.id), d);
+    }
+  }
+
+  // 7) 只读性：以上全部查询跑完，今日视图必须一个字都没变
+  const after = (await api("GET", "/api/radar")).json;
+  assert.deepEqual(after.items.map((i: any) => i.title), (today.items ?? []).map((i: any) => i.title), "历史查询改动了今日视图：读取路径不允许写库");
+  assert.equal(after.superseded_today ?? 0, today.superseded_today ?? 0);
+});
+
+test("P4 事件历史：契约如实（无 state 列 ⇒ superseded 为 null）、与今日事件同源、无数据日期不回退", { skip: SKIP_REASON }, async () => {
+  const hist = await api("GET", "/api/events/history");
+  assert.equal(hist.status, 200);
+  assert.equal(hist.json.ok, true);
+  assert.equal(hist.json.kind, "events");
+  assert.equal(hist.json.counts.superseded, null, "事件表没有 state 列：接口不得编造「已消失」计数");
+  assert.match(String(hist.json.state_filter_basis), /没有 state 列/);
+  const day = hist.json.date === null ? "" : String(hist.json.date);
+  if (!day) {
+    // 库里没有任何事件归档：如实返回 date:null + 空清单，不允许拿今天的事件列表冒充
+    assert.deepEqual(hist.json.items, []);
+    assert.ok(String(hist.json.missing.join(" ")).length > 0, "空库必须给出缺失口径");
+    assert.ok(!Array.isArray(hist.json.runs) || hist.json.runs.length === 0);
+  } else {
+    assert.match(day, /^\d{4}-\d{2}-\d{2}$/);
+    for (const it of hist.json.items) assert.equal(it.as_of, day);
+    const todays = (await api("GET", "/api/events")).json;
+    if (String(todays.as_of) === day) {
+      assert.deepEqual((hist.json.items as any[]).map((i) => i.title), (todays.items ?? []).map((i: any) => i.title),
+        "同一天里历史接口与今日接口必须读到同一批 global_event 行");
+    }
+    // 产业链映射与资金验证必须是入库时的真实值原样读回（历史查询不重算）
+    for (const it of hist.json.items) {
+      assert.ok(Array.isArray(it.mapped_sectors) && Array.isArray(it.related_stocks), "映射板块/关联标的必须是数组");
+      assert.equal(typeof it.fund_check, "object");
+      if (!it.mapped_sectors.length) assert.equal(it.chain_mapped, false, "未命中映射要如实标记，不得当作已映射展示");
+    }
+    const none = await api("GET", "/api/events/history?date=1990-01-02");
+    assert.equal(none.json.date, "1990-01-02");
+    assert.deepEqual(none.json.items, [], "没有归档的日期必须返回空，不得回退到已有数据的那天");
+    assert.ok(String(none.json.missing.join(" ")).includes("库里没有 asOf=1990-01-02"));
+  }
+  for (const bad of ["1990-1-2", "2999-01-01"]) {
+    const r = await api("GET", `/api/events/history?date=${bad}`);
+    assert.equal(r.status, 400, `非法/未来日期必须被拒：${bad}`);
+  }
+});

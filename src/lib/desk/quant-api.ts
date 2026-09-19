@@ -494,6 +494,65 @@ export async function scanEvents(): Promise<{
   return j;
 }
 
+// ---------- P4 历史查询（只读归档：按 asOf 取 radar_finding / global_event 的真实库行） ----------
+
+export interface RadarHistoryItemClient {
+  id: string; as_of: string; kind: string; title: string; detail: string;
+  evidence: Record<string, unknown>; evidence_broken: boolean;
+  state: string; state_label: string; superseded: boolean;
+  created_at: string; source: string; source_basis: string;
+}
+export interface EventHistoryItemClient {
+  id: string; as_of: string; title: string; time: string; level: string; category: string;
+  mapped_sectors: string[]; related_stocks: string[];
+  fund_check: { stage?: string; note?: string; boards?: { name: string; changePct: number; mainYi: number; rank: number }[] } & Record<string, unknown>;
+  stage: string; source: string; created_at: string;
+  chain_mapped: boolean; broken_columns: string[];
+}
+/** 可查询日期（服务端 groupBy 聚合出来的真实行数，页面据此生成日期入口，不凭空列日期） */
+export interface HistoryDateBucket { date: string; rows: number; live: number; superseded: number | null; is_today: boolean }
+/** 某天的扫描运行记录（task_run 行）：回答「这批历史数据是谁、用什么口径写进库的」 */
+export interface HistoryRunClient {
+  id: string; status: string; trigger: string; trigger_label: string;
+  started_at: string; finished_at: string | null; scanned: number; results: number;
+  error: string; basis: string; note: string; mode: string; mode_label: string; missing: string[];
+}
+export interface HistoryCountsClient { rows: number; live: number; superseded: number | null }
+export interface HistoryRespClient<T> {
+  ok: boolean; error?: string;
+  kind: "radar" | "events";
+  /** null = 库里还没有任何归档日（此时 items 必为空，页面不得显示"今天"的数据冒充历史） */
+  date: string | null;
+  is_today: boolean; today: string;
+  date_basis: string; view_basis: string;
+  state_filter: string; state_filter_basis: string;
+  counts: HistoryCountsClient;
+  items: T[];
+  available_dates: HistoryDateBucket[];
+  runs: HistoryRunClient[];
+  /** 当天 task_run 的总条数（库里 COUNT）；runs 只是倒序的最近若干条，页面必须据此说明「还有多少条没列出」 */
+  runs_total: number;
+  missing: string[];
+}
+
+async function fetchHistory<T>(path: string, params: { date?: string; state?: string }): Promise<HistoryRespClient<T>> {
+  const u = new URLSearchParams();
+  if (params.date) u.set("date", params.date);
+  if (params.state) u.set("state", params.state);
+  const qs = u.toString();
+  const res = await fetch(`${path}${qs ? `?${qs}` : ""}`);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "历史查询失败");
+  return j as HistoryRespClient<T>;
+}
+/** date 不传 = 库内最近有数据的归档日；查无此日返回空 items + missing 说明，不会回退到今天 */
+export function fetchRadarHistory(params: { date?: string; state?: "all" | "live" | "superseded" } = {}) {
+  return fetchHistory<RadarHistoryItemClient>("/api/radar/history", params);
+}
+export function fetchEventsHistory(params: { date?: string } = {}) {
+  return fetchHistory<EventHistoryItemClient>("/api/events/history", params);
+}
+
 // ---- 后台任务运行记录（P2-自动化 13）：只读 /api/tasks/status，展示真实落库的 task_run 行 ----
 export interface TaskRunClient {
   id: string; kind: string; trade_date: string; status: string; trigger: string;
