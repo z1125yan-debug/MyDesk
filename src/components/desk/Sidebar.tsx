@@ -49,6 +49,7 @@ const GROUPS: { title: string; items: { key: PageKey; label: string; icon: React
       { key: "radar", label: "主动发现", icon: ScanSearch },
       { key: "events", label: "事件雷达", icon: Globe2 },
       { key: "research", label: "AI 市场研究", icon: Telescope },
+      { key: "agent", label: "Agent 自主研究", icon: Bot },
     ],
   },
   {

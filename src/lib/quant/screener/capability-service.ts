@@ -95,6 +95,7 @@ async function dbSignals() {
     researchRows, researchLatest,
     factorTestRows, factorTestKeys,
     poolRows, taskRows, taskLatest, cursorRows, riskSnap, themeSnap, probSnap,
+    agentRunRows, agentCallRows, agentRunLatest,
   ] = await Promise.all([
     db.radarFinding.count(),
     db.radarFinding.count({ where: { state: "live" } }),
@@ -115,6 +116,9 @@ async function dbSignals() {
     db.riskSnapshot.count(),
     db.themeSnapshot.count(),
     db.probabilitySnapshot.count(),
+    db.agentRun.count(),
+    db.agentToolCall.count(),
+    db.agentRun.findFirst({ orderBy: { startedAt: "desc" }, select: { runId: true, status: true, answerStatus: true, startedAt: true } }),
   ]);
   return {
     radarRows, radarLive, radarDate: radarLatest?.asOf ?? null,
@@ -126,6 +130,7 @@ async function dbSignals() {
     taskKind: taskLatest?.kind ?? null, taskStatus: taskLatest?.status ?? null,
     taskStartedAt: taskLatest?.startedAt ? shanghaiStamp(new Date(taskLatest.startedAt)) : null,
     cursorRows, riskSnap, themeSnap, probSnap,
+    agentRunRows, agentCallRows, agentRunLatest,
   };
 }
 
@@ -315,6 +320,19 @@ function probeOne(cap: CapabilityDef, ctx: Ctx): Sig {
       return d.taskRows > 0
         ? okSig("db", { rows: d.taskRows, latest_kind: d.taskKind, latest_status: d.taskStatus, latest_started_at: d.taskStartedAt, cursors: d.cursorRows }, d.taskStartedAt)
         : emptySig("db", "task_run 0 行：本进程还没跑过扫描。服务未启动的时间段不会有条目——不能据此说「自动跑过」", { rows: 0 });
+    case "agent_run_history":
+      if (!d) return dbFail();
+      // 0 行同样是「没人跑过」而不是失败：自主循环需要客户端带 AI 回复一步一格驱动，服务端不会自动跑
+      return d.agentRunRows > 0
+        ? okSig("db", {
+            rows: d.agentRunRows, table: "agent_run", tool_call_rows: d.agentCallRows,
+            latest_run: d.agentRunLatest?.runId ?? null, latest_status: d.agentRunLatest?.status ?? null,
+            latest_answer: d.agentRunLatest?.answerStatus ?? null, latest_started_at: d.agentRunLatest?.startedAt ?? null,
+          }, d.agentRunLatest?.startedAt ?? null,
+          `已落库 Agent 运行 ${d.agentRunRows} 次（调用行 ${d.agentCallRows} 条；最新一次状态 ${d.agentRunLatest?.status ?? "未记录"}/${d.agentRunLatest?.answerStatus || "未收尾"}。调用记录属服务端事实，answer 属 AI_INTERPRETATION 层）`)
+        : emptySig("db",
+            `agent_run 当前 0 行：还没有跑过 Agent 研究循环（不是失败；服务端不会自动开跑，需要客户端带着 AI 回复逐格调 /api/agent/tool）`,
+            { rows: 0, tool_call_rows: d.agentCallRows });
     case "lifecycle_preview":
       if (!d) return dbFail();
       return okSig("db", { detail_rows: d.radarRows + d.eventRows, cursors: d.cursorRows, retention_days: 180 }, null,
