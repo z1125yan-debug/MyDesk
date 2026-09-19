@@ -179,12 +179,15 @@ export default function CandleChart({
               const s1 = clamp(Math.round(p.mid - (p.mid - p.s) * (c1 / p.c)), 0, Math.max(0, n - c1));
               return { s: s1, c: c1 };
             });
-          } else if (pointers.current.size === 1 && drag0.current) {
+          } else if (pointers.current.size === 1) {
             // 单指/鼠标拖动：左右平移
+            // setRange 的更新函数是延迟执行的，这里必须在同步代码里把 drag0 捕获到局部变量，
+            // 否则指针抬起后 drag0.current 被清空，更新函数里读 .s 会抛 TypeError
+            const d0 = drag0.current;
             const rect = svgRef.current?.getBoundingClientRect();
-            if (!rect) return;
-            const dxSlots = Math.round(((e.clientX - drag0.current.x) / rect.width) * W / step);
-            setRange(() => ({ s: clamp(drag0.current!.s - dxSlots, 0, Math.max(0, n - eff.c)), c: eff.c }));
+            if (!d0 || !rect) return;
+            const dxSlots = Math.round(((e.clientX - d0.x) / rect.width) * W / step);
+            setRange(() => ({ s: clamp(d0.s - dxSlots, 0, Math.max(0, n - eff.c)), c: eff.c }));
           }
         }}
         onPointerUp={(e) => {

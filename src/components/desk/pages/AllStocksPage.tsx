@@ -1,0 +1,131 @@
+"use client";
+// 全A市场列表（需求文档 P0：真实全A快照 + 搜索/排序/分页）
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { PctText, NumText } from "../SourceBadge";
+import { fetchAllStocks, type AllStockRow } from "@/lib/desk/quant-api";
+import { useDesk } from "@/lib/desk/store";
+
+const SORTS: { key: string; label: string }[] = [
+  { key: "amount_yi", label: "成交额" },
+  { key: "change_pct", label: "涨跌幅" },
+  { key: "turnover_rate", label: "换手率" },
+  { key: "volume_ratio", label: "量比" },
+  { key: "main_net_yi", label: "主力净额" },
+  { key: "market_cap_yi", label: "总市值" },
+  { key: "pe_ttm", label: "市盈率" },
+  { key: "amplitude", label: "振幅" },
+];
+
+export default function AllStocksPage() {
+  const go = useDesk((s) => s.go);
+  const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
+  const addWatch = useDesk((s) => s.addWatch);
+  const [q, setQ] = useState("");
+  const [orderBy, setOrderBy] = useState("amount_yi");
+  const [dir, setDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState<AllStockRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [tradeDate, setTradeDate] = useState("");
+  const pageSize = 50;
+
+  const load = useCallback(async () => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetchAllStocks({ q, order_by: orderBy, dir, page, page_size: pageSize });
+      setRows(r.list);
+      setTotal(r.total);
+      setTradeDate(r.trade_date);
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [q, orderBy, dir, page]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const openProfile = (symbol: string) => { setFocusSymbol(symbol); go("profile"); };
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-3 px-6 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-lg font-bold">全A市场列表</div>
+          <div className="text-[11px] text-muted-foreground">东财 clist 全A快照 · 交易日 {tradeDate} · 快照口径</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <div className="relative">
+            <input
+              value={q}
+              onChange={(e) => { setQ(e.target.value); setPage(1); }}
+              placeholder="代码 / 名称 / 拼音"
+              className="w-44 rounded-lg border border-border bg-card px-3 py-1.5 outline-none focus:border-sky-500/50"
+            />
+            <Search size={12} className="absolute right-2.5 top-2.5 text-muted-foreground" />
+          </div>
+          <select value={orderBy} onChange={(e) => { setOrderBy(e.target.value); setPage(1); }} className="rounded border border-border bg-background px-2 py-1.5">
+            {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+          <button onClick={() => setDir((d) => (d === "desc" ? "asc" : "desc"))} className="rounded border border-border px-2 py-1.5">
+            {dir === "desc" ? "↓ 降序" : "↑ 升序"}
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border text-left text-muted-foreground">
+              {["代码", "名称", "行业", "最新价", "涨跌幅", "成交额(亿)", "换手%", "量比", "振幅%", "总市值(亿)", "PE", "PB", "主力净额(亿)", ""].map((h) => (
+                <th key={h} className="px-2.5 py-2">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.symbol} className="border-b border-border/40 hover:bg-sky-500/5">
+                <td className="cursor-pointer px-2.5 py-1.5 font-mono" onClick={() => openProfile(r.symbol)}>{r.symbol}</td>
+                <td className="cursor-pointer px-2.5 py-1.5" onClick={() => openProfile(r.symbol)}>
+                  {r.name}{r.st && <span className="ml-1 text-[9px] text-red-400">ST</span>}{r.suspended && <span className="ml-1 text-[9px] text-muted-foreground">停</span>}
+                </td>
+                <td className="px-2.5 py-1.5 text-[10.5px] text-muted-foreground">{r.industry ?? "—"}</td>
+                <td className="px-2.5 py-1.5 text-right"><NumText value={r.price} /></td>
+                <td className="px-2.5 py-1.5 text-right"><PctText value={r.change_pct} /></td>
+                <td className="px-2.5 py-1.5 text-right"><NumText value={r.amount_yi} digits={1} /></td>
+                <td className="px-2.5 py-1.5 text-right"><NumText value={r.turnover_rate} /></td>
+                <td className="px-2.5 py-1.5 text-right"><NumText value={r.volume_ratio} /></td>
+                <td className="px-2.5 py-1.5 text-right"><NumText value={r.amplitude} /></td>
+                <td className="px-2.5 py-1.5 text-right"><NumText value={r.market_cap_yi} digits={0} /></td>
+                <td className="px-2.5 py-1.5 text-right"><NumText value={r.pe_ttm} digits={1} /></td>
+                <td className="px-2.5 py-1.5 text-right"><NumText value={r.pb} digits={1} /></td>
+                <td className="px-2.5 py-1.5 text-right"><NumText value={r.main_net_yi} digits={2} /></td>
+                <td className="px-2.5 py-1.5">
+                  <button onClick={() => addWatch({ symbol: r.symbol, name: r.name, kind: "watch" })}
+                    className="text-[10px] text-muted-foreground hover:text-sky-300" title="加入自选">+自选</button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && !busy && (
+              <tr><td colSpan={14} className="px-3 py-8 text-center text-muted-foreground">无结果</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{busy ? <Loader2 size={12} className="animate-spin" /> : `共 ${total} 只 · 第 ${page}/${pages} 页`}</span>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || busy} className="rounded border border-border p-1 disabled:opacity-40"><ChevronLeft size={13} /></button>
+          <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page >= pages || busy} className="rounded border border-border p-1 disabled:opacity-40"><ChevronRight size={13} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}

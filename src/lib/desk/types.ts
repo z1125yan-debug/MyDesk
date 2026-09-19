@@ -1,13 +1,22 @@
 // MyDesk 个人行情工作台 - 共享类型
 
 export type PageKey =
-  | "dashboard"    // 总览
+  | "aihome"       // 实时选股 · AI 对话首页（重定位后的一级入口）
+  | "aiscan"       // AI 实时选股（全A扫描漏斗）
+  | "pool"         // 候选池（冻结 + 次日验证）
+  | "screener"     // 因子选股器
+  | "profile"      // 个股资金画像
+  | "market"       // 大盘情绪仪表盘
+  | "sectors"      // 行业板块排行（P1-2）
+  | "allstocks"    // 全A市场列表
+  | "dashboard"    // 总览（旧）
   | "board"        // 数据看板
   | "analysis"     // AI 分析
-  | "tracker"      // 追踪
+  | "tracker"      // 追踪/自选
   | "history"      // 历史
   | "copilot"      // 智能助手
-  | "quant"        // 量化研究实验室（Quant Research Lab，追加）
+  | "quant"        // 量化研究实验室（Quant Research Lab，后台研究）
+  | "factorlab"    // 因子有效性测试台（P1-4）
   | "extension"    // 扩展
   | "settings";    // 设置
 
@@ -129,16 +138,26 @@ export interface AiSettings {
   baseUrl: string;
   apiKey: string;
   model: string;
+  proxy?: string; // 出网代理：留空=自动（环境变量/系统代理）；direct=强制直连；或填 http://127.0.0.1:端口
 }
 
 export const PAGE_TITLES: Record<PageKey, string> = {
+  aihome: "实时选股 · AI 首页",
+  aiscan: "AI 实时选股",
+  pool: "候选池",
+  screener: "因子选股器",
+  profile: "个股资金画像",
+  market: "大盘情绪",
+  sectors: "行业板块排行",
+  allstocks: "全A市场列表",
   dashboard: "总览",
   board: "数据看板",
   analysis: "AI 分析",
-  tracker: "追踪",
+  tracker: "自选股",
   history: "历史",
   copilot: "智能助手",
   quant: "量化研究",
+  factorlab: "因子测试台",
   extension: "扩展",
   settings: "设置",
 };

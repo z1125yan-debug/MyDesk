@@ -3,6 +3,7 @@
 // 数据纪律：因子与过滤一律只用 ≤ asOf 的数据；asOf 早于今天时明确标注幸存者偏差风险。
 import { parseExpression, evaluateAst, csRank, csZscore, csMinMax } from "../factors/expression.ts";
 import { applyUniverseFilters } from "../data/provider.ts";
+import { shanghaiDate } from "../../desk/session.ts"; // 相对路径+显式 .ts：本文件被 node:test 直接加载，别名路径不可解析
 import type {
   AssetMeta, Bar, BarsRequest, DataProvider, FactorRef, SelectionRequest, SelectionResult,
   SelectionRow, UniverseSpec,
@@ -251,7 +252,9 @@ function strategyVersionLabel(request: SelectionRequest): string {
 }
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  // 项目时间口径=上海日：new Date().toISOString() 是 UTC，在北京 00:00~08:00 段仍显示「昨天」，
+  // 会把合法的「昨天」历史回放误判为今天而拒绝 → 统一用 shanghaiDate()。
+  return shanghaiDate();
 }
 
 // 轻量面板（选股引擎专用：避免与因子挖掘的 buildPanel 耦合；字段对齐 K 线原始序列）

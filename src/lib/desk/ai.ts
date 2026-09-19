@@ -39,6 +39,7 @@ export async function aiChat(
       "x-ai-base-url": ai.baseUrl,
       "x-ai-api-key": ai.apiKey,
       "x-ai-model": ai.model,
+      ...(ai.proxy?.trim() ? { "x-ai-proxy": ai.proxy.trim() } : {}),
     },
     body: JSON.stringify({ messages }),
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 60000),

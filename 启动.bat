@@ -135,12 +135,26 @@ echo.
 
 
 REM === 境外AI接口走本机代理(v2rayN 等，默认混合端口 10808) ===
-REM 国内行情源(腾讯/东财)在 NO_PROXY 白名单里，保持直连不受影响
+REM 国内行情源(腾讯/东财/新浪)在 NO_PROXY 白名单里，保持直连不受影响
 REM 若代理端口不同请改 10808；不用代理则删除下面三行 set
 set NODE_USE_ENV_PROXY=1
 set HTTPS_PROXY=http://127.0.0.1:10808
 set HTTP_PROXY=http://127.0.0.1:10808
-set NO_PROXY=localhost,127.0.0.1,gtimg.cn,eastmoney.com,qq.com
+set NO_PROXY=localhost,127.0.0.1,gtimg.cn,eastmoney.com,qq.com,sina.com.cn
+
+REM === 启动通达信(eltdx)行情网关（端口 8756，主行情源；未安装则自动跳过走腾讯/东财） ===
+set "TDX_EXE=%LocalAppData%\Programs\Python\Python314\Scripts\eltdx-http.exe"
+if exist "%TDX_EXE%" (
+  netstat -ano | findstr ":8756 " | findstr "LISTENING" >nul 2>nul
+  if errorlevel 1 (
+    echo  [OK] 正在启动通达信行情网关 eltdx（端口 8756）...
+    start "" /b "%TDX_EXE%" --host 127.0.0.1 --port 8756 --server-count 2 --connections-per-server 2
+  ) else (
+    echo  [OK] 通达信行情网关已在运行（端口 8756）
+  )
+) else (
+  echo  [--] 未检测到 eltdx 网关，行情走腾讯/东财公开接口
+)
 
 start "" /b cmd /c "%SystemRoot%\System32\ping.exe -n 13 127.0.0.1 >nul & start "" http://localhost:3000"
 

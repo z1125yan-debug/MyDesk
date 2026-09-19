@@ -5,6 +5,7 @@ import { useDesk } from "@/lib/desk/store";
 import { autoLevels, TIMEFRAMES, CATALOG, HOT_SYMBOLS } from "@/lib/desk/data";
 import { fetchCandlesFor, fetchQuoteCards, searchSymbols, fetchTechSnapshot, fetchNewsBlock, normalizeTradingViewSymbol, trendLabel, type SuggestItem, type TechSnapshot } from "@/lib/desk/market";
 import { aiChat, aiConfigured, assistantSystemPrompt, parseLooseJson } from "@/lib/desk/ai";
+import { marketSession } from "@/lib/desk/session";
 import type { TrackerPlan, Candle } from "@/lib/desk/types";
 import CandleChart from "../CandleChart";
 import Markdown from "../Markdown";
@@ -82,8 +83,11 @@ export default function AnalysisPage() {
 
   useEffect(() => {
     let dead = false;
-    const load = () =>
+    const load = () => {
+      // 非交易时段上游不会有新数据：跳过周期轮询（首次加载仍执行，显示最近收盘数据）
+      if (!marketSession().open) return;
       fetchQuoteCards([symbol]).then((r) => { if (!dead) setQuote(r.cards[0] ?? null); }).catch(() => {});
+    };
     load();
     const t = setInterval(load, 30000);
     return () => { dead = true; clearInterval(t); };

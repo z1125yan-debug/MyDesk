@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDesk } from "@/lib/desk/store";
 import { fetchBoardRows, fetchDetailFor, type BoardKind } from "@/lib/desk/market";
+import { useMarketSession } from "@/hooks/use-market-session";
 import type { SectorDetail, SectorRow } from "@/lib/desk/types";
 import BubbleFlow from "../BubbleFlow";
 
@@ -14,6 +15,9 @@ const TABS: { key: BoardKind; label: string }[] = [
 
 export default function BoardPage() {
   const refreshInterval = useDesk((s) => s.refreshInterval);
+  const session = useMarketSession();
+  const openRef = useRef(session.open);
+  openRef.current = session.open;
   const [kind, setKind] = useState<BoardKind>("stock");
   const [dir, setDir] = useState<"in" | "out">("in");
   const [tick, setTick] = useState(0);
@@ -25,9 +29,13 @@ export default function BoardPage() {
   const [detail, setDetail] = useState<SectorDetail | null>(null);
   const [detailSource, setDetailSource] = useState<"real" | "demo">("real");
   const [showBubble, setShowBubble] = useState(true);
+  const [flowIn, setFlowIn] = useState<SectorRow[]>([]);
+  const [flowOut, setFlowOut] = useState<SectorRow[]>([]);
 
   useEffect(() => {
     const t = setInterval(() => {
+      // 非交易时段上游不会有新数据：暂停倒计时与自动刷新
+      if (!openRef.current) return;
       setLeft((v) => {
         if (v <= 1) { setTick((n) => n + 1); return refreshInterval; }
         return v - 1;
@@ -47,6 +55,14 @@ export default function BoardPage() {
   }, [kind, dir, tick]);
 
   useEffect(() => {
+    let dead = false;
+    // 资金流向图需要流入/流出双向数据（表格只展示当前方向；服务端有 TTL 缓存，重复请求无额外开销）
+    fetchBoardRows(kind, "in").then((r) => { if (!dead) setFlowIn(r.rows); }).catch(() => {});
+    fetchBoardRows(kind, "out").then((r) => { if (!dead) setFlowOut(r.rows); }).catch(() => {});
+    return () => { dead = true; };
+  }, [kind, tick]);
+
+  useEffect(() => {
     if (!selected) { setDetail(null); return; }
     let dead = false;
     fetchDetailFor(selected.secid || "", selected.name, selected.code)
@@ -63,12 +79,19 @@ export default function BoardPage() {
         <div>
           <h1 className="text-xl font-bold">数据看板</h1>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
-            板块/个股资金流向榜与气泡图 —— {sourceLabel}
+            板块/个股资金流向榜与流向图 —— {sourceLabel}
           </p>
         </div>
-        <span className="rounded-md border border-border px-2.5 py-1 font-mono text-[12px] text-muted-foreground">
-          刷新 #{tick} · 剩余 {left}s
-        </span>
+        <div className="flex items-center gap-2">
+          {!session.open && (
+            <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[12px] text-amber-300">
+              A股{session.label} · 自动刷新已暂停
+            </span>
+          )}
+          <span className="rounded-md border border-border px-2.5 py-1 font-mono text-[12px] text-muted-foreground">
+            刷新 #{tick} · 剩余 {left}s
+          </span>
+        </div>
       </div>
 
       <div className="rounded-xl border border-border bg-card">
@@ -203,9 +226,11 @@ export default function BoardPage() {
 
       {showBubble && (
         <div className="rounded-xl border border-border bg-card p-4">
-          <div className="mb-2 text-[13.5px] font-semibold">资金气泡图</div>
-          <div className="mb-2 text-[12px] text-muted-foreground">横轴=涨跌%，纵轴=主力净额，气泡大小=主力净额；红=流入，绿=流出。悬停查看明细。</div>
-          <BubbleFlow rows={rows} />
+          <div className="mb-1 text-[13.5px] font-semibold">资金流向图 · 主力净额 TOP8</div>
+          <div className="mb-2 text-[12px] text-muted-foreground">
+            粒子流向 = 资金去向：红 = 主力净流入个股，绿 = 主力净流出个股；线宽与条长 = 净额大小。悬停查看明细，点击联动右侧资金明细。
+          </div>
+          <BubbleFlow inRows={flowIn} outRows={flowOut} onSelect={setSelected} />
         </div>
       )}
     </div>

@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, LineChart, BarChart3, MessageSquareText, Info, Loader2 } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { fetchQuoteCards, searchSymbols, type QuoteCardsResult } from "@/lib/desk/market";
+import { useMarketSession } from "@/hooks/use-market-session";
 import Sparkline from "../Sparkline";
 
 export default function OverviewPage() {
@@ -11,6 +12,9 @@ export default function OverviewPage() {
   const removeWatch = useDesk((s) => s.removeWatch);
   const go = useDesk((s) => s.go);
   const refreshInterval = useDesk((s) => s.refreshInterval);
+  const session = useMarketSession();
+  const openRef = useRef(session.open);
+  openRef.current = session.open;
   const [tick, setTick] = useState(0);
   const [sym, setSym] = useState("");
   const [addError, setAddError] = useState("");
@@ -18,6 +22,8 @@ export default function OverviewPage() {
 
   useEffect(() => {
     const t = setInterval(() => {
+      // 非交易时段上游不会有新数据：暂停倒计时与自动刷新
+      if (!openRef.current) return;
       setLeft((v) => {
         if (v <= 1) { setTick((n) => n + 1); return refreshInterval; }
         return v - 1;
@@ -70,9 +76,16 @@ export default function OverviewPage() {
             自选行情卡片 · {sourceLabel} · 按设定周期自动刷新
           </p>
         </div>
-        <span className="rounded-md border border-border px-2.5 py-1 font-mono text-[12px] text-muted-foreground">
-          下次刷新 {mmss}
-        </span>
+        <div className="flex items-center gap-2">
+          {!session.open && (
+            <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[12px] text-amber-300">
+              A股{session.label} · 自动刷新已暂停
+            </span>
+          )}
+          <span className="rounded-md border border-border px-2.5 py-1 font-mono text-[12px] text-muted-foreground">
+            下次刷新 {mmss}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
