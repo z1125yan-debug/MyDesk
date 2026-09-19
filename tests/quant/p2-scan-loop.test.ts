@@ -71,6 +71,60 @@ async function taskRunRows(kind: string, tradeDate: string): Promise<{ status: s
   }
 }
 
+/** P3：读回当日最近若干条 task_run 的 basis / note，用来核对「口径」是否真被如实记录（只读） */
+async function taskRunTexts(kind: string, tradeDate: string, take = 6): Promise<{ status: string; basis: string; note: string }[]> {
+  const { PrismaClient } = await import("@prisma/client");
+  const db = new PrismaClient({ datasourceUrl: `file:${DB_FILE.replace(/\\/g, "/")}` });
+  try {
+    const rows = (await db.$queryRawUnsafe(
+      `SELECT status AS st, basis AS b, note AS n FROM task_run WHERE kind = ? AND tradeDate = ? ORDER BY startedAt DESC LIMIT ?`,
+      kind, tradeDate, take,
+    )) as { st: string; b: string; n: string }[];
+    return rows.map((r) => ({ status: String(r.st), basis: String(r.b ?? ""), note: String(r.n ?? "") }));
+  } finally {
+    await db.$disconnect();
+  }
+}
+
+/**
+ * P3：当日库内自然键的重复情况（只读）。
+ * 增量口径的正确性判据不是「条数没变」，而是「同一自然键不会有多行」——重复插一条同名信号同样会让条数看起来正常。
+ */
+async function keyDupes(table: "radar_finding" | "global_event", tradeDate: string): Promise<{ rows: number; keys: number; dupes: string[] }> {
+  const { PrismaClient } = await import("@prisma/client");
+  const db = new PrismaClient({ datasourceUrl: `file:${DB_FILE.replace(/\\/g, "/")}` });
+  const where = table === "radar_finding" ? `asOf = ? AND state = 'live'` : `asOf = ?`;
+  try {
+    const cnt = (await db.$queryRawUnsafe(
+      `SELECT COUNT(*) AS n, COUNT(DISTINCT dedupeKey) AS k FROM ${table} WHERE ${where}`, tradeDate,
+    )) as { n: number; k: number }[];
+    const dup = (await db.$queryRawUnsafe(
+      `SELECT dedupeKey AS k, COUNT(*) AS n FROM ${table} WHERE ${where} AND dedupeKey <> '' GROUP BY dedupeKey HAVING COUNT(*) > 1`,
+      tradeDate,
+    )) as { k: string; n: number }[];
+    return {
+      rows: Number(cnt[0]?.n ?? 0), keys: Number(cnt[0]?.k ?? 0),
+      dupes: dup.map((d) => `${d.k} ×${d.n}`),
+    };
+  } finally {
+    await db.$disconnect();
+  }
+}
+
+/** 游标只读快照：回答「今天有没有成功基准、基准建立后有没有被失败推进」 */
+async function cursorRow(kind: string, tradeDate: string): Promise<{ exists: boolean; watermark: string; note: string }> {
+  const { PrismaClient } = await import("@prisma/client");
+  const db = new PrismaClient({ datasourceUrl: `file:${DB_FILE.replace(/\\/g, "/")}` });
+  try {
+    const rows = (await db.$queryRawUnsafe(
+      `SELECT watermark AS w, note AS n FROM scan_cursor WHERE kind = ? AND tradeDate = ?`, kind, tradeDate,
+    )) as { w: string; n: string }[];
+    return rows.length ? { exists: true, watermark: String(rows[0].w ?? ""), note: String(rows[0].n ?? "") } : { exists: false, watermark: "", note: "" };
+  } finally {
+    await db.$disconnect();
+  }
+}
+
 test("Radar 闭环：扫描→落库→读回 一致，且同日重扫不产生重复行", { skip: SKIP_REASON }, async () => {
   const scan1 = await api("POST", "/api/radar");
   assert.equal(scan1.status, 200);
@@ -229,4 +283,70 @@ test("自动化任务记录闭环：手动扫描留 task_run 行，重复触发�
     body: JSON.stringify({ kind: "radar", trade_date: "2000-01-01" }),
   });
   assert.equal(bad.status, 400, "历史日期的任务触发必须被拒绝");
+});
+
+// ---------- P3 第三阶段：增量扫描的真实数据闭环 ----------
+// 这里只验「真实数据在增量口径下不会被写坏」：不重复、行数与写库明细对得上、口径被如实记录。
+// 失败恢复（失败不推进游标）无法用真实行情安全触发（要人为让数据源报错），因此只在
+// tests/quant/p3-incremental.test.ts 里做机制验证，不在此处伪造。
+
+test("P3 Radar 增量：显式增量补跑不重复落库，行数与写库明细严格对账，口径落进 task_run", { skip: SKIP_REASON }, async () => {
+  const full = await api("POST", "/api/radar"); // 手动扫描 = 全量口径，同时建立当日游标
+  assert.equal(full.json.ok, true, `全量扫描失败：${full.json.error}`);
+  const day = String(full.json.trade_date);
+  assert.equal(full.json.mode, "full", "手动「立即扫描」必须真跑全量，不允许被游标跳过（否则用户无法强制重刷）");
+  const cur1 = await cursorRow("radar", day);
+  assert.equal(cur1.exists, true, "全量成功后必须写入当日游标，否则收盘后那次自动扫描无从判定增量基准");
+  assert.ok(cur1.watermark.length > 0, "游标必须有数据基准水位线");
+  const base = await keyDupes("radar_finding", day);
+  assert.deepEqual(base.dupes, [], "全量结果本身就有重复自然键");
+  assert.equal(base.rows, (full.json.items ?? []).length, "接口返回条数与库内 live 行数不一致");
+  assert.equal(base.keys, base.rows, "自然键必须一行一键");
+
+  const inc = await api("POST", "/api/tasks/run", { kind: "radar", force: true, mode: "incremental" });
+  assert.equal(inc.json.ok, true, `增量补跑失败：${inc.json.outcome?.error ?? inc.json.error}`);
+  assert.equal(inc.json.outcome.mode, "incremental", "显式指定增量时必须按增量执行，不能被 force 改回全量");
+  const d = inc.json.outcome.delta as any;
+  assert.ok(d, "增量结果未返回写库明细 delta");
+  const after = await keyDupes("radar_finding", day);
+  assert.deepEqual(after.dupes, [], "增量后同日出现重复自然键 —— 同一信号被写了两遍");
+  assert.equal(after.rows, base.rows + Number(d.inserted) - Number(d.superseded),
+    `库内 live 行数变化（${base.rows}→${after.rows}）与写库明细（新增 ${d.inserted}、标记消失 ${d.superseded}）对不上`);
+  assert.equal(after.keys, after.rows, "增量后自然键不再是一行一键");
+  assert.ok(Number(d.inserted) <= Number(d.scanned) && Number(d.superseded) <= base.rows, "写库明细出现不自洽计数");
+
+  const texts = await taskRunTexts("radar", day);
+  const row = texts.find((t) => t.status === "success" && t.basis.includes("口径 增量"));
+  assert.ok(row, "task_run.basis 必须如实记录本次用的是增量口径，否则事后无法回答「那天到底怎么跑的」");
+  assert.match(row.note, /写入：新增/, "task_run.note 必须写明本次新增/更新/未变/标记消失的条数");
+
+  const st = await api("GET", "/api/tasks/status");
+  const sum = (st.json.today_summary as any[]).find((s) => s.kind === "radar");
+  assert.equal(sum?.cursor?.exists, true, "状态接口必须回报当日游标是否存在");
+  assert.ok(Number(sum.cursor.done_keys) > 0, "游标确认键数为 0 说明成功后没有记账，下次会整批重写");
+});
+
+test("P3 Events 增量：重复扫描不重复入库，已入库事件的资金验证不被悄悄改写", { skip: SKIP_REASON }, async () => {
+  const full = await api("POST", "/api/events");
+  assert.equal(full.json.ok, true, `全量事件扫描失败：${full.json.error}`);
+  const day = String(full.json.trade_date);
+  assert.equal(full.json.mode, "full");
+  const base = await keyDupes("global_event", day);
+  assert.deepEqual(base.dupes, [], "全量事件结果本身就有重复自然键");
+  assert.equal(base.rows, (full.json.items ?? []).length, "接口返回条数与库内事件行数不一致");
+
+  const inc = await api("POST", "/api/tasks/run", { kind: "events", force: true, mode: "incremental" });
+  assert.equal(inc.json.ok, true, `事件增量补跑失败：${inc.json.outcome?.error ?? inc.json.error}`);
+  assert.equal(inc.json.outcome.mode, "incremental");
+  const d = inc.json.outcome.delta as any;
+  assert.equal(Number(d.updated), 0, "增量口径不得覆盖已入库事件（其资金验证保持首次入库时的值，这条口径必须在实现里成立）");
+  const after = await keyDupes("global_event", day);
+  assert.deepEqual(after.dupes, [], "增量后同日出现重复事件行");
+  assert.equal(after.rows, base.rows + Number(d.inserted), "库内事件行数变化与新增条数不一致（增量把老事件重写成了新行？）");
+  assert.equal(after.keys, after.rows, "增量后事件自然键不再是一行一键");
+  assert.ok(Number(d.inserted) <= Number(d.scanned), "写库明细出现不自洽计数");
+
+  const texts = await taskRunTexts("events", day);
+  assert.ok(texts.some((t) => t.status === "success" && t.basis.includes("口径 增量")),
+    "事件任务的 task_run.basis 未记录增量口径");
 });

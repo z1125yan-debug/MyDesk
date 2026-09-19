@@ -1,6 +1,7 @@
 "use client";
 // 前端 → 新 P0 后端接口的类型化封装
 import type { ScreenerCond, WinProbStats } from "@/lib/quant/factors/probability";
+import { MODE_TEXT, modeFromBasis } from "@/lib/quant/screener/incremental-core";
 
 export type { ScreenerCond, WinProbStats };
 
@@ -422,13 +423,48 @@ export async function runProbabilityApi(body: {
 export interface RadarItemClient {
   id?: string; kind: string; title: string; detail: string; evidence?: Record<string, unknown>;
 }
-export async function fetchRadar(): Promise<{ as_of: string; scanned: boolean; items: RadarItemClient[] }> {
+/** P3 增量口径：本次实际采用的写库方式与逐类计数（由服务端如实返回，不在前端推断） */
+export type ScanModeClient = "full" | "incremental";
+export interface ScanDeltaClient {
+  scanned: number; inserted: number; updated: number; unchanged: number;
+  skippedByCursor: number; superseded: number; kept: number; collapsed: number;
+}
+// 口径文案只有一份实现：incremental-core 是无依赖纯模块，前端直接复用，避免服务端/页面各写一句而对不上
+export { MODE_TEXT, modeFromBasis };
+
+/**
+ * 手动扫描结果的一行如实说明（P3）：口径 + 本次写库明细。
+ * 数值全部来自服务端返回的 delta，不在前端推断；只讲「写了多少行」，不讲「数据有多新」。
+ */
+export function scanResultNote(
+  kind: "radar" | "events",
+  mode?: ScanModeClient | null,
+  delta?: ScanDeltaClient | null,
+): string {
+  if (!mode) return "";
+  const head = kind === "radar" ? "候选信号" : "快讯窗口";
+  const parts = delta ? [
+    `${head} ${delta.scanned}`,
+    `新增 ${delta.inserted}`,
+    `更新 ${delta.updated}`,
+    `未变 ${delta.unchanged}`,
+    delta.skippedByCursor ? `游标跳过 ${delta.skippedByCursor}` : "",
+    mode === "full" && delta.collapsed ? `同键合并 ${delta.collapsed}` : "",
+    delta.superseded ? `标记消失 ${delta.superseded}` : "",
+    delta.kept ? `保留 ${delta.kept}` : "",
+  ].filter(Boolean).join("、") : "";
+  return `本次口径：${MODE_TEXT[mode]}${parts ? `（${parts}）` : ""}`;
+}
+export async function fetchRadar(): Promise<{ as_of: string; scanned: boolean; superseded_today?: number; items: RadarItemClient[] }> {
   const res = await fetch("/api/radar");
   const j = await res.json();
   if (!res.ok || !j.ok) throw new Error(j.error || "雷达读取失败");
   return j;
 }
-export async function scanRadar(): Promise<{ as_of: string; trade_date: string; missing?: string[]; items: RadarItemClient[] }> {
+export async function scanRadar(): Promise<{
+  as_of: string; trade_date: string; mode?: ScanModeClient | null; delta?: ScanDeltaClient | null;
+  superseded_today?: number; missing?: string[]; items: RadarItemClient[];
+}> {
   const res = await fetch("/api/radar", { method: "POST" });
   const j = await res.json();
   if (!res.ok || !j.ok) throw new Error(j.error || "雷达扫描失败");
@@ -448,7 +484,9 @@ export async function fetchEvents(): Promise<{ as_of: string; items: EventItemCl
   return j;
 }
 export async function scanEvents(): Promise<{
-  trade_date: string; unmatched?: number; missing?: string[]; items: EventItemClient[];
+  trade_date: string; unmatched?: number; missing?: string[];
+  mode?: ScanModeClient | null; delta?: ScanDeltaClient | null;
+  items: EventItemClient[];
 }> {
   const res = await fetch("/api/events", { method: "POST" });
   const j = await res.json();
@@ -462,13 +500,22 @@ export interface TaskRunClient {
   started_at: string; finished_at: string | null; duration_ms: number | null;
   scanned: number; results: number; missing: string[]; error: string; basis: string; note: string;
 }
+/** P3 当日增量游标：exists=false 表示今天还没有成功扫描过，下一次执行会走全量口径（服务端如实返回） */
+export interface TaskCursorClient {
+  kind: string; trade_date: string; exists: boolean; watermark: string;
+  done_keys: number; unmatched_keys: number; scanned: number; results: number;
+  basis: string; note: string; updated_at: string | null;
+}
 export interface TaskStatusClient {
   as_of: string; enabled: boolean; running: boolean; tick_seconds: number;
   config: { closeMinute: number; delayMinutes: number; maxAttempts: number };
   today: string; due_now: boolean; slot_at: string | null;
   next: { trade_date: string; at: string };
   last_outcome: string; last_tick_at: string | null;
-  today_summary: { kind: string; settled: boolean; attempts: number; last_status: string; last_trigger: string; last_finished_at: string | null; last_error: string }[];
+  today_summary: {
+    kind: string; settled: boolean; attempts: number; last_status: string; last_trigger: string;
+    last_finished_at: string | null; last_error: string; cursor?: TaskCursorClient;
+  }[];
   today_runs: TaskRunClient[]; recent_runs: TaskRunClient[];
   boundary: string;
 }

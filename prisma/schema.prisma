@@ -186,9 +186,17 @@ model RadarFinding {
   title     String
   detail    String   @default("")
   evidence  String   @default("{}") // JSON
+  // P3 增量扫描：dedupeKey = 当日内的稳定自然键（kind + 标的/事件标识 + 标题），
+  // contentHash = detail+evidence 的内容指纹；两者相同 ⇒ 本次与上次是同一条，不重写（不重复落库的实现点）。
+  // state：live=本次仍算得出的结论；superseded=当日更早扫描写过、但本次按原公式已不再产出的信号。
+  //        只改标记不物理删除，当日 GET/页面只读 live，历史留给第四阶段复盘（不得抹掉当天真实曾出现的信号）。
+  dedupeKey String   @default("")
+  contentHash String @default("")
+  state     String   @default("live")
   createdAt DateTime @default(now())
 
   @@index([asOf, kind])
+  @@index([asOf, dedupeKey])
   @@map("radar_finding")
 }
 
@@ -205,9 +213,16 @@ model GlobalEvent {
   fundCheck     String   @default("{}") // JSON
   stage         String   @default("")
   source        String   @default("")
+  // P3 增量扫描：快讯没有 id，用「时间 + 标题」指纹当自然键（见 screener/incremental-core.ts eventNaturalKey）。
+  // contentHash 覆盖映射结果与资金验证内容：同一条快讯在资金验证结论变化时走更新，而不是再插一行。
+  // 注意：事件表不做 supersede —— 上游窗口是滚动的「最近 N 条」，老消息滑出窗口不代表它错了，
+  //       按雷达那样标记消失会把真实入库过的事件抹掉，属于丢历史。
+  dedupeKey     String   @default("")
+  contentHash   String   @default("")
   createdAt     DateTime @default(now())
 
   @@index([asOf])
+  @@index([asOf, dedupeKey])
   @@map("global_event")
 }
 
@@ -232,4 +247,28 @@ model TaskRun {
 
   @@index([kind, tradeDate])
   @@map("task_run")
+}
+
+// P3 增量扫描游标：记录「上次成功扫描推进到哪里」，用于回答「增量凭什么说没漏」。
+// 三条硬口径（实现见 screener/incremental-core.ts + screener/incremental.ts）：
+// 1) 只有本次数据全部落库成功才写/更新游标 —— 中途失败一律不推进，下次从上次成功位置继续；
+// 2) doneKeys 保存的是「已确认在库里的自然键 → 内容指纹」，即使游标被裁剪或进程重启，
+//    重复扫描仍会被库内键比对识别为 unchanged，不产生重复行；
+// 3) 游标按交易日分行，跨日即视为首次（走原有全量口径），不会拿昨天的游标跳过今天的新数据。
+model ScanCursor {
+  id         String   @id @default(cuid())
+  kind       String // radar | events
+  tradeDate  String // 北京时间交易日
+  watermark  String   @default("") // 上游数据位置：事件=已处理到的最大快讯时间；雷达=本次候选集合指纹
+  doneKeys   String   @default("{}") // JSON：{ 自然键: 内容指纹 }
+  unmatched  String   @default("[]") // JSON：已扫过但未命中映射的快讯键（带映射表指纹前缀，映射表变更后自动失效）
+  scanned    Int      @default(0) // 上次成功时上游产出条数
+  results    Int      @default(0) // 上次成功后库内 live 条数
+  basis      String   @default("") // 数据基准说明（来源与口径），供接口/页面如实展示
+  note       String   @default("")
+  updatedAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@unique([kind, tradeDate])
+  @@map("scan_cursor")
 }
