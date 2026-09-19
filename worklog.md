@@ -596,3 +596,39 @@ P6-A 把这些判定收到一处内核，并让「我现在能查什么 / 这次
   ③ 不可用行只剩四态泛化文案，把 MCP「没有 ready 服务器」说成「休市」这类无关解释 ⇒ 新增 `unavailableNoteWith`，标准文案后补「具体原因：<本次原文>」（无覆盖类与重复情形不加）。
   三处都有对应断言（`freshnessChip` / `freshWithinDailyFromDateOnly` / `unavailableNoteWith` 三条用例 + 一条读源码的结构约束，防「内核有了、页面没用」）。
 - 本阶段提交：`30f0658 feat(P6-A): data capability and source reliability`（24 文件 +3081/−75，含 worklog 本段；提交前 `git diff --check` 无空白错误、逐路径 `git add`，未使用 `git add .`；工作树提交后 `git status --short` 为空）。
+
+## P6 第六阶段 P6-B AI 事件理解（2026-09-20）
+
+### 这一步要解决的问题（任务书 §八/§九/§十）
+P6-A 把「取到了没有」变成机器可读之后，事件层仍然只有快讯原文 + 关键词映射：能看见「入库了这条新闻」，看不出它被理解成什么、这句话是谁说的。
+P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `global_event` 一份，AI 本阶段只做任务书 §八 列的 8 件事（分类 / 摘要 / 实体提取 / 行业主题映射 / 潜在影响方向 / 影响范围 / 重要性解释 / 需要进一步验证的数据），**不负责发现不存在的事件**。
+两条禁令必须落到代码而不是提示词愿望里：① 模型发明的事件 id 要整条拒收；② 模型自己生成的概率（§九「不得写成该股票明天上涨概率 80%」）要在落库前剥掉、留档并降级。
+
+### 落地内容（8 个新文件 + 6 个改动点）
+1. **`src/lib/quant/screener/event-interpret-core.ts`（新，纯内核，644 行）**：§九 的 17 字段按归属三分区（`FACT_FIELDS` 4 项服务端从库行回填 / `AI_FIELDS` 12 项 + `AI_EXTRA_FIELDS` 2 项 / `DERIVED_FIELDS` 6 项服务端派生），提示词与解析共用同一份清单，避免「提示词写了、解析没认」；`buildEventInterpretPrompt` 把 8 项工作与两条禁令原文写进系统提示；`parseEventInterpretations` 逐条做四件事——按自然键白名单拒收发明事件（`unknown_ids` 原文报出，不做近似匹配）、`evidenceGrounded` 要求每条证据能在原标题里找到、`symbolGrounded` 把无出处标的降级进 `hypothesized_symbols`（AI_HYPOTHESIS）并补写进 `unknowns`、`normalizeConfidence` 只接受 0..1（80 不猜成 0.8，缺失落 `null` 而不是 0）；`interpretationStatusOf` 三态（REJECTED / PARTIAL / INTERPRETED）+ `STATUS_TEXT` + `renderInterpretationTrace`（§十 的「原始事件 → AI 提取 → AI 解释 → 状态分层」回溯）+ `summarizeInterpretations` / `fieldCompleteness`（UI 与报告引用同一句话）。
+2. **概率剥离（本阶段唯一在验收中自查出的真实缺陷，已修）**：原 `PROBABILITY_PATTERNS[0]` 只吃「涨概率 80%」，实测「明天上涨概率 80%」在正文里留下「明天上」半截残字。改为把前导时间/方向词并入同一区间（`(?:明天|明日|次日|后天|近期|短期|中期|长期|后市)?…(?:上涨|下跌|涨|跌)?…(?:概率|可能性)…\d+%`），并把连接字符类从任意 `[^0-9]` 收紧为排除标点与空白（`[^。，、；\s0-9]`），否则「概率较高，涉及 5 个板块」会被整段误删；新增「时间词 + 涨幅/跌幅 + 数字%」一类（§九 禁的是预测，「航运板块今日上涨 3.2%」这类已发生的行情描述不动正文）。`probabilitySpans` 的区间合并保证同一处只留一条留档，`dropped.probability_claims` 保存原文。
+3. **`src/lib/quant/screener/event-interpret.ts`（新，服务层，335 行）**：`loadEventFacts` 只取 `global_event` 当日真实库行（`ids` 同时接受自然键与行 id，limit 上限 50）；`storeInterpretations` 在落库前**重新取一次事实**再解析（不信任客户端传来的事实字段，也不接受页面自己解析的结果），按自然键 upsert，事实字段逐条回填自库行；`loadInterpretations` 回看时把解释表与当日事件行按自然键对照，如实标 `stale`（事件 contentHash 已变）与 `orphan`（原事件行已不在当天库里），并出 `self_check.broken_payload/missing_fields`。
+4. **两个接口**：`GET /api/events/interpret/prompt`（只从库里现取事实组装提示词，不写库，`interpretation_status:PROMPT_READY`，`how_to_use` 明写「AI 未配置时不要 POST」）+ `GET/POST /api/events/interpret`（GET 只读回看；POST 是解释层唯一写入口，空 raw → 400、超 `MAX_RAW_CHARS` → 413、解析后 0 条落库 → 422，全部返回同一套 JSON 错误结构）。凭据只在客户端（P6-A 已有口径），所以链路是「服务端出事实与提示词 → 客户端调模型 → 服务端复校验落库 → 页面只读回结果」，没有复制代理逻辑、也没有 mock 一段模型输出。
+5. **`prisma/schema.prisma` 新增 `event_interpretation`（`eventKey @unique` = 事件行 `dedupeKey`）**：全量扫描是「当日先删后插」，cuid 每次都变，用自然键才能让解释在重扫后仍指向同一条事件；`eventHash` 记下当时的事件版本；`data_status` 永远是 `AI_INTERPRETATION`。**这张表明确不写进 P5 生命周期清理**（保留期属于用户决定，未定口径前不删），结构测试钉住 `lifecycle-core.ts` 的 `DetailTable` 未被改动 ⇒ §三十四「P6 不改变数据生命周期」成立。
+6. **`src/lib/desk/event-interpret.ts`（客户端编排，117 行）+ `EventInterpretation.tsx`（92 行）+ `EventsPage.tsx` 接线**：五种失败各有原文（AI 未配置 / 无事件 / 模型超时 / 落库被拒 / 部分字段没站住），页面不解析模型输出、不判状态；解释卡显示状态徽章、`confidence` 文案写死「这是 AI 对自己这套解释的把握度，不是股票上涨概率」、有出处标的与「AI 假设标的（无出处，未验证）」分列、校验留痕计数、展开可看完整回溯链与字段归属；今日与历史两处事件卡片在无解释时都写「本条…没有 AI 理解…缺失就写缺失，不补默认解释」。
+7. **能力登记**：`capability-core.ts` 新增第 41 条 `event_interpret`（`data_status:AI_INTERPRETATION`、`mutating:false`、`fallbacks:["events"]`、6 条 limitations 逐条写明「解释不是事实 / 不产概率 / 无出处标的已降级 / 表可能 0 行 / stale 与 orphan 含义 / POST 是写操作不在只读白名单」）；`capability-service.ts` 的 `dbSignals()` 与 `probeOne` 接上该表，0 行时区分「没人点过」与「失败」。
+8. 顺带：`quant-api.ts` 加 `fetchInterpretPrompt / fetchInterpretations / storeInterpretationsApi`（后者不抛 `ok:false`，附 `__status` 供页面区分「模型没配」与「落库被拒」）。
+9. **`.gitignore` 的一处真实缺陷（本阶段必须改，否则接口进不了版本库）**：baseline 提交带的两条裸规则 `test` / `prompt` 没有前导斜杠，会忽略**任意层级**的同名目录；新建的 `src/app/api/events/interpret/prompt/route.ts` 因此被 `git add` 静默跳过（`git status` 里连未跟踪项都不显示，只有 `git status --ignored` 才看得见），克隆出去的仓库就不会有这个组装提示词的接口。已改为 `/test`、`/prompt` 并就地写明原因。改动前核对过：全仓库除这个新目录外没有任何名为 `test` / `prompt` 的路径，根目录草稿产物的忽略行为不变。
+
+### 与任务书的差异 / 本轮没做（如实记）
+- **没有真实调用过一次模型**：本机 `AI 未配置`（`.env` 只有 `DATABASE_URL`，Key 存在浏览器 localStorage），所以写路径的模型原文是**手工构造的四类越界样本**（发明事件 / 无出处证据 / 无出处标的 / 概率与涨幅预测），只写进副本库 `p6b-ui.db`、`p6b-smoke.db`（验收后已删）。真实模型输出仍未经过链路——这条边界与 P6-A 一样留给用户配置凭据后点一次「AI 理解今日事件」。
+- 解释层**没有**接入助理页 / 分析页的 AI 上下文（`renderMarketContext` 目前不含 `event_interpretation`）：§九/§十 只要求 Events 侧可回溯，跨页引用属于 P6-C 的 research 组装范围。
+- 不做自动跑：解释只在人点「AI 理解今日事件」时产生，调度器没有新增 interpret 任务（避免「无人值守时 AI 替市场下结论」）。
+- `?date=` 只当查询条件，不校验日期格式：`2026-13-99` 返回 `ok:true` + 0 条 + 说明。这与 P4 历史查询既有口径一致（不报错、也绝不回退到别的日期），没有只给新接口单加一套校验；记为已知缺口。
+- 概率剥离是正则层面的兜底，不承诺覆盖所有措辞（如「八成分概率」「大概率上涨」这类无量词表述会漏网）；提示词禁令 + 落库前剥离 + `violations` 留痕三层叠加，漏网时人工仍能从 `dropped` 与原文核对。
+
+### 验收（真实数据：`npx next build` + `npx next start -p 3010`，2026-09-20 00:00~00:20）
+- `npx tsc --noEmit` 退出码 0；`npx next build` Compiled successfully，两条 interpret 路由进路由表（`ƒ` 动态）。
+- `node --test tests/quant/*.test.ts` **256 tests / 247 pass / 0 fail / 9 skipped**（跳过项全是需 `MYDESK_INTEGRATION=1` 的集成用例）。P6-B 新增 **37 条**：`p6-b-event.test.ts` 29（内核）、`p6-b-structure.test.ts` 8（结构约束）；P6-A 收口时的 219 条基线不变 ⇒ 无回归。结构测试专防「内核有了、页面没用」：路由不得对 core 做相对 value import、页面不得自己解析模型输出、`lifecycle-core.ts` 不得出现 `event_interpretation`。
+- **登记表接口 curl（生产 3010，只读）**：`GET /api/capabilities?name=event_interpret` → `HTTP 200`、`agent_allowed true`、`data_status AI_INTERPRETATION`、`mutating false`、`fallbacks ["events"]`、limitations 6 条原文完整；`?need=解读` → `matches ["event_interpret", …]`；`?need=这条事件被 AI 解读成什么` → `["event_interpret","events"]`；`GET /api/capabilities/probe?only=event_interpret` → `kind:no_data`、`usable:false`、`status:MISSING`、`evidence {rows:0, events_rows:7}`、note「还没有人对事件点过「AI 理解」，这一层的解释就是空的（不是失败，也不会自动生成）」——**0 行没有显示成失败，也没有显示成 0 条事实**。
+- **接口 curl**：`GET /api/events` → `HTTP 200`、`as_of 2026-09-20`、`items 0`（今天没扫，不拿 09-19 的 7 条冒充）；`GET /api/events/interpret?date=2026-09-19` → `rows 0` + 缺失口径「只在有人显式点「AI 理解今日事件」时产生，没做过就是空」；`GET /api/events/interpret/prompt?date=2026-09-19&limit=2` → `PROMPT_READY`、facts 2 条、prompt 1531 字符、含「禁止输出任何概率数字」与「不是股票涨跌概率」两句原文。
+- **错误结构（隔离实例 3011 + 副本库）**：空 raw → `HTTP 400` `AI_FAILED`「服务端不会替你生成一段解释」；模型原文不是 JSON → `HTTP 422`、`persisted:0`、逐条 `missing` 带原因「模型回复里没有可解析的 JSON 数组」（**没有产出任何默认解释**）；非法日期 → `HTTP 200` + 0 条 + 说明。全程无 HTML 错误页、无空 body。
+- **写路径端到端复校验（隔离实例 3011 + 副本库，手工构造模型原文）**：`persisted 2`、`interpretation_status PARTIAL`，`counts {interpreted:1, partial:1, rejected:0, missing:5, unknown_ids:1, with_probability_dropped:1, violations:3, hypothesis_symbols:2}`；发明的 id 原文报出 `unknown_ids:["ev|99:99|这条新闻系统里根本没有入库过"]`；`dropped.probability_claims ["明天上涨概率 80%","明天涨幅 3%"]` 且正文替换为「（AI 给出的概率或涨幅预测已剔除：本系统禁止 AI 生成概率与预测）」、**无残字**；无出处证据「这是第六舰队的例行部署」被剔除并留档；「航发动力、中远海控」降级进 `hypothesized_symbols`；越界枚举「正面」经 `clampEnum` 落回「未知」；`mapping_agreement` 重合 2 项 / AI 另提 3 项 / 映射表另有 1 项。
+- **UI 实机核对（`#/events`，可及性树 + 文本树）**：今日视图（2026-09-20，0 事件）→「AI 理解今日事件」按钮 disabled，tooltip 写「今天没有已入库事件：没有真实事件就没有可理解的东西，本步骤不会去猜一条新闻」；解释层状态条徽章 `AI_NOT_CONFIGURED 缺失`，副文案「本机未配置模型凭据：解释层未运行（事件事实不受影响）」，其后是计数行、分层口径行、缺失口径、读库依据；历史视图 2026-09-19 → 7 条事实卡片（`ARCHIVED 历史归档 · 只读 asOf=2026-09-19 的行`）逐条带「本条没有 AI 理解…不补默认解释」；副本库有解释时卡片显示 `PARTIAL` 徽章、`解释置信度 55%（中等）——不是股票上涨概率`、AI 假设标的单列、`校验留痕：违规 3 条 · 被降级/剔除 5 处（原文在下方回溯里，未静默删除）`，展开回溯链含【原始事件】【AI 提取】【AI 假设标的】【AI 解释】【状态分层】【主题映射核对】【证据】【仍需验证】【下一步该查】【被降级 / 剔除的内容】【校验违规】全段落与字段归属行。事实层徽章仍是 `HISTORICAL` / `ARCHIVED`，未被解释层改写。
+- **只读性与库核对**：真实库 `custom.db` 在写路径验收期间未被写入解释（`/api/events/interpret` 回看 `rows:0`、`/api/events` 的 7 条 09-19 归档未被触碰）；提交前按表逐张比对 HEAD 与工作树（仓库外只读副本 + `node:sqlite` 只读打开，未新增依赖）：**17 张表里 16 张行数完全不变，唯一差异是新增 `event_interpretation`（0 行）** ⇒ 冒烟数据没有落进真实库；副本库 `p6b-smoke.db` / `p6b-ui.db` 与冒烟 json、日志均已删除。
+- `take_screenshot` 在本机连接下仍报 `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`，视觉截图未覆盖（沿用 P6-A 的结论：UI 只做到结构与文案）。

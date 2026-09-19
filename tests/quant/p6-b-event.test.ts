@@ -1,0 +1,409 @@
+// P6-B AI 事件理解内核测试（纯内核：不碰网络、不碰库、不调模型）。
+//
+// 这些断言对应任务书 §八/§九/§十 的三条硬要求，而不是「解析别崩」：
+// 1. AI 不得发明事件（§八）：本批真实事件之外的 event_id 必须整条拒收并原文报出；
+// 2. AI 不得自生成概率（§九）：模型文本里任何带数字的概率表述都要被剥掉**且留档**，
+//    confidence 只能是 0..1 的解释置信度，越界时是 null 而不是 0、也不是替它除以 100；
+// 3. 解释必须可回溯（§十）：证据要在原始标题里找得到、标的要有出处、事实字段由服务端按库行回填，
+//    模型改了 title 也不影响落库值。
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  AI_FIELDS, AI_JOBS, DERIVED_FIELDS, FACT_FIELDS, IMPACT_DIRECTIONS, IMPACT_SCOPES, IMPORTANCE_LEVELS,
+  INTERPRET_PROMPT_VERSION, REQUIRED_INTERPRET_FIELDS, STATUS_TEXT,
+  buildEventInterpretPrompt, clampEnum, evidenceGrounded, extractJsonArray, fieldCompleteness,
+  findProbabilityClaims, interpretLayeringNote, interpretationStatusOf, layerSplitOf, mappingAgreement,
+  normalizeConfidence, parseEventInterpretations, renderInterpretationTrace, statusDataLayer,
+  stripProbabilityClaims, summarizeInterpretations, symbolGrounded,
+  type EventFact, type EventInterpretation,
+} from "../../src/lib/quant/screener/event-interpret-core.ts";
+
+const fact = (over: Partial<EventFact> = {}): EventFact => ({
+  event_id: "evt_1",
+  published_at: "21:00",
+  title: "美国中央司令部：组建新的霍尔木兹海峡联合攻击无人机部队",
+  source: "东财7x24/新浪快讯 + 手工映射表 + 东财板块资金",
+  level: "全球级事件",
+  category: "重大事件",
+  mapped_sectors: ["军工", "航运"],
+  related_names: ["航运", "军工"],
+  fund_note: "航运 涨幅前列且主力净流入",
+  stage: "扩散阶段",
+  trade_date: "2026-09-19",
+  ...over,
+});
+
+const goodEntry = (over: Record<string, unknown> = {}) => ({
+  event_id: "evt_1",
+  summary: "美军在霍尔木兹海峡组建无人机部队，属于地缘军事动作。",
+  entities: ["美国中央司令部", "霍尔木兹海峡"],
+  industries: ["军工"],
+  themes: ["航运"],
+  affected_symbols: [],
+  impact_direction: "利好",
+  impact_scope: "板块",
+  importance: "高",
+  importance_note: "涉及原油运输通道，可能影响航运与油气板块情绪。",
+  confidence: 0.62,
+  evidence: ["组建新的霍尔木兹海峡联合攻击无人机部队"],
+  unknowns: ["是否影响实际航运运价需查运价数据"],
+  follow_up_queries: ["今天航运板块主力资金变化"],
+  ...over,
+});
+
+// ---------- §九 输出结构 ----------
+
+test("P6-B §九 要求的 17 个字段一条不少：解析结果必须逐字段存在", () => {
+  const r = parseEventInterpretations(JSON.stringify([goodEntry()]), [fact()], { model: "test-model", generated_at: "2026-09-19 21:10:00" });
+  assert.equal(r.ok, true);
+  assert.equal(r.items.length, 1);
+  const itp = r.items[0];
+  const c = fieldCompleteness(itp);
+  assert.deepEqual(c.missing, [], `缺字段：${c.missing.join(",")}`);
+  assert.equal(itp.event_id, "evt_1");
+  assert.equal(itp.title, fact().title, "title 必须来自真实库行");
+  assert.equal(itp.source, fact().source);
+  assert.equal(itp.published_at, "21:00");
+  assert.equal(itp.confidence, 0.62);
+  assert.equal(itp.model, "test-model");
+  assert.equal(itp.prompt_version, INTERPRET_PROMPT_VERSION);
+});
+
+test("P6-B 每个 §九 字段都必须有唯一归属（事实 / AI 解释 / 服务端派生），不允许出现没人认领的字段", () => {
+  const owned = new Set<string>([...FACT_FIELDS, ...AI_FIELDS, ...DERIVED_FIELDS]);
+  const unowned = REQUIRED_INTERPRET_FIELDS.filter((f) => !owned.has(f));
+  assert.deepEqual(unowned, []);
+  // 事实与解释两个集合不得重叠：重叠就等于「同一句话既算事实又算解释」
+  const overlap = FACT_FIELDS.filter((f) => (AI_FIELDS as readonly string[]).includes(f));
+  assert.deepEqual(overlap, []);
+  // 事件本身是事实：这几项只能是事实字段，AI 无权提供
+  for (const f of ["event_id", "source", "published_at", "title"]) assert.ok(FACT_FIELDS.includes(f as never));
+});
+
+test("P6-B §八 的 AI 工作清单恰好是那 8 件事，不多不少", () => {
+  assert.equal(AI_JOBS.length, 8);
+  assert.deepEqual(AI_JOBS.map((j) => j.job), ["分类", "摘要", "实体提取", "行业/主题映射", "潜在影响方向", "影响范围", "重要性解释", "需要进一步验证的数据"]);
+});
+
+// ---------- §八 AI 不得发明事件 ----------
+
+test("P6-B AI 给了本批不存在的事件 id：整条拒收并原文报出，不做近似匹配", () => {
+  const r = parseEventInterpretations(
+    JSON.stringify([goodEntry(), goodEntry({ event_id: "evt_999", summary: "我发明的一条事件" })]),
+    [fact()],
+  );
+  assert.equal(r.items.length, 1, "只有本批真实事件那条留下");
+  assert.deepEqual(r.unknown_ids, ["evt_999"]);
+  assert.equal(r.items[0].summary.includes("我发明"), false);
+  // 本批真实事件里没被答到的，必须逐条列为 missing，不能让页面显示成「一共就 1 条事件」
+  const r2 = parseEventInterpretations(JSON.stringify([goodEntry()]), [fact(), fact({ event_id: "evt_2", title: "另一条事件" })]);
+  assert.equal(r2.missing.length, 1);
+  assert.equal(r2.missing[0].event_id, "evt_2");
+  assert.match(r2.missing[0].reason, /未对该事件给出解释/);
+});
+
+test("P6-B 缺 event_id 的条目也按「不是本批事件」拒收（不是当成第一条）", () => {
+  const r = parseEventInterpretations(JSON.stringify([{ summary: "没有 id 的解释" }]), [fact()]);
+  assert.equal(r.items.length, 0);
+  assert.deepEqual(r.unknown_ids, ["（缺少 event_id）"]);
+});
+
+test("P6-B 同一事件被答两次只留第一条：解释不叠加，另一条计入未覆盖检查", () => {
+  const r = parseEventInterpretations(JSON.stringify([goodEntry(), goodEntry({ summary: "第二条重复解释" })]), [fact()]);
+  assert.equal(r.items.length, 1);
+  assert.equal(r.items[0].summary.includes("重复"), false);
+});
+
+// ---------- §九 AI 不得自生成概率 ----------
+
+test("P6-B 概率断言能被识别（多种措辞），且剔除时留下原文而不是静默删除", () => {
+  for (const s of [
+    "该股票明天上涨概率 80%",
+    "利好概率为 65%",
+    "70% 的概率上涨",
+    "后市涨 30% 空间",
+  ]) {
+    const claims = findProbabilityClaims(s);
+    assert.ok(claims.length >= 1, `没识别出概率表述：${s}`);
+  }
+  const { text, claims } = stripProbabilityClaims("美军组建无人机部队，相关股票明天上涨概率 80%，值得注意。");
+  assert.equal(claims.length, 1);
+  assert.match(claims[0], /概率/);
+  assert.ok(!/80%/.test(text), "数字概率必须从正文里剥掉");
+  assert.match(text, /已剔除/);
+  assert.match(text, /禁止 AI 生成概率/);
+  // 留档要留整句：只记「涨概率 80%」会把「明天上」留在正文里，读者以为模型还说过半句话
+  assert.equal(claims[0], "明天上涨概率 80%");
+  assert.ok(!text.includes("明天"), "前导时间词必须与概率一起剥掉");
+  assert.ok(!/明天上?[涨跌]?（/.test(text), "不允许出现「明天上（已剔除）」这类残字");
+});
+
+test("P6-B 剔除区间覆盖概率/可能性的各种措辞，且同一处只留一条留档（区间合并）", () => {
+  for (const [s, expect] of [
+    ["上涨的可能性为 60%", "上涨的可能性为 60%"],
+    ["预计明日下跌概率约 40%", "明日下跌概率约 40%"],
+    ["20% 的概率回落", "20% 的概率回落"],
+    ["短期涨幅 3%", "短期涨幅 3%"],
+  ] as [string, string][]) {
+    const claims = findProbabilityClaims(s);
+    assert.equal(claims.length, 1, `同一处断言被多条规则重复留档：${s} → ${JSON.stringify(claims)}`);
+    assert.equal(claims[0], expect);
+  }
+});
+
+test("P6-B 没有概率表述的正文不被改写（不会把「涨幅 3%」当概率删掉）", () => {
+  const clean = "航运板块今日上涨 3.2%，主力净流入。";
+  assert.deepEqual(findProbabilityClaims(clean), []);
+  assert.equal(stripProbabilityClaims(clean).text, clean);
+  // 「概率」这个词本身不是禁句：没有跟着数字（或对未来的幅度预测）就不该动正文
+  const noNumber = "概率较高，涉及 5 个板块";
+  assert.deepEqual(findProbabilityClaims(noNumber), []);
+  assert.equal(stripProbabilityClaims(noNumber).text, noNumber);
+});
+
+test("P6-B 模型输出里的概率会进 violations 与 dropped 留档，并把该条降为 PARTIAL", () => {
+  const r = parseEventInterpretations(
+    JSON.stringify([goodEntry({ summary: "地缘事件影响油气运输，相关股票明天上涨概率 80%。" })]),
+    [fact()],
+  );
+  const itp = r.items[0];
+  assert.equal(itp.dropped.probability_claims.length, 1);
+  assert.ok(itp.violations.some((v) => v.includes("概率")));
+  assert.equal(itp.interpretation_status, "PARTIAL");
+  assert.ok(!/80%/.test(itp.summary));
+});
+
+test("P6-B confidence 只接受 0..1：百分数写法不猜（80 不是 0.8），越界与缺失都是 null + 违规", () => {
+  assert.equal(normalizeConfidence(0.62), 0.62);
+  assert.equal(normalizeConfidence("0.9"), 0.9);
+  assert.equal(normalizeConfidence(0.004), 0);
+  assert.equal(normalizeConfidence(80), null, "不替它除以 100：猜一次就等于替 AI 造了一个置信度");
+  assert.equal(normalizeConfidence(-1), null);
+  assert.equal(normalizeConfidence("较高"), null);
+  assert.equal(normalizeConfidence(undefined), null);
+  const r = parseEventInterpretations(JSON.stringify([goodEntry({ confidence: 80 })]), [fact()]);
+  assert.equal(r.items[0].confidence, null);
+  assert.ok(r.items[0].violations.some((v) => /confidence/.test(v)));
+});
+
+test("P6-B confidence 的语义写死为「解释置信度、不是上涨概率」（文案与结构同处，防被页面改口径）", () => {
+  const itp = parseEventInterpretations(JSON.stringify([goodEntry()]), [fact()]).items[0];
+  const trace = renderInterpretationTrace(itp);
+  assert.match(trace, /不是上涨概率/);
+  assert.match(trace, /AI 对这段解释的把握度/);
+  const split = layerSplitOf(itp);
+  assert.ok(split.ai.some((l) => l.includes("不是上涨概率")));
+  assert.ok(!split.facts.some((l) => l.includes("confidence")), "置信度不属于事实栏");
+});
+
+// ---------- §十 可追溯 ----------
+
+test("P6-B 证据必须能在原始标题里找到：无出处的 evidence 剔除并计入违规", () => {
+  assert.equal(evidenceGrounded("组建新的霍尔木兹海峡联合攻击无人机部队", fact()), true);
+  assert.equal(evidenceGrounded("据路透报道该部队已部署完成", fact()), false, "标题里没有的内容不能当证据");
+  assert.equal(evidenceGrounded("部", fact()), false, "单字不算出处");
+  const r = parseEventInterpretations(
+    JSON.stringify([goodEntry({ evidence: ["组建新的霍尔木兹海峡联合攻击无人机部队", "伊朗原油出口量为零"] })]),
+    [fact()],
+  );
+  const itp = r.items[0];
+  assert.deepEqual(itp.evidence, ["组建新的霍尔木兹海峡联合攻击无人机部队"]);
+  assert.deepEqual(itp.dropped.evidence, ["伊朗原油出口量为零"]);
+  assert.ok(itp.violations.some((v) => /evidence/.test(v)));
+});
+
+test("P6-B 标的必须有出处：标题与该行既有名称之外的，降级为 hypothesized_symbols 并写进 unknowns", () => {
+  const withCo = fact({ title: "中国船舶：签订约 10 亿元订单 交付在即", related_names: ["航运"] });
+  assert.equal(symbolGrounded("中国船舶", withCo), true, "标题里出现的公司名有出处");
+  assert.equal(symbolGrounded("航运", fact()), true, "该行入库时已关联的板块名同样算出处");
+  assert.equal(symbolGrounded("中船防务", fact()), false, "标题与既有名称里都没有 = AI 猜的");
+  assert.equal(symbolGrounded("", fact()), false);
+  const r = parseEventInterpretations(
+    JSON.stringify([goodEntry({ affected_symbols: ["中国船舶", "中国海油"] })]),
+    [withCo],
+  );
+  const itp = r.items[0];
+  assert.deepEqual(itp.affected_symbols, ["中国船舶"]);
+  assert.deepEqual(itp.dropped.symbols, ["中国海油"]);
+  assert.deepEqual(itp.hypothesized_symbols, ["中国海油"], "不删除，降级成 AI 假设留档");
+  assert.ok(itp.unknowns.some((u) => u.includes("中国海油") && u.includes("没有出处")));
+  assert.match(renderInterpretationTrace(itp), /AI 假设标的（无出处，未验证）/);
+  assert.ok(itp.violations.some((v) => /hypothesized_symbols/.test(v)));
+});
+
+test("P6-B 模型回传的 title/source 与库内不一致时按库内原文保留，并记违规（AI 不得改写事件）", () => {
+  const r = parseEventInterpretations(
+    JSON.stringify([goodEntry({ title: "被我改写过的标题", source: "我自己编的来源" })]),
+    [fact()],
+  );
+  const itp = r.items[0];
+  assert.equal(itp.title, fact().title);
+  assert.equal(itp.source, fact().source);
+  assert.ok(itp.violations.some((v) => v.includes("title")));
+  assert.ok(itp.violations.some((v) => v.includes("source")));
+  assert.deepEqual(itp.dropped.fields, ["title", "source"]);
+});
+
+test("P6-B AI 主题映射与手工映射表的重合情况逐类列出（不判谁对谁错）", () => {
+  const ma = mappingAgreement(["航运", "AI 算力"], ["军工"], fact());
+  assert.deepEqual(ma.matched.sort(), ["军工", "航运"]);
+  assert.deepEqual(ma.ai_only, ["AI 算力"]);
+  assert.deepEqual(ma.map_only, []);
+  assert.match(ma.note, /属解释/);
+  const empty = mappingAgreement([], [], fact({ mapped_sectors: [] }));
+  assert.match(empty.note, /未命中映射表/);
+});
+
+test("P6-B 回溯文本必须能回答 §十 的每个问题：来源/实体/映射/事实还是解释", () => {
+  const itp = parseEventInterpretations(JSON.stringify([goodEntry()]), [fact()], { model: "test-model", generated_at: "2026-09-19 21:10:00" }).items[0];
+  const trace = renderInterpretationTrace(itp);
+  assert.match(trace, /原始事件（事实层）/);
+  assert.match(trace, /来源：/);
+  assert.match(trace, /不得新增事件/);
+  assert.match(trace, /【AI 提取】/);
+  assert.match(trace, /【AI 解释】/);
+  assert.match(trace, /【主题映射核对】/);
+  assert.match(trace, /【证据（逐条可在原标题中找到）】/);
+  assert.match(trace, /【仍需验证】/);
+  assert.match(trace, /【下一步该查】/);
+  assert.match(trace, /AI_INTERPRETATION/);
+  assert.match(trace, /test-model/);
+  assert.ok(trace.includes(INTERPRET_PROMPT_VERSION), "回溯文本要能看出是哪一版提示词产出的");
+});
+
+test("P6-B 没有证据时回溯文本把它写成假设，而不是省略这一段", () => {
+  const itp = parseEventInterpretations(JSON.stringify([goodEntry({ evidence: [] })]), [fact()]).items[0];
+  assert.match(renderInterpretationTrace(itp), /只能当假设/);
+});
+
+// ---------- 状态与分层 ----------
+
+test("P6-B interpretation_status 三态判据：无摘要 REJECTED，有瑕疵 PARTIAL，齐全才 INTERPRETED", () => {
+  const full = { summary: "s", evidence: ["e"], impact_direction: "利好" as const, affected_symbols: ["x"] };
+  assert.equal(interpretationStatusOf(full, []), "INTERPRETED");
+  assert.equal(interpretationStatusOf({ ...full, evidence: [] }, []), "PARTIAL");
+  assert.equal(interpretationStatusOf({ ...full, impact_direction: "未知" }, []), "PARTIAL");
+  assert.equal(interpretationStatusOf(full, ["一条违规"]), "PARTIAL");
+  assert.equal(interpretationStatusOf({ ...full, summary: "" }, []), "REJECTED");
+  assert.equal(STATUS_TEXT.REJECTED.includes("不产出结论"), true);
+});
+
+test("P6-B 任何状态的解释都属于 AI_INTERPRETATION：状态再好也不会变成 REAL", () => {
+  for (const s of ["INTERPRETED", "PARTIAL", "REJECTED"] as const) assert.equal(statusDataLayer(s), "AI_INTERPRETATION");
+});
+
+test("P6-B 一批解释的汇总口径带计数与分层原文（供 UI 与报告引用同一句话）", () => {
+  const items = [
+    parseEventInterpretations(JSON.stringify([goodEntry()]), [fact()]).items[0],
+    parseEventInterpretations(JSON.stringify([goodEntry({ event_id: "evt_2", evidence: [] })]), [fact({ event_id: "evt_2" })]).items[0],
+  ];
+  const s = summarizeInterpretations(items, 3, 1);
+  assert.equal(s.counts.interpreted, 1);
+  assert.equal(s.counts.partial, 1);
+  assert.equal(s.counts.rejected, 0);
+  assert.equal(s.counts.missing, 3);
+  assert.match(s.layering, /另有 3 条真实事件没有拿到解释/);
+  assert.match(s.layering, /AI 不得发明事件/);
+  assert.match(s.layering, /AI_INTERPRETATION 层/);
+  assert.match(interpretLayeringNote({ interpreted: 0, partial: 0, rejected: 0, missing: 0, unknown_ids: 0 }), /都拿到了解释/);
+});
+
+// ---------- 解析健壮性（失败时不造数据） ----------
+
+test("P6-B 模型回复解析不出 JSON：整批判失败，逐条列为缺失，不产出任何默认解释", () => {
+  const facts = [fact(), fact({ event_id: "evt_2" })];
+  const r = parseEventInterpretations("抱歉，我无法分析这些事件。", facts);
+  assert.equal(r.ok, false);
+  assert.equal(r.parse_failed, true);
+  assert.equal(r.items.length, 0);
+  assert.equal(r.missing.length, 2);
+  assert.match(r.error ?? "", /解析失败/);
+  assert.match(r.missing[0].reason, /JSON 数组/);
+});
+
+test("P6-B extractJsonArray 兼容 ```json 包裹与前后解释文字，但不猜残缺数组", () => {
+  assert.deepEqual(extractJsonArray("```json\n[{\"a\":1}]\n```"), [{ a: 1 }]);
+  assert.deepEqual(extractJsonArray("结果如下：[{\"a\":1}] 供参考"), [{ a: 1 }]);
+  assert.equal(extractJsonArray("[{\"a\":1}"), null);
+  assert.equal(extractJsonArray("{\"a\":1}"), null, "对象不是数组：数组口径的输出契约不能松");
+});
+
+test("P6-B 枚举只认登记表里的取值：越界取值落回「未知」而不是照抄模型原文", () => {
+  assert.equal(clampEnum("利好", IMPACT_DIRECTIONS, "未知"), "利好");
+  assert.equal(clampEnum("重大利好", IMPACT_DIRECTIONS, "未知"), "未知");
+  assert.equal(clampEnum(undefined, IMPACT_SCOPES, "未知"), "未知");
+  assert.equal(clampEnum("高", IMPORTANCE_LEVELS, "无法判断"), "高");
+  const r = parseEventInterpretations(JSON.stringify([goodEntry({ impact_direction: "必须买入", impact_scope: "全部", importance: "S级" })]), [fact()]);
+  assert.equal(r.items[0].impact_direction, "未知");
+  assert.equal(r.items[0].impact_scope, "未知");
+  assert.equal(r.items[0].importance, "无法判断");
+});
+
+test("P6-B 数组字段做去重/去空/限长，非数组按缺失处理（不把字符串拆成字符）", () => {
+  const r = parseEventInterpretations(JSON.stringify([goodEntry({ entities: ["a", "a", "", " b "], themes: "航运" })]), [fact()]);
+  assert.deepEqual(r.items[0].entities, ["a", "b"]);
+  assert.deepEqual(r.items[0].themes, ["航运"], "单值容忍成一条，但不逐字拆");
+  const big = parseEventInterpretations(JSON.stringify([goodEntry({ unknowns: Array.from({ length: 40 }, (_, i) => `u${i}`) })]), [fact()]);
+  assert.ok(big.items[0].unknowns.length <= 12);
+});
+
+// ---------- 提示词 ----------
+
+test("P6-B 提示词只喂真实入库事件，并把两条禁令原文写进去", () => {
+  const facts = [fact(), fact({ event_id: "evt_2", title: "欧洲央行管委：若通胀飙升不排除10月加息可能性", mapped_sectors: [], related_names: [], fund_note: "", stage: "" })];
+  const prompt = buildEventInterpretPrompt(facts);
+  for (const f of facts) {
+    assert.ok(prompt.includes(f.event_id) && prompt.includes(f.title), "每条真实事件都要出现在提示词里");
+  }
+  assert.match(prompt, /不得新增事件/);
+  assert.match(prompt, /禁止输出任何概率数字/);
+  assert.match(prompt, /不是股票涨跌概率/);
+  assert.match(prompt, /evidence 里的每条都必须是从该条 title 原样摘出/);
+  assert.match(prompt, /mappedSectors=军工、航运/);
+  assert.match(prompt, /relatedNames=航运、军工/);
+  assert.ok(!prompt.includes("relatedNames=,"), "没有关联名称时不写空字段");
+  // 第二条没命中映射表：提示词里不得为它凭空造出映射字段
+  assert.equal(prompt.split("mappedSectors=").length - 1, 1);
+  assert.match(prompt, /fundCheck\(扩散阶段\)/);
+  assert.ok(!prompt.includes("fundCheck()"), "没有资金验证时不写空字段");
+});
+
+test("P6-B 提示词把 8 项工作与输出字段列全（模型只能按结构回答）", () => {
+  const prompt = buildEventInterpretPrompt([fact()]);
+  for (const f of ["summary", "entities[]", "industries[]", "themes[]", "affected_symbols[]", "hypothesized_symbols[]", "impact_direction", "impact_scope", "importance", "confidence", "evidence[]", "unknowns[]", "follow_up_queries[]"]) {
+    assert.ok(prompt.includes(f), `提示词缺少输出字段 ${f}`);
+  }
+  assert.match(prompt, /只输出 JSON 数组/);
+});
+
+// ---------- 端到端（仍是纯内核：真实形状的两条模型输出） ----------
+
+test("P6-B 一批真实形状的解释：好的留下、越界的逐条留痕，计数与缺失都对得上", () => {
+  const facts = [fact(), fact({ event_id: "evt_2", title: "欧洲央行管委斯图纳拉斯：若通胀飙升不排除10月加息可能性 但不应仓促行事", mapped_sectors: [], related_names: [] })];
+  const raw = JSON.stringify([
+    goodEntry(),
+    goodEntry({ event_id: "evt_2", summary: "欧央行表态偏鹰，可能压制风险资产。", evidence: ["若通胀飙升不排除10月加息可能性"], affected_symbols: [], entities: ["欧洲央行"], impact_direction: "利空", impact_scope: "市场整体", importance: "中", confidence: 0.4 }),
+    goodEntry({ event_id: "evt_3", summary: "这条是模型自己加的" }),
+  ]);
+  const r = parseEventInterpretations(raw, facts, { model: "m", generated_at: "t" });
+  assert.equal(r.items.length, 2);
+  assert.deepEqual(r.unknown_ids, ["evt_3"]);
+  assert.equal(r.missing.length, 0);
+  assert.equal(summarizeInterpretations(r.items, r.missing.length, r.unknown_ids.length).counts.interpreted, 2);
+  assert.equal(r.items.every((i) => i.interpretation_status === "INTERPRETED"), true);
+  assert.equal(r.items.map((i) => i.event_id).join(","), "evt_1,evt_2");
+  // 每条都能独立回溯到自己的原始事件
+  for (const itp of r.items) {
+    const f = facts.find((x) => x.event_id === itp.event_id)!;
+    assert.equal(itp.title, f.title);
+    for (const e of itp.evidence) assert.ok(f.title.includes(e));
+  }
+});
+
+test("P6-B 空批次不报错也不产出（库里当天 0 行是真实状态，不是失败）", () => {
+  const r = parseEventInterpretations("[]", []);
+  assert.equal(r.items.length, 0);
+  assert.equal(r.missing.length, 0);
+  assert.equal(r.parse_failed, false);
+  assert.equal(r.ok, false);
+});

@@ -91,7 +91,8 @@ function stampAgeS(stamp: string | null, nowMs: number): number | null {
 
 async function dbSignals() {
   const [
-    radarRows, radarLive, radarLatest, eventRows, eventLatest, eventDates, factorTestRows, factorTestKeys,
+    radarRows, radarLive, radarLatest, eventRows, eventLatest, eventDates, interpretRows, interpretLatest,
+    factorTestRows, factorTestKeys,
     poolRows, taskRows, taskLatest, cursorRows, riskSnap, themeSnap, probSnap,
   ] = await Promise.all([
     db.radarFinding.count(),
@@ -100,6 +101,8 @@ async function dbSignals() {
     db.globalEvent.count(),
     db.globalEvent.findFirst({ orderBy: { asOf: "desc" }, select: { asOf: true } }),
     db.globalEvent.groupBy({ by: ["asOf"], _count: { _all: true } }),
+    db.eventInterpretation.count(),
+    db.eventInterpretation.findFirst({ orderBy: { asOf: "desc" }, select: { asOf: true } }),
     db.factorTest.count(),
     db.factorTest.groupBy({ by: ["factorKey"], _count: { _all: true } }),
     db.candidatePool.count(),
@@ -113,6 +116,7 @@ async function dbSignals() {
   return {
     radarRows, radarLive, radarDate: radarLatest?.asOf ?? null,
     eventRows, eventDate: eventLatest?.asOf ?? null, eventDates: eventDates.length,
+    interpretRows, interpretDate: interpretLatest?.asOf ?? null,
     factorTestRows, factorTestKeys: factorTestKeys.length,
     poolRows, taskRows,
     taskKind: taskLatest?.kind ?? null, taskStatus: taskLatest?.status ?? null,
@@ -269,6 +273,15 @@ function probeOne(cap: CapabilityDef, ctx: Ctx): Sig {
       return channelOf(ctx.board, "板块榜通道可达；主线判定需当场拉板块+成分扩散，本探测不重复拉取", { theme_snapshot_rows: d?.themeSnap ?? null });
     case "radar": return d ? rowsSig("雷达信号", d.radarRows, "radar_finding", d.radarDate, d.radarLive) : dbFail();
     case "events": return d ? rowsSig("全球事件", d.eventRows, "global_event", d.eventDate) : dbFail();
+    case "event_interpret":
+      if (!d) return dbFail();
+      // 这张表 0 行的原因是「没人点过 AI 理解」，不是失败也不是没有事件：措辞必须和 rowsSig 的通用文案分开
+      return d.interpretRows > 0
+        ? okSig("db", { rows: d.interpretRows, table: "event_interpretation", latest_date: d.interpretDate, events_rows: d.eventRows },
+            d.interpretDate, `已落库 AI 事件解释 ${d.interpretRows} 条（属于 AI_INTERPRETATION 层，不是事实）`)
+        : emptySig("db",
+            `event_interpretation 当前 0 行：还没有人对事件点过「AI 理解」，这一层就是空的（不是失败，也不会自动生成；当日事件行 ${d.eventRows} 条是可理解的事实原料）`,
+            { rows: 0, events_rows: d.eventRows });
     case "history_radar": return d ? rowsSig("雷达历史归档", d.radarRows, "radar_finding", d.radarDate) : dbFail();
     case "history_events":
       if (!d) return dbFail();
