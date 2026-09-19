@@ -14,7 +14,7 @@ import { runScreener } from "@/lib/quant/screener/run";
 import { buildFieldPanel, lastValues, type BarsLike } from "@/lib/quant/factors/fields";
 import { historicalWinProbability, type ScreenerCond } from "@/lib/quant/factors/probability";
 import { getProvider } from "@/lib/quant/data/index";
-import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
+import { fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
 import { tdxQuotes, tdxDepth, tdxTradesMoney } from "@/lib/desk/tdx";
 import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, fetchBoardReal, symbolToSecid } from "@/lib/desk/em";
 import { shanghaiDate } from "@/lib/desk/session";
@@ -159,9 +159,14 @@ async function toolStockKline(args: { symbol: string }): Promise<unknown> {
   const provider = await getProvider("em");
   const tradeDate = shanghaiDate();
   const meta = (await provider.listUniverse({ kind: "custom", symbols: [symbol] }, tradeDate).catch(() => []))[0];
-  const barsMap = await fetchBarsHybrid([symbol], tradeDate, 480);
-  const bars = (barsMap.get(symbol) ?? []) as BarsLike[];
-  if (bars.length < 60) return { missing: "日K历史不足，无法计算技术状态" };
+  const barsRes = await fetchBarsHybridTracked([symbol], tradeDate, 480);
+  const bars = (barsRes.bars.get(symbol) ?? []) as BarsLike[];
+  if (!bars.length) {
+    // 取数失败与「这只票确实没这么长历史」是两件事，工具返回值必须分开，否则模型会把限流说成「历史不足」
+    const oc = barsRes.outcomes[0];
+    return { missing: oc?.kind === "request_failed" ? `日K取数失败：${oc.reason}` : "日K无返回（本标的未取到任何K线）" };
+  }
+  if (bars.length < 60) return { missing: `日K历史不足（仅 ${bars.length} 根，需 ≥60），无法计算技术状态` };
   const panel = buildFieldPanel([symbol], [bars], [meta]);
   const vals = lastValues(panel).get(symbol) ?? new Map();
   const pick = (...keys: string[]) => Object.fromEntries(keys.map((k) => [k, vals.get(k) ?? null]));
@@ -170,7 +175,10 @@ async function toolStockKline(args: { symbol: string }): Promise<unknown> {
     conditions: [{ field: "above_ma_20", op: "=", value: 1 }, { field: "vwap20_filter", op: "=", value: 1 }],
   });
   return {
-    symbol, 数据源: "腾讯日K + 本机指标计算（未验证因子）",
+    symbol,
+    数据源: barsRes.outcomes[0]?.channel === "tdx"
+      ? "eltdx 日K（本机直连网关）+ 本机指标计算（未验证因子）"
+      : "腾讯日K（eltdx 未取到，本条为兜底口径）+ 本机指标计算（未验证因子）",
     最近5日: bars.slice(-5).map((b) => ({ 日期: b.date, 开: b.o, 高: b.h, 低: b.l, 收: b.c })),
     技术状态: pick("above_ma_5", "above_ma_10", "above_ma_20", "above_ma_60", "above_ma_144", "ma_struct",
       "macd", "macd_cross", "kdj_cross", "rsi_14", "vwap20_filter", "vwap_pos", "rps_50", "rps_120", "is_limit_up"),
@@ -229,9 +237,13 @@ async function toolHistoricalProbability(args: { symbol: string; conditions: Scr
   const provider = await getProvider("em");
   const tradeDate = shanghaiDate();
   const meta = (await provider.listUniverse({ kind: "custom", symbols: [symbol] }, tradeDate).catch(() => []))[0];
-  const barsMap = await fetchBarsHybrid([symbol], tradeDate, 480);
-  const bars = (barsMap.get(symbol) ?? []) as BarsLike[];
-  if (bars.length < 120) return { missing: "日K历史不足，无法统计" };
+  const barsRes = await fetchBarsHybridTracked([symbol], tradeDate, 480);
+  const bars = (barsRes.bars.get(symbol) ?? []) as BarsLike[];
+  if (!bars.length) {
+    const oc = barsRes.outcomes[0];
+    return { missing: oc?.kind === "request_failed" ? `日K取数失败：${oc.reason}` : "日K无返回（本标的未取到任何K线）" };
+  }
+  if (bars.length < 120) return { missing: `日K历史不足（仅 ${bars.length} 根，需 ≥120），无法统计` };
   const stats = historicalWinProbability({ symbol, bars, meta, conditions: conds });
   if (!stats) return { missing: "条件无法识别（字段不在因子目录内）" };
   return {

@@ -3,10 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Play, Loader2, Crosshair, TrendingUp, Plus, Settings2, Bot } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { autoLevels, TIMEFRAMES, CATALOG, HOT_SYMBOLS } from "@/lib/desk/data";
-import { fetchCandlesFor, fetchQuoteCards, searchSymbols, fetchTechSnapshot, fetchNewsBlock, normalizeTradingViewSymbol, trendLabel, type SuggestItem, type TechSnapshot } from "@/lib/desk/market";
+import { fetchCandlesFor, fetchQuoteCards, searchSymbols, fetchTechSnapshot, fetchNewsBlock, normalizeTradingViewSymbol, trendLabel, isDemoSymbol, type SuggestItem, type TechSnapshot } from "@/lib/desk/market";
 import { aiChat, aiConfigured, assistantSystemPrompt, parseLooseJson } from "@/lib/desk/ai";
-import { marketSession } from "@/lib/desk/session";
-import type { TrackerPlan, Candle } from "@/lib/desk/types";
+import { marketSession, shanghaiStamp } from "@/lib/desk/session";
+import {
+  provenanceOfQuote, provenanceOfTechSnapshot, renderMarketContext, type CtxRow,
+} from "@/lib/desk/ai-context-core";
+import type { TrackerPlan, Candle, QuoteCard } from "@/lib/desk/types";
 import CandleChart from "../CandleChart";
 import Markdown from "../Markdown";
 import AssistantWidget from "../AssistantWidget";
@@ -61,7 +64,7 @@ export default function AnalysisPage() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [kSource, setKSource] = useState<"real" | "demo">("demo");
   const [kLoading, setKLoading] = useState(false);
-  const [quote, setQuote] = useState<{ price: number; changePct: number; name?: string; prevClose?: number } | null>(null);
+  const [quote, setQuote] = useState<QuoteCard | null>(null);
   const [results, setResults] = useState<SuggestItem[]>([]);
   const [snap, setSnap] = useState<TechSnapshot | null>(null);
 
@@ -108,25 +111,46 @@ export default function AnalysisPage() {
 
   const configured = aiConfigured(ai);
 
+  // 图表上下文：每条都带来源分层（P6-A）。原来整段被提示词称为「真实行情数据」，
+  // 但 K 线可能是演示回退、报价可能是缺失行、分时可能是合成序列——分层写进文本里，模型无从混用。
   const chartContext = () => {
-    if (!candles.length) return "行情数据加载中，请稍后重试。";
+    if (!candles.length) return "行情上下文：本次没有取得 K 线（状态 MISSING）。没有数据就不做技术面判断，先说明缺什么。";
     const recent = candles.slice(-14);
     const hi = Math.max(...candles.map((c) => c.h));
     const lo = Math.min(...candles.map((c) => c.l));
-    return [
-      `品种: ${symbol}（${name}）`,
-      `周期: ${tf}`,
-      `最新价: ${(quote?.price ?? candles[candles.length - 1].c).toFixed(2)}（${(quote?.changePct ?? 0) >= 0 ? "+" : ""}${(quote?.changePct ?? 0).toFixed(2)}%）`,
-      `区间最高/最低: ${hi.toFixed(2)} / ${lo.toFixed(2)}`,
-      `算法识别支撑: ${levels?.supports.map((v) => v.toFixed(2)).join(", ") || "无"}`,
-      `算法识别阻力: ${levels?.resistances.map((v) => v.toFixed(2)).join(", ") || "无"}`,
-      ...(snap ? [
-        `多周期趋势: ${snap.tfs.map((t) => `${t.tf}=${t.trend}`).join(", ")}`,
-        `RSI(14): ${snap.tfs.map((t) => `${t.tf} ${t.rsi?.toFixed(1) ?? "—"}`).join(", ")}`,
-        ...(snap.rangePos != null ? [`近半年区间位置: ${snap.rangePos.toFixed(0)}%（${snap.rangeLow?.toFixed(2)} ~ ${snap.rangeHigh?.toFixed(2)}）`] : []),
-      ] : []),
-      `最近14根收盘: ${recent.map((c) => c.c.toFixed(2)).join(", ")}`,
-    ].join("\n");
+    const quoteProv = provenanceOfQuote(quote, isDemoSymbol(symbol));
+    const rows: CtxRow[] = [];
+    if (quote) {
+      rows.push({
+        label: `${symbol}（${name}）报价`,
+        provenance: quoteProv,
+        lines: quoteProv === "REAL"
+          ? [`最新价 ${(quote.price ?? 0).toFixed(2)}（${(quote.changePct ?? 0) >= 0 ? "+" : ""}${(quote.changePct ?? 0).toFixed(2)}%）`]
+          : quoteProv === "MISSING"
+            ? ["本次未取到报价：不知道现价就不要给价位，也不要用 0"]
+            : [`展示值 ${(quote.price ?? 0).toFixed(2)}：本机演示数据，不是行情`],
+        note: quoteProv === "REAL" && quote.series_synthetic ? "分时缩略序列按现价合成，只用于绘图，不是真实成交轨迹" : undefined,
+      });
+    }
+    rows.push({
+      label: `${symbol}（${name}）${tf} K线序列与本机算法识别结果`,
+      provenance: provenanceOfTechSnapshot(kSource),
+      lines: [
+        `区间最高/最低: ${hi.toFixed(2)} / ${lo.toFixed(2)}`,
+        `算法识别支撑: ${levels?.supports.map((v) => v.toFixed(2)).join(", ") || "无"}`,
+        `算法识别阻力: ${levels?.resistances.length ? levels.resistances.map((v) => v.toFixed(2)).join(", ") : "无"}`,
+        ...(snap ? [
+          `多周期趋势: ${snap.tfs.map((t) => `${t.tf}=${t.trend}`).join(", ")}`,
+          `RSI(14): ${snap.tfs.map((t) => `${t.tf} ${t.rsi?.toFixed(1) ?? "—"}`).join(", ")}`,
+          ...(snap.rangePos != null ? [`近半年区间位置: ${snap.rangePos.toFixed(0)}%（${snap.rangeLow?.toFixed(2)} ~ ${snap.rangeHigh?.toFixed(2)}）`] : []),
+        ] : []),
+        `最近14根收盘: ${recent.map((c) => c.c.toFixed(2)).join(", ")}`,
+      ],
+      note: kSource === "demo"
+        ? "K 线为演示回退数据：以下数字只是算法演示，不构成对真实市场的任何结论"
+        : "K 线为真实行情；支撑/阻力/趋势/RSI 由本机算法对这段 K 线计算得出，不是交易所发布的指标",
+    });
+    return renderMarketContext(rows, { takenAt: shanghaiStamp() });
   };
 
   const runAnalysis = async () => {
@@ -134,15 +158,17 @@ export default function AnalysisPage() {
     setRunning(true); setResult(null); setRawText("");
     const sys = [
       "你是 MyDesk 行情工作台的图表分析引擎，面向个人投资者做技术面解读。",
-      "只基于【用户提供的行情数据】分析：价格、支撑、阻力、RSI、趋势等数值只能取自数据本身，禁止编造数据里没有的数值，禁止引用外部消息。",
+      "只基于【用户提供的行情上下文】分析：价格、支撑、阻力、RSI、趋势等数值只能取自数据本身，禁止编造数据里没有的数值，禁止引用外部消息。",
+      "上下文里每条都标了来源：标 DEMO（演示数据）/ MISSING（缺失）的部分不得当成真实行情；只有标 REAL 的可以直接引用，标 DERIVED 的要说明是本机算法算出来的。",
       "只输出一个 JSON 对象，不要 markdown 代码块，字段：",
       '{"structure":"当前趋势/结构/形态解读，120字内","support":[数字],"resistance":[数字],"bias":"看多|看空|震荡","entry":数字,"stop":数字,"targets":[数字,数字],"risk":"风险提示，80字内"}',
       "support/resistance 必须取自数据中的算法识别支撑/阻力；bias 必须与结构解读一致；entry 取最新价附近；语言简明中文。risk 里提醒：分析仅供参考，不构成投资建议。",
+      "如果上下文里根本没有可用的最新价（MISSING/DEMO），就在 structure 里第一句写明「未取得真实行情，以下为演示口径」，不要把演示数字包装成真实结论。",
     ].join("\n");
     try {
       const text = await aiChat(ai, [
         { role: "system", content: sys },
-        { role: "user", content: `请基于以下真实行情数据做技术面分析：\n${chartContext()}` },
+        { role: "user", content: `请基于以下行情上下文（已逐条标注来源分层）做技术面分析：\n${chartContext()}` },
       ]);
       const parsed = parseLooseJson<AnalysisResult>(text);
       if (parsed && (parsed.structure || parsed.bias)) setResult(parsed);

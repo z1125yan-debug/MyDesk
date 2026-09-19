@@ -8,7 +8,8 @@
 //  - 未验证因子在响应中显式标注。
 
 import { getProvider } from "@/lib/quant/data/index";
-import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
+import { fetchBarsHybrid, fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
+import { outcomeWarning, summarizeOutcomes } from "@/lib/quant/data/hybrid-core";
 import { shanghaiDate } from "@/lib/desk/session";
 import { evalLimitSnapshot } from "./sentiment";
 import { buildFieldPanel, lastValues, factorCatalog, FACTOR_FIELD_MAP, type BarsLike } from "../factors/fields.ts";
@@ -195,18 +196,28 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
       }),
       ...["rps_120", "above_ma_144"].filter((f) => klineConds.some((c) => c.field === f) || outFields.includes(f)).map(() => 160),
     );
-    const barsMap = await fetchBarsHybrid(subset.map((m) => m.symbol), asOf, lookback);
+    const barsMap = await fetchBarsHybridTracked(subset.map((m) => m.symbol), asOf, lookback);
+    const bars = barsMap.bars;
+    // P6-A：取数失败与「这只真的没K线」分开报数——否则一次限流会在漏斗里伪装成「不符合条件」
+    const klineWarn = outcomeWarning(barsMap.outcomes);
+    if (klineWarn) warnings.push(klineWarn);
+    if (barsMap.tdx_down) warnings.push("eltdx 网关本批已熔断（连续 8 只失败）：其余标的全部走腾讯日K，结果为 DEGRADED 口径");
     const symbols: string[] = [];
     const barsList: BarsLike[][] = [];
     const metasOf: (AssetMeta | undefined)[] = [];
     for (const m of subset) {
-      const bars = (barsMap.get(m.symbol) ?? []) as BarsLike[];
-      if (!bars.length) continue;
+      const b = (bars.get(m.symbol) ?? []) as BarsLike[];
+      if (!b.length) continue;
       symbols.push(m.symbol);
-      barsList.push(bars);
+      barsList.push(b);
       metasOf.push(m);
     }
-    if (!symbols.length) throw new Error("K线子集全部无数据（数据源可能被限流，请稍后重试）");
+    if (!symbols.length) {
+      const c = summarizeOutcomes(barsMap.outcomes);
+      throw new Error(c.request_failed && c.request_failed + c.no_data === barsMap.outcomes.length
+        ? `K线子集 ${barsMap.outcomes.length} 只全部取数失败（eltdx 与腾讯都没成功返回，不是「没有符合的标的」）：${c.request_failed} 只请求失败，请稍后重试`
+        : "K线子集全部无数据（数据源可能被限流，请稍后重试）");
+    }
     const panel = buildFieldPanel(symbols, barsList, metasOf);
     const lastVals = lastValues(panel);
 

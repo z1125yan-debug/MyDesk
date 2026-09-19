@@ -2,7 +2,8 @@
 // §二 补：trade_date 历史交易日回放；§六 补：基准（沪深300）同期收益 + 命中样本净值最大回撤
 import { NextResponse } from "next/server";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
-import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
+import { fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
+import { outcomeWarning } from "@/lib/quant/data/hybrid-core";
 import { getProvider } from "@/lib/quant/data/index";
 import { historicalWinProbability, type ScreenerCond } from "@/lib/quant/factors/probability";
 import type { BarsLike } from "@/lib/quant/factors/fields";
@@ -47,7 +48,10 @@ export async function POST(request: Request) {
     const isHistorical = asOf < today;
 
     const wantSymbols = [...new Set([...targets.map((t) => t.symbol), BENCHMARK_SYMBOL])];
-    const barsMap = await fetchBarsHybrid(wantSymbols, asOf, lookback);
+    const barsResult = await fetchBarsHybridTracked(wantSymbols, asOf, lookback);
+    const barsMap = barsResult.bars;
+    // P6-A：把「K线取数失败」和「这只票确实没这么多K线」分开——前者是数据源问题，不能算进样本不足
+    const outcomeOf = new Map(barsResult.outcomes.map((o) => [o.symbol, o] as const));
     const benchBars = (barsMap.get(BENCHMARK_SYMBOL) ?? []) as BarsLike[];
     const provider = await getProvider("em");
     const metas = await provider.listUniverse({ kind: "all" }, asOf).catch(() => []);
@@ -61,12 +65,18 @@ export async function POST(request: Request) {
           benchmarkBars: benchBars, benchmarkName: BENCHMARK_NAME,
         })
         : null;
+      const oc = outcomeOf.get(t.symbol);
+      const skipReason = oc?.kind === "request_failed"
+        ? "K线取数失败（eltdx 与腾讯都没成功返回）：本次不纳入统计，不是样本不足"
+        : oc?.kind === "no_data"
+          ? "K线无返回（请求成功但上游没有该标的的日K，例如代码不存在）：本次不纳入统计"
+          : bars.length < 40 ? "K线不足，跳过" : null;
       return {
         symbol: t.symbol,
         name: metaOf.get(t.symbol)?.name ?? t.name,
         bars: bars.length,
         stats,
-        error: bars.length < 40 ? "K线不足，跳过" : stats ? null : "无K线口径条件可匹配",
+        error: bars.length < 40 ? skipReason : stats ? null : "无K线口径条件可匹配",
       };
     });
 
@@ -98,7 +108,12 @@ export async function POST(request: Request) {
     });
 
     const warnings = per.flatMap((p) => p.stats?.warnings ?? (p.error ? [p.error] : []));
-    if (!benchBars.length) warnings.push(`基准 ${BENCHMARK_NAME}（${BENCHMARK_SYMBOL}）K线未取到：基准/超额收益不可用（不以0代替）`);
+    const benchOc = outcomeOf.get(BENCHMARK_SYMBOL);
+    if (!benchBars.length) {
+      warnings.push(`基准 ${BENCHMARK_NAME}（${BENCHMARK_SYMBOL}）${benchOc?.kind === "request_failed" ? "K线取数失败" : "本次无K线返回"}：基准/超额收益不可用（不以0代替）`);
+    }
+    const klineWarn = outcomeWarning(barsResult.outcomes);
+    if (klineWarn) warnings.push(klineWarn);
     if (isHistorical) warnings.push(`历史交易日回放 ${asOf}：仅K线口径条件参与匹配，快照口径条件无历史时点数据`);
 
     return NextResponse.json({

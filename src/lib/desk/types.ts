@@ -58,6 +58,11 @@ export interface QuoteCard {
   series: number[];
   prevClose?: number; // 昨收，用于绘制涨停/跌停线
   missing?: boolean;  // 真实数据源本次未取到（断源/停牌），界面显示"暂无数据"
+  // P6-A：来源分层。原来只有一起回退的 demo/missing 之分，注入 AI 上下文时会被统一说成「真实行情」，
+  // 所以每条卡片都必须自带来源（REAL=直连取到 / DEMO=本机合成的展示值 / MISSING=本次没取到）。
+  data_status?: "REAL" | "DEMO" | "MISSING";
+  /** 分时序列是按真实现价锚定出来的合成序列：仅供画缩略图，不能作为事实或价量依据引用 */
+  series_synthetic?: boolean;
 }
 
 export interface WatchItem {
