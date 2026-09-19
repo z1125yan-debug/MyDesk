@@ -2,15 +2,17 @@
 // 时序纪律（反未来函数的执行约定）：
 //   决策：调仓日用 dates[t-1] 及更早的数据生成目标持仓（selector 只能看到 ≤ t-1）
 //   成交：dates[t] 开盘价执行；开盘缺失 = 停牌当日不可交易
-// 约束：佣金/最低佣金/印花税(卖)/滑点/涨跌停/停牌/成交量上限/流动性上限/线性冲击
-// 简化声明（v1）：100股整手；主板±9.5%涨跌停近似（未区分20cm板）；qfq 复权口径
+// 约束：佣金/最低佣金/印花税(卖)/滑点/点差/涨跌停/停牌/成交量上限/流动性上限/线性冲击
+// 简化声明（v1）：100股整手；涨跌停按板块真实比例（主板10%/创业科创20%/北交所30%/ST5%，复用 limitRatio）；qfq 复权口径
 import type { BacktestConfig, TransactionCost, BacktestConstraints } from "../types.ts";
+import { limitRatio } from "../factors/fields.ts";
 
 export type Mat = (number | null)[][];
 
 export interface BacktestPanel {
   dates: string[];
   symbols: string[];
+  names?: string[]; // 与 symbols 对齐的股票简称（ST 判定 5% 涨跌停用；缺省按非 ST）
   fields: Map<string, Mat>; // o h l c v amount ...
 }
 
@@ -49,6 +51,7 @@ export const DEFAULT_COST: Required<TransactionCost> = {
   minCommission: 5,
   stampDuty: 0.0005,
   slippageRate: 0.001,
+  spreadRate: 0.001, // §二十二 点差：买一/卖一价差，双边各承担一半
 };
 
 export const DEFAULT_CONSTRAINTS: Required<BacktestConstraints> = {
@@ -59,11 +62,15 @@ export const DEFAULT_CONSTRAINTS: Required<BacktestConstraints> = {
   marketImpactCoeff: 0,
 };
 
-const LIMIT_RATIO = 0.095; // 涨跌停判定近似（主板±10%，留 0.5% 容差）
 const BOARD_LOT = 100;
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** §二十二：涨跌停幅度按板块区分（主板10% / 创业板·科创板20% / 北交所30% / ST 5%），不再用 0.095 近似 */
+export function limitRatioOf(panel: BacktestPanel, si: number): number {
+  return limitRatio(panel.symbols[si], panel.names?.[si] ?? "");
 }
 
 export function runBacktestEngine(
@@ -88,7 +95,7 @@ export function runBacktestEngine(
   const trades: BacktestTrade[] = [];
   const equityCurve: { date: string; value: number; benchmark: number }[] = [];
   const blocked: Map<string, number> = new Map();
-  const rebalanceEvery = Math.max(1, (config as { rebalanceEvery?: number }).rebalanceEvery ?? 5);
+  const rebalanceEvery = Math.max(1, config.rebalanceEvery ?? 5);
 
   function block(reason: string): void {
     blocked.set(reason, (blocked.get(reason) ?? 0) + 1);
@@ -140,16 +147,18 @@ export function runBacktestEngine(
         const equity = cash + shares.reduce((s, sh, i) => s + sh * (c[i][t - 1] ?? 0), 0);
         const targetShares = Math.floor((equity * wantWeight) / openPrice / BOARD_LOT) * BOARD_LOT;
         if (!targetSet.has(sym) || targetShares < shares[si]) {
-          if (cons.respectLimitUpDown && openPrice <= round2(prevClose * (1 - LIMIT_RATIO))) {
-            block(`跌停无法卖出:${sym}`);
+          const ratio = limitRatioOf(panel, si); // §二十二：分板涨跌停（10%/20%/30%/ST5%）
+          if (cons.respectLimitUpDown && openPrice <= round2(prevClose * (1 - ratio))) {
+            block(`跌停无法卖出:${sym}(${(ratio * 100).toFixed(0)}%)`);
             continue;
           }
           const sh = targetSet.has(sym) ? shares[si] - targetShares : shares[si];
           if (sh <= 0) continue;
-          const proceeds = sellProceeds(openPrice, sh);
+          const sellPrice = round2(openPrice * (1 - cost.spreadRate / 2)); // 点差：卖出按买一侧
+          const proceeds = sellProceeds(sellPrice, sh);
           shares[si] -= sh;
           cash += proceeds.total;
-          trades.push({ date: panel.dates[t], symbol: sym, side: "sell", price: openPrice, shares: sh, cost: proceeds.fee, reason: "调仓减仓" });
+          trades.push({ date: panel.dates[t], symbol: sym, side: "sell", price: sellPrice, shares: sh, cost: proceeds.fee, reason: "调仓减仓" });
         }
       }
       // 再买入
@@ -160,8 +169,9 @@ export function runBacktestEngine(
         const openPrice = o[si][t];
         const prevClose = c[si][t - 1];
         if (openPrice === null || prevClose === null) { block(`停牌无法买入:${sym}`); continue; }
-        if (cons.respectLimitUpDown && openPrice >= round2(prevClose * (1 + LIMIT_RATIO))) {
-          block(`涨停无法买入:${sym}`);
+        const ratioBuy = limitRatioOf(panel, si); // §二十二：分板涨跌停
+        if (cons.respectLimitUpDown && openPrice >= round2(prevClose * (1 + ratioBuy))) {
+          block(`涨停无法买入:${sym}(${(ratioBuy * 100).toFixed(0)}%)`);
           continue;
         }
         const targetValue = equity * weight;
@@ -169,9 +179,10 @@ export function runBacktestEngine(
         const currentValue = currentShares * openPrice;
         let deltaValue = targetValue - currentValue;
         if (deltaValue <= equity * 0.005) continue; // 忽略微小调仓
-        const execPrice = cons.marketImpactCoeff > 0 && amount[si][t]
+        const impactPrice = cons.marketImpactCoeff > 0 && amount[si][t]
           ? openPrice * (1 + cons.marketImpactCoeff * Math.min(1, deltaValue / (amount[si][t] as number)))
           : openPrice;
+        const execPrice = round2(impactPrice * (1 + cost.spreadRate / 2)); // 点差：买入按卖一侧
         let buyShares = Math.min(
           Math.floor(deltaValue / execPrice / BOARD_LOT) * BOARD_LOT,
           Math.floor(Math.max(0, cash) / (execPrice * (1 + cost.slippageRate + cost.commissionRate)) / BOARD_LOT) * BOARD_LOT,

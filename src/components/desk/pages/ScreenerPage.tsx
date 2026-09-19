@@ -5,11 +5,16 @@ import { Search, Plus, X, Loader2, Sparkles, AlertTriangle } from "lucide-react"
 import { PctText, NumText } from "../SourceBadge";
 import { useDesk } from "@/lib/desk/store";
 import {
-  fetchFactorCatalog, runScreenerApi, aiChatTools,
+  fetchFactorCatalog, fetchTradeDates, runScreenerApi, aiChatTools,
   type FactorFieldDef, type ScreenerCond, type ScreenerRespClient,
 } from "@/lib/desk/quant-api";
 
-const OPS = ["=", ">=", ">", "<=", "<", "!="] as const;
+// §四 操作符全集（in / not in = 多值，值用逗号或空格分隔）
+const OPS = ["=", ">=", ">", "<=", "<", "!=", "in", "not in"] as const;
+const isMultiOp = (op: string): boolean => op === "in" || op === "not in";
+/** 值输入：多值操作符保留原始字符串（列表），其余转数值 */
+const parseCondValue = (op: string, raw: string): number | string =>
+  isMultiOp(op) ? raw.trim() : Number(raw);
 
 // 常用预设 pill（默认操作符/值，可编辑）
 const PRESET_DEFAULT: Record<string, { op: string; value: number | string }> = {
@@ -43,6 +48,10 @@ export default function ScreenerPage() {
   const [editing, setEditing] = useState<string | null>(null); // 正在编辑默认值的 pill key
   const [sortKey, setSortKey] = useState("amount_yi");
   const [limit, setLimit] = useState(50);
+  // §二 历史交易日选择器：日期列表来自真实交易日（上证指数日线），默认「当日」
+  const [tradeDate, setTradeDate] = useState("");
+  const [tradeDates, setTradeDates] = useState<string[]>([]);
+  const [todayDate, setTodayDate] = useState("");
   const [result, setResult] = useState<ScreenerRespClient | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -56,6 +65,11 @@ export default function ScreenerPage() {
   const [cMinDays, setCMinDays] = useState("3");
 
   useEffect(() => { fetchFactorCatalog().then(setCatalog).catch((e) => setError(String(e.message || e))); }, []);
+  useEffect(() => {
+    // 交易日列表来自真实日线（失败只提示，不伪造日期）
+    fetchTradeDates(120).then((d) => { setTradeDates(d.dates); setTodayDate(d.as_of_trade_date); })
+      .catch(() => setTradeDates([]));
+  }, []);
 
   const fieldMap = useMemo(() => new Map((catalog?.fields ?? []).map((f) => [f.key, f])), [catalog]);
 
@@ -70,9 +84,10 @@ export default function ScreenerPage() {
   const addCustom = () => {
     const def = fieldMap.get(cField);
     if (!def || cVal === "") return;
+    const parsed = parseCondValue(cOp, cVal); // §四 in/not in 保留列表字符串
     const base: ScreenerCond = cType === "single"
-      ? { field: cField, op: cOp as ScreenerCond["op"], value: Number(cVal) }
-      : { type: cType, field: cField, op: cOp as ScreenerCond["op"], value: Number(cVal), window: Number(cWindow) || 10, ...(cType === "rolling_any" ? { min_match_days: Number(cMinDays) || 3 } : {}) };
+      ? { field: cField, op: cOp as ScreenerCond["op"], value: parsed }
+      : { type: cType, field: cField, op: cOp as ScreenerCond["op"], value: parsed, window: Number(cWindow) || 10, ...(cType === "rolling_any" ? { min_match_days: Number(cMinDays) || 3 } : {}) };
     setChips((cs) => [...cs, { ...base, zh: `${def.zh}·${cType === "single" ? "" : `近${cWindow}日${cType === "rolling_any" ? `含${cMinDays}天` : ""}`}` }]);
   };
 
@@ -87,6 +102,7 @@ export default function ScreenerPage() {
         sort: { order_by: sortKey, order_dir: "desc" },
         pagination: { limit },
         include_stats: true,
+        trade_date: tradeDate || undefined, // §二 历史交易日（空=当日实时口径）
       });
       setResult(resp);
     } catch (e) {
@@ -158,7 +174,9 @@ export default function ScreenerPage() {
           </div>
         </div>
         <div className="text-right text-[11px] text-muted-foreground">
-          交易日：{result?.as_of_trade_date ?? "当日"} · 数据源：em（腾讯/东财）
+          交易日：{result?.as_of_trade_date ?? tradeDate ?? "当日"}
+          {result?.trade_date_is_historical && <span className="ml-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">历史回放</span>}
+          · 数据源：em（腾讯/东财）
         </div>
       </div>
 
@@ -254,8 +272,9 @@ export default function ScreenerPage() {
               </select>
               <input
                 value={String(c.value)}
-                onChange={(e) => setChips((cs) => cs.map((x, k) => (k === i ? { ...x, value: Number(e.target.value) } : x)))}
-                className="w-14 bg-transparent text-[10px] outline-none"
+                onChange={(e) => setChips((cs) => cs.map((x, k) => (k === i ? { ...x, value: parseCondValue(x.op, e.target.value) } : x)))}
+                title={isMultiOp(c.op) ? "多值用逗号或空格分隔" : undefined}
+                className={`${isMultiOp(c.op) ? "w-28" : "w-14"} bg-transparent text-[10px] outline-none`}
               />
               <button onClick={() => setChips((cs) => cs.filter((_, k) => k !== i))}><X size={11} /></button>
             </span>
@@ -277,7 +296,18 @@ export default function ScreenerPage() {
             <option value="volume_ratio">按量比</option>
             <option value="main_net_yi">按主力净额</option>
             <option value="rps_50">按RPS50</option>
+            <option value="win_rate_1">按1日胜率</option>
+            <option value="win_rate_5">按5日胜率</option>
+            <option value="win_rate_20">按20日胜率</option>
           </select>
+          {/* §二 历史交易日选择器：仅真实交易日，默认当日（实时口径） */}
+          <select value={tradeDate} onChange={(e) => setTradeDate(e.target.value)}
+            title="选择历史交易日 = 历史回放口径（K线重放，快照条件不生效）"
+            className="rounded border border-border bg-background px-2 py-1.5 text-xs">
+            <option value="">当日（{todayDate || "实时"}）</option>
+            {tradeDates.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+          {tradeDate && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">历史回放</span>}
           <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="rounded border border-border bg-background px-2 py-1.5 text-xs">
             {[30, 50, 100].map((n) => <option key={n} value={n}>{n} 条</option>)}
           </select>
@@ -324,6 +354,8 @@ export default function ScreenerPage() {
                 <th className="px-3 py-2 text-right">1日胜率</th>
                 <th className="px-3 py-2 text-right">5日胜率</th>
                 <th className="px-3 py-2 text-right">20日胜率</th>
+                <th className="px-3 py-2 text-right" title="命中样本按时间复利净值的最大回撤（5日持有，≤0）">5日回撤</th>
+                <th className="px-3 py-2 text-right" title="5日持有：同期沪深300平均收益 / 本股超额（基准缺失显示—）">基准·超额</th>
               </tr>
             </thead>
             <tbody>
@@ -335,9 +367,10 @@ export default function ScreenerPage() {
                 const hover = wp ? [
                   `样本数：${h1?.sample_size ?? 0}${wp.sample_ok ? "" : "（样本不足，仅供参考）"}`,
                   `统计区间：${wp.period ? `${wp.period.start} ~ ${wp.period.end}` : "—"}`,
-                  `1日：均 ${h1?.avg_return?.toFixed(2)}% 最差 ${h1?.worst_return?.toFixed(2)}%`,
-                  `5日：均 ${h5?.avg_return?.toFixed(2)}% 最差 ${h5?.worst_return?.toFixed(2)}%`,
-                  `20日：均 ${h20?.avg_return?.toFixed(2)}% 最差 ${h20?.worst_return?.toFixed(2)}%`,
+                  `1日：均 ${h1?.avg_return?.toFixed(2)}% 最差 ${h1?.worst_return?.toFixed(2)}% 回撤 ${h1?.max_drawdown?.toFixed(2) ?? "—"}%`,
+                  `5日：均 ${h5?.avg_return?.toFixed(2)}% 最差 ${h5?.worst_return?.toFixed(2)}% 回撤 ${h5?.max_drawdown?.toFixed(2) ?? "—"}%`,
+                  `20日：均 ${h20?.avg_return?.toFixed(2)}% 最差 ${h20?.worst_return?.toFixed(2)}% 回撤 ${h20?.max_drawdown?.toFixed(2) ?? "—"}%`,
+                  `基准(沪深300)：5日 ${h5?.benchmark_return?.toFixed(2) ?? "—"}% · 超额 ${h5?.excess_return?.toFixed(2) ?? "—"}%`,
                   ...wp.warnings,
                 ].join("\n") : "无历史统计";
                 return (
@@ -356,11 +389,16 @@ export default function ScreenerPage() {
                     <WinCell h={h1} ok={wp?.sample_ok} />
                     <WinCell h={h5} ok={wp?.sample_ok} />
                     <WinCell h={h20} ok={wp?.sample_ok} />
+                    <td className="px-3 py-1.5 text-right"><PctText value={h5?.max_drawdown ?? null} digits={1} /></td>
+                    <td className="px-3 py-1.5 text-right text-[10.5px]">
+                      {h5?.benchmark_return == null ? <span className="text-muted-foreground" title="基准K线缺失，不以0代替">—</span>
+                        : <span><NumText value={h5.benchmark_return} digits={1} /> / <PctText value={h5.excess_return ?? null} digits={1} /></span>}
+                    </td>
                   </tr>
                 );
               })}
               {result.list.length === 0 && (
-                <tr><td colSpan={12} className="px-3 py-8 text-center text-muted-foreground">无命中结果（试试放宽条件）</td></tr>
+                <tr><td colSpan={14} className="px-3 py-8 text-center text-muted-foreground">无命中结果（试试放宽条件）</td></tr>
               )}
             </tbody>
           </table>
@@ -403,9 +441,10 @@ function DefaultEditor({ def, init, onOk, onCancel }: {
         {OPS.map((o) => <option key={o}>{o}</option>)}
       </select>
       <input value={val} onChange={(e) => setVal(e.target.value)} autoFocus
-        onKeyDown={(e) => { if (e.key === "Enter") onOk(op, Number(val)); if (e.key === "Escape") onCancel(); }}
-        className="w-16 rounded bg-background px-1 py-0.5 text-[10px]" />
-      <button onClick={() => onOk(op, Number(val))} className="rounded bg-sky-500 px-1.5 py-0.5 text-[10px] text-white">确定</button>
+        placeholder={isMultiOp(op) ? "多值：逗号分隔" : "值"}
+        onKeyDown={(e) => { if (e.key === "Enter") onOk(op, parseCondValue(op, val)); if (e.key === "Escape") onCancel(); }}
+        className={`${isMultiOp(op) ? "w-28" : "w-16"} rounded bg-background px-1 py-0.5 text-[10px]`} />
+      <button onClick={() => onOk(op, parseCondValue(op, val))} className="rounded bg-sky-500 px-1.5 py-0.5 text-[10px] text-white">确定</button>
       <button onClick={onCancel} className="rounded px-1 py-0.5 text-[10px] text-muted-foreground">取消</button>
     </div>
   );

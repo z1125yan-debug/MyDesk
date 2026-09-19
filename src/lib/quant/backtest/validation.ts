@@ -16,6 +16,7 @@ function runOnRange(
   const sub: BacktestPanel = {
     dates: panel.dates.slice(startIdx, endIdx + 1),
     symbols: panel.symbols,
+    names: panel.names ? panel.names.slice() : undefined,
     fields: new Map([...panel.fields.entries()].map(([k, mat]) => [k, mat.map((row) => row.slice(startIdx, endIdx + 1))])),
   };
   const engine = runBacktestEngine(sub, selector, { ...config, startDate: sub.dates[0], endDate: sub.dates[sub.dates.length - 1] }, { benchmarkSeries: benchmark ? benchmark.slice(startIdx, endIdx + 1) : null });

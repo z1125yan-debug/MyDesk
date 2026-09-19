@@ -236,10 +236,15 @@ test("evalLimitSnapshot：注册制/北交所/ST 涨停比例正确", () => {
   assert.ok(near(evalLimitSnapshot({ symbol: "600001.SH", name: "ST 某", prevClose: 10, price: 10.5, high: 10.5 })!.limitPrice, 10.5));
 });
 
-// ---------- 目录总览完整性（ZSB 15 项均在 FACTOR_FIELD_DEFS） ----------
+// ---------- 目录总览完整性（ZSB 15 项 + P2任务书新增 zsb_super_buy = 16 项均在 FACTOR_FIELD_DEFS） ----------
 
-test("FACTOR_FIELD_DEFS 含全部 15 个庄家宝体系项", () => {
+test("FACTOR_FIELD_DEFS 含全部 16 个庄家宝体系项（15原有 + zsb_super_buy 新登记pending）", () => {
   const keys = FACTOR_FIELD_DEFS.filter((f) => f.category === "庄家宝体系").map((f) => f.key);
   for (const k of [...ZSB_IMPLEMENTED, ...ZSB_PENDING]) assert.ok(keys.includes(k), `DEFS 缺 ${k}`);
-  assert.equal(keys.length, 15);
+  assert.equal(keys.length, 16);
+  // 新增项必须是「只注册不实现」，不改变原 11 实现/4 pending 格局
+  const sup = FACTOR_FIELD_DEFS.find((f) => f.key === "zsb_super_buy")!;
+  assert.equal(sup.implemented, false);
+  assert.equal(sup.status, "pending_dependency");
+  assert.equal(FACTOR_FIELD_DEFS.filter((f) => f.category === "庄家宝体系" && f.implemented !== false).length, 11);
 });

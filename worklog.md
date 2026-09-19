@@ -211,3 +211,55 @@
 - §八 测试：新增 tests/quant/zsb-factors.test.ts 18 用例（tdxSma 递归精确/retail 手算40与hh==ll拒绝/rsiV 单调量100·0·恒定null/dealer 平坦通道=50/acc_*与macdCalc逐点相等/0-1信号值域/bdw N参数化默认20/registry 11+4状态/factorCatalog 分类/panel 不产出pending/evalLimitSnapshot A-D回归/涨跌停比例）；未删除未改动其余既有测试文件（除上条披露的 phase4-11 日期修正）。
 - §九 验收：tsc 0 错误；node --test tests/quant/*.test.ts 71/71 全过；curl catalog=11 分类项+92 字段+pending 4 项 verified:false；POST screener zsb_attack=1 → 漏斗 {5916→5353→40→13} 真实出数、factor_verify={92,7,0,7}；zsb_height_control 条件 → 显式忽略警示；factor-test 提交 pending → 明确拒绝；is_limit_up=1 → bar_time 警示正常；pool freeze→list/[id] data_source+price_basis 回读通过（冒烟池已清理）；浏览器：庄家宝体系 11 pills、动态验证文案「库 92 · 选用 0 · 已验证 0」、pending 仅 disabled 选项、候选池 3 测试池 amber 徽标；dev server 重启 + npx prisma generate 成功（此前 EPERM 因 DLL 被锁）。
 - P2（风险页/概率页/主线发现/主动发现/事件雷达）按任务书继续冻结未动。
+
+## P2 剩余因子包（任务书 D:\DoubaoData\P2下一步执行指令_剩余因子包.md，2026-09-19）
+
+### Step 1：全库因子批量 IC 验证闭环（真实数据，未降低阈值）
+
+- 新增 `runBatchFieldTests()`（tester.ts）：universe/K线/面板只构建一次，逐因子走 `testFieldOnPanel()`，与单因子测试台同一口径同一判据；新增路由 `POST /api/quant/factor-test/batch`（每条落 `db.factorTest`，`persist:false` 可只算不写）。
+- 判据仍为需求文档§五原式（未为凑数放宽）：`enoughSample(validPairs≥60 且 monthlyIc≥4)` 且（`|ICIR|>0.5` 或 `|monotonicity|≥0.9`）且 `monthlyWinRate>0.6` → 才写 verified=true。任务书提到的 `|RankIC|>0.03 且 |ICIR|>0.3` 单独作为 loosePass 列报告，不参与 verified。
+- 真实批量结果（`data/factor-verify-report.json`，as_of 2026-09-19）：样本池=成交额 Top 300，实际入面板 287 只 × 515 个交易日（2024-08-07~2026-09-18），horizon=5，lookback=500（任务书 250 会让 250 日窗口因子无值，取更长更严口径并披露）。
+  - requested 108 / tested 108 / passed **33** / failed 0；loosePass 11（任务书线在此数据下比§五单调性通道更严，33 条里多数 |ICIR|≈0.24~0.28）。
+  - 33 条通过项 RankIC 全为负 → 本区间（2024-08~2026-09，流动性前 287）以反转效应为主：verified=true 的含义是「有预测力且跨月稳定」，不是「做多信号」，方向必须结合 rankIc 符号读。
+- `data/factor-verified.json` = 33 个 true 键（只有测试台可写；pending 因子不进账本，测试断言已绑定）。
+- 执行披露：期间因误判后台任务状态重复触发过一次全量批量（两次结果逐条一致，均为 33/108），DB `factorTest` 表多出 111 条重复历史行（共 219），属 insert-only 历史，UI 按 field 取最新一条，不改写不删除。
+
+### Step 2：任务书 A 组纯日线因子实现 + B 组仅登记 pending
+
+- 严格照任务书原始公式参数实现（未自行「优化」参数）；去重后不重复注册 vwap_pos/vwap_score/gauss_overheat 等既有键。
+- 注册表 137 键：可测 kline 因子 108，`implemented:false` pending 19（zsb_height_control、acc_base、strong_acc_conds_met、strong_acc_pick、candle_patterns_text、pe_dynamic、sector_rps_*、in_sector_rps_*、concept_rps_*、concept_lead_strength、bidding_* 5 项、super_resonance_week、zsb_super_buy）。pending 只登记（含 data_requirements/原因），无计算体，UI 显示「未实现」。
+- candle_patterns_text 披露：纯函数 `candlePatternCalc` 已实现且有单测，但输出为字符串标签，当前因子面板/IC 框架只支持数值列 → 保持 pending，不做数字编码假接入。
+- 新增单测 tests/quant/p2-factor-pack.test.ts（公式手算/边界/注册状态/pending 防护）。
+
+### Step 3：契约补齐（§二/§四/§六/§二十二）
+
+- 操作符：`CondOp` 扩 `in` / `not in`；新增唯一实现 `cmpWithOp()`（probability.ts），选股引擎 run.ts 与概率引擎共用同一份（原 run.ts 内重复的 switch 已改为引用，消除两引擎口径漂移）。多值来自 `listOf()`：数组或 `, ， / ; 、 |`/空白分隔串；数值项按数值容差比较，非数值按字符串相等；空列表 / null / NaN → false（UNKNOWN 不判真）。回测 `rebalanceEvery` 提升为 BacktestConfig 正式字段。
+- 胜率统计：每个持有期新增 `max_drawdown`（命中样本按时间复利净值回撤，≤0，样本<2 → null）、`benchmark_return`/`benchmark_sample_size`/`excess_return`（基准=沪深300 000300.SH，按「命中日→t+h」日期对齐取同期收益；基准K线缺失或日期不可对齐 → null + 显式警示，绝不以 0 代替）。
+- 交易日：新增 `GET /api/quant/screener/trade-dates`（真实上证指数日线，倒序 N 条，失败 502 明确报错不伪造）；screener/probability 均接受 `trade_date`，历史日期 → K线重放口径（快照条件剔除 + 警示、行情展示值由当日K线重建、`is_limit_up` 回退K线定义、响应带 `trade_date_is_historical`），非法/未来日期回落当日并警示。
+- 结果表：`order_by=win_rate_1/5/20` 真正生效（先按 statsCap 计算胜率再排序再分页，非命中页不浪费请求）；ScreenerPage/ProbabilityPage 加交易日下拉（当日 + 真实交易日）、「历史回放」徽标、胜率排序选项、条件值输入走 parseCondValue（in/not in 列表不被 Number() 吞掉）；结果表新增「5日回撤」「基准·超额」两列，悬停含三档回撤与基准。
+- 回测成本：`TransactionCost.spreadRate`（默认 0.001）双边各承担半点差——买入执行价 ×(1+s/2)、卖出 ×(1-s/2)，与 slippage/commission 分列；涨跌停改分板真实比例（复用 `limitRatio`：主板10% / 创业板300·301、科创板688·689 为20% / 北交所 .BJ 30% / ST 5%），删除引擎内 0.095 近似，panel 带 `names`（validation.ts、strategy-jobs.ts 已补），封锁原因文案带比例。
+- 新增单测 tests/quant/p2-contract-fixes.test.ts 10 用例（in/not in 解析与容差、两引擎同实现等价、回撤可解析验证（单调 -1%/日 → (0.99^n-1)）、样本<2 → null、基准缺失/错位/半对齐三种 null 路径、分板比例、+15% 开盘主板拒买而创业板/北交所放行、买卖两侧点差执行价 11.51/11.39）。
+- 既有测试调整（未删除、未降低断言）：p2-factor-pack 的「新因子 verified 初始 false」硬编码断言在 Step 1 真实验证后与事实不符 → 改为更强的账本一致性断言（全库 `catalog.verified === (factor-verified.json[key]===true)`，且 pending 键不得出现在账本、账本只存 true）。
+- 验收：`npx tsc --noEmit` 0 错误；`node --test tests/**/*.test.ts` 103/103 全过。
+
+### Step 4：P2 五页面浏览器实机验收（真实数据，无改动公式）
+
+- 前置缺陷（阻塞验收，非页面逻辑问题）：`#/radar` 报 `Failed to execute 'json' on 'Response': Unexpected end of JSON input`，`curl /api/radar` → `http=500 size=0`，dev 日志 `The table 'main.radar_finding' does not exist in the current database`。根因：schema 里 RadarFinding/GlobalEvent 模型已登记、Prisma Client 已生成，但 SQLite 库从未建表（P2 WIP 未 db push）。处理：`npx prisma db push`（仅建表，非破坏性；顺带的 generate 因 dev server 锁住 query_engine DLL 报 EPERM，Client 无需重新生成故不影响）。
+- 小修（属错误处理，不是页面大改）：`GET /api/radar`、`GET /api/events` 补 try/catch，失败时返回 `{ok:false,error}` + 502，避免空 body 让前端抛出无法定位的 JSON 解析异常（POST 原本已有）。
+- 风险监控 `#/risk`：正常渲染，市场风险等级「正常」，炸板率 28% / 涨跌比 3.68 / 主力净额 399 亿，历史参考区块给出上证相似涨跌幅环境 1/5/20 日（样本 113/112/106、均值 -0.03%/-0.06%/-0.12%）；「暂缺」如实列出北向净流入停披与 1 只新股触板跳过。
+- 主线发现 `#/themes`：主线/次主线/轮动卡片渲染正常（集成电路制造 +4.59%/12.4亿/扩散100% 等）；板块日K无返回处显示「连续强势 — 日」，未以 0 或猜测值填充。
+- 概率实验台 `#/problab`：条件 pill、交易日下拉（当日 + 120 个真实交易日，来自上证指数日线）、批量结果表格、最大回撤/沪深300基准/超额列与「基准数据缺失 → — 不以 0 代替」文案均按 Step 3 实现生效。
+- AI 主动发现 `#/radar`：「立即扫描」按钮实机可用，扫描后 10 条真实发现入库并按类型渲染（FUND 3 / THEME 4 / NEWS 2 / RISK 1），页面底部「口径」行完整披露 6 项限制（板块日K缺失、RPS 为榜单内百分位、事件分级为关键词规则、产业链映射来自起步表、北向停披、1 只新股触板跳过）。
+- 事件雷达 `#/events`：`POST /api/events` 扫描后 2 条真实事件落库并渲染（日本核心CPI→券商/银行/房地产/黄金；宁德时代锂盐项目→汽车/电力设备/有色金属），含时间、分级、映射板块与板块资金核验（涨幅/主力净额/排名，涨跌用红涨绿跌）。
+- 因子测试台 `#/factorlab`：清单按分类渲染 137 键、pending 项仅显示不计算，顶部计数「已验证 33/137」直接读 factor-verified.json 账本。
+- 控制台：仅 React DevTools 提示与 `[HMR] connected`，无 error/warn；五页均无白屏。
+
+### Step 5：全量回归 + 目标核对（commit 等人工确认）
+
+- `npx tsc --noEmit` → 0 错误；`node --test tests/**/*.test.ts` → 103/103 通过（未删除既有用例、未降低断言）。
+- 注册表逐键核对（脚本比对 HEAD 版与本版，用后即删）：92 → 137，新增 45 键、删除 0 键。
+  - 任务书 A 组 34 项：vwap_pos、vwap_score 旧表已有 → 复用不重复登记；其余 32 项新登记（其中 candle_patterns_text 因面板只支持数值列 → 仅 pending）。
+  - 任务书 B 组 18 项：zsb_height_control、acc_base、strong_acc_conds_met、strong_acc_pick 上一批已登记为 pending；其余 14 项新登记，但 pe_dynamic 同时出现在 A5 与 B 清单，只登记一次 → B 实际新增 13。
+  - 合计 32+13=45，与逐键 diff 一致；144−137=7 全部为去重复用（A 2 + B 4 + pe_dynamic 重复 1），非漏做。
+  - 状态分布：pending 19（旧 4 + 新 15），快照口径且已实现 10（不参与 IC 测试），可测 K 线口径 108；批量真实验证 108/108 完成、通过 33，`data/factor-verified.json` 33 条 true 与报告 passed 集合逐键一致（双向差集为空）。
+- 待确认后才 commit。`git status` 42 项：本次改动（fields/probability/run/engine/types/tester/quant-api/ScreenerPage/ProbabilityPage 等 + 2 个新测试 + factor-verified/factor-verify-report 数据）；另一会话未提交的 P2 WIP（RiskPage/ThemesPage/RadarPage/EventsPage/AppShell/Sidebar/schema 模型/radar.ts/events*.ts/theme*.ts/similar-env.ts/theme-chain-map.json、design-mockups/）也在同一副本工作区内，提交范围需人工确认；`prisma/db/custom.db` 为二进制库文件，是否入库需决策。

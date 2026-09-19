@@ -224,6 +224,7 @@ export interface TransactionCost {
   minCommission?: number; // 单笔最低佣金，默认 5 元
   stampDuty?: number; // 印花税（仅卖出），默认 0.0005
   slippageRate?: number; // 滑点，默认 0.001
+  spreadRate?: number;   // §二十二 点差（买卖价差，双边；买入价×(1+spread/2)、卖出价×(1-spread/2)），默认 0.001
 }
 
 export interface BacktestConstraints {
@@ -246,6 +247,7 @@ export interface BacktestConfig {
   // Train/Validation/Test 切分（比例，留空=全样本）
   split?: { train: number; validation: number; test: number };
   benchmark?: string; // 默认 000300.SH
+  rebalanceEvery?: number; // 调仓频率（交易日），默认 5
 }
 
 export interface BacktestSegment {

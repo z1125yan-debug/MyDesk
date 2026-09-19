@@ -26,7 +26,9 @@ export type FactorFieldCategoryZh =
   | "TD序列"
   | "江恩"
   | "高斯通道"
-  | "庄家宝体系";
+  | "庄家宝体系"
+  | "板块与概念"
+  | "共振与竞价";
 
 export interface FactorFieldDef {
   key: string;
@@ -252,13 +254,252 @@ export const FACTOR_FIELD_DEFS: FactorFieldDef[] = [
     data_requirements: "需通达信公式原文",
     implemented: false, status: "pending_dependency",
   },
+  // ---- P2 剩余因子包（任务书 2026-09-19）：A组纯日线可算因子 ----
+  // 口径纪律：任务书 A4 部分行按字面直译会产生恒真/恒假（如 C<LLV(L,250) 含当日时恒假），
+  // 凡「线」参与信号比较处，统一采用本项目支撑/压力线标准口径 = REF(LLV/HHV(N),1)（不含当日），
+  // 与既有 support_bounce_60 等一致；纯线值字段（*_line_250 / *_144_val）按任务书字面 LLV/HHV（含当日）。
+  // 每条公式注释即口径，禁止事后凭结果改口径。
+  // A1 VWAP体系（vwap_pos/vwap_score 已存在且口径一致，不重复注册）
+  {
+    key: "vwap30", zh: "VWAP30(成本价)", category: "VWAP体系", source: "kline", verified: false, unit: "元",
+    description: "30日累计成交额/累计成交量；无量额K线整段 null（宁缺勿假，与 vwap20 同口径）",
+    formula: "VWAP30:=SUM(AMOUNT,30)/SUM(VOL,30);", dependencies: ["amount", "vol"],
+    data_requirements: "需成交额K线（eltdx 有；腾讯日K无 amount → null）",
+  },
+  {
+    key: "vwap_full", zh: "VWAP全周期", category: "VWAP体系", source: "kline", verified: false, unit: "元",
+    description: "SUM(AMOUNT,0)/SUM(VOL,0)：自样本首日起累计（对有效量额日累计；全程无量额 → null）",
+    formula: "VWAP_FULL:=SUM(AMOUNT,0)/SUM(VOL,0);", dependencies: ["amount", "vol"],
+    data_requirements: "需成交额K线",
+  },
+  {
+    key: "vwap_slope3", zh: "全周期VWAP三日斜率%", category: "VWAP体系", source: "kline", verified: false, unit: "%",
+    description: "基于 vwap_full（vwap20 口径已有独立字段 vwap20_slope3，二者不混用）",
+    formula: "slope3:=(VWAP_FULL-REF(VWAP_FULL,3))/REF(VWAP_FULL,3)*100;", dependencies: ["vwap_full"],
+    data_requirements: "需成交额K线",
+  },
+  {
+    key: "vwap_slope6", zh: "全周期VWAP六日斜率%", category: "VWAP体系", source: "kline", verified: false, unit: "%",
+    formula: "slope6:=(VWAP_FULL-REF(VWAP_FULL,6))/REF(VWAP_FULL,6)*100;", dependencies: ["vwap_full"],
+    data_requirements: "需成交额K线",
+  },
+  {
+    key: "vwap_accel", zh: "VWAP加速度", category: "VWAP体系", source: "kline", verified: false, unit: "%",
+    description: "斜率的变化率；REF(slope3,3)≈0 时不可判 → null（不伪造）",
+    formula: "accel:=(slope3-REF(slope3,3))/REF(slope3,3)*100;", dependencies: ["vwap_slope3"],
+    data_requirements: "需成交额K线",
+  },
+  {
+    key: "vwap_lowpullback", zh: "VWAP低吸回踩", category: "VWAP体系", source: "kline", verified: false,
+    description: "VWAP 锚定本项目主成本线 vwap20（任务书未指明锚，选择口径已在摘要披露）；放量基准 MA(VOL,20)",
+    formula: "C<REF(VWAP20,1) AND C>VWAP20 AND VOL>MA(VOL,20);", dependencies: ["vwap20", "vol"],
+    data_requirements: "需成交额K线（vwap20 依赖）",
+  },
+  {
+    key: "vwap_break_expand", zh: "VWAP突破放量", category: "VWAP体系", source: "kline", verified: false,
+    description: "VWAP 锚定 vwap20；放量倍数 1.5 为任务书固定参数",
+    formula: "C>REF(VWAP20,1) AND VOL>MA(VOL,20)*1.5;", dependencies: ["vwap20", "vol"],
+    data_requirements: "需成交额K线",
+  },
+  // A2 高斯通道（既有 gauss_overheat=收盘>上轨，与 gauss_overheat_warn=触上轨+放量 是两个不同定义）
+  {
+    key: "gauss_entry", zh: "高斯入场(上穿中轨)", category: "高斯通道", source: "kline", verified: false,
+    formula: "CROSS(CLOSE, 高斯中轨);  // 中轨=gaussChannel.mid（零滞后高斯加权均线，win=40）",
+    dependencies: ["gauss_mid"], data_requirements: "仅日线收盘价",
+  },
+  {
+    key: "gauss_exit", zh: "高斯出场(下穿中轨)", category: "高斯通道", source: "kline", verified: false,
+    formula: "CROSS(高斯中轨, CLOSE);  // 中轨上穿收盘 = 收盘下穿中轨",
+    dependencies: ["gauss_mid"], data_requirements: "仅日线收盘价",
+  },
+  {
+    key: "gauss_overheat_warn", zh: "高斯过热预警(触上轨+放量)", category: "高斯通道", source: "kline", verified: false,
+    formula: "CLOSE>=高斯上轨 AND VOL>MA(VOL,20)*1.5;",
+    dependencies: ["gauss_upper", "vol"], data_requirements: "仅日线 OHLCV",
+  },
+  // A3 缠论简化中枢（任务书口径：最近10日 HHV(H,10)/LLV(L,10)，含当日；不做严格分型笔段递归）
+  {
+    key: "cz_active", zh: "中枢激活(收盘在10日区间内)", category: "缠论", source: "kline", verified: false,
+    formula: "CLOSE>=LLV(LOW,10) AND CLOSE<=HHV(HIGH,10);",
+    dependencies: ["HHV(H,10)", "LLV(L,10)"], data_requirements: "仅日线 OHLC",
+  },
+  {
+    key: "cz_start", zh: "中枢形成(首次进入区间)", category: "缠论", source: "kline", verified: false,
+    formula: "今日在区间内 AND 昨日不在区间内（昨日按昨日窗口判定）;",
+    dependencies: ["cz_active"], data_requirements: "仅日线 OHLC",
+  },
+  {
+    key: "cz_end", zh: "中枢结束(突破区间)", category: "缠论", source: "kline", verified: false,
+    formula: "今日 CLOSE>HHV(HIGH,10) OR CLOSE<LLV(LOW,10) 的当日（即脱离区间日）且昨日在区间内;",
+    dependencies: ["cz_active"], data_requirements: "仅日线 OHLC",
+  },
+  {
+    key: "cz_inside", zh: "中枢内震荡收窄", category: "缠论", source: "kline", verified: false,
+    description: "区间内 且 区间宽度较昨日收窄（振幅收窄）",
+    formula: "在区间内 AND (HHV(H,10)-LLV(L,10)) < REF(HHV(H,10)-LLV(L,10),1);",
+    dependencies: ["cz_active"], data_requirements: "仅日线 OHLC",
+  },
+  // A4 支撑压力 250/144 变体（12个）
+  {
+    key: "support_line_250", zh: "250日支撑线", category: "支撑阻力", source: "kline", verified: false, unit: "元",
+    formula: "LLV(LOW,250);  // 任务书字面：含当日", dependencies: ["L"], data_requirements: "仅日线最低价；需≥250根K线" },
+  {
+    key: "resistance_line_250", zh: "250日压力线", category: "支撑阻力", source: "kline", verified: false, unit: "元",
+    formula: "HHV(HIGH,250);  // 含当日", dependencies: ["H"], data_requirements: "仅日线最高价；需≥250根K线" },
+  {
+    key: "support_bounce_250", zh: "250支撑反弹", category: "支撑阻力", source: "kline", verified: false,
+    description: "线=REF(LLV(LOW,250),1)（不含当日，项目标准口径）",
+    formula: "LOW<=线*1.02 AND CLOSE>REF(CLOSE,1);", dependencies: ["support_line(不含当日)"],
+    data_requirements: "仅日线 OHLC；需≥250根K线" },
+  {
+    key: "resistance_rebound_250", zh: "250压力回落", category: "支撑阻力", source: "kline", verified: false,
+    description: "线=REF(HHV(HIGH,250),1)",
+    formula: "HIGH>=线*0.98 AND CLOSE<REF(CLOSE,1);", dependencies: ["resistance_line(不含当日)"],
+    data_requirements: "仅日线 OHLC；需≥250根K线" },
+  {
+    key: "support_break_250", zh: "跌破250支撑", category: "支撑阻力", source: "kline", verified: false,
+    description: "线=REF(LLV(LOW,250),1)；跌破须发生「上→下」穿越事件（任务书第二项 REF(C,1)>=REF(LLV,1) 的等价口径）",
+    formula: "CLOSE<线 AND REF(CLOSE,1)>=REF(线,1);", dependencies: ["support_line(不含当日)"],
+    data_requirements: "仅日线 OHLC；需≥250根K线" },
+  {
+    key: "resistance_breakout_250", zh: "突破250压力", category: "支撑阻力", source: "kline", verified: false,
+    description: "线=REF(HHV(HIGH,250),1)；任务书无穿越事件要求，按字面直用比较",
+    formula: "CLOSE>线 AND VOL>MA(VOL,20)*1.5;", dependencies: ["resistance_line(不含当日)", "VOL"],
+    data_requirements: "仅日线 OHLCV；需≥250根K线" },
+  {
+    key: "support_near_250", zh: "接近250支撑", category: "支撑阻力", source: "kline", verified: false,
+    description: "任务书 (LLV-C)/C<0.03 字面会恒真（C 通常高于支撑），采用项目 support_near 同构口径：收于线上且距离<3%",
+    formula: "CLOSE>=线 AND (CLOSE-线)/线*100<3;  // 线=REF(LLV(LOW,250),1)",
+    dependencies: ["support_line(不含当日)"], data_requirements: "仅日线 OHLC；需≥250根K线" },
+  {
+    key: "resistance_near_250", zh: "接近250压力", category: "支撑阻力", source: "kline", verified: false,
+    description: "与 support_near_250 镜像：收于线下且距离<3%",
+    formula: "CLOSE<=线 AND (线-CLOSE)/线*100<3;  // 线=REF(HHV(HIGH,250),1)",
+    dependencies: ["resistance_line(不含当日)"], data_requirements: "仅日线 OHLC；需≥250根K线" },
+  {
+    key: "support_breakdown_250", zh: "250支撑破位确认", category: "支撑阻力", source: "kline", verified: false,
+    description: "连续2日收在250支撑下方（线逐日按不含当日口径）",
+    formula: "CLOSE<线(t) AND REF(CLOSE,1)<线(t-1);", dependencies: ["support_line(不含当日)"],
+    data_requirements: "仅日线 OHLC；需≥250根K线" },
+  {
+    key: "resistance_breakout_250_conf", zh: "250压力突破确认", category: "支撑阻力", source: "kline", verified: false,
+    description: "连续2日收在250压力上方",
+    formula: "CLOSE>线(t) AND REF(CLOSE,1)>线(t-1);", dependencies: ["resistance_line(不含当日)"],
+    data_requirements: "仅日线 OHLC；需≥250根K线" },
+  {
+    key: "support_144_val", zh: "144日支撑线值", category: "支撑阻力", source: "kline", verified: false, unit: "元",
+    formula: "LLV(LOW,144);  // 任务书字面：含当日", dependencies: ["L"], data_requirements: "仅日线最低价" },
+  {
+    key: "resistance_144_val", zh: "144日压力线值", category: "支撑阻力", source: "kline", verified: false, unit: "元",
+    formula: "HHV(HIGH,144);  // 含当日", dependencies: ["H"], data_requirements: "仅日线最高价" },
+  // A5 其他
+  {
+    key: "market_cost_60", zh: "60日市场成本", category: "主力资金与成本", source: "kline", verified: false, unit: "元",
+    description: "与 market_cost_20(=vwap20) 同口径：累计成交额/累计成交量（任务书 SUM(C*V,60) 为等价简写，本项目统一用真实成交额，无量额→null）",
+    formula: "SUM(AMOUNT,60)/SUM(VOL,60);", dependencies: ["amount", "vol"],
+    data_requirements: "需成交额K线",
+  },
+  {
+    key: "vol_spike_ratio", zh: "成交量脉冲", category: "量能与活跃度", source: "kline", verified: false,
+    formula: "VOL/MA(VOL,20);", dependencies: ["VOL"], data_requirements: "仅日线成交量",
+  },
+  {
+    key: "close_dev_ma120", zh: "偏离120日线%", category: "趋势与均线", source: "kline", verified: false, unit: "%",
+    formula: "(CLOSE-MA(CLOSE,120))/MA(CLOSE,120)*100;", dependencies: ["MA(C,120)"],
+    data_requirements: "仅日线收盘价",
+  },
+  {
+    key: "amplitude_20d", zh: "20日振幅", category: "量能与活跃度", source: "kline", verified: false, unit: "%",
+    formula: "(HHV(HIGH,20)-LLV(LOW,20))/LLV(LOW,20)*100;  // 含当日",
+    dependencies: ["H", "L"], data_requirements: "仅日线 OHLC",
+  },
+  // ---- B组受限 pending（只注册不实现，摘要见 factorCatalog；UI 显示「未实现」）----
+  {
+    key: "candle_patterns_text", zh: "K线形态文本", category: "动量与形态", source: "kline", verified: false,
+    description: "识别：大阳/大阴/十字星/锤头/吞没，输出字符串标签。纯函数 candlePatternCalc 已实现并有单测；" +
+      "但当前因子面板/IC框架仅支持数值列，字符串字段需架构支持后接入筛选（不做数字编码假接入）",
+    formula: "LABEL: 大阳(收阳且涨幅≥3%)/大阴(镜像)/十字星(实体≤10%×振幅)/锤头(下影≥2×实体且上影≤0.5×实体)/看涨吞没/看跌吞没；优先级：吞没>大阳阴>十字星>锤头",
+    data_requirements: "仅日线 OHLC；需面板字符串列支持",
+    implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "pe_dynamic", zh: "市盈率-动态", category: "估值与市值", source: "snapshot", verified: false,
+    description: "CLOSE/EPS_动态；数据源仅提供 pe_ttm，无动态EPS字段 → 不猜测、不实现",
+    formula: "PE_DYNAMIC:=CLOSE/EPS_DYNAMIC;", data_requirements: "需 EPS 数据（当前源无）",
+    implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "sector_rps_50", zh: "板块RPS50", category: "板块与概念", source: "kline", verified: false,
+    description: "需板块指数行情聚合（板块页有涨幅榜，但无逐日板块RPS历史序列）→ 待接入，不造数",
+    data_requirements: "板块指数行情", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "sector_rps_120", zh: "板块RPS120", category: "板块与概念", source: "kline", verified: false,
+    description: "同 sector_rps_50：需逐日板块指数历史，不造数",
+    data_requirements: "板块指数行情", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "in_sector_rps_50", zh: "个股在板块RPS50", category: "板块与概念", source: "kline", verified: false,
+    description: "需板块成分映射+板块内逐日排名，当前无该历史数据 → 不实现",
+    data_requirements: "板块成分映射", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "in_sector_rps_120", zh: "个股在板块RPS120", category: "板块与概念", source: "kline", verified: false,
+    description: "同 in_sector_rps_50：需板块成分映射历史数据",
+    data_requirements: "板块成分映射", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "concept_rps_50", zh: "概念RPS50", category: "板块与概念", source: "kline", verified: false,
+    description: "需概念指数历史+成分映射 → 数据缺，不实现",
+    data_requirements: "概念指数+成分", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "concept_rps_120", zh: "概念RPS120", category: "板块与概念", source: "kline", verified: false,
+    description: "同 concept_rps_50",
+    data_requirements: "概念指数+成分", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "concept_lead_strength", zh: "概念领涨强度", category: "板块与概念", source: "kline", verified: false,
+    description: "需概念成分映射+逐日聚合，数据缺 → 不实现",
+    data_requirements: "概念成分映射", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "bidding_reversal_signal", zh: "竞价弱转强信号", category: "共振与竞价", source: "snapshot", verified: false,
+    description: "需集合竞价分钟/逐笔数据，当前日线+快照体系无该数据 → 不实现",
+    data_requirements: "集合竞价分钟数据", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "bidding_reversal_score", zh: "竞价转强评分", category: "共振与竞价", source: "snapshot", verified: false,
+    description: "同 bidding_reversal_signal：需集合竞价数据，当前源无",
+    data_requirements: "集合竞价分钟数据", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "bidding_volume_ratio", zh: "竞价量比", category: "共振与竞价", source: "snapshot", verified: false,
+    description: "需竞价逐笔/分时数据，当前日线+快照体系无 → 不实现",
+    data_requirements: "竞价逐笔数据", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "bidding_premium_score", zh: "竞价溢价评分", category: "共振与竞价", source: "snapshot", verified: false,
+    description: "需竞价逐笔数据；且无公式原文 → 双重缺失，不猜测",
+    data_requirements: "竞价逐笔数据", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "super_resonance_week", zh: "周线共振", category: "共振与竞价", source: "kline", verified: false,
+    description: "需周线跨周期数据（日线重采样可行但公式原文未提供，不猜测参数）",
+    data_requirements: "周线跨周期数据+公式原文", implemented: false, status: "pending_dependency",
+  },
+  {
+    key: "zsb_super_buy", zh: "庄家宝超级买入", category: "庄家宝体系", source: "kline", verified: false,
+    description: "竞价+筹码复合条件，两类依赖数据均缺 → 不实现、不近似",
+    data_requirements: "竞价数据+筹码分布", implemented: false, status: "pending_dependency",
+  },
 ];
 
 export const FACTOR_FIELD_MAP: Map<string, FactorFieldDef> = new Map(FACTOR_FIELD_DEFS.map((f) => [f.key, f]));
 
 export const FACTOR_FIELD_CATEGORIES: FactorFieldCategoryZh[] = [
   "估值与市值", "量能与活跃度", "趋势与均线", "动量与形态", "主力资金与成本", "VWAP体系", "支撑阻力",
-  "缠论", "TD序列", "江恩", "高斯通道", "庄家宝体系",
+  "缠论", "TD序列", "江恩", "高斯通道", "庄家宝体系", "板块与概念", "共振与竞价",
 ];
 
 export function factorCatalog(): {
@@ -774,6 +1015,155 @@ export function bdwCalc(c: Series, v: Series, n = ZSB_BDW_N): Series {
   });
 }
 
+// ---------- P2 剩余因子包（任务书 2026-09-19）：纯函数（node:test 可直跑） ----------
+
+/** HHV/LLV：滚动 N 日最高/最低（含当日，通达信字面口径）；窗口内含 null → null */
+export function hhv(x: Series, n: number): Series {
+  return x.map((_, t) => {
+    if (t < n - 1) return null;
+    let m = -Infinity;
+    for (let i = t - n + 1; i <= t; i++) { const val = x[i]; if (val === null) return null; if (val > m) m = val; }
+    return m;
+  });
+}
+export function llv(x: Series, n: number): Series {
+  return x.map((_, t) => {
+    if (t < n - 1) return null;
+    let m = Infinity;
+    for (let i = t - n + 1; i <= t; i++) { const val = x[i]; if (val === null) return null; if (val < m) m = val; }
+    return m;
+  });
+}
+
+/** 不含当日的滚动 N 日最低/最高：t 时刻取 [t-n, t-1]（项目支撑/压力线标准口径，= REF(LLV/HHV(N),1)） */
+export function refRollMin(x: Series, n: number): Series {
+  return x.map((_, t) => {
+    if (t < n) return null;
+    let m = Infinity;
+    for (let i = t - n; i <= t - 1; i++) { const val = x[i]; if (val === null) return null; if (val < m) m = val; }
+    return m;
+  });
+}
+export function refRollMax(x: Series, n: number): Series {
+  return x.map((_, t) => {
+    if (t < n) return null;
+    let m = -Infinity;
+    for (let i = t - n; i <= t - 1; i++) { const val = x[i]; if (val === null) return null; if (val > m) m = val; }
+    return m;
+  });
+}
+
+/** (X-REF(X,N))/REF(X,N)*100；基准缺失或为 0 → null（不可判，不伪造） */
+export function pctChange(x: Series, n: number): Series {
+  return x.map((v, t) => {
+    const p = t >= n ? x[t - n] : null;
+    return v !== null && p !== null && p !== 0 ? (v / p - 1) * 100 : null;
+  });
+}
+
+/** vwap_full：自样本起累计（仅累计有效量额日）；尚无任何有效日 → null */
+export function vwapFullCalc(v: Series, amount: Series): Series {
+  const out: Series = new Array(v.length).fill(null);
+  let sa = 0, sv = 0;
+  for (let t = 0; t < v.length; t++) {
+    const a = amount[t], vv = v[t];
+    if (a !== null && a > 0 && vv !== null && vv > 0) { sa += a; sv += vv; }
+    out[t] = sv > 0 ? sa / sv : null;
+  }
+  return out;
+}
+
+/** 缠论简化中枢（任务书口径）：区间=[LLV(L,n), HHV(H,n)]（含当日，n=10） */
+export function czRangeSignals(h: Series, l: Series, c: Series, n = 10): {
+  active: Series; start: Series; end: Series; inside: Series;
+} {
+  const zg = hhv(h, n), zd = llv(l, n);
+  const T = c.length;
+  const active: Series = new Array(T).fill(null);
+  const start: Series = new Array(T).fill(null);
+  const end: Series = new Array(T).fill(null);
+  const inside: Series = new Array(T).fill(null);
+  const inRange: (0 | 1 | null)[] = new Array(T).fill(null);
+  const width: (number | null)[] = zg.map((g, t) => (g !== null && zd[t] !== null ? g - zd[t]! : null));
+  for (let t = 0; t < T; t++) {
+    const cv = c[t], g = zg[t], d = zd[t];
+    if (cv === null || g === null || d === null) continue;
+    const insideFlag: 0 | 1 = cv >= d && cv <= g ? 1 : 0;
+    inRange[t] = insideFlag;
+    active[t] = insideFlag;
+    const prev = t > 0 ? inRange[t - 1] : null;
+    if (prev !== null) {
+      start[t] = insideFlag === 1 && prev === 0 ? 1 : 0;
+      end[t] = insideFlag === 0 && prev === 1 ? 1 : 0;
+    }
+    const pw = t > 0 ? width[t - 1] : null;
+    if (insideFlag === 1 && width[t] !== null && pw !== null) inside[t] = width[t]! < pw ? 1 : 0;
+    else inside[t] = null;
+  }
+  return { active, start, end, inside };
+}
+
+/**
+ * 支撑/压力信号族（250/144 变体通用，任务书 A4）：
+ * 线口径 = refRollMin/refRollMax（不含当日，项目标准；理由见 DEFS 区块口径纪律注释）。
+ * n=250 时需 ≥251 根K线才开始有值 —— 面板 lookback 必须大于窗口。
+ */
+export function srSignals(h: Series, l: Series, c: Series, v: Series, n: number, vma20: Series): {
+  bounce: Series; rebound: Series; supportBreak: Series; resistanceBreakoutVol: Series;
+  supportNear: Series; resistanceNear: Series; supportBreakdown2: Series; resistanceBreakoutConf2: Series;
+  supLine: Series; resLine: Series;
+} {
+  const sup = refRollMin(l, n), res = refRollMax(h, n);
+  const T = c.length;
+  const mk = (): Series => new Array(T).fill(null);
+  const bounce = mk(), rebound = mk(), supportBreak = mk(), rBreakVol = mk();
+  const sNear = mk(), rNear = mk(), sDown2 = mk(), rConf2 = mk();
+  for (let t = 0; t < T; t++) {
+    const cv = c[t], lv = l[t], hv = h[t], s = sup[t], r = res[t];
+    const pc = t > 0 ? c[t - 1] : null;
+    const ps = t > 0 ? sup[t - 1] : null, pr = t > 0 ? res[t - 1] : null;
+    const vol = v[t], mv = vma20[t];
+    if (cv !== null && lv !== null && pc !== null && s !== null) bounce[t] = lv <= s * 1.02 && cv > pc ? 1 : 0;
+    if (cv !== null && hv !== null && pc !== null && r !== null) rebound[t] = hv >= r * 0.98 && cv < pc ? 1 : 0;
+    if (cv !== null && s !== null && pc !== null && ps !== null) supportBreak[t] = cv < s && pc >= ps ? 1 : 0;
+    if (cv !== null && r !== null && vol !== null && mv !== null && mv > 0) rBreakVol[t] = cv > r && vol > mv * 1.5 ? 1 : 0;
+    if (cv !== null && s !== null && s > 0) sNear[t] = cv >= s && ((cv - s) / s) * 100 < 3 ? 1 : 0;
+    if (cv !== null && r !== null && r > 0) rNear[t] = cv <= r && ((r - cv) / r) * 100 < 3 ? 1 : 0;
+    if (cv !== null && s !== null && pc !== null && ps !== null) sDown2[t] = cv < s && pc < ps ? 1 : 0;
+    if (cv !== null && r !== null && pc !== null && pr !== null) rConf2[t] = cv > r && pc > pr ? 1 : 0;
+  }
+  return { bounce, rebound, supportBreak, resistanceBreakoutVol: rBreakVol, supportNear: sNear, resistanceNear: rNear, supportBreakdown2: sDown2, resistanceBreakoutConf2: rConf2, supLine: sup, resLine: res };
+}
+
+/**
+ * K线形态标签（candle_patterns_text 的纯函数实现；面板字符串列未支持前仅供画像/AI 使用）：
+ * 优先级：吞没 > 大阳/大阴 > 十字星 > 锤头；无匹配 → null。
+ * 大阳：收阳且较昨收涨幅≥3%；大阴镜像；十字星：实体≤10%×振幅（振幅>0）；
+ * 锤头：下影≥2×实体 且 上影≤0.5×实体 且 实体>0；
+ * 看涨吞没：今阳包昨阴（今实体完全包住昨实体）；看跌吞没镜像。
+ */
+export function candlePatternCalc(o: Series, h: Series, l: Series, c: Series): (string | null)[] {
+  const out: (string | null)[] = new Array(c.length).fill(null);
+  for (let t = 1; t < c.length; t++) {
+    const cv = c[t], ov = o[t], hv = h[t], lv = l[t], pc = c[t - 1], po = o[t - 1];
+    if (cv === null || ov === null || hv === null || lv === null || pc === null || po === null || pc <= 0) continue;
+    const body = Math.abs(cv - ov), rng = hv - lv;
+    const upper = hv - Math.max(cv, ov), lower = Math.min(cv, ov) - lv;
+    const ret = cv / pc - 1;
+    const prevBody = Math.abs(pc - po);
+    const bullEngulf = cv > ov && pc < po && cv >= po && ov <= pc && body >= prevBody;
+    const bearEngulf = cv < ov && pc > po && cv <= po && ov >= pc && body >= prevBody;
+    if (bullEngulf) { out[t] = "看涨吞没"; continue; }
+    if (bearEngulf) { out[t] = "看跌吞没"; continue; }
+    if (cv > ov && ret >= 0.03) { out[t] = "大阳"; continue; }
+    if (cv < ov && ret <= -0.03) { out[t] = "大阴"; continue; }
+    if (rng > 0 && body <= rng * 0.1) { out[t] = "十字星"; continue; }
+    if (body > 0 && lower >= body * 2 && upper <= body * 0.5) { out[t] = "锤头"; continue; }
+    out[t] = null;
+  }
+  return out;
+}
+
 // 由子集日K + 快照元数据构建因子面板（含快照常数列，便于统一取值；历史匹配时只用 kline 字段）
 export function buildFieldPanel(symbols: string[], barsList: BarsLike[][], metas: (MetaLike | undefined)[]): KPanel {
   const dateSet = new Set<string>();
@@ -1069,6 +1459,72 @@ export function buildFieldPanel(symbols: string[], barsList: BarsLike[][], metas
       return r === null || cv === null || prevC === null || prevR === null ? null : (cv > r && prevC <= prevR ? 1 : 0);
     })));
   }
+
+  // ---------- P2 剩余因子包接线（任务书 2026-09-19；口径见各 DEFS 注释） ----------
+  const vma20 = v.map((s) => sma(s, 20));
+  // VWAP 体系
+  fields.set("vwap30", symbols.map((_, si) => vwapCalc(cArr[si], v[si], amt[si], 30).vwap));
+  fields.set("market_cost_60", symbols.map((_, si) => vwapCalc(cArr[si], v[si], amt[si], 60).vwap));
+  const vwapFulls = symbols.map((_, si) => vwapFullCalc(v[si], amt[si]));
+  fields.set("vwap_full", vwapFulls);
+  const vfSlope3 = vwapFulls.map((s) => pctChange(s, 3));
+  fields.set("vwap_slope3", vfSlope3);
+  fields.set("vwap_slope6", vwapFulls.map((s) => pctChange(s, 6)));
+  fields.set("vwap_accel", vfSlope3.map((s) => pctChange(s, 3)));
+  const vw20 = vwaps.map((m) => m.vwap);
+  fields.set("vwap_lowpullback", symbols.map((_, si) => vw20[si].map((w, t) => {
+    const cv = cArr[si][t], pw = t > 0 ? vw20[si][t - 1] : null, vol = v[si][t], mv = vma20[si][t];
+    return cv === null || w === null || pw === null || vol === null || mv === null || mv <= 0 ? null
+      : (cv < pw && cv > w && vol > mv ? 1 : 0);
+  })));
+  fields.set("vwap_break_expand", symbols.map((_, si) => vw20[si].map((w, t) => {
+    const cv = cArr[si][t], pw = t > 0 ? vw20[si][t - 1] : null, vol = v[si][t], mv = vma20[si][t];
+    return cv === null || pw === null || vol === null || mv === null || mv <= 0 ? null
+      : (cv > pw && vol > mv * 1.5 ? 1 : 0);
+  })));
+  // 高斯通道信号
+  fields.set("gauss_entry", symbols.map((_, si) => crossUp(cArr[si], gausses[si].mid)));
+  fields.set("gauss_exit", symbols.map((_, si) => crossUp(gausses[si].mid, cArr[si])));
+  fields.set("gauss_overheat_warn", symbols.map((_, si) => gausses[si].upper.map((u, t) => {
+    const cv = cArr[si][t], vol = v[si][t], mv = vma20[si][t];
+    return u === null || cv === null || vol === null || mv === null || mv <= 0 ? null
+      : (cv >= u && vol > mv * 1.5 ? 1 : 0);
+  })));
+  // 缠论简化中枢（10日区间）
+  const cz10 = symbols.map((_, si) => czRangeSignals(h[si], l[si], cArr[si], 10));
+  fields.set("cz_active", cz10.map((m) => m.active));
+  fields.set("cz_start", cz10.map((m) => m.start));
+  fields.set("cz_end", cz10.map((m) => m.end));
+  fields.set("cz_inside", cz10.map((m) => m.inside));
+  // 支撑压力 250/144 变体（线值=含当日字面；信号线=不含当日标准口径）
+  fields.set("support_line_250", symbols.map((_, si) => llv(l[si], 250)));
+  fields.set("resistance_line_250", symbols.map((_, si) => hhv(h[si], 250)));
+  fields.set("support_144_val", symbols.map((_, si) => llv(l[si], 144)));
+  fields.set("resistance_144_val", symbols.map((_, si) => hhv(h[si], 144)));
+  const sr250 = symbols.map((_, si) => srSignals(h[si], l[si], cArr[si], v[si], 250, vma20[si]));
+  fields.set("support_bounce_250", sr250.map((m) => m.bounce));
+  fields.set("resistance_rebound_250", sr250.map((m) => m.rebound));
+  fields.set("support_break_250", sr250.map((m) => m.supportBreak));
+  fields.set("resistance_breakout_250", sr250.map((m) => m.resistanceBreakoutVol));
+  fields.set("support_near_250", sr250.map((m) => m.supportNear));
+  fields.set("resistance_near_250", sr250.map((m) => m.resistanceNear));
+  fields.set("support_breakdown_250", sr250.map((m) => m.supportBreakdown2));
+  fields.set("resistance_breakout_250_conf", sr250.map((m) => m.resistanceBreakoutConf2));
+  // 其他
+  fields.set("vol_spike_ratio", symbols.map((_, si) => v[si].map((x, t) => {
+    const mv = vma20[si][t];
+    return x !== null && mv !== null && mv > 0 ? x / mv : null;
+  })));
+  fields.set("close_dev_ma120", cArr.map((s) => {
+    const m = sma(s, 120);
+    return m.map((mv, t) => (mv !== null && s[t] !== null && mv > 0 ? (s[t]! / mv - 1) * 100 : null));
+  }));
+  const amp20H = symbols.map((_, si) => hhv(h[si], 20));
+  const amp20L = symbols.map((_, si) => llv(l[si], 20));
+  fields.set("amplitude_20d", symbols.map((_, si) => amp20H[si].map((hv, t) => {
+    const lv = amp20L[si][t];
+    return hv !== null && lv !== null && lv > 0 ? (hv - lv) / lv * 100 : null;
+  })));
 
   // RPS（子集截面百分位：N日涨幅在子集内的排名百分位；口径=K线子集，非全A）
   const rocN = (n: number): Series[] => cArr.map((s) =>

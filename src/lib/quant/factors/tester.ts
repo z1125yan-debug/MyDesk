@@ -8,7 +8,7 @@ import { getProvider } from "@/lib/quant/data/index";
 import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
 import { shanghaiDate } from "@/lib/desk/session";
 import {
-  buildFieldPanel, FACTOR_FIELD_MAP, markFieldVerified, type BarsLike,
+  buildFieldPanel, FACTOR_FIELD_DEFS, FACTOR_FIELD_MAP, markFieldVerified, type BarsLike,
 } from "@/lib/quant/factors/fields";
 import { evaluateFactorMetrics } from "@/lib/quant/factors/metrics";
 
@@ -83,11 +83,21 @@ export async function runFactorTest(opts: FactorTestOptions): Promise<FactorTest
   }
   if (symbols.length < 50) throw new Error(`有效K线样本仅 ${symbols.length} 只（<50），测试中止`);
   const panel = buildFieldPanel(symbols, barsList, metasOf);
+  return testFieldOnPanel(def, panel, horizon);
+}
+
+/** 在既有面板上跑单因子测试（批量模式复用同一次数据拉取与面板构建，口径与逐项一致） */
+export function testFieldOnPanel(
+  def: NonNullable<ReturnType<typeof FACTOR_FIELD_MAP.get>>,
+  panel: ReturnType<typeof buildFieldPanel>,
+  horizon: number,
+): FactorTestResult {
+  const symbols = panel.symbols;
   const factorMat = panel.fields.get(def.key);
   if (!factorMat) throw new Error(`面板中不存在字段 ${def.key}`);
 
   // 3) 指标（复用 Phase 2 指标引擎；minStocks 提高以保截面质量）
-  const full = evaluateFactorMetrics(factorMat, { dates: panel.dates, fields: panel.fields }, {
+  const full = evaluateFactorMetrics(factorMat, panel, {
     horizon, groups: 5, minStocks: Math.max(30, Math.floor(symbols.length * 0.3)),
   });
 
@@ -149,7 +159,7 @@ export async function runFactorTest(opts: FactorTestOptions): Promise<FactorTest
     field: def.key,
     fieldZh: def.zh,
     horizon,
-    testedAt: asOf,
+    testedAt: shanghaiDate(),
     passed,
     passRule,
     metrics: {
@@ -167,5 +177,163 @@ export async function runFactorTest(opts: FactorTestOptions): Promise<FactorTest
     monthlyIc,
     icSeriesLite: full.icSeries.map((s) => ({ date: s.date, rankIc: s.rankIc })),
     note: `样本=${symbols.length}只流动性Top（全A剔ST/停牌）×${T}个交易日；t日因子↔t+${horizon}前向收益（防泄漏）；胜率按方向调整后月度RankIC>0占比`,
+  };
+}
+
+// ---------- 批量验证（Task P2-1）：一次拉数 + 一次建面板，逐因子复用同一口径 ----------
+
+export interface BatchFieldTestOptions {
+  fields?: string[];   // 指定因子；默认 = 全部可测（implemented!==false 且 source==="kline"）
+  horizon?: number;    // 默认 5
+  maxStocks?: number;  // 默认 300
+  lookback?: number;   // 默认 500（需求文档口径：需覆盖 250 日窗口因子，故不用指令文档的 250）
+}
+
+export interface BatchFieldTestRow {
+  field: string;
+  fieldZh: string;
+  category: string;
+  tested: boolean;
+  passed: boolean;          // 需求文档§五硬性标准（verified=true 的唯一依据）
+  loosePass: boolean;       // 指令文档宽松线：|RankIC|>0.03 且 |ICIR|>0.3（仅报告，不落 verified）
+  rankIc: number;
+  ic: number;
+  icIr: number;
+  monotonicity: number;
+  monthlyWinRate: number;
+  turnover: number;
+  maxDrawdown: number;
+  sampleDates: number;
+  sampleStocks: number;
+  validPairs: number;
+  months: number;
+  error: string;
+  result: FactorTestResult | null;
+}
+
+export interface BatchFieldTestReport {
+  ok: true;
+  asOfTradeDate: string;
+  horizon: number;
+  lookback: number;
+  dataRange: string;
+  universeStocks: number;
+  panelStocks: number;
+  panelDates: number;
+  totals: { requested: number; tested: number; passed: number; loosePassed: number; failed: number };
+  rows: BatchFieldTestRow[];
+  unavailable: { field: string; reason: string }[];
+}
+
+/** 宽松线（指令文档给的参考线）——只用于报告对比，不作为 verified 依据 */
+export function loosePassOf(rankIc: number, icIr: number): boolean {
+  return Math.abs(rankIc) > 0.03 && Math.abs(icIr) > 0.3;
+}
+
+/**
+ * 批量跑因子有效性测试：样本池/K线/面板只构建一次，逐因子在同一数据上判定，
+ * 与逐项 runFactorTest 口径完全一致（testFieldOnPanel）。
+ * 不可测因子（pending/快照口径）不进入 rows，由 unavailable 列表明确说明原因。
+ */
+export async function runBatchFieldTests(opts: BatchFieldTestOptions = {}): Promise<BatchFieldTestReport> {
+  const horizon = Math.max(1, Math.min(20, opts.horizon ?? 5));
+  const maxStocks = Math.max(50, Math.min(600, opts.maxStocks ?? 300));
+  const lookback = Math.max(200, Math.min(800, opts.lookback ?? 500));
+
+  const allTestable = FACTOR_FIELD_DEFS
+    .filter((d) => d.implemented !== false && d.source === "kline")
+    .map((d) => d.key);
+  const requested = (opts.fields?.length ? opts.fields : allTestable)
+    .filter((k, i, a) => a.indexOf(k) === i);
+  const unavailable: { field: string; reason: string }[] = [];
+  const testable: string[] = [];
+  for (const k of requested) {
+    const def = FACTOR_FIELD_MAP.get(k);
+    if (!def) { unavailable.push({ field: k, reason: "未知字段" }); continue; }
+    if (def.implemented === false) { unavailable.push({ field: k, reason: "已登记未实现（pending_dependency）" }); continue; }
+    if (def.source !== "kline") { unavailable.push({ field: k, reason: "快照口径，无历史时点数据" }); continue; }
+    testable.push(k);
+  }
+
+  // 1) 样本池 + 2) 长历史 + 面板（一次）
+  const provider = await getProvider("em");
+  const asOf = shanghaiDate();
+  const metas = (await provider.listUniverse({ kind: "all" }, asOf))
+    .filter((m) => !m.st && !m.suspended && (m.amount ?? 0) > 0)
+    .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
+    .slice(0, maxStocks);
+  if (metas.length < 50) throw new Error(`样本池仅 ${metas.length} 只（<50），数据源返回不足，批量测试中止`);
+
+  const barsMap = await fetchBarsHybrid(metas.map((m) => m.symbol), asOf, lookback);
+  const symbols: string[] = [];
+  const barsList: BarsLike[][] = [];
+  const metasOf: typeof metas = [];
+  for (const m of metas) {
+    const bars = (barsMap.get(m.symbol) ?? []) as BarsLike[];
+    if (bars.length < 120) continue;
+    symbols.push(m.symbol);
+    barsList.push(bars);
+    metasOf.push(m);
+  }
+  if (symbols.length < 50) throw new Error(`有效K线样本仅 ${symbols.length} 只（<50），批量测试中止`);
+  const panel = buildFieldPanel(symbols, barsList, metasOf);
+
+  // 3) 逐因子
+  const rows: BatchFieldTestRow[] = [];
+  for (const key of testable) {
+    const def = FACTOR_FIELD_MAP.get(key)!;
+    try {
+      const r = testFieldOnPanel(def, panel, horizon);
+      rows.push({
+        field: key,
+        fieldZh: def.zh,
+        category: def.category ?? "",
+        tested: true,
+        passed: r.passed,
+        loosePass: loosePassOf(r.metrics.rankIc, r.metrics.icIr),
+        rankIc: r.metrics.rankIc,
+        ic: r.metrics.ic,
+        icIr: r.metrics.icIr,
+        monotonicity: r.metrics.monotonicity,
+        monthlyWinRate: r.metrics.monthlyWinRate,
+        turnover: r.metrics.turnover,
+        maxDrawdown: r.metrics.maxDrawdown,
+        sampleDates: r.metrics.sample.dates,
+        sampleStocks: r.metrics.sample.stocks,
+        validPairs: r.metrics.sample.validPairs,
+        months: r.monthlyIc.length,
+        error: "",
+        result: r,
+      });
+    } catch (e) {
+      rows.push({
+        field: key, fieldZh: def.zh, category: def.category ?? "", tested: false,
+        passed: false, loosePass: false, rankIc: 0, ic: 0, icIr: 0, monotonicity: 0,
+        monthlyWinRate: 0, turnover: 0, maxDrawdown: 0,
+        sampleDates: 0, sampleStocks: 0, validPairs: 0, months: 0,
+        error: (e as Error).message, result: null,
+      });
+    }
+  }
+
+  const T = panel.dates.length;
+  return {
+    ok: true,
+    asOfTradeDate: asOf,
+    horizon,
+    lookback,
+    dataRange: T ? `${panel.dates[0]}~${panel.dates[T - 1]}` : "",
+    universeStocks: metas.length,
+    panelStocks: symbols.length,
+    panelDates: T,
+    totals: {
+      requested: requested.length,
+      tested: rows.filter((r) => r.tested).length,
+      passed: rows.filter((r) => r.passed).length,
+      loosePassed: rows.filter((r) => r.loosePass).length,
+      failed: rows.filter((r) => !r.tested).length,
+    },
+    rows,
+    unavailable,
   };
 }
