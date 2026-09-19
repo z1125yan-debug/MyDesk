@@ -678,3 +678,74 @@ export async function fetchSnapshots(kind: SnapshotKindClient, date = ""): Promi
   if (!res.ok || !j.ok) throw new Error(j.error || "留档读取失败");
   return j as SnapshotRespClient;
 }
+
+// ---------- P6-A：数据能力登记表 / 能力探测（只读） ----------
+// 面板自己不判定任何状态：kind / status / usable 全部照服务端探测结果原样显示，
+// 服务端未探测的（probed:false）在这里也只能显示「未探测」，绝不允许显示成 0 或「暂无数据」以外的数值。
+import type { CapabilityDef } from "@/lib/quant/screener/capability-core";
+
+export interface CapabilityProbeClient {
+  name: string; title: string; group: string; availability: string; mutating: boolean;
+  freshness: "live" | "intraday" | "daily" | "static";
+  /** false = 本次没测（不是「没数据」） */
+  probed: boolean;
+  kind: "value" | "real_zero" | "no_data" | "request_failed" | "not_covered" | null;
+  usable: boolean;
+  status: string;
+  note: string; reason: string;
+  /** direct=真取了该能力的数据 / channel=只验证同接口族可达 / db|static|local=读本地 */
+  scope: string;
+  evidence: Record<string, string | number | boolean | null>;
+  as_of: string | null; freshness_s: number | null;
+  /** true=口径内 / false=确认超上限 / null=无时刻可核对（未知，不能显示成「超出上限」） */
+  fresh: boolean | null;
+  display: string; degraded_from: string | null;
+  fallbacks: string[]; limitations: string[];
+}
+export interface CapabilitiesProbeClient {
+  ok: true; probed_at: string; today: string; live: boolean; cached: boolean; cache_age_s: number | null;
+  basis: string; gateway_note: string; upstream_calls: number;
+  probes: CapabilityProbeClient[]; counts: Record<string, number>;
+  layering: string; missing: string[]; unprobed: string[];
+  self_check: { rule: string; unusable_statuses: string[]; violations: string[] };
+}
+export interface CapabilitiesRegistryClient {
+  ok: true; kind: "capabilities"; basis: string;
+  groups: { group: string; items: CapabilityDef[] }[];
+  group_order: string[];
+  counts: { total: number; read_only: number; mutating: number; not_covered: number };
+  not_covered: { name: string; title: string; why: string }[];
+  answer: { 可用: string[]; 当前取不到: string[]; 无可靠来源: string[]; 说明: string };
+  read_only_names: string[];
+  total: number;
+}
+
+/** 登记表（不探测、不碰网络） */
+export async function fetchCapabilitiesRegistry(): Promise<CapabilitiesRegistryClient> {
+  const res = await fetch("/api/capabilities");
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "能力登记表读取失败");
+  return j as CapabilitiesRegistryClient;
+}
+/** 能力探测：live=true 才会真的打上游（固定几个小请求，20 秒内复用） */
+export async function fetchCapabilityProbe(opts: { live?: boolean; force?: boolean } = {}): Promise<CapabilitiesProbeClient> {
+  const u = new URLSearchParams();
+  if (opts.live) u.set("live", "1");
+  if (opts.force) u.set("force", "1");
+  const q = u.toString();
+  const res = await fetch(`/api/capabilities/probe${q ? `?${q}` : ""}`);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "能力探测失败");
+  return j as CapabilitiesProbeClient;
+}
+/** 需求 → 候选能力（匹配不上返回空数组：这就是缺口，页面要原样说） */
+export async function fetchCapabilitiesForNeed(need: string): Promise<{
+  ok: true; need: string; matches: CapabilityDef[]; match_note: string;
+  hits?: { name: string; matched: string[] }[];
+  order_note?: string; gap_groups?: string[];
+}> {
+  const res = await fetch(`/api/capabilities?need=${encodeURIComponent(need)}`);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "需求匹配失败");
+  return j;
+}

@@ -91,29 +91,31 @@ export async function fetchQuoteCards(symbols: string[]): Promise<QuoteCardsResu
       for (const q of j.quotes ?? []) {
         if (!q) continue;
         realOk = true;
+        const spark = Array.isArray(q.spark) && q.spark.length > 4 ? q.spark : null;
         cards.push({
           symbol: q.symbol,
           name: q.name,
           price: q.price,
           changePct: q.changePct,
           prevClose: q.prevClose,
-          series:
-            Array.isArray(q.spark) && q.spark.length > 4
-              ? q.spark
-              : syntheticSeries(q.price, q.changePct, q.symbol),
+          // P6-A：真实报价标 REAL；缺分时时用合成序列，就必须显式标出来（否则 AI 会拿假分时当价量事实）
+          series: spark ?? syntheticSeries(q.price, q.changePct, q.symbol),
+          data_status: "REAL",
+          series_synthetic: !spark,
         });
       }
     } catch {
       // 整体失败时全部回退
     }
   }
-  for (const s of demo) cards.push(buildQuote(s, 0));
+  // 非 A 股品种只有本机演示数据：标 DEMO，注入上下文时不得与真实行情混为「事实」
+  for (const s of demo) cards.push({ ...buildQuote(s, 0), data_status: "DEMO", series_synthetic: true });
   const order = new Map(symbols.map((s, i) => [s, i]));
   cards.sort((a, b) => (order.get(a.symbol) ?? 1e9) - (order.get(b.symbol) ?? 1e9));
   // 真实符号但本次没取到报价（数据源断开/停牌）→ 显式缺失，不冒充实数
   for (const s of symbols) {
     if (!cards.some((c) => c.symbol === s)) {
-      cards.push({ symbol: s, name: s, price: 0, changePct: 0, series: [], missing: true });
+      cards.push({ symbol: s, name: s, price: 0, changePct: 0, series: [], missing: true, data_status: "MISSING" });
     }
   }
   return { cards, source: realOk ? (demo.length ? "mixed" : "real") : "demo" };

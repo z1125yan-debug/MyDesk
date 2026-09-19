@@ -548,6 +548,18 @@ export function markFieldVerified(key: string, verified: boolean): void {
   }
 }
 
+/** 账本文件的只读元信息（能力探测用：文件在不在、什么时候被验证流程写过、里面有几条）。
+ *  本函数只读不写：verified 结论的唯一写入方是正式批量验证流程（markFieldVerified 的调用方），
+ *  AI / Agent / 探测层都不通过这里改状态。 */
+export function verifiedLedgerMeta(): { exists: boolean; mtime_ms: number | null; keys: number; path: string } {
+  try {
+    const st = fs.statSync(VERIFIED_FILE);
+    return { exists: true, mtime_ms: st.mtimeMs, keys: Object.keys(loadVerifiedOverrides()).length, path: VERIFIED_FILE };
+  } catch {
+    return { exists: false, mtime_ms: null, keys: 0, path: VERIFIED_FILE };
+  }
+}
+
 // ---------- 技术指标（单序列，null 安全） ----------
 
 type Series = (number | null)[];

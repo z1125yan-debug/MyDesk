@@ -3,7 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, Send, Plus, Trash2, Settings2, Bot } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { aiChat, aiConfigured, assistantSystemPrompt, priceBandOk } from "@/lib/desk/ai";
-import { fetchQuoteCards, fetchTechSnapshot, searchSymbols, fetchNewsBlock } from "@/lib/desk/market";
+import { fetchQuoteCards, fetchTechSnapshot, searchSymbols, fetchNewsBlock, isDemoSymbol } from "@/lib/desk/market";
+import { shanghaiStamp } from "@/lib/desk/session";
+import {
+  guardPriceOf, provenanceOfQuote, provenanceOfTechSnapshot, renderMarketContext, type CtxRow,
+} from "@/lib/desk/ai-context-core";
 import Markdown from "../Markdown";
 
 const QUICK_ASKS = [
@@ -13,31 +17,58 @@ const QUICK_ASKS = [
   "均线多头排列该怎么理解？",
 ];
 
-// 为指定品种生成行情快照文本块（含真实价格，供数量级校验使用）
-async function marketBlockFor(symbol: string): Promise<{ block: string; price: number | null }> {
+// 为指定品种生成行情快照文本块。
+// P6-A：每条都带来源分层（真实/派生/演示/缺失），只有标 REAL 的价格才允许当数量级校验的锚点——
+// 原来演示品种（非 A 股）的假价格既被写成「最新价」当事实注入，又被拿去做幻觉校验，两处都已修正。
+async function marketBlockFor(symbol: string): Promise<{ rows: CtxRow[]; block: string; price: number | null }> {
   try {
     const [cards, snap] = await Promise.all([
       fetchQuoteCards([symbol]),
       fetchTechSnapshot(symbol).catch(() => null),
     ]);
     const q = cards.cards[0];
-    const price = q && !q.missing ? q.price : null;
-    const lines = [
-      `${q?.name ?? symbol}（${symbol}）`,
-      price != null
-        ? `最新价 ${price.toFixed(2)} 元（${q!.changePct >= 0 ? "+" : ""}${q!.changePct.toFixed(2)}%）`
-        : "最新价暂不可用（非A股品种为演示数据）",
-      snap ? `多周期趋势: ${snap.tfs.map((t) => `${t.tf}=${t.trend}`).join(", ")}；RSI: ${snap.tfs.map((t) => `${t.tf} ${t.rsi?.toFixed(0) ?? "—"}`).join(", ")}` : "",
-      snap?.support != null ? `最近支撑 ${snap.support.toFixed(2)} / 最近阻力 ${snap.resistance?.toFixed(2)}` : "",
-      snap?.rangePos != null ? `近半年区间位置 ${snap.rangePos.toFixed(0)}%（${snap.rangeLow?.toFixed(2)} ~ ${snap.rangeHigh?.toFixed(2)}）` : "",
-    ].filter(Boolean);
-    return { block: lines.join("\n"), price };
+    const prov = provenanceOfQuote(q, isDemoSymbol(symbol));
+    const lines: string[] = [];
+    if (prov === "REAL") {
+      lines.push(`最新价 ${q.price.toFixed(2)} 元（${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}%）`);
+    } else if (prov === "MISSING") {
+      lines.push("最新价：本次未取到（数据源断开或停牌）——不知道就不要给价格，也不要用 0");
+    } else {
+      lines.push(`展示值 ${q ? q.price.toFixed(2) : "—"} 元：本机演示数据，不是行情，禁止引用为价格事实`);
+    }
+    const snapProv = snap ? provenanceOfTechSnapshot(snap.source) : null;
+    const snapLines = snap && snapProv && snapProv !== "MISSING"
+      ? [
+        `多周期趋势: ${snap.tfs.map((t) => `${t.tf}=${t.trend}`).join(", ")}；RSI: ${snap.tfs.map((t) => `${t.tf} ${t.rsi?.toFixed(0) ?? "—"}`).join(", ")}`,
+        snap.support != null ? `最近支撑 ${snap.support.toFixed(2)} / 最近阻力 ${snap.resistance?.toFixed(2)}` : "",
+        snap.rangePos != null ? `近半年区间位置 ${snap.rangePos.toFixed(0)}%（${snap.rangeLow?.toFixed(2)} ~ ${snap.rangeHigh?.toFixed(2)}）` : "",
+      ].filter(Boolean)
+      : [];
+    const rows: CtxRow[] = [
+      {
+        label: `${q?.name ?? symbol}（${symbol}）报价`,
+        provenance: prov,
+        lines,
+        note: prov === "REAL" && q?.series_synthetic ? "分时序列为按现价合成的展示序列，只用于画缩略图，不是真实成交轨迹" : undefined,
+      },
+    ];
+    if (snapLines.length) {
+      rows.push({
+        label: `${q?.name ?? symbol}（${symbol}）技术面`,
+        provenance: snapProv === "DERIVED_ON_DEMO" ? "DERIVED_ON_DEMO" : "DERIVED",
+        lines: snapLines,
+        note: snapProv === "DERIVED_ON_DEMO" ? "K 线为演示数据：趋势/RSI/关键位只是算法演示，不构成任何结论" : "由本机引擎对真实 K 线计算（MA/RSI/区间），不是交易所发布的指标",
+      });
+    } else if (snap && snapProv === "MISSING") {
+      rows.push({ label: `${q?.name ?? symbol}（${symbol}）技术面`, provenance: "MISSING", lines: ["K 线未取得：趋势/RSI/关键位全部缺，不要凭印象补"] });
+    }
+    return { rows, block: renderMarketContext(rows, { takenAt: shanghaiStamp() }), price: guardPriceOf(prov, q?.price) };
   } catch {
-    return { block: "", price: null };
+    return { rows: [], block: "", price: null };
   }
 }
 
-// 价格数量级校验：回答里至少要有一个接近现价的数字，否则视为幻觉
+// 价格数量级校验：回答里至少要有一个接近现价的数字，否则视为幻觉（只在有真实现价时才做，见 guardPriceOf）
 // 从自然语言问题中提取品种搜索词（整句搜索接口是不认的）
 export function questionCandidates(q: string): string[] {
   const out = new Set<string>();
@@ -98,8 +129,10 @@ export default function AssistantPage() {
         }
       } catch { /* 识别失败则仅注入关注品种 */ }
       const blocks = await Promise.all(targets.map((s) => marketBlockFor(s)));
-      const marketBlock = blocks.map((b) => b.block).filter(Boolean).join("\n\n");
-      const guardPrice = blocks[0]?.price ?? null;
+      const allRows: CtxRow[] = blocks.flatMap((b) => b.rows);
+      const marketBlock = renderMarketContext(allRows, { takenAt: shanghaiStamp() });
+      // 校验锚点只认真实报价：演示品种/缺失品种的 price 已经是 null，不会再拿假价判模型幻觉
+      const guardPrice = blocks.map((b) => b.price).find((p) => p != null) ?? null;
       const newsBlock = await fetchNewsBlock();
 
       // 快照注入最后一条用户消息：部分轻量模型对 system 消息的遵循度低
@@ -107,7 +140,7 @@ export default function AssistantPage() {
       const lastMsg = sent[sent.length - 1];
       sent[sent.length - 1] = {
         ...lastMsg,
-        content: marketBlock ? `[实时行情快照]\n${marketBlock}\n\n用户问题：${lastMsg.content}` : lastMsg.content,
+        content: allRows.length ? `[行情快照·逐条标注来源分层]\n${marketBlock}\n\n用户问题：${lastMsg.content}` : lastMsg.content,
       };
       const callMessages = [
         { role: "system" as const, content: assistantSystemPrompt([marketBlock, newsBlock].filter(Boolean).join("\n\n")) },

@@ -559,3 +559,39 @@
 - 顺带留痕：`global_event` 从 0 变回 7 是**跑 P2 真实链路回归**（`POST /api/events` 的手动全量口径：当日先删后插）+ 真实快讯窗口滚动共同造成的，
   与 P5 无关——本阶段的两个清理接口在验收里全部走「拒绝执行 / 0 行删除」，留档接口只写快照表。
 - 本阶段已按人工确认方案提交：`adf2d68 feat(P5): 数据生命周期（180 天 dry-run + 先导出再删 + Risk/Themes/Probability 手动每日留档）`（25 文件 +2327/−2，含 `prisma/db/custom.db` 与 `.gitignore` 新增 `data/lifecycle/` 一条）。与计划的实际差异如实记下：① 真实库里**一行都没删过**——唯一归档日就是今天，候选 0 条，物理删除只在真实库的 OS 临时副本上验收（含 409「计划过期」分支），`data/lifecycle/` 至今无导出文件；② 快照机制用例的前提从「库是空的」改成「基线 + 增量」精确比对（正式库当时已有真实留档行，行数/条数/倒序顺序仍逐条核对，不是放宽断言）；③ 顺带修了一个真实源码缺陷：留档回放日原用 `DATE_RE` 只校格式，`2026-13-45` 能透传，已改为复用 `lifecycle-core` 的 `isValidDate`；④ UI 因 `take_screenshot` 报 `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE` 只做了结构与文案（可及性树 + 接口返回）验收，视觉截图仍是缺口。验收数字：`tsc --noEmit` 退出码 0、`node --test tests/quant/*.test.ts` 167 tests / 158 pass / 0 fail / 9 skipped（P5 新增 15 条）、`MYDESK_INTEGRATION=1` 的 P2 真实链路回归 9/9 pass、三条 purge 拒绝路径均 `HTTP=400 deleted:0`、三页各 1 条真实留档已落库并可回看。
+
+## P6 第六阶段 P6-A 数据源可靠性 + Data Capability Registry（2026-09-19）
+
+### 这一步要解决的问题（任务书 §三/§六/§七）
+P0~P5 里「没有数据」散落成 `null` / `undefined` / `0` / `missing[]` / `catch→null` / `[]` 六种写法，同一个上游 200 + `data:[]` 在 A 页显示「暂无数据」、在 B 页显示 0；AI 上下文里演示价与真实价共用一句「来自本机直连的真实行情接口，视为当前事实」。
+P6-A 把这些判定收到一处内核，并让「我现在能查什么 / 这次到底取到了没有 / 还缺什么」变成机器可读的接口（P6-D 的 Agent 要靠它自主挑工具、承认缺口）。
+
+### 落地内容（全部新建文件 + 8 个改动点）
+1. **`src/lib/quant/screener/datastatus-core.ts`（新，纯内核，229 行）**：任务书 §三 的 8 类分层逐字进 `DATA_STATUSES`（REAL/DERIVED/HISTORICAL/SNAPSHOT/AI_INTERPRETATION/AI_HYPOTHESIS/MISSING/DEGRADED）；`UNVERIFIED` 属于验证状态，单列 `VERIFY_STATUSES`，不进数据分层；五态观测 `value / real_zero / no_data / request_failed / not_covered` 互不合并，`observeValue` 的判定优先级是「未发起请求 → 未覆盖 → 请求失败 → 无内容 → 真 0 → 有值」（失败优先，因为上游把超时和空返回压成同一个 `null`）；`envelopeOf` 组装时强制自洽（不可用 ⇒ status 只能是 MISSING/DEGRADED）；新鲜度四档 `live 90 / intraday 300 / daily 86400 / static 31536000` 与三态新鲜度判定。
+2. **`src/lib/quant/screener/capability-core.ts`（新，纯内核，660 行）**：40 条能力登记，每条都写 `input/output/source/source_type/freshness/availability/data_status/limitations/fallbacks/mutating/examples`，且**逐条对得上当前代码里真实存在的路由或引擎函数**（不登记「设想中」的能力）；三条「没有可靠来源」的（北向净流入、个股公告、板块日K连续强势天数）照样登记、`availability=not_covered` 并写明原因；只读白名单 39 条，唯一 `mutating=true` 的 `mcp_tools` 在 need 候选、兜底链与 `agent_allowed` 三处都被排除；`need→能力` 返回命中词并按命中数排序，匹配不到时只给登记过的分组方向（`needHints`）不猜；登记表自身也被登记为三条元能力（`capability_registry` / `capability_probe` / `ai_context_layering`），`ai_context_layering` 必须标 `AI_INTERPRETATION`。
+3. **`src/lib/quant/screener/capability-service.ts`（新，服务端探测，575 行）**：默认只读本地（15 项 SQLite 并发 count + 验证账本元信息 + Provider 注册表 + MCP 运行态），`?live=1` 才真打 7 个小上游请求；`probed:false` 表示「本次没测」，绝不显示成 MISSING 或 0；探测范围写进 `scope`（`direct` 真取了该能力数据 / `channel` 只验证同接口族可达 / `db` / `static` / `local`），不用「通道通了」冒充「有数据」；本层不产出 `VERIFIED`；结果缓存 20 秒且**缓存起点取探测完成时刻**（一次 live 探测本身十几秒，按开始时刻记会刚落盘就过期、页面每次刷新重打上游）。
+4. **两个只读接口**：`GET /api/capabilities`（纯静态，不探测不碰网络不读库；`?name=` 给定义+兜底链+`agent_allowed`，未知名字 404 并列出可选名，绝不返回「大概像」的能力；`?need=` 给候选与缺口承认）与 `GET /api/capabilities/probe`（`?live=1 ?force=1 ?only=`，带 `self_check` 出参自检与 `counts_note`）。
+5. **`src/components/desk/CapabilityPanel.tsx`（新，251 行）+ 挂设置页**：四张计数卡（本次取到 / 本次取不到（失败与无内容分列）/ 无可靠来源 / 未探测）、分层计数、口径行、「还缺什么」明细、需求查询框、按分组逐条列出三态着色 + 兜底链 + evidence chips + 已知局限；面板不判定任何状态，全部照服务端返回显示。
+6. **`src/lib/desk/ai-context-core.ts`（新，纯内核，110 行）+ 助理页/分析页接线**：上下文逐条自带「标签｜层级｜口径」，`guardPriceOf` 只允许 REAL 价做数量级锚点（演示价当锚点与不带锚点必须等价，已有断言），`provenanceOfQuote` / `provenanceOfTechSnapshot` 与徽标同源；`assistantSystemPrompt` 删掉「视为当前事实」，改为要求模型遵守四类内容分层（含「上下文里没有的数字不要补」）。
+7. **`src/lib/quant/data/hybrid-core.ts`（新，纯内核，107 行）+ `hybrid.ts` tracked 版本**：把「K线取数失败」与「这只票真的没数据」分开（`BarOutcome` / `summarizeOutcomes` / `outcomeWarning`）；`fetchBarsHybrid` 原签名与所有公式不变，选股器（`screener/run.ts`）、条件概率（`/api/quant/probability`）、AI 的两个 K线工具（`/api/ai/chat`）三处调用点改为分列报错：失败标的**不参与条件判断**、不写进「不符合条件」；熔断与兜底通道都显式记为 DEGRADED 口径。
+8. 顺带：`fields.ts` 加 `verifiedLedgerMeta()`（只读元信息，验证账本的唯一写入口径没动）；`types.ts` 的 `QuoteCard` 加 `data_status` / `series_synthetic`，`market.ts` 三条卡片各自标注来源（真实 / 演示合成 / 本次缺失）。
+
+### 与任务书的差异 / 本轮没做（如实记）
+- **「数据源增强」只做了一半口径**：本轮做的是「已有源的可靠性与兜底可见化」，**没有新增任何第三方数据源**（龙虎榜、大宗交易、公告、北向替代源都没接）。北向净流入维持 `not_covered`，没有用估算或替代口径顶上去。
+- 探测层**不覆盖** `backtest` / `probability` 的全量计算（需要明确策略与回放区间，健康探测不该打满上游），这两条返回 `probed:false` + 原因，而不是「可用」。
+- `/api/ai/chat` 的工具链路仍是自己一套 8 个硬编码工具，本轮只把它接到 outcome 分层，**没有**改成从 capability-core 动态生成（那是 P6-D 的活）。
+- UI 只做结构与文案（可及性树）验收：`take_screenshot` 在本机连接下仍报 `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`，视觉截图未覆盖。
+
+### 验收（真实数据：`npx next build` + `npx next start -p 3010`，2026-09-19 22:56~23:07）
+- `npx tsc --noEmit` 退出码 0；`node --test tests/quant/*.test.ts` **219 tests / 210 pass / 0 fail / 9 skipped**（跳过项全是需 `MYDESK_INTEGRATION=1` 的集成用例）。P6 新增 **52 条**：`p6-capability.test.ts` 25、`p6-hybrid.test.ts` 8、`p6-aicontext.test.ts` 19；非 P6 基线 167 条不变 ⇒ 无回归。
+- **本地探测（不碰外网）curl**：`counts {total:40, usable:16, unprobed:20, no_data:1, request_failed:0, not_covered:3, degraded:0, read_only:39, mutating:1}`；`layering` 「REAL 17 / DERIVED 8 / HISTORICAL 7 / SNAPSHOT 3 / AI_INTERPRETATION 1 / MISSING 4」；`self_check.violations: []`；`gateway_note` 「本次未做上游探测：只读了本地库/账本/MCP 运行态；行情类上游能力标 probed:false，不是「没数据」」。
+- **带真实上游探测 curl**：`upstream_calls 7`、`gateway_note`「eltdx 本机网关：在线」、usable 33。逐条 evidence 都是当场取到的真值：`index_benchmark {price:3911.87, change_pct:0.9359}`、`stock_kline {bars:30, last_date:"2026-09-18"}`、`sector_rank {boards:5, top:"电子", top_main_yi:198.53959168}`、`fund_flow_stock {symbol:"688256.SH", days:1, last_date:"2026-09-18"}`、`market_news {items:3, latest_time:"22:59"}`、`symbol_search {first:"688256.SH"}`；本地侧 `radar {rows:13, latest_date:"2026-09-19", live_rows:13}`、`events {rows:7}`、`factor_catalog {factors:137, implemented:118, unimplemented:19}`、`factor_test {rows:219, keys:108}`、`factor_verified {verified_keys:33, ledger_mtime_ms:1789780532261}`、`task_status {rows:112, latest_started_at:"2026-09-19 21:05:36"}`。
+- **登记表接口 curl**：`GET /api/capabilities` → `total 40`、分组 `行情:13, 信号:7, 研究:7, 历史:6, 运维:7`、`not_covered 3`、`read_only_names 39`；`?need=板块资金` → 首条 `sector_rank`（matched `["资金","板块"]`）+ `order_note`；`?need=天气` → `matches 0` + 「没有任何已登记的只读能力覆盖「天气」：应作为缺口显式承认，不要换个说法硬凑」+ `gap_groups []`；`?name=northbound`（未登记）→ `HTTP 404` 且明确「不是取数失败，是这条路不存在」；`?only=events` → `counts_note` 说明计数按全表 40 条统计。
+- **K线失败/无数据分列的真实实测**：`POST /api/quant/probability`（`universe:"custom"` + `symbols:["000001.SH","399006.SZ","999999.BAD"]`）→ `999999.BAD bars=0 error="K线无返回（请求成功但上游没有该标的的日K，例如代码不存在）：本次不纳入统计"`，warnings 同时带出口径行「K线口径：eltdx 直连 3 只；腾讯兜底 1 只（主通道不可用，已降级）；无K线返回 1 只；取数失败与「没有数据」是两回事，不合并统计」；`pooled` 全为 `win_rate:null, sample_size:0`（**没有**用 0 冒充概率）。
+- **面板实机核对（`#/settings` 可及性树）**：40 条能力齐全；三条 not_covered 的「还缺什么」原文完整；MCP 行「本次无内容」并带「具体原因：MCP unavailable：已配置 1 个服务器，没有一个 ready（demo-market:stopped）。本层不会假装调用成功」；`capability_registry` evidence `capabilities 40 / read_only 39 / not_covered 3`；`ai_context_layering` evidence `layers 5 / discipline_rules 4 / wired_pages #/assistant,#/analysis`；`capability_probe` 显示未探测 + 自指说明；`task_status` 显示「超出 intraday 口径上限（7123 秒 > 300 秒）：不再算实时」，`radar/events/三张 snapshot/lifecycle_preview` 显示「新鲜度未知（数据源没给出可核对的时刻，不猜是否仍算实时）」——**问号占位 0 条**。
+- **只读性核对**：整个验收过程（探测 + 两个 GET + 面板）不写库；`prisma/db/custom.db` 在验收前后 `size 868352 / mtime 2026-09-19T13:05:36.960Z` 完全未变，`data/factor-verified.json` 未被本轮任何路径写过（探测层只读它的元信息）。
+- 阶段内自查发现并修掉的三处措辞缺陷（都是 REAL_DATA_ONLY 口径问题，不是外部指出）：
+  ① `freshness_s` 为 `null` 时面板写「超出 daily 新鲜度上限（? 秒）：不再算实时」⇒ `fresh` 改为三态（true/false/**null=未知**），措辞收进内核 `freshnessChip` + `FRESHNESS_UNKNOWN_NOTE`，并把「as_of 只到日期且就是今天 ⇒ daily 口径必然在限内」这一条可证结论单独成函数（跨天仍判未知，不猜秒数）；
+  ② 未探测行出现「未探测——未探测：回测 需要明确的策略…」双前缀 ⇒ `reason` 只写裸原因，前缀由 `toProbe` 统一加一次；
+  ③ 不可用行只剩四态泛化文案，把 MCP「没有 ready 服务器」说成「休市」这类无关解释 ⇒ 新增 `unavailableNoteWith`，标准文案后补「具体原因：<本次原文>」（无覆盖类与重复情形不加）。
+  三处都有对应断言（`freshnessChip` / `freshWithinDailyFromDateOnly` / `unavailableNoteWith` 三条用例 + 一条读源码的结构约束，防「内核有了、页面没用」）。
