@@ -25,6 +25,7 @@ import ProbabilityPage from "./pages/ProbabilityPage";
 import ThemesPage from "./pages/ThemesPage";
 import RadarPage from "./pages/RadarPage";
 import EventsPage from "./pages/EventsPage";
+import ResearchPage from "./pages/ResearchPage";
 import { useDesk } from "@/lib/desk/store";
 import { PAGE_TITLES, type PageKey } from "@/lib/desk/types";
 
@@ -82,6 +83,7 @@ export default function AppShell() {
           {page === "themes" && <ThemesPage />}
           {page === "radar" && <RadarPage />}
           {page === "events" && <EventsPage />}
+          {page === "research" && <ResearchPage />}
           {page === "extension" && <ExtensionPage />}
           {page === "settings" && <SettingsPage />}
         </main>

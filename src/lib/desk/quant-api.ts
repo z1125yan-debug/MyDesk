@@ -2,6 +2,7 @@
 // 前端 → 新 P0 后端接口的类型化封装
 import type { ScreenerCond, WinProbStats } from "@/lib/quant/factors/probability";
 import type { EventFact, EventInterpretation, summarizeInterpretations } from "@/lib/quant/screener/event-interpret-core";
+import type { EvidenceLine, ResearchReport, SourceProbe } from "@/lib/quant/screener/research-core";
 import { MODE_TEXT, modeFromBasis } from "@/lib/quant/screener/incremental-core";
 
 export type { ScreenerCond, WinProbStats };
@@ -615,6 +616,66 @@ export async function storeInterpretationsApi(body: { raw: string; model?: strin
   const j = await res.json();
   // 这里不能用 !j.ok 抛错：ok=false 时服务端仍然带着「为什么一条都没落库」的原因与留痕，页面要原样显示
   return { ...j, __status: res.status } as InterpretStoreClient & { __status: number };
+}
+
+// ---------- P6-C AI Market Research（服务端出现场台账 + 复校验落库；客户端只负责调模型） ----------
+// 类型同样复用纯内核：EvidenceLine/ResearchReport/SourceProbe 只有一份定义（§十三 的七层以它为准）。
+
+/** GET /api/research/prompt：服务端从已有引擎与库里现取读数组装的台账 + 提示词 */
+export interface ResearchPromptClient {
+  ok: boolean; scope: string; date: string; as_of: string;
+  lines: EvidenceLine[]; sources: SourceProbe[]; missing: string[];
+  truncated: number; basis: string; question: string;
+  system: string; prompt: string; prompt_version: string; error: string | null;
+  report_status: string; how_to_use?: string; note?: string;
+}
+/** GET /api/research：只读回看已落库的报告（台账用落库时冻结的那一份回显） */
+export interface ResearchLoadClient {
+  ok: boolean; as_of: string; today: string; scope: string;
+  report: (ResearchReport & { report_key: string; stale_evidence: boolean }) | null;
+  evidence: EvidenceLine[]; sources: SourceProbe[]; missing: string[];
+  available_dates: { date: string; status: string; question: string }[];
+  counts: { rows: number; interpreted: number; partial: number; rejected: number };
+  layering: string; self_check: { broken_payload: string[] }; basis: string; probed_at: string;
+  error: string | null;
+}
+/** POST /api/research：服务端重新现取台账复校验后的落库结果 */
+export interface ResearchStoreClient {
+  ok: boolean; persisted: boolean; scope: string; date: string; report_key: string;
+  report: ResearchReport | null; evidence_total: number; missing: string[]; sources: SourceProbe[];
+  error: string | null; basis: string; report_status: string;
+}
+
+export async function fetchResearchPrompt(params: { question?: string; scope?: string } = {}): Promise<ResearchPromptClient> {
+  const u = new URLSearchParams();
+  if (params.question) u.set("question", params.question);
+  if (params.scope) u.set("scope", params.scope);
+  const qs = u.toString();
+  const res = await fetch(`/api/research/prompt${qs ? `?${qs}` : ""}`);
+  const j = await res.json();
+  // 台账为空时服务端给的是 ok=false + 原因：这里不抛成「未知错误」，把原因原样交给页面显示
+  if (!res.ok || !j.ok) throw new Error(j.error || "服务端没有取到可解释的真实读数（详见缺失口径）");
+  return j as ResearchPromptClient;
+}
+
+export async function fetchResearchReport(date = "", scope = ""): Promise<ResearchLoadClient> {
+  const u = new URLSearchParams();
+  if (date) u.set("date", date);
+  if (scope) u.set("scope", scope);
+  const qs = u.toString();
+  const res = await fetch(`/api/research${qs ? `?${qs}` : ""}`);
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error || "研究报告读取失败");
+  return j as ResearchLoadClient;
+}
+
+export async function storeResearchApi(body: { raw: string; question?: string; model?: string; scope?: string }): Promise<ResearchStoreClient> {
+  const res = await fetch("/api/research", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const j = await res.json();
+  // 422/400/413 都带着结构化的「为什么没落库」，页面必须原样显示，不能只报「请求失败」
+  return { ...j, __status: res.status } as ResearchStoreClient & { __status: number };
 }
 
 // ---- 后台任务运行记录（P2-自动化 13）：只读 /api/tasks/status，展示真实落库的 task_run 行 ----

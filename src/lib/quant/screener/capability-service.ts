@@ -92,6 +92,7 @@ function stampAgeS(stamp: string | null, nowMs: number): number | null {
 async function dbSignals() {
   const [
     radarRows, radarLive, radarLatest, eventRows, eventLatest, eventDates, interpretRows, interpretLatest,
+    researchRows, researchLatest,
     factorTestRows, factorTestKeys,
     poolRows, taskRows, taskLatest, cursorRows, riskSnap, themeSnap, probSnap,
   ] = await Promise.all([
@@ -103,6 +104,8 @@ async function dbSignals() {
     db.globalEvent.groupBy({ by: ["asOf"], _count: { _all: true } }),
     db.eventInterpretation.count(),
     db.eventInterpretation.findFirst({ orderBy: { asOf: "desc" }, select: { asOf: true } }),
+    db.researchReport.count(),
+    db.researchReport.findFirst({ orderBy: { asOf: "desc" }, select: { asOf: true, status: true } }),
     db.factorTest.count(),
     db.factorTest.groupBy({ by: ["factorKey"], _count: { _all: true } }),
     db.candidatePool.count(),
@@ -117,6 +120,7 @@ async function dbSignals() {
     radarRows, radarLive, radarDate: radarLatest?.asOf ?? null,
     eventRows, eventDate: eventLatest?.asOf ?? null, eventDates: eventDates.length,
     interpretRows, interpretDate: interpretLatest?.asOf ?? null,
+    researchRows, researchDate: researchLatest?.asOf ?? null, researchStatus: researchLatest?.status ?? null,
     factorTestRows, factorTestKeys: factorTestKeys.length,
     poolRows, taskRows,
     taskKind: taskLatest?.kind ?? null, taskStatus: taskLatest?.status ?? null,
@@ -282,6 +286,15 @@ function probeOne(cap: CapabilityDef, ctx: Ctx): Sig {
         : emptySig("db",
             `event_interpretation 当前 0 行：还没有人对事件点过「AI 理解」，这一层就是空的（不是失败，也不会自动生成；当日事件行 ${d.eventRows} 条是可理解的事实原料）`,
             { rows: 0, events_rows: d.eventRows });
+    case "market_research":
+      if (!d) return dbFail();
+      // 与 event_interpret 同一类：这张表 0 行是「没人点过生成研究报告」，既不是失败也不是没有市场数据
+      return d.researchRows > 0
+        ? okSig("db", { rows: d.researchRows, table: "research_report", latest_date: d.researchDate, latest_status: d.researchStatus },
+            d.researchDate, `已落库市场环境研究报告 ${d.researchRows} 条（最新一条状态 ${d.researchStatus ?? "未记录"}；属于 AI_INTERPRETATION 层，不是事实）`)
+        : emptySig("db",
+            "research_report 当前 0 行：还没有人点过「生成研究报告」，这一层就是空的（不是失败，也不会自动生成；服务端台账能不能取到读数要看 risk/themes/radar/events 各自的探测行）",
+            { rows: 0 });
     case "history_radar": return d ? rowsSig("雷达历史归档", d.radarRows, "radar_finding", d.radarDate) : dbFail();
     case "history_events":
       if (!d) return dbFail();

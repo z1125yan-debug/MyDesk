@@ -254,6 +254,47 @@ model EventInterpretation {
   @@map("event_interpretation")
 }
 
+// P6-C AI Market Research：把「当前市场环境研究报告」存下来，供回看与对比。
+// 为什么需要新增这张表（§三十三 要求先说清）：
+// - 已有的三张留档表存的是「某个引擎那一次算出的完整响应」（risk/theme/probability 各一页），
+//   存的是机器算的东西；这张表存的是「AI 对当天台账的解释 + 当时那份台账本身」，两者不能互相替代：
+//   留档表没有 INTERPRETATION/RISKS/UNKNOWN/NEXT_CHECKS，研究层也不能反过来去改写留档行；
+// - event_interpretation 是「一条事件一份解释」，粒度不同：研究层是一份跨源综合，引用的是整批台账行。
+// 保存什么：报告 JSON（payload）、生成当时的台账快照（evidence_json，让「这句话从哪来」日后仍可回答）、
+//   采集器观测（sources_json）、缺失口径（missing_json）、违规留档（violations）、模型名与提示词版本。
+// 不保存什么：不复制行情原始数据、不保存任何 API Key、不保存模型原文之外的东西。
+// 生命周期与自然键：reportKey = scope|asOf 唯一 ⇒ 同一范围同一天只有一条，重做就是覆盖（不是堆历史），
+//   所以这张表的增长上限就是「天数 × 范围数」，当前只有 market 一个范围 ⇒ 每天最多一行。
+// 保留期（§三十四 明确自己的口径，不能偷偷无限增长）：
+// - 不进 P5 的 180 天清理：那张表的清理对象是 Radar/Events 归档，扩大它需要用户决定，P6 不擅自改口径；
+// - 本表自身的上限由「每天一行 + 覆盖写」保证；行数是否需要按天清理，与 P5 保留天数一样属于用户决定，
+//   未定口径前不删任何行（宁可不删，也不多删）。
+// 索引：按 asOf 查（页面回看选日期）；reportKey 唯一索引已覆盖 upsert。
+model ResearchReport {
+  id            String   @id @default(cuid())
+  reportKey     String   @unique // scope|asOf（自然键：同一天同范围只留最新一条）
+  scope         String   @default("market") // 当前只有 market（个股/板块范围 NOT IMPLEMENTED）
+  asOf          String // 北京时间交易日 YYYY-MM-DD
+  question      String   @default("") // 人输入的研究问题（原样存，报告离不开问题）
+  status        String // INTERPRETED | PARTIAL | REJECTED（服务端复校验后的三态）
+  model         String   @default("") // 哪个模型产出的（客户端配置，不落 Key）
+  promptVersion String   @default("")
+  headline      String   @default("")
+  marketPosture String   @default("") // 偏进攻 | 均衡 | 偏防守 | 观察 | 未登记取值：… | 未记录
+  evidenceTotal Int      @default(0) // 台账行数（0 ⇒ 报告必然是 REJECTED）
+  evidenceJson  String   @default("[]") // JSON：生成当时的服务端台账（含 id/层/出处/asOf/数据状态）
+  sourcesJson   String   @default("[]") // JSON：逐采集器观测（ok/empty/failed/not_covered）
+  missingJson   String   @default("[]") // JSON：当次缺失口径原文
+  violations    String   @default("[]") // JSON：复校验违规（编造引用、无出处数字、概率剥离等）
+  payload       String   @default("{}") // JSON：§十三 七层里的 AI 四层 + 引用回填 + dropped 留档
+  generatedAt   String   @default("") // 报告生成时刻（北京时间串，与 shanghaiStamp 同口径）
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([asOf])
+  @@map("research_report")
+}
+
 // P2-自动化 后台任务运行记录：用于回答「到底有没有运行 / 什么时候运行 / 为什么失败」
 // 幂等口径：同一 (kind, tradeDate) 有 success 就不再重复执行（调度器只认「收盘窗口之后完成」的成功，
 // 盘中手动扫描不算收盘结果）；failure 允许重试但每日有限次；已确证休市的当日不再重试（见 scheduler/rules.ts）。
