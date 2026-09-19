@@ -442,3 +442,56 @@
 ### 提交
 - 本阶段已按人工确认方案提交：`1ed82b6 feat(P3): Radar/Events 增量扫描（游标断点恢复 + 自然键幂等 + 口径可见）`
   —— 17 个文件、1596 插入 / 92 删除（逐个 `git add <路径>`，未用 `git add .`），提交后 `git status` 干净。
+
+## P2 第四阶段 历史信号查询与复盘（2026-09-19：只读回看，不重算、不改写）
+
+### 做了什么
+- 新增**只读历史层**，与 P2/P3 的写库层完全隔离：
+  - `src/lib/quant/screener/history-core.ts`（纯函数内核：日期解析/清单聚合形状/行整形/口径文案，无 DB、无 value import，`node --test` 直接可加载）
+  - `src/lib/quant/screener/history.ts`（DB 读取：`dayCounts` / `dateBuckets` / `readRadarDay` / `readEventDay` / `readDayRuns`，client 由调用方注入，仅 `import type PrismaClient`）
+- 新增两个接口：`GET /api/radar/history?date=&state=all|live|superseded`、`GET /api/events/history?date=`。
+  两者都**只读现有库行**：不触发扫描、不重算指标、不写 `task_run`、不动 `scan_cursor`。
+- 页面（`RadarPage` / `EventsPage` + 共用 `HistoryBar`）：查询范围三入口（今天 / 最近有数据 / 指定日期）+ 明确「当前查看日期」+
+  历史视图徽章 `ARCHIVED 历史归档`、`view_basis` 口径句、雷达 live/已消失计数、当日 `task_run` 运行记录、`missing` 缺失口径黄条。
+- `quant-api.ts` 增加 `fetchRadarHistory` / `fetchEventsHistory` 与配套类型，前端不自己算任何条数或口径。
+- 运行记录分三层如实报：`runs_total`（库里 `taskRun.count` 的当日总条数）/ `runs`（倒序最近 20 条）/ 页面展示前 5 条，
+  并明说「更早的记录不在返回范围里，真正落过库的那次可能在其中」——不假装列全，也不因少列就说那天没扫过。
+
+### 关键取舍与拒绝冒充的做法
+- `parseQueryDate` 直接拒绝：格式错、非法日历日（`2026-02-30`）、未来日期 → **400**，不"顺手"回退到最近有数据的那天。
+- 指定日期无数据 ⇒ `items:[]` + `emptyDayNote`，并区分**三种空**（查今天=当前库里 0 行；那天有扫描记录但没留下行；那天根本没扫过），
+  绝不写成同一句话，也绝不拿今天的数据顶上。
+- `viewBasis` 历史分支的文案里禁止出现「实时 / LIVE」；今天分支改称「当日库行视图…不是行情实时推送」（浏览器实测时发现原文案把库行说成实时视图，已改）。
+- 日期入口的归档清单只来自服务端 `groupBy`（`asOf`+`state`）聚合，不把行读进内存；元信息未回来前按钮写「归档清单读取中…」，
+  不提前断言「库内暂无归档」（实测发现过这个谎，已修）。
+- 雷达行**没有逐行来源列** ⇒ `radarSourceOf(kind, evidence)` 只按 `kind`+证据推导，并同时给出推导依据 `source_basis`；认不出就写
+  「未知（库内该行没有来源字段）」，不猜。事件的来源/映射/资金验证都是入库时的真实列，原样读回；`mappedSectors` 为空时写
+  「未命中映射表（入库时即为空，未编造板块）」。
+- P3 机制一行未改：`dedupeKey` / `contentHash` / `state` / `scan_cursor` / 幂等拦截 / 调度规则全部原样；schema 无变更。
+
+### 验收拆分
+- 真实数据验收（`npx next build` + `npx next start -p 3010`，真实浏览器 + curl）：
+  - `GET /api/radar/history`（无 date）→ `date=2026-09-19`、8 条 live、0 superseded，与 `GET /api/radar` 同批行同源一致；
+  - `?date=2026-09-18` → 空 + 「库里没有 asOf=2026-09-18…不会用别的数据顶上、也不会重新计算那一天」；
+  - 页面实测：今天视图显示「当前查看日期：今天（2026-09-19）…不是行情实时推送」；点「最近有数据（2026-09-19）」出 8 条归档卡（类型/asOf/状态/来源推导/首次入库北京时间）+ 8 条 task_run 记录；「只看已消失」出「共有 8 行，但都不在当前筛选里」；console 零报错。
+  - 事件页实测：当前 `global_event` 真实为 0 行 ⇒ 徽章/清单如实写「库内暂无归档」，指定 2026-09-19 与 2026-09-18 均返回空 + 缺失口径。
+  - 真实链路回归 `node --test tests/quant/p2-scan-loop.test.ts`（`MYDESK_INTEGRATION=1`）9/9 pass，含新增两条 P4 只读用例；
+    纯函数/机制 `tests/quant/p4-history.test.ts` 10 条；全量 `node --test tests/quant/*.test.ts` 152 tests / 143 pass / 0 fail / 9 skipped（跳过项为需 `MYDESK_INTEGRATION=1` 的集成用例）；`npx tsc --noEmit` 0 错误。
+- 仅机制验收（真实库现在演示不了，未伪造数据）：跨日不串、`superseded` 过滤与"消失行仍可查"、空日不回退、事件 `superseded` 恒 `null`
+  —— 用真实库的 OS 临时副本插入前缀为「〔机制测试行·非行情数据〕」的行完成断言，用例结尾校验真实库 `size`/`mtimeMs` 完全未变。
+- 已知现状（真实数据决定，不是缺陷）：库内可查询历史日期 = **radar 1 天（2026-09-19）/ events 0 天**；
+  今天是休市日（`task_run` 里有 `non_trading_day` 说明），本阶段不做第五阶段清理，历史行一律保留。
+- 顺带记录：`scan_cursor.doneKeys` 是**当日累计确认**（实测 9 条键 vs 当前 8 行 live），P3 的游标快速路径另有 `liveCount` 一致性校验兜底，
+  因此键多于行不会导致跳过未落库数据 —— 本阶段未触碰该逻辑。
+
+### 验收过程中出现的一次真实数据变化（必须留痕，不是我删的）
+- 本阶段验收开始时 `global_event` 里有 1 条当日事件（19:19 那次扫描落库）。随后按用户既有纪律重跑真实链路回归
+  `MYDESK_INTEGRATION=1 node --test tests/quant/p2-scan-loop.test.ts`，其中「Events 闭环」用例会走 `POST /api/events`
+  的**手动全量口径**（P2 定稿：当日先删后插）。那一次重跑时真实快讯窗口已滚动，24 条里 0 条命中产业链映射 ⇒
+  当日事件行数从 1 变成 0。此后我又单独 `curl -X POST /api/events` 复核一次，结果同样是「扫描 24 / 落库 0 / 未映射 24」。
+- 结论：事件归档清空是**既有全量口径的既定行为 + 真实上游窗口变化**共同造成的，P4 的只读层没有写库；
+  历史查询如实呈现「库里当前一行事件都没有」，没有回补、没有拿旧截图冒充。
+- 这件事同时说明第四阶段的价值：`task_run` 里 19:19 那 8 次「落库 1 条」的记录仍然在库里
+  （`/api/events/history?date=2026-09-19` 返回 `runs`（倒序最近 20 条）+ `runs_total`（当日总条数，验收时已 41 条），
+  页面按「当日共 N 条 / 接口返回最近 M 条 / 这里展示前 5 条」三层如实说明，并明说「真正落过库的那次可能在更早的记录里」），
+  只是明细行已经不在了 —— 「哪天扫过、扫出几条」与「现在库里有多少行」是两件不同的事，页面分开显示。
