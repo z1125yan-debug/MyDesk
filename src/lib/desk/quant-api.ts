@@ -584,3 +584,97 @@ export async function fetchTaskStatus(): Promise<TaskStatusClient> {
   if (!res.ok || !j.ok) throw new Error(j.error || "任务记录读取失败");
   return j;
 }
+
+// ---------- P5 数据生命周期（dry-run 预览 + 人工确认后手动执行；保留天数 180 天由用户定，接口无参数） ----------
+
+export interface LifecycleCandidateClient {
+  table: "radar_finding" | "global_event"; date: string; rows: number;
+  live: number; superseded: number; age_days: number;
+}
+export interface LifecycleProtectedClient extends Omit<LifecycleCandidateClient, "age_days"> { reason: string }
+export interface LifecyclePreviewClient {
+  ok: true; kind: "lifecycle"; today: string; retention_days: number; cutoff: string; basis: string;
+  /** 「谁定的天数 / 怎么删 / 谁来触发」三条口径，页面原样显示 */
+  policy_notes: string[];
+  /** live/superseded 一起进候选的说明 */
+  state_note: string;
+  totals: { candidate_days: number; candidate_rows: number; protected_days: number; protected_rows: number };
+  candidates: LifecycleCandidateClient[];
+  protected_days: LifecycleProtectedClient[];
+  /** 执行清理必须带回这个指纹；预览之后库里数据变了就失效（409），不会按旧计划删 */
+  plan_hash: string;
+  can_execute: boolean;
+  detail_rows_in_db: number;
+  /** 只报告、不清理的运行记录表 */
+  run_tables: { expired: { table: "task_run" | "scan_cursor"; rows: number }[]; note: string };
+  missing: string[];
+}
+export async function fetchLifecyclePreview(): Promise<LifecyclePreviewClient> {
+  const res = await fetch("/api/lifecycle/preview");
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "生命周期预览读取失败");
+  return j as LifecyclePreviewClient;
+}
+
+export interface PurgePerDayClient { table: string; date: string; count: number }
+export interface PurgeResultClient {
+  ok: true; deleted: number; rows_deleted: number; per_day: PurgePerDayClient[];
+  export: { path: string; abs_path: string; bytes: number; row_count: number } | null;
+  detail_rows_in_db_before: number; detail_rows_in_db_after: number;
+  plan_hash: string; cutoff: string; retention_days: number; today: string; note: string;
+}
+/**
+ * 真正会删正式库明细行的唯一入口：confirm 必须逐字为 "PURGE_EXPIRED_ROWS"，
+ * plan_hash 必须来自刚拿到的 dry-run 预览。失败时服务端保证「未删除任何行」，页面要把这句原样显示。
+ */
+export async function purgeLifecycleApi(body: { confirm: string; plan_hash: string }): Promise<PurgeResultClient> {
+  const res = await fetch("/api/lifecycle/purge", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(`${j.error || "清理执行被拒绝"}${j.note ? `｜${j.note}` : ""}`);
+  return j as PurgeResultClient;
+}
+
+// ---------- P5 每日留档（Risk / Themes / Probability 三页：服务端同源重算后落库，前端不传结果数字） ----------
+
+export interface SnapshotItemClient {
+  id: string; kind: SnapshotKindClient; trade_date: string; computed_at: string;
+  /** 服务端按当次 payload 生成的人话摘要 */
+  headline: string; missing: string[]; source: string;
+  payload: unknown; payload_broken: boolean;
+}
+export interface SnapshotSaveClient {
+  ok: true; kind: SnapshotKindClient; id: string; trade_date: string; computed_at: string;
+  headline: string; scope?: string; missing: string[]; source: string; basis: string; note: string;
+}
+export interface SnapshotRespClient {
+  ok: true; kind: SnapshotKindClient; table: string; label: string; today: string;
+  /** null = 未指定日期（返回最近若干条） */
+  date: string | null; date_basis: string; basis: string;
+  counts: { total: number; days: number; returned: number };
+  available_dates: { date: string; count: number }[];
+  items: SnapshotItemClient[];
+  missing: string[];
+}
+export type SnapshotKindClient = "risk" | "themes" | "probability";
+
+/** 点「留档今天」：服务端当场重算一次（真的会拉行情，耗时同页面刷新），把当次结果写进快照表 */
+export async function archiveSnapshotApi(kind: SnapshotKindClient, body?: unknown): Promise<SnapshotSaveClient> {
+  const res = await fetch(`/api/snapshot/${kind}`, {
+    method: "POST",
+    ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  });
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "留档失败");
+  return j as SnapshotSaveClient;
+}
+/** 留档回看：date 不传 = 最近若干条；那天没留过则返回空 items + missing 说明，不会拿别的日子顶上 */
+export async function fetchSnapshots(kind: SnapshotKindClient, date = ""): Promise<SnapshotRespClient> {
+  const u = new URLSearchParams({ kind });
+  if (date) u.set("date", date);
+  const res = await fetch(`/api/snapshot?${u.toString()}`);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "留档读取失败");
+  return j as SnapshotRespClient;
+}

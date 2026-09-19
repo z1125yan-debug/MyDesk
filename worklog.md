@@ -496,3 +496,65 @@
   页面按「当日共 N 条 / 接口返回最近 M 条 / 这里展示前 5 条」三层如实说明，并明说「真正落过库的那次可能在更早的记录里」），
   只是明细行已经不在了 —— 「哪天扫过、扫出几条」与「现在库里有多少行」是两件不同的事，页面分开显示。
 - 本阶段已按人工确认方案提交：`dd0fe18 feat(P4): Radar/Events 历史查询与复盘（只读 asOf 取数，空日不回退，不冒充实时）`（12 文件 +1452/−52，含 `custom.db`：相对 `1ed82b6` 仅 task_run 41→102 与 radar 游标 doneKeys 8→9，机制测试行 0 条入库）；第四阶段到此停止，未进入第五阶段。
+
+## P5 第五阶段 数据生命周期：旧信号清理 + 三页每日留档（2026-09-19）
+
+### 用户拍定的四项口径（本阶段写死，API 不提供可改参数）
+1. **保留 180 天**：`asOf` 严格早于「今天 − 180」才进候选（`RETENTION_DAYS = 180`，改天数只能改这个常量并留 worklog 记录）；
+2. **先导出、再物理删除**：候选日的全部明细行先写成 `data/lifecycle/*.json` 并回读复核行数，导出失败或行数对不上 ⇒ 一行都不删；
+3. **dry-run 预览 + 人工确认后手动执行**：不挂调度器，项目里没有「到点自动清理」这回事；
+4. **Risk / Themes / Probability 各一张每日快照表 + 手动「留档今天」**：同样不挂调度器，不点就没有那天的行，也不会自动补。
+
+### 做了什么
+- 三段分层与既有阶段一致（纯内核 / 注入 client 的 DB 层 / 用 `@/lib/db` 的粘合层）：
+  - `src/lib/quant/screener/lifecycle-core.ts`（过期判定、清理计划、FNV-1a 计划指纹、四道执行闸门、导出封套与口径文案，无 DB 无别名 value import）
+  - `src/lib/quant/screener/lifecycle.ts`（`dayCounts` / 按整天删 / 导出行数复核，只 `import type { PrismaClient }`）
+  - `src/lib/quant/screener/lifecycle-service.ts`（生产用的 `@/lib/db` 粘合）
+  - `src/lib/quant/screener/snapshot-core.ts` + `snapshot.ts`（三张快照表的列提取/摘要/回看整形，纯内核可 `node --test` 直跑）
+- schema 新增三张表：`risk_snapshot` / `theme_snapshot` / `probability_snapshot`（`prisma/schema.prisma` +73 行；未触碰 P2/P3/P4 任何既有表与列）。
+- 接口：`GET /api/lifecycle/preview`（dry-run，只读）、`POST /api/lifecycle/purge`（唯一能删真实数据的口子）、
+  `POST /api/snapshot/{risk,themes,probability}`（写入＝服务端当场重算）、`GET /api/snapshot?kind=&date=`（只读回看）。
+- UI：`src/components/desk/LifecyclePanel.tsx`（挂进设置页：四张计数卡 + policy_notes + 候选表 / 无候选说明 + 受保护 `<details>` + run_tables 报告 + 红色执行块）、
+  `src/components/desk/SnapshotBar.tsx`（三页共用留档条：留档今天 / 留档日 chips / 指定日回看 / 每条摘要+当次缺失+来源 / 固定口径「本页没有调度器」）、
+  `src/lib/desk/quant-api.ts` 增加对应客户端封装（全部沿用既有 `fetch`，**未新增任何依赖**）。
+
+### 关键取舍与防误删/防冒充的做法
+- **四道闸门**：确认串逐字 `PURGE_CONFIRM_TEXT="PURGE_EXPIRED_ROWS"` → 必须有候选 → 必须带回预览的 `plan_hash` → 执行时重算的指纹必须一致（不一致 409）。前端按钮禁用只是提示，服务端同样四条各跑一遍，不依赖前端。
+- **按「整天」删**：当日行、以及 `asOf` 判不出年龄的行永不进候选；route 里再加一道 `c.date >= today` 兜底。`superseded`（已标记消失）与 `live` 走同一条 asOf 保留规则，不存在「消失的先删」。
+- **`task_run` / `scan_cursor` 只报告条数，不在清理范围内**（预览里单独一块说明为什么不动它们）。
+- **留档不收前端的数字**：点「留档今天」POST 里没有任何行情数值，服务端调**页面同源**的 route handler 当场重算（themes 用 `?force=1` 绕开 45 秒内存缓存），把当次完整响应原样存进 payload；概率页额外带上「这次用的是哪一组条件」，没有条件就不留（离开条件的胜率没有意义）。
+- 同日多次留档**各成一行、互不覆盖**；算不出的量保持 `null`，回看摘要显示「炸板率 算不出（当日触板 0）」而不是 0%；`warnings`/`missing` 随留档一起存回，不事后丢口径。
+- **修掉一个真实源码缺陷**（不是测试问题）：`snapshot-core` 原先用 `DATE_RE` 判回放日，`2026-13-45` 这种格式对、日历非法的值能透传。改为复用 `lifecycle-core` 的 `isValidDate`（UTC 回读校验），全项目只保留一份日历合法性判定；对应断言原样保留。
+- `policyNotes()` 去掉了与响应 `basis` 字段重复的那一条，避免同一条口径在面板上显示两遍。
+
+### 验收拆分
+- **真实数据验收**（`npx next build` + `npx next start -p 3010`，真实浏览器 + curl）：
+  - `GET /api/lifecycle/preview` → `retention_days: 180`、`cutoff: 2026-03-23`、`candidates: 0`、`detail_rows_in_db: 8`（随后跑真实链路回归又扫进新行，最后一次复跑为 20）、`plan_hash: fnv1a-6a4e38120000`、`can_execute: false`、`policy_notes` 4 条、
+    `missing`：「库里共 8 条明细行，但没有一条 asOf 早于 2026-03-23…本轮可清理 0 行。这是真实数据还没有那么旧，不是清理机制没生效 —— 未执行任何删除。」
+  - 三条 purge 拒绝路径实测均 `HTTP=400` 且 `deleted: 0, rows_deleted: 0, export: null`（确认串错 / 缺 plan_hash / 指纹过期）；
+  - 真实点了三次「留档今天」并落库：`risk` id `cmu8e33i00000v6n4n5shib5e`、`themes` id `cmu8e3gel0001v6n422c5ls5h`、`probability` id `cmu8e3ln50002v6n4ke85rgqr`（耗时 27.9s / 6.3s / 0.23s，都是服务端当场重算）；
+  - 回看 `GET /api/snapshot?kind=…` 三表各 `counts {total:1, days:1, returned:1}`，payload 完整（23 / 9 / 10 个键），headline 与当次缺失都读得回来（例：风险页「炸板率 28% … 计算时非交易时段（收盘/休市值）」，概率页「1日 36.1%（n=61）/ 5日 48.3%（n=60）/ 20日 52.5%（n=59） · 样本量达标（≥30）」并保留三条「样本不足」警示）；
+  - 空留档日 → `items: []` + 明确说明「没留过的那天不会自动补出来，查询也不会拿别的日子顶上」（HTTP 200）；`date=2026-02-30` → 400「date 不是存在的日历日」；`kind=whatever` → 400；
+  - 页面实测（hash 路由直达 + 可及性树核对）：设置页生命周期面板列表为 4 条 policy_notes + 1 条 state_note（去重后已生效）、执行按钮禁用且 title 写明「预览里没有候选：没有东西可删，接口也会拒绝执行」；
+    风险页/主线页留档条各有「已有留档日 2026-09-19(1) 」chips 与 1 条留档卡；概率页未做计算时留档按钮为**禁用**，title「还没有可留档的计算结果：先完成一次计算再留档」。
+  - 回归：`npx tsc --noEmit` 退出码 0；`node --test tests/quant/*.test.ts` **167 tests / 158 pass / 0 fail / 9 skipped**（跳过项为需 `MYDESK_INTEGRATION=1` 的集成用例），其中本阶段新增 `p5-lifecycle.test.ts` 8 条 + `p5-snapshot.test.ts` 7 条 = 15 条全绿；
+    `MYDESK_INTEGRATION=1 node --test tests/quant/p2-scan-loop.test.ts` **9/9 pass**（含 P4 只读用例，P5 未破坏既有链路）。
+- **仅机制验收（真实库现在演示不了，未伪造数据）**：物理删除这条路径只能在真实库的 OS 临时副本上验收 ——
+  副本里插入 `asOf` 为过去日期、前缀「〔机制测试行·非真实计算结果〕」的行，断言「过期日整天被删、未满期与当日一行不少、删除前行数与导出文件完全一致、计划被改后旧指纹失效」。
+  用例结束删副本并校验真实库 `size` 与 `mtimeMs` 完全未变。正式库唯一归档日就是今天 ⇒ 候选 0 条，因此**本轮真实库里没有删过任何一行**，`data/lifecycle/` 至今没有任何导出文件。
+  快照机制用例同样跑在副本上，且因正式库已有真实留档行，断言前提改为「基线 + 增量」精确比对（行数/条数/倒序顺序仍逐条核对，只是不再假设库是空的）。
+- **已知缺口（如实记下）**：
+  1. `take_screenshot` 在本机浏览器连接下报 `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`（内置视口不可见），本阶段 UI 只做了**结构与文案**验收（可及性树 + 接口返回），**视觉截图未覆盖**；
+  2. purge 的 **409「计划已过期」路径只在副本单测覆盖**：真实库无候选时服务端先返回「无候选」的 400，生产 HTTP 侧无法单独触发过期指纹分支；
+  3. 「每天自动留档 / 到点自动清理」本阶段**有意不做**（口径 3、4 就是手动），所以也不存在无人值守式验收；
+  4. 留档回看目前只能按单页 `kind` 查询，跨页时间线（例如「某天三页各留了什么」的合并视图）不在本阶段范围。
+
+### `prisma/db/custom.db` 的变化（本轮真实运行产生，机制行 0 条入库）
+- 新增三张空→有真实数据的快照表：`risk_snapshot` 1 行、`theme_snapshot` 1 行、`probability_snapshot` 1 行（就是上面三条 id，全部来自点击「留档今天」的服务端真实重算）。
+- 运行时增长（P4 提交 `dd0fe18` 之后）：`task_run` 102 → 112（本轮真实扫描与回归测试的运行记录）、`radar_finding` 8 → 13、`global_event` 0 → 7、`scan_cursor` 2 行、`candidate_pool` 5 行 —— 均为既有 P2/P3/P4 链路的真实数据，本阶段没写它们的代码路径去造数。
+- 删除行数：**0**。库里没有任何 `asOf` 早于 2026-03-23 的明细行。
+- **指纹覆盖的是「要删的那批」**：`planHash` 只吃 `cutoff` + `retention_days` + 候选日明细（表/日期/行数/成立数/消失数/距今），
+  因此本轮实测中受保护行从 8 涨到 20 时 `plan_hash` 保持 `fnv1a-6a4e38120000` 不变（这是设计意图：闸门要防的是「待删集合在预览后被改动」，
+  而当天新落的库行都在候选之外）；任一候选日的行数或构成一变，旧指纹就失效并被拒（副本单测覆盖）。
+- 顺带留痕：`global_event` 从 0 变回 7 是**跑 P2 真实链路回归**（`POST /api/events` 的手动全量口径：当日先删后插）+ 真实快讯窗口滚动共同造成的，
+  与 P5 无关——本阶段的两个清理接口在验收里全部走「拒绝执行 / 0 行删除」，留档接口只写快照表。

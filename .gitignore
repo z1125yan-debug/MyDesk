@@ -59,3 +59,6 @@ data/factor-verify-report*.json
 # 视觉选型稿：4 套风格页全部是手写死的示例数据、src/ 无引用（见 eltdx-验证-实时与五档.md §设计稿 与 worklog 判定），非项目正式资产
 # 仅排除入库，文件保留在磁盘；需要正式收录时用 git add -f
 design-mockups/
+
+# P5 生命周期清理的运行时导出目录（每次真实清理写出的 JSON 快照，可能含大量明细行；导出逻辑不变，只是不入版本库）
+data/lifecycle/

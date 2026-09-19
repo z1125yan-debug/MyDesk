@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, PlugZap, Server, Plus, Trash2, FileJson, Info } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
+import { LifecyclePanel } from "../LifecyclePanel";
 import { aiChat, aiConfigured, PROVIDER_PRESETS } from "@/lib/desk/ai";
 import type { AiProvider, McpServerConfig, McpToolInfo } from "@/lib/desk/types";
 
@@ -326,6 +327,8 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      <LifecyclePanel />
 
       <div className="flex items-start gap-2.5 rounded-xl border border-border bg-card p-4 text-[12.5px] leading-5 text-muted-foreground">
         <Info size={15} className="mt-0.5 shrink-0 text-sky-400" />

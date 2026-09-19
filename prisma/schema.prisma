@@ -272,3 +272,76 @@ model ScanCursor {
   @@unique([kind, tradeDate])
   @@map("scan_cursor")
 }
+
+// ===== P5 第五阶段：Risk / Themes / Probability 的每日留档 =====
+// 三页此前完全不落库：每次打开页面按当时的真实上游数据现算，关掉就没了 ⇒ 无法回答「上周那天的风险等级是多少」。
+// 三张表的共同口径：
+// 1) 行内容 = 服务端在留档那一刻调用「页面同源的计算函数」算出来的结果（见 src/app/api/snapshot/*），
+//    绝不接受前端把算好的数字 POST 上来入库 —— 那样等于把可伪造的数据写进正式库（REAL_DATA_ONLY）。
+// 2) payload 存当次接口完整响应，另把最常回看的几个字段提成列，方便不解析 JSON 也能按天比较。
+// 3) 同一天允许多条留档（盘中留一次、收盘后留一次都是真实计算结果），computedAt 记录各次时刻；
+//    不做「同日覆盖」：覆盖会把先一次的真实结果抹掉，那正是第三/四阶段反对的做法。
+// 4) null / 空数组 = 当时确实算不出来（例如炸板率当日无触板），不以 0 代替；缺失口径随 missing 列一起留档。
+// 5) 本阶段只手动「留档今天」，不挂调度器 ⇒ 不存在「每天自动留档」这种说法。
+//    这三张表不参与第五阶段的过期清理：用户授权的清理范围只有 radar_finding / global_event 明细行。
+
+model RiskSnapshot {
+  id         String  @id @default(cuid())
+  tradeDate  String // 北京时间交易日 YYYY-MM-DD
+  computedAt String // 留档时刻（北京时间 'YYYY-MM-DD HH:mm:ss'）
+  level      String // 正常 | 注意 | 偏高 | 高风险（当次 risk.level）
+  total      Int     @default(0) // 参与统计的个股数
+  advancers  Int     @default(0)
+  decliners  Int     @default(0)
+  limitUp    Int     @default(0)
+  limitDown  Int     @default(0)
+  breakRate  Float? // 炸板率 %；null = 当日触板数为 0 算不出（不以 0 代替）
+  mainNetYi  Float   @default(0)
+  medianPct  Float   @default(0)
+  live       Boolean @default(false) // 计算瞬间是否处于交易时段：留档是当时快照，不冒充收盘值
+  payload    String  @default("{}") // 当次 /api/market/risk 的完整响应
+  missing    String  @default("[]") // JSON：当次的数据缺失口径
+  source     String  @default("") // 数据来源与端点（服务端算的，不是前端传的）
+
+  @@index([tradeDate])
+  @@map("risk_snapshot")
+}
+
+model ThemeSnapshot {
+  id           String  @id @default(cuid())
+  tradeDate    String
+  computedAt   String
+  mainCount    Int     @default(0)
+  subCount     Int     @default(0)
+  rotationCount Int    @default(0)
+  watchCount   Int     @default(0)
+  topMain      String  @default("[]") // JSON：主线名+评分，按天比较时不必解析整个 payload
+  payload      String  @default("{}")
+  missing      String  @default("[]")
+  source       String  @default("")
+
+  @@index([tradeDate])
+  @@map("theme_snapshot")
+}
+
+// 概率页的结果依赖「哪一组筛选条件」，所以留档必须连条件一起存：
+// 没有 conditions 的留档行等于一条无法复现、也无法解释的胜率数字，宁可不存。
+model ProbabilitySnapshot {
+  id         String  @id @default(cuid())
+  tradeDate  String // 回放基准日（接口 as_of_trade_date，可能是历史交易日）
+  computedAt String // 留档时刻
+  tradeDateIsHistorical Boolean @default(false) // 回放基准日早于留档当日（历史回放，不是当日实况）
+  scope      String  @default("") // 人类可读口径：标的池 + 回看天数 + 条件条数
+  conditions String  @default("[]") // JSON：这次留档用的筛选条件（用户输入，非市场数据）
+  universe   String  @default("index")
+  lookback   Int     @default(520)
+  pooled     String  @default("[]") // JSON：1/5/20 日汇总（胜率/均值/样本数/基准/超额/回撤）
+  sampleOk   Boolean @default(false) // 是否有任一期限样本数 ≥30（不足时页面必须提示）
+  benchmark  String  @default("") // 基准指数口径
+  payload    String  @default("{}")
+  missing    String  @default("[]") // JSON：当次的 warnings（含「快照口径条件不参与历史回放」等）
+  source     String  @default("")
+
+  @@index([tradeDate])
+  @@map("probability_snapshot")
+}
