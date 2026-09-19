@@ -3,7 +3,7 @@ import {
   Sparkles, Radar, Filter, UserSearch, Gauge, ListOrdered, Target,
   LayoutDashboard, BarChart3, LineChart, History, Bot,
   FlaskConical, Puzzle, Settings, Snowflake, LayoutGrid, Microscope,
-  ShieldAlert, Compass, Globe2, Percent, ScanSearch,
+  ShieldAlert, Compass, Globe2, Percent, ScanSearch, Telescope,
 } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import type { PageKey } from "@/lib/desk/types";
@@ -48,6 +48,7 @@ const GROUPS: { title: string; items: { key: PageKey; label: string; icon: React
       { key: "problab", label: "历史概率", icon: Percent },
       { key: "radar", label: "主动发现", icon: ScanSearch },
       { key: "events", label: "事件雷达", icon: Globe2 },
+      { key: "research", label: "AI 市场研究", icon: Telescope },
     ],
   },
   {
