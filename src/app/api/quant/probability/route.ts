@@ -105,6 +105,9 @@ export async function POST(request: Request) {
       ok: true,
       as_of_trade_date: asOf,
       trade_date_is_historical: isHistorical,
+      /** P5 留档口径：把「本次真正生效的回看天数」回显出来（请求里的值会被 120..800 夹取），
+       *  留档接口据此存列，避免页面显示一个、库里记另一个。纯新增字段，不改任何计算。 */
+      lookback,
       benchmark: { symbol: BENCHMARK_SYMBOL, name: BENCHMARK_NAME, bars: benchBars.length },
       universe: body.symbols?.length ? "custom" : "index",
       per_symbol: per,

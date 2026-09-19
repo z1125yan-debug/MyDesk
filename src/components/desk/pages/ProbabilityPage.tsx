@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Percent } from "lucide-react";
 import { PctText, NumText, SourceBadge } from "../SourceBadge";
+import { SnapshotBar } from "../SnapshotBar";
 import { useDesk } from "@/lib/desk/store";
 import {
   fetchFactorCatalog, fetchTradeDates, runProbabilityApi,
@@ -36,6 +37,9 @@ export default function ProbabilityPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<ProbabilityResp | null>(null);
+  // 留档要连「这次用的是哪一组条件」一起存：没有条件的胜率数字无法复现也无法解释。
+  // 记的是上一次**成功计算**真正发出去的请求体，不随用户之后改动 pill 而变（改完没重算就留档，留的仍是刚算出的那份结果对应的条件）。
+  const [lastReq, setLastReq] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     fetchFactorCatalog().then((c) => setCatalog({ fields: c.fields })).catch((e) => setError(String(e.message || e)));
@@ -63,12 +67,14 @@ export default function ProbabilityPage() {
       const symbols = universe === "custom"
         ? custom.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean)
         : undefined;
-      setResult(await runProbabilityApi({
+      const body = {
         conditions: chips.map(({ zh: _z, ...c }) => c),
         universe,
         symbols,
         trade_date: tradeDate || undefined,
-      }));
+      };
+      setResult(await runProbabilityApi(body));
+      setLastReq(body);
     } catch (e) {
       setError(String((e as Error).message || e));
       setResult(null);
@@ -151,6 +157,9 @@ export default function ProbabilityPage() {
         </div>
       </div>
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+      <SnapshotBar kind="probability" label="条件概率"
+        sideEffect="留档这一下会在服务端按上面那组条件真的重算一次（拉指数/自定义池 K 线 + 全A快照），并把条件一起存进 probability_snapshot。"
+        getRequest={() => lastReq} />
       {result && (
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-3">

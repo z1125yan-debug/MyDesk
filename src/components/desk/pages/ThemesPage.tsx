@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Compass, Loader2, RefreshCw } from "lucide-react";
 import { PctText, NumText, SourceBadge } from "../SourceBadge";
+import { SnapshotBar } from "../SnapshotBar";
 import { fetchThemes, type ThemeDiscoveryClient, type ThemeRowClient } from "@/lib/desk/quant-api";
 import { useDesk } from "@/lib/desk/store";
 
@@ -66,6 +67,8 @@ export default function ThemesPage() {
         </div>
       </div>
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+      <SnapshotBar kind="themes" label="主线发现"
+        sideEffect="留档这一下会绕过 45 秒内存缓存、在服务端重算一次主线发现（板块榜 + 成分扩散 + 板块资金/日K），存的是那一刻的结果。" />
       {data && (
         <>
           <Block title="主线" rows={data.main} tone="text-red-400" />

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw, ShieldAlert } from "lucide-react";
 import { SourceBadge, PctText } from "../SourceBadge";
+import { SnapshotBar } from "../SnapshotBar";
 import { fetchRisk, type RiskClient } from "@/lib/desk/quant-api";
 import { useDesk } from "@/lib/desk/store";
 
@@ -42,6 +43,8 @@ export default function RiskPage() {
         </div>
       </div>
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+      <SnapshotBar kind="risk" label="风险监控"
+        sideEffect="留档这一下会在服务端真的重算一次（全A快照 + 指数行情 + 相似历史日统计），不是读本页缓存、也不是把上面的数字上传存起来。" />
       {data && (
         <>
           <div className={`rounded-xl border px-5 py-4 ${levelClass(data.risk.level)}`}>
