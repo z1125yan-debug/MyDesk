@@ -193,7 +193,7 @@ export default function AiHomePage() {
               </div>
             )}
             <div className="mt-2 text-[10.5px] leading-4 text-muted-foreground/70">
-              「AI 主动发现」属 P2 市场雷达（当前需手动扫描，尚无后台自动推送），此处为真实市场状态摘要；{sent?.missing.length ? `暂缺：${sent.missing.join("、")}` : ""}
+              「AI 主动发现」属 P2 市场雷达（交易日收盘后由服务进程内的调度器自动扫描一次，也可在雷达页手动扫描；服务未启动时不会自动跑），此处为真实市场状态摘要；{sent?.missing.length ? `暂缺：${sent.missing.join("、")}` : ""}
             </div>
           </div>
         </div>

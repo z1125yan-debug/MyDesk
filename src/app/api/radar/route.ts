@@ -1,8 +1,9 @@
 // GET 最新发现 / POST 立即扫描并落库（P2-4）
+// 手动点击扫描与后台调度共用 scheduler.runTaskTracked（内部落库实现见 screener/persist.ts），保证幂等口径与任务记录只有一份实现
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
-import { buildRadarFindings } from "@/lib/quant/screener/radar";
+import { runTaskTracked, scanFailMessage } from "@/lib/quant/scheduler/index";
 import { shanghaiDate } from "@/lib/desk/session";
 
 export const dynamic = "force-dynamic";
@@ -28,32 +29,23 @@ export async function GET() {
   }
 }
 
+// POST 手动扫描：与后台调度共用 scheduler.runTaskTracked —— 既落 radar_finding，也落一条 task_run（trigger=manual），
+// 这样「这次是谁跑的、跑成功没有、拿到多少条」在同一个地方能查到。force=true：用户点了就必须真跑，
+// 唯一还会拦的情况是同类型任务正在执行（running），避免两个扫描同时改当日数据。
 export async function POST() {
   quantBootstrap();
   try {
-    const scan = await buildRadarFindings();
-    await db.radarFinding.deleteMany({ where: { asOf: scan.trade_date } });
-    if (scan.items.length) {
-      await db.radarFinding.createMany({
-        data: scan.items.map((it) => ({
-          asOf: scan.trade_date,
-          kind: it.kind,
-          title: it.title,
-          detail: it.detail,
-          evidence: JSON.stringify(it.evidence),
-        })),
-      });
+    const { outcome, result } = await runTaskTracked("radar", "manual", { force: true });
+    if (!result) {
+      return NextResponse.json({ ok: false, error: scanFailMessage(outcome), task: outcome }, { status: 502 });
     }
-    const rows = await db.radarFinding.findMany({ where: { asOf: scan.trade_date }, orderBy: { createdAt: "asc" } });
     return NextResponse.json({
       ok: true,
-      as_of: scan.as_of,
-      trade_date: scan.trade_date,
-      missing: scan.missing,
-      items: rows.map((r) => ({
-        id: r.id, kind: r.kind, title: r.title, detail: r.detail,
-        evidence: JSON.parse(r.evidence || "{}"),
-      })),
+      as_of: result.as_of,
+      trade_date: result.trade_date,
+      missing: result.missing,
+      items: result.items,
+      task: outcome,
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 502 });

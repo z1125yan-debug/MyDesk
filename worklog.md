@@ -300,3 +300,58 @@
 - `npx tsc --noEmit` → 0 错误。
 - `node --test tests/quant/*.test.ts` → 112 例：108 通过、4 skipped（即 `p2-scan-loop`，需显式开启）、0 失败。
 - 待人工确认提交范围后再 commit：本轮改动 = `.gitignore`、`EventsPage`、`RadarPage`、`AiHomePage`、`ProbabilityPage`、`AppShell`、`schema.prisma`（注释）、2 个新测试 + 其他会话 P2 WIP（含 `custom.db`）；`design-mockups/` 已被忽略规则排除。
+
+## P2 第二阶段 后台自动化（2026-09-19：清单第 9–13 项，触发机制=服务端进程内调度，服务形态=常驻生产服务）
+
+### 实现与取舍
+
+- **9/10 后台扫描不依赖网页**：`src/instrumentation.ts` 的 `register()`（Next 16 钩子，`NEXT_RUNTIME==="nodejs"` 才生效）在服务进程启动时调用 `startScheduler()`；定时器与浏览器无关。
+  边界如实写入 API/页面/记录：`任务随服务端进程运行：网页可关闭，但服务未启动时不会执行`。不写「无人值守 / 每天自动运行」。
+- **11 收盘后自动触发**：`src/lib/quant/scheduler/rules.ts`（纯函数、可单测）定义窗口 = 交易日北京 15:00 收盘 + 20 分钟等待（`DESK_SCHEDULER_DELAY_MIN` 可调），每 60s tick 一次；
+  交易日只认「上证指数（`000001.SH`）真实日线的最后一根日期」（`judgeTradingDay`）：相等=交易日、更早=休市、拿不到数据=**不可确证**（记 skipped，不猜）。
+  周末不排班；执行链路 = 判定 → `archiveRadarScan/archiveEventScan`（扫描→当日先删后插→回读）→ 写 `task_run`。
+- **12 防重复执行**：`decideRun(rows, cfg, now, successSince)` 四类拦截 `already_success / running / max_attempts / non_trading_day`。
+  关键口径：**自动任务只认「完成时刻不早于当日收盘窗口」的成功**——盘中 10:00 的手动扫描不会挡掉 15:20 的收盘扫描（盘中数据不等于收盘数据）；
+  手动补跑接口默认仍受「当日已有成功」拦截，只有显式 `force=true` 才绕过，且绕过时 note 写「强制补跑，不计入自动重试次数」；
+  `running` 行 30 分钟内互斥、超过 30 分钟视为进程崩溃遗留自动放行（任务恢复）；失败按 `maxAttempts`（默认 3）有限重试；
+  休市一旦确证，当天不再重复探测数据源；确证不了则最多每 15 分钟再问一次。被拦截的触发**不写业务表也不写 task_run**，避免无意义重复数据。
+- **13 任务运行记录**：新表 `task_run`（`prisma/schema.prisma` 的 `TaskRun`，`prisma db push` 已同步）：
+  `kind / tradeDate / status(running|success|failure|skipped) / trigger(schedule|manual) / startedAt / finishedAt / scanned / results / missing(JSON) / error / basis / note`。
+  `error` 对 skipped 行存机器码（`non_trading_day` / `trading_day_unconfirmed`），供 `decideRun` 判定；`basis` 存数据来源与交易日判定依据。
+  查询接口 `GET /api/tasks/status`（调度器是否启用/在跑、下次窗口、当日汇总、当日与最近 20 条记录、能力边界），手动触发 `POST /api/tasks/run {kind, force?}`。
+  **只允许跑当日**：传历史 `trade_date` 直接 400——扫描器读的是当前实时行情，标成历史日期会造出对不上的记录。
+- 落库逻辑抽出 `src/lib/quant/screener/persist.ts`（唯一实现），`/api/radar`、`/api/events` 的 POST 改走 `scheduler.runTaskTracked(kind,"manual",{force:true})`，
+  响应字段保持不变并新增 `task`；因此手动点击同样留痕，且 `trigger=manual` 与自动可区分。事件 POST 现在也会先 `quantBootstrap()`（原先没有，走统一入口）。
+- 页面可见性：新组件 `src/components/desk/AutoTaskLine.tsx`（Radar/Events 各一条），文案完全由 `task_run` 真实行推导：
+  「今日收盘后已自动扫描」只有 `trigger=schedule` 的 success 行才出现；手动扫描显示「手动」；休市依据、扫描/落库条数、最近错误、失败次数一并展示；
+  Radar/Events/AI 首页副标题从「当前无后台自动扫描」改为「交易日收盘后由服务进程内的调度器自动扫描一次」（不再与实际能力不符）。
+
+### 过程中发现并修复的真实缺陷
+
+- **EM Provider 在生产构建下未注册**：切 `next build` + `next start` 后 `GET /api/quant/data/bars` 返回 `EM Provider 未注册（仅服务端可用）`。
+  根因：`quantBootstrap()` 的幂等标记放在 `globalThis`，而 Provider 注册表 `loaders` 是模块级变量；同一份 `data/index.ts` 在生产 bundle 里因说明符不同被打成两个实例，
+  先跑的（现在是 instrumentation）置位标记，后加载的路由实例永远不会再注册。dev 下不复现，故此前未暴露。
+  修复：`src/lib/quant/data/index.ts` 的 `loaders` 改为挂在 `globalThis.__quantProviderLoaders`（注册表与其守卫必须同作用域）。修复后接口恢复真实数据（上证日线最后一条 `2026-09-18`）。
+- 状态接口字段 `done_after_close` 更名 `settled`：非交易日窗口为 0 时它会对「手动扫描」也为 true，名字会误导；页面仍用 `trigger` 区分自动/手动。
+- `note` 曾写出「第 ? 次尝试」（force 绕过幂等时无序号）：改为强制补跑单独措辞，普通路径按「当日失败数 + 1」给序号。
+
+### 实测（生产服务 `npx next build` + `npx next start -p 3010`）
+
+- 启动日志：`[scheduler] 已启动：每 60s 检查；执行窗口=交易日北京 15:20；下次 2026-09-21 15:20（2026-09-21T07:20:00.000Z）；任务 radar、events`。
+- `GET /api/tasks/status`：`enabled=true running=true tick_seconds=60 today=2026-09-19 due_now=false slot_at=null next=2026-09-21T07:20Z`；
+  无浏览器交互时 `last_tick_at` 仍从 `04:01:40Z` 推进到 `04:03:40Z`，`last_outcome=未到执行窗口（2026-09-19，当日不排班）` → 定时器确实在服务进程内跑。
+- 交易日闸门（真实周六）：`POST /api/tasks/run {kind:"radar"}` → `status=skipped`，记录 `error=non_trading_day`、
+  `basis=上证指数日线最新交易日 2026-09-18 早于目标日 2026-09-19：休市/节假日，当日无新数据`、`note=未执行扫描，未产生任何数据`（events 同）。
+  期间还验证了「确证不了」→「确证休市」会升级同一条 skipped 记录而不新增行。
+- 手动闭环：`POST /api/radar` → `ok=true items=8 task={status:"success",results:8}`，落库 8 条与读回一致；
+  `POST /api/events` → `scanned=24 unmatched=24 results=0`（周六真实快讯全未命中映射，未入库、未编造产业链）。
+- 幂等：随后 `POST /api/tasks/run {kind:"radar"}`（不带 force）→ `skipped(non_trading_day)`，`task_run` 行数不变、当日条数不变；带 `force=true` 才真的再跑一次。
+- 页面（浏览器实机）：Radar / Events 两条状态行分别显示「今日未运行（等待 09/21 15:20 窗口）；当日最近一次为 手动 触发 · 扫描 8 条 / 落库 8 条；…休市/节假日…；最近记录 成功/手动 09/19 12:01」，
+  徽章仍为 `HISTORICAL`（radar_finding / global_event 当日库行）。
+- `npx tsc --noEmit` → 0 错误；`node --test tests/quant/*.test.ts` → 123 例：118 通过、5 skipped（均需 `MYDESK_INTEGRATION=1` 显式开启的真实闭环）、0 失败；
+  `MYDESK_INTEGRATION=1` 实跑 `p2-scan-loop` → 5/5 通过（新增第 5 例：手动扫描必须留 `task_run` 行、条数与接口一致、重复触发不产生新行、历史日期必须 400）；
+  新增 `tests/quant/p3-scheduler-rules.test.ts`（10 例纯规则：北京时区、周末顺延、窗口、四类幂等拦截、盘中手动不挡收盘自动、陈旧 running 恢复、失败上限、休市终止、交易日不可确证）。
+- 未做/待验：真实交易日 15:20 的自动执行只能等 2026-09-21（周一）当天服务在跑时观察；`task_run` 的历史清理策略属第五阶段，保留天数待人工决定。
+- 服务形态变更需人工知晓：本副本原 3010 端口的 `next dev` 进程已停止，改为 `next build` + `npx next start -p 3010`（日志 `.prod-server.log`）；
+  `next start` 会提示 `does not work with "output: standalone"`，实测功能正常（standalone 只影响容器化部署路径），未改动 `next.config.ts`。
+- 待人工确认后再 commit。

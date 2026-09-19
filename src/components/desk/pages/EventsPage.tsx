@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Globe2, Loader2, RefreshCw } from "lucide-react";
 import { SourceBadge, PctText } from "../SourceBadge";
+import { AutoTaskLine } from "../AutoTaskLine";
 import { fetchEvents, scanEvents, type EventItemClient } from "@/lib/desk/quant-api";
 
 const LEVEL_TONE: Record<string, string> = {
@@ -22,6 +23,7 @@ export default function EventsPage() {
   const [origin, setOrigin] = useState<"db" | "scan">("db");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [taskTick, setTaskTick] = useState(0); // 手动扫描后自增 → 任务状态条重读 task_run
 
   const load = useCallback(async () => {
     setError("");
@@ -39,7 +41,7 @@ export default function EventsPage() {
       setItems(j.items); setAsOf(j.trade_date); setMissing(j.missing ?? []); setUnmatched(j.unmatched ?? null);
       setOrigin("scan");
     } catch (e) { setError(String((e as Error).message || e)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setTaskTick((t) => t + 1); }
   };
 
   useEffect(() => { void load(); }, [load]);
@@ -49,7 +51,7 @@ export default function EventsPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Globe2 size={18} className="text-sky-400" /> 全球事件雷达</div>
-          <div className="text-[11px] text-muted-foreground">快讯关键词映射 → 板块资金验证 · 未命中映射的新闻不入库 · 手动扫描落库（非后台自动更新）</div>
+          <div className="text-[11px] text-muted-foreground">快讯关键词映射 → 板块资金验证 · 未命中映射的新闻不入库 · 交易日收盘后由服务进程内的调度器自动扫描一次，也可点「扫描今日」</div>
         </div>
         <div className="flex items-center gap-2">
           {asOf && (
@@ -65,8 +67,9 @@ export default function EventsPage() {
         </div>
       </div>
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+      <AutoTaskLine kind="events" refreshKey={taskTick} />
       {unmatched !== null && <div className="text-[11px] text-muted-foreground">未映射快讯 {unmatched} 条（已忽略，未编造产业链）</div>}
-      {!items.length && !busy && <div className="text-xs text-muted-foreground">尚无入库事件，点击「扫描今日」。</div>}
+      {!items.length && !busy && <div className="text-xs text-muted-foreground">尚无入库事件：等待收盘后自动任务，或点击「扫描今日」。</div>}
       <div className="space-y-2">
         {items.map((ev) => (
           <div key={ev.id} className={`rounded-xl border bg-card px-4 py-3 ${LEVEL_TONE[ev.level] ?? "border-border"}`}>
