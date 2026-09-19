@@ -26,7 +26,13 @@ export interface AssetMeta {
   pe?: number;
   pb?: number;
   price?: number; // 最新快照价
+  changePct?: number; // 涨跌幅 %
   turnover?: number; // 换手率 %
+  volumeRatio?: number; // 量比（东财 f10，快照口径）
+  amplitude?: number; // 振幅 %
+  high?: number; // 当日最高（快照口径，P0补齐·炸板率）
+  prevClose?: number; // 昨收（快照口径，P0补齐·炸板率）
+  mainNet?: number; // 主力净额（元，东财 f62，快照口径）
   volume?: number; // 成交量
   amount?: number; // 成交额
   st?: boolean; // 名称含 ST/*ST

@@ -4,9 +4,11 @@ import { PanelLeftClose, Search, Sparkles, RefreshCw } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { searchSymbols, type SuggestItem } from "@/lib/desk/market";
 import { aiConfigured } from "@/lib/desk/ai";
+import { useMarketSession } from "@/hooks/use-market-session";
 import ThemeToggle from "./ThemeToggle";
 
 export default function TopBar() {
+  const session = useMarketSession();
   const toggleSidebar = useDesk((s) => s.toggleSidebar);
   const go = useDesk((s) => s.go);
   const setFocus = useDesk((s) => s.setFocusSymbol);
@@ -80,8 +82,10 @@ export default function TopBar() {
 
       <div className="ml-auto flex items-center gap-2.5 text-[12px]">
         <span className="hidden items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-muted-foreground md:inline-flex">
-          <RefreshCw size={12.5} />
-          自动刷新 {refreshInterval >= 60 ? `${Math.round(refreshInterval / 60)} 分` : `${refreshInterval} 秒`}
+          <RefreshCw size={12.5} className={session.open ? "" : "opacity-45"} />
+          {session.open
+            ? `自动刷新 ${refreshInterval >= 60 ? `${Math.round(refreshInterval / 60)} 分` : `${refreshInterval} 秒`}`
+            : `A股${session.label} · 刷新已暂停`}
         </span>
         <ThemeToggle />
         <button

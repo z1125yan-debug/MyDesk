@@ -5,6 +5,18 @@ import type {
   PageKey, WatchItem, TrackerPlan, HistoryEntry, ChatMsg, AiSettings, McpServerConfig,
 } from "./types";
 
+// 冻结候选池（需求文档 二十三：冻结后原始候选结果不得被覆盖）
+export interface FrozenPool {
+  id: string;            // 2026-09-19-AI-001
+  createdAt: string;     // HH:mm:ss
+  asOf: string;          // 交易日
+  universe: string;
+  conditions: { field: string; op: string; value: number | string }[];
+  source: string;        // 产生方式（AI扫描/因子选股/手工）
+  rows: { symbol: string; name: string; close: number | null; changePct: number | null; score?: number; reason?: string }[];
+  nextVerify?: { date: string; results: Record<string, { open: number; high: number; low: number; close: number; ret1d: number | null }> };
+}
+
 interface DeskState {
   page: PageKey;
   sidebarCollapsed: boolean;
@@ -18,6 +30,7 @@ interface DeskState {
   mcpServers: McpServerConfig[];
   refreshInterval: number;     // 秒
   extensionKey: string;
+  frozenPools: FrozenPool[];
 
   go: (p: PageKey) => void;
   toggleSidebar: () => void;
@@ -37,6 +50,9 @@ interface DeskState {
   setMcpServers: (s: McpServerConfig[]) => void;
   setRefreshInterval: (n: number) => void;
   regenExtensionKey: () => void;
+  addFrozenPool: (p: FrozenPool) => void;
+  dropFrozenPool: (id: string) => void;
+  attachVerify: (id: string, v: NonNullable<FrozenPool["nextVerify"]>) => void;
 }
 
 const DEFAULT_AI: AiSettings = {
@@ -53,7 +69,7 @@ function randKey() {
 export const useDesk = create<DeskState>()(
   persist(
     (set) => ({
-      page: "dashboard",
+      page: "aihome",
       sidebarCollapsed: false,
       focusSymbol: "000001.SH",
       watchlist: [
@@ -77,6 +93,7 @@ export const useDesk = create<DeskState>()(
       ],
       refreshInterval: 60,
       extensionKey: randKey(),
+      frozenPools: [],
 
       go: (p) => set({ page: p }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
@@ -100,6 +117,11 @@ export const useDesk = create<DeskState>()(
       setMcpServers: (sv) => set({ mcpServers: sv }),
       setRefreshInterval: (n) => set({ refreshInterval: n }),
       regenExtensionKey: () => set({ extensionKey: randKey() }),
+      addFrozenPool: (p) => set((s) => ({ frozenPools: [p, ...s.frozenPools].slice(0, 30) })),
+      dropFrozenPool: (id) => set((s) => ({ frozenPools: s.frozenPools.filter((x) => x.id !== id) })),
+      attachVerify: (id, v) => set((s) => ({
+        frozenPools: s.frozenPools.map((p) => (p.id === id ? { ...p, nextVerify: v } : p)),
+      })),
     }),
     {
       name: "mydesk-state",
@@ -116,6 +138,7 @@ export const useDesk = create<DeskState>()(
         mcpServers: s.mcpServers,
         refreshInterval: s.refreshInterval,
         extensionKey: s.extensionKey,
+        frozenPools: s.frozenPools,
       }),
     }
   )

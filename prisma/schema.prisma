@@ -133,3 +133,44 @@ model QuantJob {
   @@index([kind, status])
   @@map("quant_jobs")
 }
+
+// 候选池冻结（P1-1：冻结后 rows 永不覆盖，verify 次日回填）
+model CandidatePool {
+  poolId     String   @id
+  createdAt  DateTime @default(now())
+  asOf       String
+  universe   String
+  conditions String   @default("{}") // JSON
+  source     String   @default("")
+  dataSource String   @default("") // 数据来源口径（如 em（腾讯/东财…）；旧池为空=未记录）
+  rows       String   @default("[]") // JSON（冻结后永不覆盖）
+  verify     String?  // JSON（次日验证回填，可重算覆盖）
+
+  @@map("candidate_pool")
+}
+
+// 因子有效性测试（P1-4）：每次测试一条记录可追溯；verified 状态取最新一次 passed
+model FactorTest {
+  id             String   @id @default(cuid())
+  factorKey      String
+  horizon        Int      @default(5)
+  universe       String   @default("all_a_top")
+  dataRange      String   @default("") // 实际统计区间 2024-xx-xx~2026-09-xx
+  sampleStocks   Int      @default(0)
+  sampleDates    Int      @default(0)
+  ic             Float    @default(0)
+  rankIc         Float    @default(0)
+  icIr           Float    @default(0)
+  monotonicity   Float    @default(0)
+  turnover       Float    @default(0)
+  monthlyWinRate Float    @default(0)
+  maxDrawdown    Float    @default(0)
+  groupReturns   String   @default("[]") // JSON 5档分层年化
+  monthlyIc      String   @default("[]") // JSON 逐月 RankIC
+  passed         Boolean  @default(false)
+  note           String   @default("")
+  createdAt      DateTime @default(now())
+
+  @@index([factorKey, createdAt])
+  @@map("factor_test")
+}

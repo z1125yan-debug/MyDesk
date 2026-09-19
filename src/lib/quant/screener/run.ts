@@ -1,0 +1,353 @@
+// Quant Screener — 全A漏斗式选股引擎（服务端）
+// 层级（需求文档 十七）：股票池 → 快照口径粗筛 → K线子集（流动性Top-K）→ K线口径精筛
+//   → 排序分页 → （include_stats）逐只历史条件概率。
+// 硬规则：
+//  - 只用真实数据源（emProvider：腾讯/东财公开接口）；失败直接报错，绝不回退演示数据；
+//  - 大池不逐只无限拉K线：K线子集上限 maxKlineSymbols（默认 120，按快照成交额取流动性Top-K），
+//    漏斗各层数量全部返回给前端展示；
+//  - 未验证因子在响应中显式标注。
+
+import { getProvider } from "@/lib/quant/data/index";
+import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
+import { shanghaiDate } from "@/lib/desk/session";
+import { evalLimitSnapshot } from "./sentiment";
+import { buildFieldPanel, lastValues, factorCatalog, FACTOR_FIELD_MAP, type BarsLike } from "../factors/fields.ts";
+import { historicalWinProbability, type ScreenerCond, type WinProbStats } from "../factors/probability.ts";
+import type { AssetMeta } from "../types.ts";
+
+export type UniverseSpec = "all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] } | { kind: "industry"; boardCode: string };
+
+export interface ScreenerRequestBody {
+  universe?: UniverseSpec;
+  conditions?: ScreenerCond[];
+  fields?: string[];
+  sort?: { order_by?: string; order_dir?: "asc" | "desc" };
+  pagination?: { limit?: number; offset?: number };
+  include_stats?: boolean;
+  maxKlineSymbols?: number;
+  statsMaxRows?: number;
+}
+
+export interface ScreenerRow {
+  symbol: string;
+  name: string;
+  industry?: string;
+  close: number | null;
+  change_pct: number | null;
+  values: Record<string, number | null>;
+  win_prob?: WinProbStats | null;
+}
+
+export interface ScreenerResponse {
+  list: ScreenerRow[];
+  total: number;
+  page: { limit: number; offset: number };
+  as_of_trade_date: string;
+  trade_date_available: boolean;
+  funnel: { universe: number; snapshot_pass: number; kline_subset: number; kline_pass: number };
+  source: { provider: string; note: string; price_basis?: string };
+  /** §五：是否「本次涉及的因子全部已验证」（动态绑定 factor-verified 落盘状态，非静态写死） */
+  factors_verified: boolean;
+  factor_verify: { total: number; enabled: number; verified: number; unverified: number };
+  warnings: string[];
+}
+
+function shanghaiToday(): string {
+  return shanghaiDate();
+}
+
+function cmpNum(v: number | null | undefined, op: string, value: number): boolean {
+  if (v === null || v === undefined || !isFinite(v)) return false;
+  switch (op) {
+    case "=": return Math.abs(v - value) < 1e-9;
+    case ">=": return v >= value;
+    case ">": return v > value;
+    case "<=": return v <= value;
+    case "<": return v < value;
+    case "!=": return Math.abs(v - value) >= 1e-9;
+    case "like": return String(v).includes(String(value));
+    default: return false;
+  }
+}
+
+// §三（验收修复）：涨停实时状态优先用实时快照（snapshot_time），而非K线最后一根（bar_time 可能滞后）。
+// 快照不可判（新股无涨跌幅限制期 / 缺 prevClose/high）→ 返回 null=UNKNOWN，绝不冒充 false。
+function snapLimitUp(m: AssetMeta): number | null {
+  const ev = evalLimitSnapshot(m);
+  return ev === null ? null : ev.sealed ? 1 : 0;
+}
+
+// 快照口径条件的当日求值（AssetMeta → 字段值）
+function snapshotValue(meta: AssetMeta, field: string): number | null {
+  switch (field) {
+    case "pe_ttm": return meta.pe ?? null;
+    case "pb": return meta.pb ?? null;
+    case "market_cap_yi": return meta.marketCap != null ? meta.marketCap / 1e8 : null;
+    case "floatcap_yi": return meta.floatCap != null ? meta.floatCap / 1e8 : null;
+    case "change_pct": return meta.changePct ?? null;
+    case "turnover_rate": return meta.turnover ?? null;
+    case "volume_ratio": return meta.volumeRatio ?? null;
+    case "amplitude": return meta.amplitude ?? null;
+    case "amount_yi": return meta.amount != null ? meta.amount / 1e8 : null;
+    case "main_net_yi": return meta.mainNet != null ? meta.mainNet / 1e8 : null;
+    default: return null;
+  }
+}
+
+export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerResponse> {
+  const provider = await getProvider("em");
+  const asOf = shanghaiToday();
+  const warnings: string[] = [];
+  const allConds = body.conditions ?? [];
+  const unknownFields = allConds.filter((c) => !FACTOR_FIELD_MAP.has(c.field)).map((c) => c.field);
+  if (unknownFields.length) warnings.push(`未知因子字段已忽略：${unknownFields.join("、")}`);
+  // 已登记但未实现（implemented=false，如依赖筹码分布/无原始公式）：不参与筛选，显式提示而非静默永不命中
+  const pendingFields = [
+    ...new Set(
+      allConds
+        .filter((c) => FACTOR_FIELD_MAP.has(c.field) && FACTOR_FIELD_MAP.get(c.field)!.implemented === false)
+        .map((c) => c.field)
+    ),
+  ];
+  if (pendingFields.length)
+    warnings.push(`已登记但未实现的因子已忽略：${pendingFields.join("、")}（依赖筹码分布或无原始公式，见因子实验室 status=pending_dependency）`);
+  const conditions = allConds.filter(
+    (c) => FACTOR_FIELD_MAP.has(c.field) && FACTOR_FIELD_MAP.get(c.field)!.implemented !== false
+  );
+
+  const snapConds = conditions.filter((c) => FACTOR_FIELD_MAP.get(c.field)!.source === "snapshot");
+  const klineConds = conditions.filter((c) => FACTOR_FIELD_MAP.get(c.field)!.source === "kline");
+  const hasSectorCond = (body.conditions ?? []).some((c) => c.field === "sector");
+  if (hasSectorCond) warnings.push("板块(sector)条件暂未接入：请用 industry 字段或在结果中按行业筛选");
+  const hasRolling = conditions.some((c) => (c.type ?? "single") !== "single");
+  if (hasRolling && !klineConds.length) {
+    // rolling 条件作用于任意字段的日序列；快照字段无历史 → 明确拒绝而不是静默忽略
+    warnings.push("近N日(rolling)条件仅支持K线口径字段；含快照字段的rolling条件无法进行（无历史时点数据）");
+  }
+
+  // 1) 股票池
+  const spec = body.universe ?? "all_a";
+  let metas: AssetMeta[];
+  if (typeof spec === "string") {
+    metas = await provider.listUniverse({ kind: "all" }, asOf);
+    if (spec === "hs_a") metas = metas.filter((m) => !m.symbol.endsWith(".BJ"));
+  } else if (spec.kind === "watchlist") {
+    metas = await provider.listUniverse({ kind: "custom", symbols: spec.symbols }, asOf);
+  } else {
+    metas = await provider.listUniverse({ kind: "industry", boardCode: spec.boardCode }, asOf);
+  }
+  const universeCount = metas.length;
+  if (!metas.length) throw new Error("股票池为空（数据源无返回）");
+
+  // 2) 快照口径粗筛（含 ST/停牌默认剔除）
+  const snapshotPass = metas.filter((m) => {
+    if (m.st) return false;
+    if (m.suspended) return false;
+    for (const c of snapConds) {
+      const v = snapshotValue(m, c.field);
+      const val = typeof c.value === "string" ? Number(c.value) : c.value;
+      if (!cmpNum(v, c.op, val)) return false;
+    }
+    return true;
+  });
+
+  // 3) K线子集：需要K线的条件/字段存在时，按成交额取流动性Top-K
+  const outFields = (body.fields ?? []).filter(
+    (f) => (FACTOR_FIELD_MAP.has(f) && FACTOR_FIELD_MAP.get(f)!.implemented !== false) || f === "close" || f === "change_pct"
+  );
+  const needKline =
+    klineConds.length > 0 ||
+    hasRolling ||
+    outFields.some((f) => FACTOR_FIELD_MAP.get(f)?.source === "kline");
+  const klineSubsetCap = Math.max(20, Math.min(600, body.maxKlineSymbols ?? 120));
+  let subset = snapshotPass;
+  if (needKline && subset.length > klineSubsetCap) {
+    subset = [...subset].sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0)).slice(0, klineSubsetCap);
+    warnings.push(`快照粗筛后 ${snapshotPass.length} 只超出K线子集上限 ${klineSubsetCap}：已按成交额取流动性Top-K参与K线条件（其余不参与）`);
+  }
+
+  let rows: ScreenerRow[] = [];
+  let klinePass = subset.length;
+
+  if (needKline && subset.length) {
+    // 4) 拉K线 + 建面板 + 逐日条件
+    const lookback = Math.max(
+      180,
+      ...klineConds.map((c) => {
+        const w = (c.type ?? "single") === "single" ? 0 : Math.max(1, c.window ?? 1);
+        const maN = c.field.startsWith("above_ma_") ? Number(c.field.slice(9)) : 0;
+        return w + maN + 30;
+      }),
+      ...["rps_120", "above_ma_144"].filter((f) => klineConds.some((c) => c.field === f) || outFields.includes(f)).map(() => 160),
+    );
+    const barsMap = await fetchBarsHybrid(subset.map((m) => m.symbol), asOf, lookback);
+    const symbols: string[] = [];
+    const barsList: BarsLike[][] = [];
+    const metasOf: (AssetMeta | undefined)[] = [];
+    for (const m of subset) {
+      const bars = (barsMap.get(m.symbol) ?? []) as BarsLike[];
+      if (!bars.length) continue;
+      symbols.push(m.symbol);
+      barsList.push(bars);
+      metasOf.push(m);
+    }
+    if (!symbols.length) throw new Error("K线子集全部无数据（数据源可能被限流，请稍后重试）");
+    const panel = buildFieldPanel(symbols, barsList, metasOf);
+    const lastVals = lastValues(panel);
+
+    // §三：bar_time 与 snapshot_time 一致性提示（周末/盘前 K线未更新属正常，仅在使用涨停类实时判定时说明口径）
+    const usesLimitSnap = klineConds.some((c) => c.field === "is_limit_up") || outFields.includes("is_limit_up");
+    const lastBarDate = panel.dates[panel.dates.length - 1] ?? "";
+    if (usesLimitSnap && lastBarDate && lastBarDate < asOf) {
+      warnings.push(`K线最后日期 ${lastBarDate} 早于当日 ${asOf}（bar_time < snapshot_time）：is_limit_up 实时态已优先使用快照口径`);
+    }
+    let limitUnknown = 0; // is_limit_up 快照不可判（UNKNOWN）计数
+
+    // 每只股票逐日评估 kline 条件（含 rolling），取「当日命中」的股票
+    const passedIdx: number[] = [];
+    for (let si = 0; si < symbols.length; si++) {
+      const seriesOf = (key: string) => panel.fields.get(key)?.[si];
+      let ok = true;
+      for (const c of klineConds) {
+        const val = typeof c.value === "string" ? Number(c.value) : c.value;
+        const type = c.type ?? "single";
+        // §三：is_limit_up 的「当日」判定优先实时快照；不可判 → UNKNOWN（计警告，不按 false 处理）
+        if (c.field === "is_limit_up" && type === "single") {
+          const sv = snapLimitUp(metasOf[si]!);
+          if (sv === null) { limitUnknown++; ok = false; break; }
+          if (!cmpNum(sv, c.op, val)) { ok = false; break; }
+          continue;
+        }
+        const series = seriesOf(c.field);
+        if (!series) { ok = false; break; }
+        const T = series.length;
+        if (type === "single") {
+          if (!cmpNum(series[T - 1] ?? null, c.op, val)) { ok = false; break; }
+        } else {
+          // rolling 条件：按「以最后一日为终点」评估（与历史概率引擎同规则）
+          const probe = (t: number): boolean => {
+            const w = Math.max(1, Math.min(250, c.window ?? 0));
+            if (type === "rolling_return") {
+              if (t < w) return false;
+              const now = series[t], then = series[t - w];
+              if (now === null || then === null || then <= 0) return false;
+              return cmpNum((now / then - 1) * 100, c.op, val);
+            }
+            if (type === "rolling_sum") {
+              if (t < w - 1) return false;
+              let s = 0, o = true;
+              for (let i = t - w + 1; i <= t; i++) { const v = series[i]; if (v === null) { o = false; break; } s += v; }
+              return o ? cmpNum(s, c.op, val) : false;
+            }
+            if (t < w - 1) return false;
+            let hits = 0;
+            for (let i = t - w + 1; i <= t; i++) if (cmpNum(series[i] ?? null, c.op, val)) hits++;
+            return hits >= Math.max(1, c.min_match_days ?? 1);
+          };
+          if (!probe(T - 1)) { ok = false; break; }
+        }
+      }
+      if (ok) passedIdx.push(si);
+    }
+    klinePass = passedIdx.length;
+    if (limitUnknown > 0) warnings.push(`涨停判定 UNKNOWN ${limitUnknown} 只（快照缺 prevClose/high 或新股无涨跌幅限制期）：条件求值按不满足剔除并显式计数，不作「确认未涨停」结论；展示值回退K线口径并另有 bar_time 提示`);
+
+    rows = passedIdx.map((si) => {
+      const m = metasOf[si]!;
+      const vals = lastVals.get(symbols[si]) ?? new Map();
+      const values: Record<string, number | null> = {};
+      for (const f of outFields) {
+        values[f] = f === "close" ? (m.price ?? vals.get("c") ?? null)
+          : f === "change_pct" ? (m.changePct ?? null)
+          : f === "is_limit_up" ? (snapLimitUp(m) ?? vals.get(f) ?? null) // §三：快照优先，不可判回退K线口径
+          : vals.get(f) ?? null;
+      }
+      return {
+        symbol: m.symbol, name: m.name, industry: m.industry,
+        close: m.price ?? null, change_pct: m.changePct ?? null, values,
+      };
+    });
+  } else {
+    rows = snapshotPass.map((m) => {
+      const values: Record<string, number | null> = {};
+      for (const f of outFields) values[f] = f === "close" ? (m.price ?? null) : f === "change_pct" ? (m.changePct ?? null) : snapshotValue(m, f);
+      return { symbol: m.symbol, name: m.name, industry: m.industry, close: m.price ?? null, change_pct: m.changePct ?? null, values };
+    });
+  }
+
+  // 5) 排序 + 分页
+  const orderBy = body.sort?.order_by ?? "amount_yi";
+  const dir = body.sort?.order_dir === "asc" ? 1 : -1;
+  const sortVal = (r: ScreenerRow): number | null => {
+    if (orderBy === "close") return r.close;
+    if (orderBy === "change_pct") return r.change_pct;
+    if (orderBy === "win_rate_1d" && r.win_prob) return r.win_prob.horizons.find((h) => h.h === 1)?.win_rate ?? null;
+    return r.values[orderBy] ?? null;
+  };
+  rows.sort((a, b) => {
+    const va = sortVal(a), vb = sortVal(b);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    return (va - vb) * dir;
+  });
+
+  const limit = Math.max(1, Math.min(200, body.pagination?.limit ?? 50));
+  const offset = Math.max(0, body.pagination?.offset ?? 0);
+  const pageRows = rows.slice(offset, offset + limit);
+
+  // 6) include_stats：对本页结果逐只做历史条件概率（仅K线口径条件参与）
+  if (body.include_stats && pageRows.length) {
+    const statsMax = Math.max(1, Math.min(40, body.statsMaxRows ?? 25));
+    for (const row of pageRows.slice(0, statsMax)) {
+      try {
+        const barsMap = await fetchBarsHybrid([row.symbol], asOf, 480);
+        const bars = (barsMap.get(row.symbol) ?? []) as BarsLike[];
+        if (bars.length < 60) {
+          row.win_prob = { hit_today: null, horizons: [], period: null, sample_ok: false, warnings: ["K线历史不足，无法统计"] };
+          continue;
+        }
+        const meta = subset.find((m) => m.symbol === row.symbol);
+        row.win_prob = historicalWinProbability({ symbol: row.symbol, bars, meta, conditions });
+      } catch {
+        row.win_prob = { hit_today: null, horizons: [], period: null, sample_ok: false, warnings: ["历史统计失败"] };
+      }
+    }
+    if (pageRows.length > statsMax) warnings.push(`历史胜率仅统计前 ${statsMax} 只（控制数据源请求量）`);
+  }
+
+  // §五：因子验证状态绑定真实落盘数据（factorCatalog 已合并 data/factor-verified.json 覆盖），禁止硬编码结论
+  const catalogFields = factorCatalog().fields;
+  const catalogMap = new Map(catalogFields.map((f) => [f.key, f]));
+  const involvedFactors = [...new Set([...conditions.map((c) => c.field), ...outFields])].filter((f) => catalogMap.has(f));
+  const verifiedN = involvedFactors.filter((f) => catalogMap.get(f)!.verified).length;
+  const unverifiedN = involvedFactors.length - verifiedN;
+  if (involvedFactors.length === 0) {
+    warnings.push("因子验证状态未知：本次请求未涉及任何已登记因子字段");
+  } else if (unverifiedN === involvedFactors.length && involvedFactors.length > 0) {
+    warnings.push(`本次涉及 ${involvedFactors.length} 个因子均未通过 IC/稳定性验证（因子测试台：选股器页→因子实验室），结果仅为条件筛选，不构成投资建议`);
+  } else if (unverifiedN > 0) {
+    warnings.push(`本次涉及 ${involvedFactors.length} 个因子，其中 ${unverifiedN} 个未通过 IC/稳定性验证，结果仅为条件筛选，不构成投资建议`);
+  } else {
+    warnings.push(`本次涉及 ${involvedFactors.length} 个因子均已通过 IC/稳定性验证；结果仍仅为条件筛选，不构成投资建议`);
+  }
+  if (snapConds.length) warnings.push("快照口径条件（估值/市值/换手/量比/主力净额等）为当日口径，历史胜率不含这些条件的时点匹配");
+
+  return {
+    list: pageRows,
+    total: rows.length,
+    page: { limit, offset },
+    as_of_trade_date: asOf,
+    trade_date_available: true,
+    funnel: { universe: universeCount, snapshot_pass: snapshotPass.length, kline_subset: subset.length, kline_pass: klinePass },
+    source: {
+      provider: "em（腾讯/东财公开接口，本机直连）",
+      note: "REAL_DATA_ONLY：数据失败时明确报错，不回退演示数据",
+      // §四：价格口径显式标注（真实价 vs 前复权，禁止为对齐数字修改数据）
+      price_basis: "close/涨跌幅/快照字段=真实未复权实时价；K线因子字段=日线序列（eltdx 实测为原始价、腾讯兜底为前复权qfq，同一序列内口径一致）；胜率/收益均在同一K线序列内计算，除权除息日附近真实价与复权价不相等属正常，不是数据错误",
+    },
+    factors_verified: involvedFactors.length > 0 && unverifiedN === 0,
+    factor_verify: { total: catalogFields.length, enabled: involvedFactors.length, verified: verifiedN, unverified: unverifiedN },
+    warnings,
+  };
+}

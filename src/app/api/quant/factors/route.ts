@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { getFactor, listFactors, listLatestFactors, saveFactorVersion } from "@/lib/quant/store";
 import { parseExpression, parseAndNormalize, auditExpression } from "@/lib/quant/factors/expression";
+import { factorCatalog } from "@/lib/quant/factors/fields";
 import { FACTOR_CATEGORIES, FACTOR_STATUSES, type FactorCategory, type FactorStatus } from "@/lib/quant/types";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   quantBootstrap();
   const url = new URL(request.url);
+  // ?catalog=1：选股器因子字段目录（需求文档 四：labels_zh + fields + category；均标未验证）
+  if (url.searchParams.get("catalog")) {
+    return NextResponse.json({ ok: true, ...factorCatalog() });
+  }
   const status = url.searchParams.get("status") as FactorStatus | null;
   const category = url.searchParams.get("category") as FactorCategory | null;
   const factorKey = url.searchParams.get("key") ?? undefined;

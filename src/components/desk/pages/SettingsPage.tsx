@@ -204,6 +204,14 @@ export default function SettingsPage() {
                 placeholder={ai.provider === "ollama" ? "Ollama 无需填写" : "sk-…"}
                 className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[12px] outline-none focus:border-sky-500/60" />
             </label>
+            <label className="block md:col-span-2">
+              <span className="text-[12px] text-muted-foreground">
+                网络代理（境外接口被地域拦截时使用；留空=自动检测系统代理，direct=强制直连，或填 http://127.0.0.1:端口）
+              </span>
+              <input value={ai.proxy ?? ""} onChange={(e) => setAi({ proxy: e.target.value })}
+                placeholder="自动（系统代理 / 启动脚本里的 HTTPS_PROXY）"
+                className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[12px] outline-none focus:border-sky-500/60" />
+            </label>
           </div>
 
           <div className="flex items-center gap-3">

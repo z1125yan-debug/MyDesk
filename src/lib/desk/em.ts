@@ -1,7 +1,9 @@
 // MyDesk 本地行情数据层（仅服务端使用）
-// 数据来源：腾讯行情（qt.gtimg.cn）与东方财富公开接口，全部由本机直连请求，
-// 不经过任何云端中转（与 ModelScope 托管 MCP 无关）。
-// 仅供个人本地参考，行情可能有延迟，不构成投资建议。
+// 数据来源：通达信 eltdx 网关（主）→ 腾讯行情（qt.gtimg.cn）→ 东方财富公开接口，
+// 全部由本机直连请求。仅供个人本地参考，行情可能有延迟，不构成投资建议。
+
+import { marketSession } from "./session";
+import { tdxQuotes, tdxKlines, tdxNameOf, type TdxQuote } from "./tdx";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -41,8 +43,11 @@ const TTL: Record<string, number> = { search: 300, quote: 15, kline: 20, board: 
 
 async function cached<T>(kind: string, key: string, fn: () => Promise<T>): Promise<T> {
   const k = `${kind}:${key}`;
+  // 非交易时段上游不会有新数据：行情类缓存延长 20 倍，避免客户端轮询造成无意义请求
+  const closed = !marketSession().open && kind !== "news";
+  const ttl = (TTL[kind] ?? 30) * (closed ? 20 : 1) * 1000;
   const hit = cache.get(k);
-  if (hit && Date.now() - hit.at < (TTL[kind] ?? 30) * 1000) return hit.data as T;
+  if (hit && Date.now() - hit.at < ttl) return hit.data as T;
   const data = await fn();
   cache.set(k, { at: Date.now(), data });
   if (cache.size > 800) {
@@ -86,9 +91,40 @@ export interface RealQuote {
 
 export async function fetchQuotesReal(symbols: string[]): Promise<(RealQuote | null)[]> {
   const out: (RealQuote | null)[] = symbols.map(() => null);
+
+  // 1) 通达信网关优先（本机 eltdx-http，见 tdx.ts；未启动时静默跳过）
+  const tdx = await tdxQuotes(symbols).catch(() => null);
+  if (tdx) {
+    const filled: number[] = [];
+    for (let i = 0; i < symbols.length; i++) {
+      const q: TdxQuote | undefined = tdx.get(symbols[i]);
+      if (!q) continue;
+      filled.push(i);
+      out[i] = {
+        symbol: q.symbol,
+        name: "",
+        price: q.price,
+        changePct: q.changePct,
+        high: q.high,
+        low: q.low,
+        prevClose: q.prevClose,
+        amountYi: q.amountYi,
+      };
+    }
+    // 名称表从通达信代码表加载（进程内缓存 24h），失败则由腾讯兜底补
+    const names = await Promise.all(
+      filled.map((i) => tdxNameOf(symbols[i]).catch(() => null)),
+    );
+    names.forEach((nm, k) => {
+      const i = filled[k];
+      if (nm && out[i]) out[i]!.name = nm;
+    });
+  }
+
+  // 2) 腾讯兜底：只补 TDX 没取到的符号（顺带补全缺失名称）
   const pairs = symbols
-    .map((s) => ({ s, tc: symbolToTencent(s) }))
-    .filter((p): p is { s: string; tc: string } => Boolean(p.tc));
+    .map((s, i) => ({ s, i, tc: symbolToTencent(s) }))
+    .filter((p): p is { s: string; i: number; tc: string } => Boolean(p.tc) && (!out[p.i] || !out[p.i]!.name));
   if (!pairs.length) return out;
   try {
     const raw = await cached(
@@ -109,22 +145,23 @@ export async function fetchQuotesReal(symbols: string[]): Promise<(RealQuote | n
       const price = parseFloat(f[3]);
       const changePct = parseFloat(f[32]);
       if (!isFinite(price) || price <= 0) continue;
-      const idx = symbols.indexOf(p.s);
-      out[idx] = {
+      const cur = out[p.i];
+      if (cur && cur.name) continue; // TDX 已给出完整数据，腾讯仅作名称兜底
+      const amtM = /\/(\d+)$/.exec(f[35] ?? "");
+      const base: RealQuote = cur ?? {
         symbol: p.s,
-        name: f[1] || p.s,
+        name: "",
         price,
         changePct: isFinite(changePct) ? changePct : 0,
         high: parseFloat(f[33]) || undefined,
         low: parseFloat(f[34]) || undefined,
         prevClose: parseFloat(f[4]) || undefined,
-        amountYi: /\/(\d+)$/.exec(f[35] ?? "")
-          ? parseFloat(/\/(\d+)$/.exec(f[35])![1]) / 1e8
-          : undefined,
+        amountYi: amtM ? parseFloat(amtM[1]) / 1e8 : undefined,
         time: /^\d{14}$/.test(f[30] ?? "")
           ? `${f[30].slice(4, 6)}-${f[30].slice(6, 8)} ${f[30].slice(8, 10)}:${f[30].slice(10, 12)}`
           : undefined,
       };
+      out[p.i] = { ...base, name: base.name || f[1] || p.s };
     }
   } catch {
     // 数据源不可用：保持 null，由上层回退演示数据
@@ -184,6 +221,10 @@ const MINUTE_TF: Record<string, [string, number]> = {
 export async function fetchKlinesReal(symbol: string, tf: string, lmt = 160): Promise<RealCandle[] | null> {
   const tc = symbolToTencent(symbol);
   if (!tc) return null;
+  // 1) 通达信网关优先（未启动时静默回退腾讯）
+  const tdx = await tdxKlines(symbol, tf, lmt).catch(() => null);
+  if (tdx && tdx.length > 10) return tdx.slice(-lmt);
+  // 2) 腾讯兜底
   try {
     let rows: string[][];
     if (MINUTE_TF[tf]) {

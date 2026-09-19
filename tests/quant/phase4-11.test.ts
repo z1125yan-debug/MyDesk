@@ -12,6 +12,7 @@ import {
 import { experimentFingerprint, canonicalJson, newExperimentRecord } from "../../src/lib/quant/research/experiments.ts";
 import { buildResearchContext, contextToPrompt } from "../../src/lib/quant/research/knowledge.ts";
 import { runSelection, runSelectionReplay, compositeScores } from "../../src/lib/quant/selection/engine.ts";
+import { shanghaiDate } from "../../src/lib/desk/session.ts";
 import { validateStrategy, scanParameterStability } from "../../src/lib/quant/backtest/validation.ts";
 import { evaluateAst, parseExpression } from "../../src/lib/quant/factors/expression.ts";
 
@@ -221,8 +222,9 @@ test("选股引擎: compositeScores 方向与权重", () => {
 
 test("历史回放: 同一选股引擎 + 未来窗口标签，拒绝今天", async () => {
   const asOf = "2025-09-01";
+  // 拒绝用例的 asOf 必须动态取「今天」（上海日），否则跨 UTC 零点后该硬编码日期会变成合法历史日期。
   await assert.rejects(
-    () => runSelectionReplay(demoProvider, { mode: "multi_factor", asOf: "2026-09-18", universe: { kind: "custom", symbols: ["601000.SH"] }, factors: [{ factorKey: "f", version: 1, weight: 1, direction: 1, expression: "roc(c, 20)" }], scoring: { method: "rank", topN: 5 } }, 5),
+    () => runSelectionReplay(demoProvider, { mode: "multi_factor", asOf: shanghaiDate(), universe: { kind: "custom", symbols: ["601000.SH"] }, factors: [{ factorKey: "f", version: 1, weight: 1, direction: 1, expression: "roc(c, 20)" }], scoring: { method: "rank", topN: 5 } }, 5),
     /早于今天/,
   );
   const outcome = await runSelectionReplay(demoProvider, {

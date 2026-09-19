@@ -86,8 +86,9 @@ function symbolToTencent(symbol: string): string | null {
 // 沪深京 A 股口径沿用 em.ts BOARD_FS.stock
 const FS_ALL_A = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048";
 const EM_HOSTS = ["https://push2delay.eastmoney.com", "https://push2.eastmoney.com"];
-// f12代码 f13市场 f14名称 f2价 f5量(手) f6额(元) f8换手 f9PE f10量比 f20总市值 f21流通 f23PB f26上市日 f100行业
-const UNIVERSE_FIELDS = "f12,f13,f14,f2,f5,f6,f8,f9,f20,f21,f23,f26,f100";
+// f12代码 f13市场 f14名称 f2价 f3涨跌幅 f5量(手) f6额(元) f7振幅 f8换手 f9PE f10量比
+// f15最高 f18昨收（P0补齐·炸板率口径需要） f20总市值 f21流通 f23PB f26上市日 f62主力净额 f100行业
+const UNIVERSE_FIELDS = "f12,f13,f14,f2,f3,f5,f6,f7,f8,f9,f10,f15,f18,f20,f21,f23,f26,f62,f100";
 const UNIVERSE_PAGE_SIZE = 200;
 
 function isBjCode(code: string): boolean {
@@ -143,7 +144,13 @@ function rowToMeta(d: Record<string, unknown>): AssetMeta | null {
     pe: num(d.f9) ?? undefined,
     pb: num(d.f23) ?? undefined,
     price: price ?? undefined,
+    changePct: num(d.f3) ?? undefined,
     turnover: num(d.f8) ?? undefined,
+    volumeRatio: num(d.f10) ?? undefined,
+    amplitude: num(d.f7) ?? undefined,
+    high: num(d.f15) ?? undefined,
+    prevClose: num(d.f18) ?? undefined,
+    mainNet: num(d.f62) ?? undefined,
     volume: num(d.f5) !== null ? (num(d.f5) as number) * 100 : undefined, // 手 → 股
     amount: num(d.f6) ?? undefined,
     st: /ST/i.test(String(d.f14 ?? "")),
