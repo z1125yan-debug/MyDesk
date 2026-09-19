@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "note": "手工维护的全球事件→A股主题映射起步表。仅关键词规则，不编造未匹配事件。",
+  "themes": [
+    {
+      "id": "fed_macro",
+      "category": "货币政策",
+      "levelHint": "全球级事件",
+      "keywords": ["美联储", "FOMC", "降息", "加息", "点阵图", "非农", "CPI", "PCE", "鲍威尔"],
+      "sectors": ["券商", "银行", "房地产", "黄金"],
+      "concepts": ["降息", "地产"]
+    },
+    {
+      "id": "pboc",
+      "category": "货币政策",
+      "levelHint": "重大产业事件",
+      "keywords": ["降准", "MLF", "LPR", "央行", "公开市场"],
+      "sectors": ["银行", "券商", "房地产"],
+      "concepts": ["降准降息"]
+    },
+    {
+      "id": "fda_pharma",
+      "category": "医药",
+      "levelHint": "重大产业事件",
+      "keywords": ["FDA", "减肥药", "GLP-1", "司美格鲁肽", "临床三期", "NDA", "BLA"],
+      "sectors": ["医药生物", "化学制药", "生物制品"],
+      "concepts": ["减肥药", "创新药"]
+    },
+    {
+      "id": "semiconductor",
+      "category": "科技",
+      "levelHint": "重要行业事件",
+      "keywords": ["英伟达", "NVIDIA", "台积电", "HBM", "光刻", "ASML", "芯片法案", "先进封装", "存储芯片"],
+      "sectors": ["半导体", "电子元件", "元器件"],
+      "concepts": ["芯片", "AI算力", "CPO"]
+    },
+    {
+      "id": "ai_robot",
+      "category": "科技",
+      "levelHint": "重要行业事件",
+      "keywords": ["人形机器人", "具身智能", "特斯拉机器人", "Optimus", "减速器"],
+      "sectors": ["机械设备", "汽车零部件"],
+      "concepts": ["人形机器人", "工业母机"]
+    },
+    {
+      "id": "ev_battery",
+      "category": "科技",
+      "levelHint": "行业新闻",
+      "keywords": ["固态电池", "锂矿", "宁德时代", "比亚迪", "充电桩", "新能源汽车补贴"],
+      "sectors": ["汽车", "电力设备", "有色金属"],
+      "concepts": ["锂电池", "新能源汽车"]
+    },
+    {
+      "id": "trade_policy",
+      "category": "产业政策",
+      "levelHint": "全球级事件",
+      "keywords": ["关税", "制裁", "出口管制", "实体清单", "贸易战", "对等关税"],
+      "sectors": ["电子", "半导体", "汽车"],
+      "concepts": ["国产替代"]
+    },
+    {
+      "id": "geo",
+      "category": "重大事件",
+      "levelHint": "全球级事件",
+      "keywords": ["冲突", "停火", "霍尔木兹", "原油", "OPEC"],
+      "sectors": ["石油石化", "煤炭", "国防军工"],
+      "concepts": ["油气开采", "军工"]
+    }
+  ]
+}

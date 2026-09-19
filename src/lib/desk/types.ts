@@ -17,6 +17,11 @@ export type PageKey =
   | "copilot"      // 智能助手
   | "quant"        // 量化研究实验室（Quant Research Lab，后台研究）
   | "factorlab"    // 因子有效性测试台（P1-4）
+  | "risk"         // P2-1 风险监控
+  | "problab"      // P2-2 历史条件概率
+  | "themes"       // P2-3 主线发现
+  | "radar"        // P2-4 AI 主动发现
+  | "events"       // P2-5 全球事件雷达
   | "extension"    // 扩展
   | "settings";    // 设置
 
@@ -158,6 +163,11 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   copilot: "智能助手",
   quant: "量化研究",
   factorlab: "因子测试台",
+  risk: "风险监控",
+  problab: "历史条件概率",
+  themes: "主线发现",
+  radar: "AI 主动发现",
+  events: "全球事件雷达",
   extension: "扩展",
   settings: "设置",
 };

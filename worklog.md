@@ -268,3 +268,35 @@
 
 - 定性核查：全仓（排除 node_modules/.next/.git）除本 worklog 外无任何代码读写该文件；batch 路由只 `db.factorTest.create()` 落库并返回 JSON，文件顶层字段 `{ok, persisted, unavailable, rows}` 正是接口响应形状 → 属人工 curl 快照，非研究资产。只读查库交叉核对：`factor_test` 219 行 / 去重 108 因子 / 每因子最新行 passed=1 共 33 个，与 `data/factor-verified.json` 的 33 键一致 → 正式测试历史在库表，verified 真源是 `factor-verified.json`（`tester.ts` 的 `markFieldVerified()` 写、`factorCatalog()` 读、p2-factor-pack 断言绑定）。
 - 处理：按仓库既有约定（`data/quant-config.json` 就地忽略）执行 `git rm --cached data/factor-verify-report.json`（本地文件保留 44993 字节作证据），`.gitignore` 新增 `data/factor-verify-report*.json` 防同类快照再入库；`factor-verified.json` 已确认未被忽略、仍在版本库。未改公式、未改测试逻辑、未动数据库、未动其他会话的 P2 WIP（24 项保持原样）。
+
+## P2 收尾（2026-09-19 第二轮：八项收口，commit 等人工确认）
+
+基线 `8c6cdd1`。本轮只做任务书§一 的 8 项收尾，未重新开发任何已完成页面。开工前 `git status --short` 24 项 P2 WIP 全部保留。
+
+### 决策取证（只读）
+
+- `custom.db`：`.env` 为 `DATABASE_URL=file:./db/custom.db`（`.env*` 被忽略，`启动.bat:51` 会重建）；仓库无 `prisma/migrations`、无 seed 脚本。只读查库（`node:sqlite` DatabaseSync）得 10 张业务表：`factor_test` 219、`quant_knowledge` 67、`quant_jobs` 14、`radar_finding` 10、`candidate_pool` 5、`quant_factors` 8、`quant_strategies` 5、`quant_experiments` 7、`global_event` 2、`User/Post` 0 → 它是研究账本与 P2 归档的唯一载体，且自 `aaafc06` 起一直被跟踪（最近 `aedefe9`）。人工选择：A 保留入库。
+- `design-mockups/`：`src/` 零引用；`eltdx-验证-实时与五档.md:58` 记载 4 套风格页「全部是手写死的示例数据，仅用于视觉选型」；本 worklog 第 204 行既有判定为临时物。人工选择：B 加入 `.gitignore`（文件保留在磁盘，未删除）。
+
+### 逐项落地
+
+1. `.gitignore` 追加 `design-mockups/`（含理由注释与 `git add -f` 逃生说明）；未跟踪目录不删文件即从提交候选中移除。
+2. `EventsPage` SourceBadge：原硬编码 `LIVE · 快讯+映射表` 与真实数据链（读 `global_event` 库行）不符 → 改为 `HISTORICAL`，并按来源分两种文案：GET 读回标「global_event 当日库行」、POST 扫描后标「本次扫描写入 global_event 后回读」（新增 `origin` 状态）；副标题补「手动扫描落库（非后台自动更新）」。浏览器实测两态文案均正确切换，未映射 23 条仅计数不入库。
+3. 能力边界文案：`RadarPage` 副标题补「当前无后台自动扫描」；`AiHomePage` 原「AI 主动发现（每日自动推送）」→「（当前需手动扫描，尚无后台自动推送）」（这是仓库内唯一把 P2 写成自动推送的地方；`P1P2_任务书.md:125` 属需求原文，不改）。
+4. 幂等策略定稿：`schema.prisma` 两个模型注释写明「当日先删后插、跨日历史不触碰、刻意不设唯一键」，并把不变式指向测试文件。未改路由业务逻辑、未加唯一键。
+5. `boardDayStreak` 保持 missing：实测 `/api/market/themes` 卡片 `streakPct: null` 且 `missing` 含「板块日K连续强势天数（东财 kline 无返回，本批全部缺失）」→ 无伪造，维持原状（任务书§九-9）。
+6. `ProbabilityPage` 补 SourceBadge（数据块必须有来源标注的既有约定）：`HISTORICAL · K线回放 三大指数 · 基准 沪深300（520 根）`，实测渲染并显示真实结果（h=1 53%、样本 898/3 只、最大回撤 −24.1%、基准 0.07%、超额 +0.08%）。
+7. `AppShell` 增加 `hashchange` 监听：挂载即同步一次 + 监听前进/后退与手改 hash，无效 hash 回写为当前页保证 URL 与渲染一致。浏览器实测 `#/risk`、`#/themes` 即时切换、`#/bogus-page` 被回写为 `#/themes`；控制台仅 HMR 日志，无 error。
+
+### 新增测试（不删既有用例、不降断言）
+
+- `tests/quant/p2-archive-db.test.ts`（5 例，只读真实库、无网络、默认执行）：asOf 必须为 `YYYY-MM-DD`、radar `kind` 与 event `level` 取值受控、`evidence/mappedSectors/relatedStocks/fundCheck` JSON 可解析、同日无 `(asOf,kind,title)`/`(asOf,title)` 重复、每个交易日行数等于去重后行数（越界即说明当日 deleteMany 失效）。库/表不存在时按 skip 处理而非伪造通过。
+- `tests/quant/p2-scan-loop.test.ts`（4 例，需 `MYDESK_INTEGRATION=1` + `MYDESK_BASE_URL`，默认 skipped）：Radar 扫描→落库→GET 读回三者一致且同日重扫条数不变、多次扫描只动当日（直连库比对非当日行数）、Events 同链路 + 未映射计数、五接口响应契约（`live` 布尔、四个主线桶、`scanned` 布尔、概率三档且不可计算为 null 不以 0 代替、`streakPct` 必须为 null 或数值）。
+- 本轮实跑（本地 3010 端口服务，`MYDESK_INTEGRATION=1`）：4/4 通过。过程发现并修正的是测试自身对 themes 响应字段的假设（真实为 `main/sub/rotation/watch` 四桶），未改动业务代码。
+- 口径披露：闭环测试会按既有幂等策略重写当日归档，实测期间 `radar_finding` 由 10 → 9、`global_event` 由 2 → 1（周六非交易日，真实快讯流与板块数据本身变化），属真实数据波动而非丢历史；跨日历史行数经断言确认未变。
+
+### 全量回归
+
+- `npx tsc --noEmit` → 0 错误。
+- `node --test tests/quant/*.test.ts` → 112 例：108 通过、4 skipped（即 `p2-scan-loop`，需显式开启）、0 失败。
+- 待人工确认提交范围后再 commit：本轮改动 = `.gitignore`、`EventsPage`、`RadarPage`、`AiHomePage`、`ProbabilityPage`、`AppShell`、`schema.prisma`（注释）、2 个新测试 + 其他会话 P2 WIP（含 `custom.db`）；`design-mockups/` 已被忽略规则排除。
