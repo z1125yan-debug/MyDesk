@@ -12,7 +12,7 @@ import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
 import { shanghaiDate } from "@/lib/desk/session";
 import { evalLimitSnapshot } from "./sentiment";
 import { buildFieldPanel, lastValues, factorCatalog, FACTOR_FIELD_MAP, type BarsLike } from "../factors/fields.ts";
-import { historicalWinProbability, type ScreenerCond, type WinProbStats } from "../factors/probability.ts";
+import { cmpWithOp, historicalWinProbability, type ScreenerCond, type WinProbStats } from "../factors/probability.ts";
 import type { AssetMeta } from "../types.ts";
 
 export type UniverseSpec = "all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] } | { kind: "industry"; boardCode: string };
@@ -21,6 +21,8 @@ export interface ScreenerRequestBody {
   universe?: UniverseSpec;
   conditions?: ScreenerCond[];
   fields?: string[];
+  /** §二 历史交易日：YYYY-MM-DD（仅K线口径可回溯；缺省=当日） */
+  trade_date?: string;
   sort?: { order_by?: string; order_dir?: "asc" | "desc" };
   pagination?: { limit?: number; offset?: number };
   include_stats?: boolean;
@@ -44,6 +46,8 @@ export interface ScreenerResponse {
   page: { limit: number; offset: number };
   as_of_trade_date: string;
   trade_date_available: boolean;
+  /** §二 是否为历史交易日回放（true=仅K线口径可回溯，快照口径已剔除） */
+  trade_date_is_historical: boolean;
   funnel: { universe: number; snapshot_pass: number; kline_subset: number; kline_pass: number };
   source: { provider: string; note: string; price_basis?: string };
   /** §五：是否「本次涉及的因子全部已验证」（动态绑定 factor-verified 落盘状态，非静态写死） */
@@ -56,19 +60,12 @@ function shanghaiToday(): string {
   return shanghaiDate();
 }
 
-function cmpNum(v: number | null | undefined, op: string, value: number): boolean {
-  if (v === null || v === undefined || !isFinite(v)) return false;
-  switch (op) {
-    case "=": return Math.abs(v - value) < 1e-9;
-    case ">=": return v >= value;
-    case ">": return v > value;
-    case "<=": return v <= value;
-    case "<": return v < value;
-    case "!=": return Math.abs(v - value) >= 1e-9;
-    case "like": return String(v).includes(String(value));
-    default: return false;
-  }
-}
+/** §二/§六 基准指数：胜率统计的同期对比基准（沪深300） */
+export const BENCHMARK_SYMBOL = "000300.SH";
+export const BENCHMARK_NAME = "沪深300";
+
+// §四 操作符契约：与概率引擎共用同一份实现（= >= > <= < != like + in / not in）
+const cmpNum = cmpWithOp;
 
 // §三（验收修复）：涨停实时状态优先用实时快照（snapshot_time），而非K线最后一根（bar_time 可能滞后）。
 // 快照不可判（新股无涨跌幅限制期 / 缺 prevClose/high）→ 返回 null=UNKNOWN，绝不冒充 false。
@@ -96,8 +93,16 @@ function snapshotValue(meta: AssetMeta, field: string): number | null {
 
 export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerResponse> {
   const provider = await getProvider("em");
-  const asOf = shanghaiToday();
+  // §二 历史交易日选择器：trade_date 只接受 YYYY-MM-DD 且不晚于今日；
+  // 历史日期只有K线口径可回溯（当日快照/实时涨停态无历史时点数据 → 显式剔除并告警，不冒充历史）
+  const today = shanghaiToday();
+  const reqDate = typeof body.trade_date === "string" ? body.trade_date.trim().slice(0, 10) : "";
+  const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(reqDate);
   const warnings: string[] = [];
+  if (reqDate && !dateValid) warnings.push(`trade_date 格式非法（${reqDate}），已按当日 ${today} 执行`);
+  else if (dateValid && reqDate > today) warnings.push(`trade_date 晚于当日（${reqDate} > ${today}），已按当日 ${today} 执行`);
+  const asOf = dateValid && reqDate <= today ? reqDate : today;
+  const isHistorical = asOf < today;
   const allConds = body.conditions ?? [];
   const unknownFields = allConds.filter((c) => !FACTOR_FIELD_MAP.has(c.field)).map((c) => c.field);
   if (unknownFields.length) warnings.push(`未知因子字段已忽略：${unknownFields.join("、")}`);
@@ -115,8 +120,18 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     (c) => FACTOR_FIELD_MAP.has(c.field) && FACTOR_FIELD_MAP.get(c.field)!.implemented !== false
   );
 
-  const snapConds = conditions.filter((c) => FACTOR_FIELD_MAP.get(c.field)!.source === "snapshot");
+  const snapCondsAll = conditions.filter((c) => FACTOR_FIELD_MAP.get(c.field)!.source === "snapshot");
+  const snapConds = isHistorical ? [] : snapCondsAll; // 历史日期：快照口径条件不可回溯 → 剔除并告警
   const klineConds = conditions.filter((c) => FACTOR_FIELD_MAP.get(c.field)!.source === "kline");
+  if (isHistorical && snapCondsAll.length) {
+    warnings.push(
+      `历史交易日 ${asOf}：快照口径条件（${snapCondsAll.map((c) => FACTOR_FIELD_MAP.get(c.field)!.zh).join("、")}）` +
+      `无历史时点数据，本次已剔除（不用当前快照值冒充历史）；结果仅按K线口径条件在 ${asOf} 当日评估`,
+    );
+  }
+  if (isHistorical) {
+    warnings.push(`历史日期口径：股票池名单来自当前快照（已退市/已改名股票不在池内，存在幸存者偏差）；close/涨跌幅取 ${asOf} 当日K线收盘`);
+  }
   const hasSectorCond = (body.conditions ?? []).some((c) => c.field === "sector");
   if (hasSectorCond) warnings.push("板块(sector)条件暂未接入：请用 industry 字段或在结果中按行业筛选");
   const hasRolling = conditions.some((c) => (c.type ?? "single") !== "single");
@@ -145,8 +160,7 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     if (m.suspended) return false;
     for (const c of snapConds) {
       const v = snapshotValue(m, c.field);
-      const val = typeof c.value === "string" ? Number(c.value) : c.value;
-      if (!cmpNum(v, c.op, val)) return false;
+      if (!cmpNum(v, c.op, c.value)) return false; // 原值传入：in/not in 需要列表，数值操作符内部再转数值
     }
     return true;
   });
@@ -158,6 +172,7 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
   const needKline =
     klineConds.length > 0 ||
     hasRolling ||
+    isHistorical || // 历史日期：展示值必须由当日K线重建（快照值不可用）
     outFields.some((f) => FACTOR_FIELD_MAP.get(f)?.source === "kline");
   const klineSubsetCap = Math.max(20, Math.min(600, body.maxKlineSymbols ?? 120));
   let subset = snapshotPass;
@@ -209,10 +224,11 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
       const seriesOf = (key: string) => panel.fields.get(key)?.[si];
       let ok = true;
       for (const c of klineConds) {
-        const val = typeof c.value === "string" ? Number(c.value) : c.value;
+        const val = c.value; // §四：原值下传，in/not in 需要列表
         const type = c.type ?? "single";
         // §三：is_limit_up 的「当日」判定优先实时快照；不可判 → UNKNOWN（计警告，不按 false 处理）
-        if (c.field === "is_limit_up" && type === "single") {
+        // 历史交易日：实时快照属「今日」口径，不可用于历史日 → 直接用K线口径列（当日涨幅≥涨停比例）
+        if (c.field === "is_limit_up" && type === "single" && !isHistorical) {
           const sv = snapLimitUp(metasOf[si]!);
           if (sv === null) { limitUnknown++; ok = false; break; }
           if (!cmpNum(sv, c.op, val)) { ok = false; break; }
@@ -257,14 +273,17 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
       const vals = lastVals.get(symbols[si]) ?? new Map();
       const values: Record<string, number | null> = {};
       for (const f of outFields) {
-        values[f] = f === "close" ? (m.price ?? vals.get("c") ?? null)
-          : f === "change_pct" ? (m.changePct ?? null)
-          : f === "is_limit_up" ? (snapLimitUp(m) ?? vals.get(f) ?? null) // §三：快照优先，不可判回退K线口径
+        // 历史交易日：快照口径字段无历史时点数据 → null（显示「—」），不得用今日快照值冒充
+        if (isHistorical && FACTOR_FIELD_MAP.get(f)?.source === "snapshot") { values[f] = null; continue; }
+        values[f] = f === "close" ? ((isHistorical ? null : m.price) ?? vals.get("c") ?? null)
+          : f === "change_pct" ? ((isHistorical ? null : m.changePct) ?? vals.get("ret") ?? null)
+          : f === "is_limit_up" ? ((isHistorical ? null : snapLimitUp(m)) ?? vals.get(f) ?? null) // §三：快照优先，不可判回退K线口径
           : vals.get(f) ?? null;
       }
+      const close = (isHistorical ? null : m.price) ?? vals.get("c") ?? null;
       return {
         symbol: m.symbol, name: m.name, industry: m.industry,
-        close: m.price ?? null, change_pct: m.changePct ?? null, values,
+        close, change_pct: (isHistorical ? null : m.changePct) ?? vals.get("ret") ?? null, values,
       };
     });
   } else {
@@ -275,13 +294,57 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     });
   }
 
-  // 5) 排序 + 分页
+  // 5) 历史条件概率（include_stats）——按胜率排序时必须在排序前算好，故提前
+  const statsMax = Math.max(1, Math.min(40, body.statsMaxRows ?? 25));
+  const limit = Math.max(1, Math.min(200, body.pagination?.limit ?? 50));
+  const offset = Math.max(0, body.pagination?.offset ?? 0);
   const orderBy = body.sort?.order_by ?? "amount_yi";
+  const winRateSort = /^win_rate_(\d+)(?:d|D)?$/.exec(orderBy); // §二 结果表支持按 1/5/20 日胜率排序
+  let benchBars: BarsLike[] = [];
+  if (body.include_stats && rows.length) {
+    // 基准（沪深300）只拉一次，供逐只同期基准收益对比；拉不到 → benchmark_* 为 null 并提示
+    try {
+      benchBars = (await fetchBarsHybrid([BENCHMARK_SYMBOL], asOf, 520)).get(BENCHMARK_SYMBOL) ?? [];
+    } catch {
+      benchBars = [];
+    }
+    if (!benchBars.length) warnings.push(`基准指数 ${BENCHMARK_NAME}（${BENCHMARK_SYMBOL}）K线获取失败：本期不显示基准/超额收益（不以0代替）`);
+  }
+  async function attachStats(target: ScreenerRow[], cap: number): Promise<void> {
+    for (const row of target.slice(0, cap)) {
+      try {
+        const barsMap = await fetchBarsHybrid([row.symbol], asOf, 480);
+        const bars = (barsMap.get(row.symbol) ?? []) as BarsLike[];
+        if (bars.length < 60) {
+          row.win_prob = { hit_today: null, horizons: [], period: null, sample_ok: false, warnings: ["K线历史不足，无法统计"] };
+          continue;
+        }
+        const meta = subset.find((m) => m.symbol === row.symbol);
+        row.win_prob = historicalWinProbability({
+          symbol: row.symbol, bars, meta, conditions,
+          benchmarkBars: benchBars, benchmarkName: BENCHMARK_NAME,
+        });
+      } catch {
+        row.win_prob = { hit_today: null, horizons: [], period: null, sample_ok: false, warnings: ["历史统计失败"] };
+      }
+    }
+  }
+  const statsCap = Math.max(statsMax, winRateSort ? limit + offset : 0);
+  if (body.include_stats && rows.length && winRateSort) {
+    await attachStats(rows, statsCap);
+    if (rows.length > statsCap) warnings.push(`按胜率排序：仅对前 ${statsCap} 只计算历史胜率（控制数据源请求量），其余排在后面`);
+  }
+
+  // 6) 排序 + 分页
   const dir = body.sort?.order_dir === "asc" ? 1 : -1;
   const sortVal = (r: ScreenerRow): number | null => {
     if (orderBy === "close") return r.close;
     if (orderBy === "change_pct") return r.change_pct;
-    if (orderBy === "win_rate_1d" && r.win_prob) return r.win_prob.horizons.find((h) => h.h === 1)?.win_rate ?? null;
+    if (winRateSort) {
+      const h = Number(winRateSort[1]);
+      const row = r.win_prob?.horizons.find((x) => x.h === h);
+      return row?.win_rate ?? null;
+    }
     return r.values[orderBy] ?? null;
   };
   rows.sort((a, b) => {
@@ -292,27 +355,11 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     return (va - vb) * dir;
   });
 
-  const limit = Math.max(1, Math.min(200, body.pagination?.limit ?? 50));
-  const offset = Math.max(0, body.pagination?.offset ?? 0);
   const pageRows = rows.slice(offset, offset + limit);
 
-  // 6) include_stats：对本页结果逐只做历史条件概率（仅K线口径条件参与）
-  if (body.include_stats && pageRows.length) {
-    const statsMax = Math.max(1, Math.min(40, body.statsMaxRows ?? 25));
-    for (const row of pageRows.slice(0, statsMax)) {
-      try {
-        const barsMap = await fetchBarsHybrid([row.symbol], asOf, 480);
-        const bars = (barsMap.get(row.symbol) ?? []) as BarsLike[];
-        if (bars.length < 60) {
-          row.win_prob = { hit_today: null, horizons: [], period: null, sample_ok: false, warnings: ["K线历史不足，无法统计"] };
-          continue;
-        }
-        const meta = subset.find((m) => m.symbol === row.symbol);
-        row.win_prob = historicalWinProbability({ symbol: row.symbol, bars, meta, conditions });
-      } catch {
-        row.win_prob = { hit_today: null, horizons: [], period: null, sample_ok: false, warnings: ["历史统计失败"] };
-      }
-    }
+  // 7) 非胜率排序时，胜率统计只对本页做（省数据源请求）
+  if (body.include_stats && pageRows.length && !winRateSort) {
+    await attachStats(pageRows, statsMax);
     if (pageRows.length > statsMax) warnings.push(`历史胜率仅统计前 ${statsMax} 只（控制数据源请求量）`);
   }
 
@@ -339,6 +386,7 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     page: { limit, offset },
     as_of_trade_date: asOf,
     trade_date_available: true,
+    trade_date_is_historical: isHistorical,
     funnel: { universe: universeCount, snapshot_pass: snapshotPass.length, kline_subset: subset.length, kline_pass: klinePass },
     source: {
       provider: "em（腾讯/东财公开接口，本机直连）",

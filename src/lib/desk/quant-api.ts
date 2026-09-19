@@ -42,6 +42,8 @@ export interface ScreenerRespClient {
   total: number;
   page: { limit: number; offset: number };
   as_of_trade_date: string;
+  /** §二 是否历史交易日回放（true=快照口径条件已剔除，仅K线口径参与） */
+  trade_date_is_historical?: boolean;
   funnel: { universe: number; snapshot_pass: number; kline_subset: number; kline_pass: number };
   source: { provider: string; note: string; price_basis?: string };
   factors_verified?: boolean;
@@ -57,6 +59,7 @@ export async function runScreenerApi(body: {
   pagination?: { limit?: number; offset?: number };
   include_stats?: boolean;
   maxKlineSymbols?: number;
+  trade_date?: string;
 }): Promise<ScreenerRespClient> {
   const res = await fetch("/api/quant/screener", {
     method: "POST",
@@ -336,4 +339,119 @@ export async function saveScanAsStrategyApi(body: {
   const j = await res.json();
   if (!res.ok || j.error) throw new Error(j.error || "存为策略失败");
   return { strategyKey: j.strategy?.strategyKey ?? body.strategyKey, version: j.strategy?.version ?? 1 };
+}
+
+// ---------- P2 ----------
+
+/** §二 历史交易日选择器数据源：真实交易日（上证指数日线），倒序 */
+export async function fetchTradeDates(count = 120): Promise<{ as_of_trade_date: string; dates: string[] }> {
+  const res = await fetch("/api/quant/screener/trade-dates?count=" + count);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || '交易日列表获取失败');
+  return { as_of_trade_date: j.as_of_trade_date, dates: j.dates };
+}
+
+export interface RiskClient extends SentimentClient {
+  suggestions: string[];
+  history_ref: {
+    today_return: number | null;
+    band: number;
+    sample_size: number;
+    sample_ok: boolean;
+    period: { start: string; end: string } | null;
+    horizons: { h: number; win_rate: number | null; sample_size: number; avg_return: number | null; median_return: number | null; worst_return: number | null }[];
+    warnings: string[];
+  } | null;
+  history_ref_note: string;
+}
+
+export async function fetchRisk(): Promise<RiskClient> {
+  const res = await fetch("/api/market/risk");
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "风险数据获取失败");
+  return j;
+}
+
+export interface ThemeRowClient {
+  code: string; name: string; changePct: number; mainYi: number; rps: number;
+  diffusion: number | null; streakPct: number | null; streakInflow: number | null;
+  score: number; role: string; reasons: string[];
+}
+export interface ThemeDiscoveryClient {
+  as_of: string; trade_date: string;
+  main: ThemeRowClient[]; sub: ThemeRowClient[]; rotation: ThemeRowClient[]; watch: ThemeRowClient[];
+  missing: string[];
+  source: { provider: string; note: string };
+}
+export async function fetchThemes(force = false): Promise<ThemeDiscoveryClient> {
+  const res = await fetch(`/api/market/themes${force ? "?force=1" : ""}`);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "主线发现失败");
+  return j;
+}
+
+export interface ProbabilityResp {
+  as_of_trade_date: string;
+  /** §二 历史交易日回放标记 */
+  trade_date_is_historical?: boolean;
+  /** §六 基准指数（沪深300）实际取到的K线根数；0=数据缺失 */
+  benchmark?: { symbol: string; name: string; bars: number };
+  universe: string;
+  sample_ok: boolean;
+  warnings: string[];
+  pooled: {
+    h: number; win_rate: number | null; avg_return: number | null; sample_size: number; symbols_used: number;
+    benchmark_return?: number | null; excess_return?: number | null; max_drawdown?: number | null;
+  }[];
+  per_symbol: {
+    symbol: string; name: string; bars: number; error: string | null;
+    stats: WinProbStats | null;
+  }[];
+}
+export async function runProbabilityApi(body: {
+  conditions: ScreenerCond[]; universe?: "index" | "custom"; symbols?: string[]; lookback?: number; trade_date?: string;
+}): Promise<ProbabilityResp> {
+  const res = await fetch("/api/quant/probability", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "概率计算失败");
+  return j;
+}
+
+export interface RadarItemClient {
+  id?: string; kind: string; title: string; detail: string; evidence?: Record<string, unknown>;
+}
+export async function fetchRadar(): Promise<{ as_of: string; scanned: boolean; items: RadarItemClient[] }> {
+  const res = await fetch("/api/radar");
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "雷达读取失败");
+  return j;
+}
+export async function scanRadar(): Promise<{ as_of: string; trade_date: string; missing?: string[]; items: RadarItemClient[] }> {
+  const res = await fetch("/api/radar", { method: "POST" });
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "雷达扫描失败");
+  return j;
+}
+
+export interface EventItemClient {
+  id: string; title: string; time: string; level: string; category: string;
+  mappedSectors: string[]; relatedStocks: string[];
+  fundCheck: { stage?: string; note?: string; boards?: { name: string; changePct: number; mainYi: number; rank: number }[] };
+  stage: string; source: string;
+}
+export async function fetchEvents(): Promise<{ as_of: string; items: EventItemClient[] }> {
+  const res = await fetch("/api/events");
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "事件列表失败");
+  return j;
+}
+export async function scanEvents(): Promise<{
+  trade_date: string; unmatched?: number; missing?: string[]; items: EventItemClient[];
+}> {
+  const res = await fetch("/api/events", { method: "POST" });
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "事件扫描失败");
+  return j;
 }

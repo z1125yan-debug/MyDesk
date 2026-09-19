@@ -85,7 +85,7 @@ export function registerStrategyRunners(): void {
     if (!factorRefs.length) throw new Error("未指定任何因子（factors 或 strategyKey）");
 
     const mats = factorRefs.map((ref) => ({ ref, mat: evaluateAst(parseExpression(ref.expression), panel) }));
-    const btPanel: BacktestPanel = { dates: panel.dates, symbols: panel.symbols, fields: panel.fields };
+    const btPanel: BacktestPanel = { dates: panel.dates, symbols: panel.symbols, names: panel.meta.map((m) => m.name), fields: panel.fields };
 
     // 选股器：每调仓日按因子综合分取 TopN（等权），只用 ≤ t-1 数据
     const selector: PositionSelector = {
@@ -130,6 +130,7 @@ export function registerStrategyRunners(): void {
       const idxEnd = panel.dates.indexOf(seg.endDate);
       const sub: BacktestPanel = {
         dates: panel.dates.slice(idxStart, idxEnd + 1), symbols: panel.symbols,
+        names: panel.meta.map((m) => m.name),
         fields: new Map([...panel.fields.entries()].map(([k, m]) => [k, m.map((row) => row.slice(idxStart, idxEnd + 1))])),
       };
       const subEngine = runBacktestEngine(sub, selector, {
@@ -352,7 +353,7 @@ export function registerStrategyRunners(): void {
 
     // 12-15 回测 + Walk-forward + OOS + 稳定性
     ctx.progress(68, "回测", "组合回测…");
-    const btPanel: BacktestPanel = { dates: panel.dates, symbols: panel.symbols, fields: panel.fields };
+    const btPanel: BacktestPanel = { dates: panel.dates, symbols: panel.symbols, names: panel.meta.map((m) => m.name), fields: panel.fields };
     const mats = factorRefs.map((ref) => ({
       ref,
       mat: evaluateAst(parseExpression(passed.find((r) => r.candidate.factorKey === ref.factorKey)!.normalizedExpression), panel),
