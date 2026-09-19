@@ -558,3 +558,4 @@
   而当天新落的库行都在候选之外）；任一候选日的行数或构成一变，旧指纹就失效并被拒（副本单测覆盖）。
 - 顺带留痕：`global_event` 从 0 变回 7 是**跑 P2 真实链路回归**（`POST /api/events` 的手动全量口径：当日先删后插）+ 真实快讯窗口滚动共同造成的，
   与 P5 无关——本阶段的两个清理接口在验收里全部走「拒绝执行 / 0 行删除」，留档接口只写快照表。
+- 本阶段已按人工确认方案提交：`adf2d68 feat(P5): 数据生命周期（180 天 dry-run + 先导出再删 + Risk/Themes/Probability 手动每日留档）`（25 文件 +2327/−2，含 `prisma/db/custom.db` 与 `.gitignore` 新增 `data/lifecycle/` 一条）。与计划的实际差异如实记下：① 真实库里**一行都没删过**——唯一归档日就是今天，候选 0 条，物理删除只在真实库的 OS 临时副本上验收（含 409「计划过期」分支），`data/lifecycle/` 至今无导出文件；② 快照机制用例的前提从「库是空的」改成「基线 + 增量」精确比对（正式库当时已有真实留档行，行数/条数/倒序顺序仍逐条核对，不是放宽断言）；③ 顺带修了一个真实源码缺陷：留档回放日原用 `DATE_RE` 只校格式，`2026-13-45` 能透传，已改为复用 `lifecycle-core` 的 `isValidDate`；④ UI 因 `take_screenshot` 报 `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE` 只做了结构与文案（可及性树 + 接口返回）验收，视觉截图仍是缺口。验收数字：`tsc --noEmit` 退出码 0、`node --test tests/quant/*.test.ts` 167 tests / 158 pass / 0 fail / 9 skipped（P5 新增 15 条）、`MYDESK_INTEGRATION=1` 的 P2 真实链路回归 9/9 pass、三条 purge 拒绝路径均 `HTTP=400 deleted:0`、三页各 1 条真实留档已落库并可回看。
