@@ -46,8 +46,11 @@ local-*
 *.log
 dev.log
 dev.out.log
-test
-prompt
+# 这两个是根目录草稿产物的忽略项，必须带前导斜杠：
+# 不锚定就会连任意层级的同名目录一起忽略——P6-B 的 src/app/api/events/interpret/prompt/route.ts
+# 曾被整条吞掉（`git add` 静默跳过，克隆出来就没有这个接口），所以写成 /test、/prompt。
+/test
+/prompt
 
 server.log
 # Skills directory

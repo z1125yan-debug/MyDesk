@@ -1,6 +1,7 @@
 "use client";
 // 前端 → 新 P0 后端接口的类型化封装
 import type { ScreenerCond, WinProbStats } from "@/lib/quant/factors/probability";
+import type { EventFact, EventInterpretation, summarizeInterpretations } from "@/lib/quant/screener/event-interpret-core";
 import { MODE_TEXT, modeFromBasis } from "@/lib/quant/screener/incremental-core";
 
 export type { ScreenerCond, WinProbStats };
@@ -551,6 +552,69 @@ export function fetchRadarHistory(params: { date?: string; state?: "all" | "live
 }
 export function fetchEventsHistory(params: { date?: string } = {}) {
   return fetchHistory<EventHistoryItemClient>("/api/events/history", params);
+}
+
+// ---------- P6-B AI 事件理解（服务端出事实 + 复校验落库；客户端只负责调模型） ----------
+// 类型直接复用纯内核的接口定义，避免前后端各写一份字段清单而漂移（§九 的 17 字段以内核为准）。
+
+/** GET /api/events/interpret/prompt 的返回（服务端从 global_event 现取事实组装） */
+export interface InterpretPromptClient {
+  ok: boolean; date: string; system: string; prompt: string; prompt_version: string;
+  facts: EventFact[]; basis: string; missing: string[]; error: string | null;
+  interpretation_status: string; how_to_use: string; note: string;
+  total_rows: number; selected: number; limited: boolean;
+}
+/** GET /api/events/interpret 的单行（含服务端派生的 stale/orphan 对照结果） */
+export type InterpretationViewClient = EventInterpretation & {
+  row_id: string; stale: boolean; orphan: boolean; payload_broken: boolean;
+};
+export interface InterpretLoadClient {
+  ok: true; as_of: string; today: string;
+  items: InterpretationViewClient[];
+  available_dates: { date: string; rows: number }[];
+  counts: {
+    rows: number; interpreted: number; partial: number; rejected: number;
+    stale: number; orphan: number; violations: number; hypothesis_symbols: number;
+  };
+  layering: string; missing: string[];
+  self_check: { broken_payload: string[]; missing_fields: string[] };
+  basis: string; probed_at: string;
+}
+export interface InterpretStoreClient {
+  ok: boolean; date: string; persisted: number; updated: number; inserted: number;
+  items: EventInterpretation[];
+  missing: { event_id: string; title: string; reason: string }[];
+  unknown_ids: string[]; parse_failed: boolean; error: string | null;
+  counts: ReturnType<typeof summarizeInterpretations>["counts"];
+  layering: string; basis: string; interpretation_status?: string;
+}
+
+export async function fetchInterpretPrompt(params: { date?: string; ids?: string[]; limit?: number } = {}): Promise<InterpretPromptClient> {
+  const u = new URLSearchParams();
+  if (params.date) u.set("date", params.date);
+  if (params.ids?.length) u.set("ids", params.ids.join(","));
+  if (params.limit) u.set("limit", String(params.limit));
+  const qs = u.toString();
+  const res = await fetch(`/api/events/interpret/prompt${qs ? `?${qs}` : ""}`);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "没有可用于 AI 理解的真实事件（服务端会说明原因，不会去猜一条新闻）");
+  return j as InterpretPromptClient;
+}
+
+export async function fetchInterpretations(date = ""): Promise<InterpretLoadClient> {
+  const res = await fetch(`/api/events/interpret${date ? `?date=${encodeURIComponent(date)}` : ""}`);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "事件理解结果读取失败");
+  return j as InterpretLoadClient;
+}
+
+export async function storeInterpretationsApi(body: { raw: string; model?: string; date?: string; ids?: string[] }): Promise<InterpretStoreClient> {
+  const res = await fetch("/api/events/interpret", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const j = await res.json();
+  // 这里不能用 !j.ok 抛错：ok=false 时服务端仍然带着「为什么一条都没落库」的原因与留痕，页面要原样显示
+  return { ...j, __status: res.status } as InterpretStoreClient & { __status: number };
 }
 
 // ---- 后台任务运行记录（P2-自动化 13）：只读 /api/tasks/status，展示真实落库的 task_run 行 ----

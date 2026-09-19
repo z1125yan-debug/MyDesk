@@ -226,6 +226,34 @@ model GlobalEvent {
   @@map("global_event")
 }
 
+// P6-B AI 事件理解：对「已经落库的真实事件」加一层解释。事件只有一份，仍在 global_event；
+// 这张表存的不是事实，是 AI 对某一条事实事件的解释（data_status 永远是 AI_INTERPRETATION）。
+// 自然键用事件行的 dedupeKey（时间+标题指纹）而不是 cuid：全量扫描是「当日先删后插」，
+// 同一条快讯重扫后 cuid 会变，用 dedupeKey 才能让解释在重扫之后仍然指向同一条事件。
+// 落库前必须过 event-interpret-core 的校验（见 screener/event-interpret.ts）：
+// AI 发明的事件 id、无出处的证据/标的、AI 自己生成的概率，都在校验阶段被剔除并留档，不进这张表。
+// 保留期：不在 P5 生命周期（180 天）清理范围内——是否跟着事件行一起清理属于用户决定，未定口径前不删。
+model EventInterpretation {
+  id            String   @id @default(cuid())
+  eventKey      String   @unique // global_event.dedupeKey（旧行没有自然键时退回该行 id）
+  eventId       String   @default("") // 落库当时对应的 global_event.id：重扫后会变，只用于展示与跳转
+  asOf          String // 与 global_event.asOf 同口径（交易日）
+  title         String // 事实快照：解释产生时看到的原始标题（事件行被清理后回溯仍能独立成立）
+  source        String   @default("")
+  publishedAt   String   @default("")
+  eventHash     String   @default("") // 当时事件行的 contentHash：与现值不等 ⇒ 解释针对的事件版本已变（stale）
+  status        String // INTERPRETED | PARTIAL | REJECTED
+  model         String   @default("") // 是哪个模型产出的（客户端配置，不落 Key）
+  promptVersion String   @default("")
+  violations    String   @default("[]") // JSON：校验违规原文，便于直接查「哪条越界了」
+  payload       String   @default("{}") // JSON：§九 完整结构（含 evidence / unknowns / dropped 留档）
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([asOf])
+  @@map("event_interpretation")
+}
+
 // P2-自动化 后台任务运行记录：用于回答「到底有没有运行 / 什么时候运行 / 为什么失败」
 // 幂等口径：同一 (kind, tradeDate) 有 success 就不再重复执行（调度器只认「收盘窗口之后完成」的成功，
 // 盘中手动扫描不算收盘结果）；failure 允许重试但每日有限次；已确证休市的当日不再重试（见 scheduler/rules.ts）。
