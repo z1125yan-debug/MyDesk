@@ -20,6 +20,11 @@ import FactorLabPage from "./pages/FactorLabPage";
 import ProfilePage from "./pages/ProfilePage";
 import MarketPage from "./pages/MarketPage";
 import AllStocksPage from "./pages/AllStocksPage";
+import RiskPage from "./pages/RiskPage";
+import ProbabilityPage from "./pages/ProbabilityPage";
+import ThemesPage from "./pages/ThemesPage";
+import RadarPage from "./pages/RadarPage";
+import EventsPage from "./pages/EventsPage";
 import { useDesk } from "@/lib/desk/store";
 import { PAGE_TITLES, type PageKey } from "@/lib/desk/types";
 
@@ -28,12 +33,22 @@ export default function AppShell() {
   const collapsed = useDesk((s) => s.sidebarCollapsed);
   const go = useDesk((s) => s.go);
 
-  // hash 路由：刷新后停留当前页
+  // hash 路由：①刷新后停留当前页 ②监听 hashchange——浏览器前进/后退或手改 #/xxx 时同步页面，
+  // 避免出现「URL 已变、渲染未变」的不一致；无效 hash 回写为当前页，保证 URL 与实际页面一致。
   useEffect(() => {
-    const fromHash = window.location.hash.replace(/^#\/?/, "") as PageKey;
-    if (fromHash && PAGE_TITLES[fromHash] && fromHash !== page) go(fromHash);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const syncFromHash = () => {
+      const fromHash = window.location.hash.replace(/^#\/?/, "") as PageKey;
+      const cur = useDesk.getState().page;
+      if (fromHash && PAGE_TITLES[fromHash]) {
+        if (fromHash !== cur) go(fromHash);
+      } else if (window.location.hash !== `#/${cur}`) {
+        window.location.hash = `#/${cur}`;
+      }
+    };
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, [go]);
 
   useEffect(() => {
     window.location.hash = `#/${page}`;
@@ -62,6 +77,11 @@ export default function AppShell() {
           {page === "copilot" && <CopilotPage />}
           {page === "quant" && <QuantPage />}
           {page === "factorlab" && <FactorLabPage />}
+          {page === "risk" && <RiskPage />}
+          {page === "problab" && <ProbabilityPage />}
+          {page === "themes" && <ThemesPage />}
+          {page === "radar" && <RadarPage />}
+          {page === "events" && <EventsPage />}
           {page === "extension" && <ExtensionPage />}
           {page === "settings" && <SettingsPage />}
         </main>

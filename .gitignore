@@ -55,3 +55,7 @@ server.log
 data/quant-config.json
 # 人工核对快照：批量IC接口响应的 curl 存盘件（正式测试历史=factor_test 库表；verified 真源=data/factor-verified.json，勿一并忽略）
 data/factor-verify-report*.json
+
+# 视觉选型稿：4 套风格页全部是手写死的示例数据、src/ 无引用（见 eltdx-验证-实时与五档.md §设计稿 与 worklog 判定），非项目正式资产
+# 仅排除入库，文件保留在磁盘；需要正式收录时用 git add -f
+design-mockups/

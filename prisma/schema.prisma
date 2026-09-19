@@ -174,3 +174,39 @@ model FactorTest {
   @@index([factorKey, createdAt])
   @@map("factor_test")
 }
+
+// P2-4 AI 主动发现 / 市场雷达（按交易日落库）
+// 幂等策略（P2 定稿）：同一交易日重扫 = 先 deleteMany({asOf: 当日}) 再整批 createMany，读回即为当日全集；
+// 跨交易日历史行不触碰。故刻意不设唯一键——当日唯一性由「先删后插」保证，
+// 该不变式由 tests/quant/p2-archive-db.test.ts 断言（同日不得出现 (asOf,kind,title) 重复行）。
+model RadarFinding {
+  id        String   @id @default(cuid())
+  asOf      String
+  kind      String // risk | theme | fund | news | anomaly
+  title     String
+  detail    String   @default("")
+  evidence  String   @default("{}") // JSON
+  createdAt DateTime @default(now())
+
+  @@index([asOf, kind])
+  @@map("radar_finding")
+}
+
+// P2-5 全球事件雷达（按交易日落库，幂等策略同上：当日先删后插，跨日历史不触碰）
+model GlobalEvent {
+  id            String   @id @default(cuid())
+  asOf          String
+  title         String
+  time          String   @default("")
+  level         String // 普通新闻 | 行业新闻 | 重要行业事件 | 重大产业事件 | 全球级事件
+  category      String   @default("")
+  mappedSectors String   @default("[]") // JSON
+  relatedStocks String   @default("[]") // JSON
+  fundCheck     String   @default("{}") // JSON
+  stage         String   @default("")
+  source        String   @default("")
+  createdAt     DateTime @default(now())
+
+  @@index([asOf])
+  @@map("global_event")
+}

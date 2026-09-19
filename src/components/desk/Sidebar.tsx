@@ -3,6 +3,7 @@ import {
   Sparkles, Radar, Filter, UserSearch, Gauge, ListOrdered, Target,
   LayoutDashboard, BarChart3, LineChart, History, Bot,
   FlaskConical, Puzzle, Settings, Snowflake, LayoutGrid, Microscope,
+  ShieldAlert, Compass, Globe2, Percent, ScanSearch,
 } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import type { PageKey } from "@/lib/desk/types";
@@ -22,6 +23,8 @@ const GROUPS: { title: string; items: { key: PageKey; label: string; icon: React
     items: [
       { key: "market", label: "大盘情绪", icon: Gauge },
       { key: "sectors", label: "行业板块", icon: LayoutGrid },
+      { key: "themes", label: "主线发现", icon: Compass },
+      { key: "risk", label: "风险监控", icon: ShieldAlert },
       { key: "allstocks", label: "全A列表", icon: ListOrdered },
       { key: "profile", label: "个股画像", icon: UserSearch },
       { key: "tracker", label: "自选股", icon: Target },
@@ -42,6 +45,9 @@ const GROUPS: { title: string; items: { key: PageKey; label: string; icon: React
     items: [
       { key: "quant", label: "量化研究", icon: FlaskConical },
       { key: "factorlab", label: "因子测试台", icon: Microscope },
+      { key: "problab", label: "历史概率", icon: Percent },
+      { key: "radar", label: "主动发现", icon: ScanSearch },
+      { key: "events", label: "事件雷达", icon: Globe2 },
     ],
   },
   {
