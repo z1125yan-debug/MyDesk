@@ -595,3 +595,4 @@ P6-A 把这些判定收到一处内核，并让「我现在能查什么 / 这次
   ② 未探测行出现「未探测——未探测：回测 需要明确的策略…」双前缀 ⇒ `reason` 只写裸原因，前缀由 `toProbe` 统一加一次；
   ③ 不可用行只剩四态泛化文案，把 MCP「没有 ready 服务器」说成「休市」这类无关解释 ⇒ 新增 `unavailableNoteWith`，标准文案后补「具体原因：<本次原文>」（无覆盖类与重复情形不加）。
   三处都有对应断言（`freshnessChip` / `freshWithinDailyFromDateOnly` / `unavailableNoteWith` 三条用例 + 一条读源码的结构约束，防「内核有了、页面没用」）。
+- 本阶段提交：`30f0658 feat(P6-A): data capability and source reliability`（24 文件 +3081/−75，含 worklog 本段；提交前 `git diff --check` 无空白错误、逐路径 `git add`，未使用 `git add .`；工作树提交后 `git status --short` 为空）。
