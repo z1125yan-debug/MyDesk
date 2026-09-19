@@ -354,4 +354,5 @@
 - 未做/待验：真实交易日 15:20 的自动执行只能等 2026-09-21（周一）当天服务在跑时观察；`task_run` 的历史清理策略属第五阶段，保留天数待人工决定。
 - 服务形态变更需人工知晓：本副本原 3010 端口的 `next dev` 进程已停止，改为 `next build` + `npx next start -p 3010`（日志 `.prod-server.log`）；
   `next start` 会提示 `does not work with "output: standalone"`，实测功能正常（standalone 只影响容器化部署路径），未改动 `next.config.ts`。
-- 待人工确认后再 commit。
+- 提交：人工确认后以 `7fd829d`（19 文件，+1082/−81，含 `prisma/db/custom.db`）单独形成 P2 第二阶段正式 commit，工作树干净。
+  周一（2026-09-21）15:20 的真实自动触发按用户决定作为「后续运行验收」，不再阻塞提交。
