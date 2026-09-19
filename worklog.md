@@ -263,3 +263,8 @@
   - 合计 32+13=45，与逐键 diff 一致；144−137=7 全部为去重复用（A 2 + B 4 + pe_dynamic 重复 1），非漏做。
   - 状态分布：pending 19（旧 4 + 新 15），快照口径且已实现 10（不参与 IC 测试），可测 K 线口径 108；批量真实验证 108/108 完成、通过 33，`data/factor-verified.json` 33 条 true 与报告 passed 集合逐键一致（双向差集为空）。
 - 待确认后才 commit。`git status` 42 项：本次改动（fields/probability/run/engine/types/tester/quant-api/ScreenerPage/ProbabilityPage 等 + 2 个新测试 + factor-verified/factor-verify-report 数据）；另一会话未提交的 P2 WIP（RiskPage/ThemesPage/RadarPage/EventsPage/AppShell/Sidebar/schema 模型/radar.ts/events*.ts/theme*.ts/similar-env.ts/theme-chain-map.json、design-mockups/）也在同一副本工作区内，提交范围需人工确认；`prisma/db/custom.db` 为二进制库文件，是否入库需决策。
+
+### 补记：`data/factor-verify-report.json` 移出版本库（2026-09-19，人工确认后）
+
+- 定性核查：全仓（排除 node_modules/.next/.git）除本 worklog 外无任何代码读写该文件；batch 路由只 `db.factorTest.create()` 落库并返回 JSON，文件顶层字段 `{ok, persisted, unavailable, rows}` 正是接口响应形状 → 属人工 curl 快照，非研究资产。只读查库交叉核对：`factor_test` 219 行 / 去重 108 因子 / 每因子最新行 passed=1 共 33 个，与 `data/factor-verified.json` 的 33 键一致 → 正式测试历史在库表，verified 真源是 `factor-verified.json`（`tester.ts` 的 `markFieldVerified()` 写、`factorCatalog()` 读、p2-factor-pack 断言绑定）。
+- 处理：按仓库既有约定（`data/quant-config.json` 就地忽略）执行 `git rm --cached data/factor-verify-report.json`（本地文件保留 44993 字节作证据），`.gitignore` 新增 `data/factor-verify-report*.json` 防同类快照再入库；`factor-verified.json` 已确认未被忽略、仍在版本库。未改公式、未改测试逻辑、未动数据库、未动其他会话的 P2 WIP（24 项保持原样）。

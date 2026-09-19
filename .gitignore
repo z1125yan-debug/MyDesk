@@ -53,3 +53,5 @@ server.log
 # Skills directory
 /skills
 data/quant-config.json
+# 人工核对快照：批量IC接口响应的 curl 存盘件（正式测试历史=factor_test 库表；verified 真源=data/factor-verified.json，勿一并忽略）
+data/factor-verify-report*.json
