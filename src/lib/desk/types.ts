@@ -23,6 +23,7 @@ export type PageKey =
   | "radar"        // P2-4 AI 主动发现
   | "events"       // P2-5 全球事件雷达
   | "research"     // P6-C AI 市场环境研究（七分区研究报告 + 服务端台账）
+  | "agent"        // P6-D Agent 自主工具调用（步骤时间线 + 台账 + 血缘 + 预算）
   | "extension"    // 扩展
   | "settings";    // 设置
 
@@ -175,6 +176,7 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   radar: "AI 主动发现",
   events: "全球事件雷达",
   research: "AI 市场研究",
+  agent: "Agent 自主研究",
   extension: "扩展",
   settings: "设置",
 };

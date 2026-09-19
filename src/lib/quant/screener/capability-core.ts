@@ -446,6 +446,22 @@ export const CAPABILITIES: CapabilityDef[] = [
     examples: ["最近一次扫描是什么时候、成没成功"],
   },
   {
+    name: "agent_run_history", title: "Agent 研究运行记录", group: "运维",
+    description: "读 agent_run + agent_tool_call：每次自主研究运行的问题、步骤时间线、每条工具调用的结果与血缘。",
+    input: "run_id=某次运行（可省=最近若干次列表）；GET /api/agent/run",
+    output: "runs[]: run_id/question/status/answer_status/steps/tool_calls/evidence_lines/started_at；带 run_id 时另有 timeline[]/ledger[]/lineage[]/budget_left/missing[]",
+    source: "SQLite agent_run + agent_tool_call",
+    source_type: "database", freshness: "intraday", availability: "db", data_status: "REAL",
+    limitations: [
+      "库里有没有这一行才是「调没调过」的准绳：模型自称调用过但 agent_tool_call 没有行，就等于没调用",
+      "answer_text 属 AI_INTERPRETATION 层，不是行情事实；ACCEPTED/PARTIAL/REJECTED 是服务端复校验的判定，不是市场结论",
+      "status=running 表示这次运行还没收尾；进程重启不影响续跑与回看（状态从调用行重建，不靠内存）",
+      "这两张表不在 P5 的 180 天清理口径内：保留期由用户决定，未定之前一行都不删",
+    ],
+    fallbacks: [], mutating: false,
+    examples: ["刚才那次研究调了哪些工具、为什么停", "这次结论的每条引用回到哪次取数"],
+  },
+  {
     name: "lifecycle_preview", title: "数据生命周期 dry-run", group: "运维",
     description: "按 180 天保留期预览哪些归档日将被清理（只读，不删）。",
     input: "GET /api/lifecycle/preview",

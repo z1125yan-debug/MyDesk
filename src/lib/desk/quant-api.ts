@@ -874,3 +874,167 @@ export async function fetchCapabilitiesForNeed(need: string): Promise<{
   if (!res.ok || !j.ok) throw new Error(j.error || "需求匹配失败");
   return j;
 }
+
+// ---------- P6-D Agent 自主工具调用（/api/agent/*） ----------
+//
+// 这些封装一律「不抛 4xx」：状态码背后的 body 就是页面要显示的事实（为什么没记账、为什么没落库），
+// 抛成异常会让 §三十一 的「错误结构与成功同形」在页面上退化成一句「请求失败」。
+// 只有真的没拿到 JSON（网关/HTML 错误页）才抛，并且抛的也是这件事本身。
+
+/** 一次工具调用的日志行（§十八）。字段名与服务端 rowToLog 同一份：走一步的 call 与回看的 timeline 同形 */
+export interface AgentCallRowClient {
+  run_id?: string; step?: number; tool?: string; capability?: string; executor?: string;
+  input?: Record<string, unknown>;
+  output_status?: string; kind?: string | null; data_status?: string | null;
+  source?: string; as_of?: string;
+  /** null = 什么都没执行（被准入挡下）；0 也可能是「查本地缓存」的真实耗时，两者不许互相冒充 */
+  latency_ms?: number | null;
+  error?: string; fallback_of?: string; degraded_from?: string; attempt?: number;
+  call_key?: string; cached_from?: string; evidence_id?: string;
+  thought?: string; summary?: string;
+  notes?: string[]; refs?: string[]; timestamp?: string;
+}
+
+export interface AgentLedgerRowClient {
+  id: string; layer: string; text: string; capability: string; source: string;
+  as_of: string; data_status: string; tool: string; step: number; refs: string[];
+}
+
+export interface AgentLineageRowClient {
+  evidence_id: string; tool: string; executor: string | null; source: string; as_of: string;
+  /** null = 那行的分层值不认识：页面按 data_status_raw 原样显示，不猜它算事实还是派生 */
+  data_status: string | null; data_status_raw: string; step: number; call_key: string; refs: string[];
+}
+
+export interface AgentBudgetClient {
+  max_steps: number; max_tool_calls: number; max_retries_per_tool: number; max_total_ms: number; max_evidence_lines: number;
+}
+export interface AgentBudgetLeftClient { steps: number; tool_calls: number; ms: number; retries_left: number; evidence_lines: number }
+export interface AgentNextTurnClient { action: string; reason: string | null; detail: string }
+export interface AgentObservationClient {
+  kind: string | null; data_status: string | null; source: string | null; as_of: string | null;
+  summary: string; reason: string | null; notes: string[]; degraded_from: string | null; timed_out: boolean; payload: unknown;
+}
+export interface AgentDeadEndClient {
+  failure: string | null; reason: string; retryable: boolean; has_fallback: boolean;
+  fallback_tools: string[]; next_action: string; user_note: string;
+}
+/** summarizeRun 的返回是宽对象：这里只声明页面上会读的那几项 */
+export interface AgentSummaryClient {
+  run_id?: string; question?: string; steps?: number; tool_calls?: number; distinct_tools?: number;
+  evidence_lines?: number; missing_lines?: number; fallback_used?: number; cached_hits?: number;
+  latency_total_ms?: number; stop_reason?: string | null; stop_detail?: string;
+  answer_status?: string | null; log_status_counts?: string; protocol?: string;
+}
+/** 带状态码的返回：页面按 __status 区分「200 但没执行」与「409 已收尾」，不靠猜中文 */
+export type AgentApi<T> = T & { __status: number };
+
+async function agentJson<T>(res: Response): Promise<AgentApi<T>> {
+  const j = (await res.json().catch(() => null)) as T | null;
+  if (!j) throw new Error(`接口没有返回 JSON（HTTP ${res.status}）：本页面不猜结果，也不会把错误页当成「跑过了」`);
+  return { ...j, __status: res.status } as AgentApi<T>;
+}
+
+export interface AgentStartResultClient {
+  ok: boolean; error: string | null; run_id: string; resumed: boolean; status: string; question: string;
+  budget: AgentBudgetClient | null; budget_notes: string[]; missing: string[];
+  prompt: { system: string; turn: string; protocol: string };
+  next_turn: AgentNextTurnClient; summary: AgentSummaryClient; basis: string;
+}
+/** POST /api/agent/run：开一次运行（同一 run_id 再提交是续开，不是重建） */
+export async function agentRunApi(body: {
+  run_id: string; question: string; budget?: Partial<AgentBudgetClient>; model?: string;
+}): Promise<AgentApi<AgentStartResultClient>> {
+  const res = await fetch("/api/agent/run", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  return agentJson<AgentStartResultClient>(res);
+}
+
+export interface AgentStepResultClient {
+  ok: boolean; error: string | null; run_id: string; admitted: boolean;
+  call: AgentCallRowClient; params_effective: Record<string, unknown>;
+  observation: AgentObservationClient; dead_end: AgentDeadEndClient | null;
+  budget_left: AgentBudgetLeftClient; evidence_lines: number; missing: string[];
+  next_turn: AgentNextTurnClient; prompt: { turn: string } | null;
+  summary: AgentSummaryClient; basis: string;
+}
+/** POST /api/agent/tool：走一步。取数失败/没有数据/能力不支持都是 200——这一步真的记了账 */
+export async function agentToolApi(body: {
+  run_id: string; tool: string; args?: Record<string, unknown>; thought?: string; timeout_ms?: number;
+}): Promise<AgentApi<AgentStepResultClient>> {
+  const res = await fetch("/api/agent/tool", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  return agentJson<AgentStepResultClient>(res);
+}
+
+export interface AgentAnswerCheckClient {
+  status: string; answer: string; cites_valid: string[]; cites_invalid: string[];
+  unsourced_numbers: { claim: string; value?: number; where?: string }[];
+  historical_as_current: string[]; probability_gaps: string[]; unused_evidence: string[];
+  violations: string[]; gaps: string[]; lineage: AgentLineageRowClient[];
+}
+export interface AgentFinalizeResultClient {
+  ok: boolean; error: string | null; persisted: boolean; run_id: string;
+  directive: { kind: string; thought: string } | null;
+  check: AgentAnswerCheckClient | null; summary: AgentSummaryClient; missing: string[]; basis: string;
+}
+/** POST /api/agent/finalize：把模型**原文**交给服务端解析与复校验（前端解析结果只用于路由，不参与判定） */
+export async function agentFinalizeApi(body: { run_id: string; raw: string; model?: string }): Promise<AgentApi<AgentFinalizeResultClient>> {
+  const res = await fetch("/api/agent/finalize", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  return agentJson<AgentFinalizeResultClient>(res);
+}
+
+export interface AgentRunListItemClient {
+  run_id: string; question: string; status: string; answer_status: string; stop_reason: string;
+  steps: number; tool_calls: number; evidence_lines: number; missing_lines: number; started_at: string; elapsed_ms: number;
+}
+export interface AgentRunListClient {
+  ok: boolean; error: string | null; mode: string; runs: AgentRunListItemClient[]; take: number; basis: string;
+}
+/** GET /api/agent/run（不带 run_id）：最近若干次运行的摘要列表 */
+export async function fetchAgentRunList(take = 20): Promise<AgentApi<AgentRunListClient>> {
+  const res = await fetch(`/api/agent/run?take=${take}`);
+  return agentJson<AgentRunListClient>(res);
+}
+
+export interface AgentRunViewClient {
+  ok: boolean; error: string | null; run_id: string; mode: string;
+  question?: string; status?: string; model?: string; protocol?: string; prompt_version?: string;
+  budget?: AgentBudgetClient; budget_notes?: string[]; budget_left?: AgentBudgetLeftClient;
+  timeline?: AgentCallRowClient[]; ledger?: AgentLedgerRowClient[]; evidence_snapshot?: unknown[];
+  missing?: string[];
+  answer_status?: string; answer_text?: string; answer_cites?: string[]; answer_cites_missing?: string[];
+  answer_gaps?: string[]; violations?: string[]; unused_evidence?: string[]; lineage?: AgentLineageRowClient[];
+  stop_reason?: string; stop_detail?: string;
+  rebuild_check?: { stored: Record<string, number>; rebuilt: Record<string, number>; rows: number; consistent: boolean; unknown_layer_rows: unknown[] };
+  summary?: AgentSummaryClient; started_at?: string; finished_at?: string; elapsed_ms?: number; basis?: string;
+}
+/** GET /api/agent/run?run_id=：完整回看（时间线 + 台账 + 血缘 + 预算 + 答案与违规项） */
+export async function fetchAgentRunView(runId: string): Promise<AgentApi<AgentRunViewClient>> {
+  const res = await fetch(`/api/agent/run?run_id=${encodeURIComponent(runId)}`);
+  return agentJson<AgentRunViewClient>(res);
+}
+
+export interface AgentToolDefClient {
+  name: string; title: string; description: string; capability: string; group: string; executor: string | null;
+  input_schema: unknown; input_note: string; output_schema: string;
+  source: string; source_type: string; freshness: string; data_status: string; availability: string;
+  risk_level: string; side_effect: string; enabled: boolean; fallbacks: string[];
+  limitations: string[]; examples: string[]; timeout_ms: number | null; disabled_reason: string | null;
+}
+export interface AgentToolsCatalogClient {
+  ok: boolean; error: string | null; total: number; enabled: number; disabled: number;
+  tools: AgentToolDefClient[]; catalog_text: string;
+  budget: { default: AgentBudgetClient; hard_caps: AgentBudgetClient };
+  self_check: { unimplemented_executors: string[]; read_only_violations: string[] };
+  basis: string;
+}
+/** GET /api/agent/tools：工具目录 + 自检（假能力与越界条目由服务端点名，页面原样显示） */
+export async function fetchAgentTools(): Promise<AgentApi<AgentToolsCatalogClient>> {
+  const res = await fetch("/api/agent/tools");
+  return agentJson<AgentToolsCatalogClient>(res);
+}
