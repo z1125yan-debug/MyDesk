@@ -38,6 +38,7 @@ export async function GET() {
 }
 
 // POST 手动扫描：与后台调度共用 scheduler.runTaskTracked（落库实现见 screener/persist.ts），同时写一条 trigger=manual 的 task_run
+// force=true → 口径=全量（当日先删后插重刷），用户点了就必须真跑一遍；mode/delta 如实回给前端。
 export async function POST() {
   try {
     const { outcome, result } = await runTaskTracked("events", "manual", { force: true });
@@ -48,6 +49,8 @@ export async function POST() {
       ok: true,
       as_of: result.as_of,
       trade_date: result.trade_date,
+      mode: outcome.mode ?? null,
+      delta: outcome.delta ?? null,
       unmatched: result.unmatched,
       missing: result.missing,
       source: result.source,

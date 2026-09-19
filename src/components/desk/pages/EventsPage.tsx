@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Globe2, Loader2, RefreshCw } from "lucide-react";
 import { SourceBadge, PctText } from "../SourceBadge";
 import { AutoTaskLine } from "../AutoTaskLine";
-import { fetchEvents, scanEvents, type EventItemClient } from "@/lib/desk/quant-api";
+import { fetchEvents, scanEvents, scanResultNote, type EventItemClient } from "@/lib/desk/quant-api";
 
 const LEVEL_TONE: Record<string, string> = {
   全球级事件: "border-violet-500/40 text-violet-300",
@@ -24,6 +24,7 @@ export default function EventsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [taskTick, setTaskTick] = useState(0); // 手动扫描后自增 → 任务状态条重读 task_run
+  const [scanNote, setScanNote] = useState(""); // 本次手动扫描的口径与写库明细（服务端返回，不在前端算）
 
   const load = useCallback(async () => {
     setError("");
@@ -35,10 +36,11 @@ export default function EventsPage() {
   }, []);
 
   const scan = async () => {
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setScanNote("");
     try {
       const j = await scanEvents();
       setItems(j.items); setAsOf(j.trade_date); setMissing(j.missing ?? []); setUnmatched(j.unmatched ?? null);
+      setScanNote(scanResultNote("events", j.mode, j.delta));
       setOrigin("scan");
     } catch (e) { setError(String((e as Error).message || e)); }
     finally { setBusy(false); setTaskTick((t) => t + 1); }
@@ -68,6 +70,11 @@ export default function EventsPage() {
       </div>
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
       <AutoTaskLine kind="events" refreshKey={taskTick} />
+      {scanNote && (
+        <div className="text-[10.5px] text-muted-foreground">
+          {scanNote}；手动「扫描今日」按全量重刷当日事件；收盘后的自动扫描在当日已有成功游标时按增量写入——窗口内没有新快讯就不写库、也不再请求板块榜，已入库事件的资金验证保持首次扫描时的数值。
+        </div>
+      )}
       {unmatched !== null && <div className="text-[11px] text-muted-foreground">未映射快讯 {unmatched} 条（已忽略，未编造产业链）</div>}
       {!items.length && !busy && <div className="text-xs text-muted-foreground">尚无入库事件：等待收盘后自动任务，或点击「扫描今日」。</div>}
       <div className="space-y-2">

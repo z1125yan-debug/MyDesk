@@ -8,10 +8,15 @@
 //       执行前先插一条 running 行，两个调用方（tick 与手动接口）撞车时后者会看到新鲜 running 而跳过。
 // 恢复：进程重启后 tick 会重新判定当日窗口，未成功就继续跑；崩溃遗留的 running 超过 30 分钟视为陈旧，不再阻塞。
 // 交易日：只认上证指数真实日线的最后一根日期；判不出来时记 skipped 而不是猜一个。
+// P3 增量：调度规则与幂等拦截一行没改；执行时把「全量还是增量」交给落库层判定 ——
+//          当日已有成功游标（例如上午手动扫过一次）→ 收盘后那次自动扫描只写新增与内容变化的行；
+//          扫描失败不推进游标，下一次仍从上次成功位置重新处理同一批数据。task_run 里如实记录用了哪种口径。
 import { db } from "@/lib/db";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
-import { archiveRadarScan, archiveEventScan, type ArchiveResult, type EventRow, type RadarRow } from "@/lib/quant/screener/persist";
+import { modeBasisLabel } from "@/lib/quant/screener/incremental-core";
+import { cursorSummary } from "@/lib/quant/screener/incremental";
+import { archiveRadarScan, archiveEventScan, type ArchiveResult, type DeltaStats, type EventRow, type RadarRow, type ScanMode } from "@/lib/quant/screener/persist";
 import { shanghaiDate } from "@/lib/desk/session";
 import {
   DEFAULT_SCHEDULER_CONFIG, SKIP_REASON_TEXT, decideRun, isDueWindow, judgeTradingDay, nextSlot, slotAtForDate,
@@ -28,6 +33,10 @@ const UNCONFIRMED_PROBE_MS = 15 * 60_000; // 确证不了交易日时，最多�
 export interface TaskOutcome {
   kind: TaskKind; tradeDate: string; status: "success" | "failure" | "skipped";
   reason?: string; results?: number; error?: string;
+  /** P3：本次实际采用的口径（auto 解析后的结果）；未执行扫描时省略 */
+  mode?: ScanMode;
+  /** P3：本次写入库的明细（新增/更新/未变/标记消失），供接口与 task_run 如实回报 */
+  delta?: DeltaStats;
 }
 
 interface SchedulerState {
@@ -107,11 +116,17 @@ async function recordSkippedOnce(kind: TaskKind, tradeDate: string, trigger: str
  * 执行一次任务（调度器与手动接口共用），同时返回落库结果供 API 回给前端。
  * force=true 时忽略「当日已成功 / 已达重试上限 / 已确证休市」的幂等拦截（人工点「立即扫描」、补跑与失败重试），
  * 但仍受 running 互斥保护，且拦截被绕过时会在 note 里写明是强制执行。
+ *
+ * mode（P3）：交给落库层决定/记录，本函数只负责如实写进 task_run。
+ * - 缺省 "auto"：当日已有成功游标 → 增量（只写新增与变化的行），否则全量；
+ * - "full"：当日先删后插重刷（手动点「立即扫描」即此口径，用户要求真跑一遍）；
+ * - "incremental"：显式要求增量补跑（即使同时 force=true 也不退回全量）。
+ * 幂等拦截规则（第二阶段定稿）没有因为增量而改变：这里不碰 decideRun。
  */
 export async function runTaskTracked(
   kind: TaskKind,
   trigger: "schedule" | "manual",
-  opts?: { force?: boolean; tradeDate?: string },
+  opts?: { force?: boolean; tradeDate?: string; mode?: "auto" | "full" | "incremental" },
 ): Promise<{ outcome: TaskOutcome; result: ArchiveResult<RadarRow | EventRow> | null }> {
   const s = state();
   quantBootstrap(); // 数据源 Provider 注册（幂等）：交易日判据与扫描都要用
@@ -159,27 +174,32 @@ export async function runTaskTracked(
   const note = opts?.force
     ? `${label}（强制补跑，忽略当日已有结果，不计入自动重试次数）`
     : `${label}：第 ${attempt} 次尝试`;
+  // P3：扫描口径交给落库层判定（当日已有成功游标才走增量），这里只负责把结果如实写进 task_run
+  const archiveOpts = { force: opts?.force, mode: opts?.mode ?? "auto" as const };
   try {
-    const out = kind === "radar" ? await archiveRadarScan() : await archiveEventScan();
+    const out = kind === "radar" ? await archiveRadarScan(archiveOpts) : await archiveEventScan(archiveOpts);
+    const writeLine = `写入：新增 ${out.delta.inserted}、更新 ${out.delta.updated}、未变 ${out.delta.unchanged}`
+      + (out.delta.skippedByCursor ? `、游标跳过 ${out.delta.skippedByCursor}` : "")
+      + (kind === "radar" ? `、标记消失 ${out.delta.superseded}` : `、保留 ${out.delta.kept}`);
     await db.taskRun.update({
       where: { id: row.id },
       data: {
         status: "success", finishedAt: new Date(),
         scanned: out.scanned, results: out.results,
         missing: JSON.stringify(out.missing ?? []),
-        basis: `${verdict.basis}；来源 ${out.source}`,
-        note,
+        basis: `${verdict.basis}；${modeBasisLabel(out.mode)}；来源 ${out.source}`,
+        note: `${note}；${writeLine}`,
       },
     });
-    s.lastOutcome = `${kind} success ${out.results} 条 @${tradeDate}`;
-    return { outcome: { kind, tradeDate, status: "success", results: out.results }, result: out };
+    s.lastOutcome = `${kind} success ${out.results} 条 @${tradeDate}（${out.mode === "full" ? "全量" : "增量"}）`;
+    return { outcome: { kind, tradeDate, status: "success", results: out.results, mode: out.mode, delta: out.delta }, result: out };
   } catch (e) {
     const msg = (e as Error).message;
     await db.taskRun.update({
       where: { id: row.id },
       data: {
         status: "failure", finishedAt: new Date(), error: msg,
-        missing: JSON.stringify([`执行失败：${msg}`]),
+        missing: JSON.stringify([`执行失败：${msg}`, "失败不推进增量游标：下次运行仍从上次成功位置重新处理这批数据"]),
         basis: `${verdict.basis}；来源 未完成（扫描阶段异常）`,
         note: `${label}：第 ${attempt} 次尝试失败`,
       },
@@ -190,7 +210,11 @@ export async function runTaskTracked(
 }
 
 /** 调度器/tick 用的简洁入口：只关心结果状态 */
-export async function runTask(kind: TaskKind, trigger: "schedule" | "manual", opts?: { force?: boolean; tradeDate?: string }): Promise<TaskOutcome> {
+export async function runTask(
+  kind: TaskKind,
+  trigger: "schedule" | "manual",
+  opts?: { force?: boolean; tradeDate?: string; mode?: "auto" | "full" | "incremental" },
+): Promise<TaskOutcome> {
   const { outcome } = await runTaskTracked(kind, trigger, opts);
   return outcome;
 }
@@ -216,7 +240,7 @@ export async function tick(now = new Date()): Promise<string> {
   const outcomes: string[] = [];
   for (const kind of KINDS) {
     const r = await runTask(kind, "schedule");
-    outcomes.push(`${kind}:${r.status}${r.reason ? `(${r.reason})` : ""}${r.results !== undefined ? `×${r.results}` : ""}`);
+    outcomes.push(`${kind}:${r.status}${r.reason ? `(${r.reason})` : ""}${r.results !== undefined ? `×${r.results}` : ""}${r.mode ? `[${r.mode}]` : ""}`);
   }
   s.lastOutcome = outcomes.join(" / ");
   return s.lastOutcome;
@@ -273,7 +297,7 @@ export async function schedulerStatus() {
     error: r.error, basis: r.basis, note: r.note,
   });
   const slotMs = slotMsFor(today, s.cfg);
-  const todaySummary = KINDS.map((kind) => {
+  const todaySummary = await Promise.all(KINDS.map(async (kind) => {
     const rows = todays.filter((r) => r.kind === kind);
     // settled 必须与调度器的幂等口径同一条规则：只看窗口之后完成的成功行，否则页面会说谎。
     // 它只回答「调度器今天还会不会再跑」，不回答「是谁跑的」——后者看 last_trigger。
@@ -287,8 +311,10 @@ export async function schedulerStatus() {
       last_trigger: last ? last.trigger : "",
       last_finished_at: last?.finishedAt ? last.finishedAt.toISOString() : null,
       last_error: last?.error ?? "",
+      // P3：当日增量游标（没有游标 = 今天还没成功跑过，下一次会走全量口径）
+      cursor: await cursorSummary(kind, today),
     };
-  });
+  }));
   return {
     ok: true,
     as_of: now.toISOString(),

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Radar, Loader2, RefreshCw } from "lucide-react";
 import { SourceBadge } from "../SourceBadge";
 import { AutoTaskLine } from "../AutoTaskLine";
-import { fetchRadar, scanRadar, type RadarItemClient } from "@/lib/desk/quant-api";
+import { fetchRadar, scanRadar, scanResultNote, type RadarItemClient } from "@/lib/desk/quant-api";
 import { useDesk } from "@/lib/desk/store";
 
 const KIND_GO: Record<string, "risk" | "themes" | "events" | "market"> = {
@@ -18,20 +18,24 @@ export default function RadarPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [taskTick, setTaskTick] = useState(0); // 手动扫描后自增 → 让任务状态条重读 task_run
+  const [scanNote, setScanNote] = useState(""); // 本次手动扫描的口径与写库明细（服务端返回，不在前端算）
+  const [superseded, setSuperseded] = useState(0); // 今日曾成立、最近一次扫描未再算出的条数（增量口径只标记消失，不删除）
 
   const load = useCallback(async () => {
     try {
       const j = await fetchRadar();
-      setItems(j.items); setAsOf(j.as_of);
+      setItems(j.items); setAsOf(j.as_of); setSuperseded(j.superseded_today ?? 0);
       if (!j.scanned) { /* 空库不自动扫描，避免打开页面就打满数据源 */ }
     } catch (e) { setError(String((e as Error).message || e)); }
   }, []);
 
   const scan = async () => {
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setScanNote("");
     try {
       const j = await scanRadar();
       setItems(j.items); setAsOf(j.trade_date || j.as_of); setMissing(j.missing ?? []);
+      setSuperseded(j.superseded_today ?? 0);
+      setScanNote(scanResultNote("radar", j.mode, j.delta));
     } catch (e) { setError(String((e as Error).message || e)); }
     finally { setBusy(false); setTaskTick((t) => t + 1); }
   };
@@ -54,7 +58,13 @@ export default function RadarPage() {
       </div>
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
       <AutoTaskLine kind="radar" refreshKey={taskTick} />
+      {scanNote && <div className="text-[10.5px] text-muted-foreground">{scanNote}；手动「立即扫描」按全量重刷当日结果，收盘后的自动扫描在当日已有成功游标时按增量写入。</div>}
       {!items.length && <div className="text-xs text-muted-foreground">今日尚未扫描。交易日收盘后调度器会自动执行一次；也可点击「立即扫描」马上生成（需真实行情源）。</div>}
+      {superseded > 0 && (
+        <div className="text-[10.5px] text-muted-foreground/80">
+          另有 {superseded} 条今日曾成立、最近一次扫描未再算出的信号：已标记为消失、不再列示，但仍在 radar_finding 里保留（供后续复盘）。
+        </div>
+      )}
       <div className="space-y-2">
         {items.map((it) => (
           <button key={it.id ?? it.title} onClick={() => go(KIND_GO[it.kind] ?? "market")}
