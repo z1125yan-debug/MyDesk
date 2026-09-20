@@ -1069,3 +1069,47 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 4. 技术面 T-VOLUME 恒 DEGRADED 的历史待办仍在。
 5. 任务书未给事件面单维限制（±50 只写在技术面与市场面），本层不替它补一条限制。
 
+## P7 第八阶段 P7-⑧② 对话正文里的代码与板块可点：识别下沉纯内核 + 两个入口共用一份跳转（2026-09-21：新增 link-core 与 13 条测试，顺带修掉号段映射的四副本不一致）
+
+### 这一轮定的三条口径（批准范围内）
+
+1. **判定全部放纯内核**，界面零判定：新增 `link-core.ts`（187 行，无 `"use client"`、无 `@/`，`node --test` 直跑）。渲染层只做「把 `splitByLinks` 给的片段画成按钮或普通 span」，不认代码也不认板块名 —— 与 `intent-core` / `screener-core` 同一套分层理由：判定规则必须能被测试钉住。
+2. **代码形状只有一份出处**：`link-core` 复用 `intent-core.codeRe()`（工厂函数，避免 `/g` 的 `lastIndex` 跨模块共享）与 `suffixOf()` 号段表。链接层比意图层**更保守**：额外拒判「小数尾巴 / 千分位 / 后接小数位 / 六位数字紧跟单位」四种形状（`600519 万元`、`3.600519`、`1,234567`、`600519.5` 都不该跳标的）。
+3. **板块只认真实榜单**：白名单来自 `/api/market/sectors` 的 BK 代码（与板块榜页同源），编译成「长名优先」的正则交替式并按清单 key 缓存。取不到清单 ⇒ 正文里的板块名一律不可点。**故意不做 `fetchBoardRows` 式演示兜底**，也不在页面里维护第二份板块名表。两字板块名（白银 / 银行）必须挨着行业语境词才生成链接，否则「银行的中报」「白银价格」会被误跳。
+
+### 一处真实缺陷：号段映射有四份副本，且互相不一致（测试照出来的，不是顺手重构）
+
+`p7-link.test.ts` 断言 `920819 → 920819.BJ` 时当场失败：`suffixOf` 先判 `^(60|68|9|5)` ⇒ `92xxxx` 被算成 `.SH`。继续追查发现全工程有四份号段副本（`intent-core` / `chat-tools.normalizeSymbol` / `market.normalizeTradingViewSymbol` / `ProfilePage` 搜索框），其中北交所那条只有 `chat-tools` 写对了。后果不是显示问题而是**取数取不到、跳转跳错标的**：`920819` 会被当成一只不存在的沪市票去请求。修法：`intent-core.suffixOf` 先判 BJ（顺序写进注释），其余三处删掉自抄的号段表、统一委托它。新增断言 `920819.BJ` / `900901.SH` / `500001.SH` / `430139.BJ` 钉住这条。
+
+### 落点
+
+- `src/lib/desk/link-core.ts`（新增，纯内核）：`toSymbol` / `symbolRejectReason` / `findSymbolSpans` / `sectorRejectReason` / `findSectorSpans` / `findLinkSpans` / `splitByLinks`。不变量：**同一起点代码优先于板块**、**片段拼回逐字等于原文**、**同一句切两次结果必须相同**（正则状态泄漏回归）、**换清单必须按新清单判**（缓存不能粘住上一份榜单）。
+- `intent-core.ts`：`suffixOf` 导出 + 先判 BJ；新增 `codeRe()` 工厂与 `findSymbolMatches()`（逐个出现地报，不去重，带 start/end），`extractSymbols` 改为由它去重 ⇒ 旧行为不变。
+- `market.ts`：`normalizeTradingViewSymbol` 裸六位分支委托 `suffixOf`；新增 `fetchSectorRefs()`（只认真实榜单，`code` 必须形如 `BK\d+` 且名字 ≥2 字，取不到返回空数组）。
+- `Markdown.tsx`（整文件重写）：九类模块卡片逻辑原样保留，新增 `DeskLinkCtx` + `linkifyTree()` —— 用 `Children.map + cloneElement` 递归替换字符串片段，遇 `a` / `code` / `pre` 停止下探（外链与代码块里不生链接）。**不传 `onLink` 就一个按钮都不画**。
+- `use-desk-links.ts`（新增）：助手页与小窗共用同一份跳转口径（`symbol → setFocusSymbol + go("analysis")`；`sector → setFocusSector + go("sectors")`），板块白名单只在挂载时取一次。两个入口不各判一套是 P7-⑤ 之前的老毛病。
+- `store.ts`：`focusSector` + `setFocusSector` + `takeFocusSector`（取一次即清，和 `pendingAsk` 一样**不进 `partialize`**，刷新不重发）。
+- `SectorsPage.tsx`：结算那一跳的位置在 `load()` 的 **await 之后**（`settleJump(rows)` / 失败时 `settleJump(null, msg)`），不在 effect 体内同步改状态。四种结果各写一句实话：展开了 / 该行本来就已展开 / 「BKxxxx」不在当前板块榜（共 N 个板块）里 / 板块榜这次没取到（附错误）。**判「查无此板块」必须等榜单到手**，否则是把「没取到」说成「不存在」。手动点行的开合与跳转共用 `openMembers` / `closeBoard`，跳转只在未展开时开，不会把已展开的行 toggling 关掉。
+
+### 验收（全部当场重跑）
+
+- `node --experimental-strip-types --test tests/quant/p7-link.test.ts` = **13 通过 / 0 失败**（识别、误识别、板块白名单与最长优先、两字名语境词闸门、重叠只留一个、切分无损、幂等与缓存失效、回调参数即 `LinkSegment.link`）。`p7-intent.test.ts` 只增不减。
+- 全量 `tests/quant/*.test.ts` = **569 tests / 560 pass / 0 fail / 9 skipped**（上一轮 P7-⑦ 收尾 555/546/9 ⇒ +14 全部来自 `p7-link.test.ts`，既有测试未删、断言未降）。
+- `npx tsc --noEmit` 退出码 **0**。`git diff -- package.json package-lock.json` = **0 行** ⇒ 未新增依赖。
+- `npx eslint` 对本轮 10 个改动/新增文件：3 条 `react-hooks/set-state-in-effect` 全部是**改动前就在**的语句（`ProfilePage:46/51`、`SectorsPage` 的 `useEffect(() => load())`，位置随新增代码从 74 行挪到 117 行，同一条）。中途我写的版本确实**新增过**三条（渲染期写 ref、effect 体内 setState 两处），已按规则改成「effect 里同步 ref + 结算放 await 之后」后回到 3 条 ⇒ **未新增告警**。
+- `next build` 成功（两次，重构后重建）+ `npx next start -p 3014`（**隔离实例 + 仓库外副本库** `D:/Zai/p7-check/p7v3-3014.db` + `DESK_SCHEDULER=0`）。真实库 `prisma/db/custom.db` md5 本轮前后均为 `9b98e11cedff742e1a077af3b767c0e2`（未被写）；`data/factor-verified.json` 未改；用户 3010（PID 93740）未动；收尾后 `netstat` 复核 3014 与假上游 8898/8899 均无监听。
+- 浏览器实机（生产构建 3014，对话正文由**仓库外假上游常量**提供，正文里每行都写明「假上游脚本常量」；点进去之后的行情、成分股全部来自本机真实接口）：
+  - 助手页与个股画像页的正文里出现同样一段文本时：**对话面 6 个可点（`600519.SH` / `000001`→`000001.SZ` / `000001.SZ` / `半导体设备`→BK1326 / `半导体`→BK1036 / `银行`→BK1283），非对话面（`AnalysisPage`、`ProfilePage` 不传 `onLink`）0 个可点**；
+  - 负例逐个实测**不可点**：`2026-09-19`、`20260919`、`3.600519`、`600519.5`、`1,234567`、`600519 万元`、`500000 份`、`白银`（两字无语境词）、`银行的中报`、`白酒`、`机器人`（清单外）；
+  - 点代码：分析页小窗里点 `000001.SZ` ⇒ 不切页、K 线从贵州茅台 1257.12 换成 000001.SZ 11.70（真实行情）；助手页点 `600519.SH` ⇒ 切到 `#/analysis` 且头部显示「贵州茅台 · 600519.SH · 真实行情」；
+  - 点板块：小窗点 `银行（BK1283）` ⇒ 切到 `#/sectors`、该行展开真实成分股（首行 600919.SH）、页面顶部如实写「已按对话里的链接展开「银行」（BK1283）的成分股」；助手页点 `半导体（BK1036）` 同理；
+  - 截图仍不可用（in-app browser 视口 hidden ⇒ `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`），视觉证据为 DOM 级；console 零消息（无 error / 无 warning）。
+- 凭据自查：对 `git diff` 与三个新增文件（1299 行）跑 `sk_[a-z0-9]{8,}|Bearer|api[_-]?key|inceptionlabs|mercury|password` ⇒ **命中 0**。本轮未在任何文件、日志、命令输出里读取或写入密钥；测试走免 Key 的假上游（`provider=ollama` + `127.0.0.1:8899`）。
+
+### 本轮的边界（必须说清）
+
+1. 正文文本来自假上游常量，**不是模型输出**：本轮验的是「识别 + 跳转 + 如实提示」这条界面链路，不是模型会不会写出代码。真实模型的端到端复测按批准留到开发完成后统一做。
+2. 板块跳转的另外两个结算分支（`absent` 查无此板块、`no-list` 榜单没取到）**未在实机触发**：板块页是 `page === "sectors"` 才条件挂载，而两个对话入口都在别的页面 ⇒ 每一次跳转必然先卸载后重挂，`outcome: "already"` 同样只在「跳转时该行已展开」这一种现在构造不出来的场合出现。三条分支的代码路径与文案在场，实机只验到 `expanded`。同理，本轮**去掉了**一开始写的 store 订阅结算路径 —— 那是在给不存在的场景写代码，注释里留了「哪天板块页改成常驻渲染或本页出现对话面才需要补订阅」。
+3. 链接只带代码，不做「名称→代码」反查：`600519.SH` 这种带后缀的直接跳，裸六位按号段补后缀。跳转后分析页头部对没名字可读的标的显示「000001.SZ · 000001.SZ」是既有画法（`name ?? symbol`），不是本轮新增的假名字，也**不猜**中文名。
+4. 行情快照页（`#/watchlist` 等）、候选池、因子测试台里的代码文本本轮**不接**可点 —— 那些是表格自带行点击语义的地方，加一层正文链接会和行内点击打架。
+5. 未 commit，等分项报告确认。
