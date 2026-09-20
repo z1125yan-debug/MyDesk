@@ -1,4 +1,4 @@
-// P7-④ 接线层（纯内核）：把「服务层从真实数据源取回来的读数」映射成三张打分表的输入。
+// P7-⑦ 接线层（纯内核）：把「服务层从真实数据源取回来的读数」映射成三张打分表的输入。
 //
 // 为什么单独一层，而不是直接在 decision-service.ts 里写映射：
 // 这一层的每一个判断都是 REAL_DATA_ONLY 的落点 —— 主力净额什么时候算「有读数」、中位数什么时候算「算不出」、
@@ -6,31 +6,42 @@
 // 要打外部数据源，`node --test` 跑不动。所以本文件**不 import db、不 fetch、不取时钟**（除日期字符串比较外），
 // 所有真实读数由调用方作为参数传进来。
 //
+// v3（P7-⑦）多出来的四件事，都是因为新表要读的东西项目里原本没人算过：
+//   - M-IDX-MA20 ⇒ 本层用基准指数日K算 20 日均线（sma 来自 fields.ts，纯函数）；
+//   - M-TURNOVER ⇒ 当日全 A 成交额来自 sentiment，近期均值只能来自**本项目的 risk_snapshot 留档**：
+//     留档天数不够、或那些行的成交额本身没确认过 ⇒ 交 null，不拿一个自造基线凑「放量/缩量」；
+//   - T-VOLUME / T-BREAKOUT ⇒ 从同一份标的日K里取量、最高价与前 20 根最高价（上游没给成交量字段就是 null）；
+//   - 概率面的盈亏比与观察周期 ⇒ payoff 直接照抄引擎读数；primary_horizon 必传（本层默认 1 日并记账，
+//     因为任务书的示例句式用的是「未来 1 日」，换周期等于换结论口径，所以它是个常量而不是临时决定）。
+//
 // 三条贯穿全层的口径：
 // 1) **上游补过 0 的字段，本层负责还原成 null**。sentiment.ts 里的 `mainNetSum += m.mainNet ?? 0` 与
 //    `median = pcts.length ? 中位数 : 0` 就是两个这样的地方：引擎在没有读数时会返回一个看起来像读数的 0。
 //    （引用上游时写表达式而不是行号 —— 行号会随上游改动漂移，变成指错地方的注释。）
 //    规则表（market-score-core）无从分辨，所以判断放在这里做，并且做在能被测试看到的地方。
-// 2) **不替调用方选口径**。基准指数是哪一条、RSI 用哪个周期、概率面用哪个引擎，都由服务层显式声明后传进来；
-//    本层只做「没声明 ⇒ 这一项不判定」，不会挑一个默认值让结论看起来完整。
+// 2) **不替调用方选口径**。基准指数是哪一条、RSI 用哪个周期、概率面用哪个引擎与哪个观察周期，都由服务层显式声明
+//    后传进来；本层只做「没声明 ⇒ 这一项不判定」，不会挑一个默认值让结论看起来完整。
 // 3) 映射不出分数不是错误：MarketInput/EventInput/TechnicalInput 全部允许整面为空，
 //    缺的部分由 market-score-core / event-score-core / decision-core 各自登记成 missing，本层不吞掉也不美化。
 //
 // 出处：用户 2026-09-20《P7开发文档核对回复》第 2 条「服务层把 computeSentiment / themes / event_interpretation
-// 映射成 MarketInput / EventInput，调 buildDecision」。
+// 映射成 MarketInput / EventInput，调 buildDecision」；P7-⑦ 任务书的四条新读数由本次接线供上。
 
 import { macdCalc, rsiCalc, sma, type BarsLike } from "../factors/fields.ts";
-import type { Decision, ProbabilityInput, ProbabilityReading, TechnicalInput } from "./decision-core";
-import type { MarketInput, MarketRiskLevel } from "./market-score-core";
-import type { EventInput, EventSignal } from "./event-score-core";
+import {
+  PRIOR_HIGH_WINDOW_DEFAULT, SUPPLEMENT_MARKER, VOLUME_AVG_WINDOW_DEFAULT,
+  type Decision, type Horizon, type ProbabilityInput, type ProbabilityReading, type TechnicalInput,
+} from "./decision-core.ts";
+import type { MarketInput, MarketRiskLevel } from "./market-score-core.ts";
+import type { EventInput, EventSignal } from "./event-score-core.ts";
 import { EVENT_STALE_AFTER_DAYS_DEFAULT } from "./event-score-core.ts";
 import type { SimilarEnvStats } from "./similar-env.ts";
 
 /** 接线层版本：写进服务层响应，让页面上的结论能追回「用哪一版映射算出来的」 */
-export const WIRING_VERSION = "p7.s4.wiring.v1";
+export const WIRING_VERSION = "p7.s7.wiring.v1";
 
 /**
- * 基准指数由本层**固定声明**：M-INDEX 这条分项不能接受裸数字（上证 +0.5% 与创业板 +0.5% 在血缘里会长得一模一样），
+ * 基准指数由本层**固定声明**：指数这条分项（v3 的计分项 M-IDX-MA20 与判定依据 M-INDEX-PCT）不能接受裸数字（上证 +0.5% 与创业板 +0.5% 在血缘里会长得一模一样），
  * 也不能由打分表自己挑。选 000001.SH 的理由是项目里所有「大盘」口径（similar-env、市场风险）都以它为基准，
  * 换基准指数等于换结论口径，所以写成常量而不是散落在服务层的字符串字面量里。
  */
@@ -43,6 +54,34 @@ export const PROBABILITY_SCOPE_NOTE =
 
 /** RSI 周期：任务书 §六 只写「RSI」没写周期，本层选定 14 并在分项 raw 里记账（TechnicalInput.rsi_period） */
 export const RSI_PERIOD_DEFAULT = 14;
+
+/**
+ * 概率面的观察周期：P7-⑦ 表只有「样本量 / 上涨比例 / 盈亏比」三条，没说 1/5/20 日各算什么，
+ * 三个周期一起加就把同一维算三遍。本层选 **1 日**，理由写在这里而不是散在服务层：
+ * 任务书给的概率句式示例就是「未来 1 日上涨概率 52.9%」，且决策卡的服务端窗口按日更新。
+ * 换周期（例如改看 20 日）等于换结论口径，所以它是常量 + 页面必须显示（DecisionView.wiring.probability_horizon）。
+ */
+export const PRIMARY_HORIZON_DEFAULT: Horizon = 1;
+
+/** 基准指数均线窗口（M-IDX-MA20）：任务书写的就是「20 日线」，本层不擅自改长度 */
+export const INDEX_MA_WINDOW_DEFAULT = 20;
+
+/** 成交额均值所需的最少历史留档天数：少于这个就不判「放量/缩量」，因为基数本身就是猜出来的 */
+export const TURNOVER_MIN_PRIOR_DAYS = 5;
+
+/**
+ * 均量窗口（T-VOLUME 的成交量基准）与压力位窗口（T-BREAKOUT 的 20 日高点）：任务书写了「20 日压力」，
+ * 均量窗口没写 ⇒ 由打分内核取 20 并记账。两个常量定义在 decision-core（它们与打分档同源），这里只转导，
+ * 这样服务层与测试都只需要从一个地方拿窗口长度。
+ */
+export { VOLUME_AVG_WINDOW_DEFAULT, PRIOR_HIGH_WINDOW_DEFAULT };
+
+/**
+ * M-TURNOVER 的口径声明：当日值与历史均值必须来自**同一个算法**，否则「放大/缩量」是拿两把尺子比出来的。
+ * 项目里唯一逐日留档的全 A 成交额就是 /api/market/risk 的响应落库（risk_snapshot.payload），
+ * 它的 amount_total_yi 与今日这份 sentiment 是同一句 `amountSum += m.amount` ⇒ 同口径可比。
+ */
+export const TURNOVER_SCOPE = "全 A（东财 clist 快照逐只成交额累加，与 risk_snapshot 留档同源）";
 
 // ---------- 市场面：computeSentiment + discoverThemes → MarketInput ----------
 
@@ -66,6 +105,10 @@ export interface SentimentWire {
    * 「一只都没抓到主力资金字段」和「今天主力净额正好 0 亿」是两件事，后者是个结论。
    */
   main_net_known: number | null;
+  /** 全 A 成交额（亿）：同样来自 `?? 0` 累加，可信度看 amount_known（M-TURNOVER 的当日值） */
+  amount_total_yi: number | null;
+  /** 快照里 amount 真实有值的家数；null = 服务层没确认（旧版 sentiment 没有这一格） */
+  amount_known: number | null;
   median_pct: number;
   indices: { symbol: string; changePct: number | null }[];
   risk_level: MarketRiskLevel | null;
@@ -75,6 +118,18 @@ export interface SentimentWire {
 export interface ThemesWire {
   main_count: number | null;
   top_score: number | null;
+  /** 榜首主线的板块 RPS 百分位（themes 的合并榜内百分位，不是全市场 RPS） */
+  top_rps: number | null;
+  /** RPS 的榜单口径原文（themes 自己在 missing 里写的那句）；不声明时打分表会登记「口径未知」 */
+  rps_scope: string | null;
+}
+
+/** risk_snapshot 留档里的一日成交额读数（服务层从 payload 里取，本层只做「可信/不可信」的判断） */
+export interface TurnoverDayWire {
+  trade_date: string | null;
+  amount_total_yi: number | null;
+  /** 该日快照里 amount 真实有值的家数；旧留档没有这一格 ⇒ null（口径未确认） */
+  amount_known: number | null;
 }
 
 export interface MarketWireResult {
@@ -83,15 +138,71 @@ export interface MarketWireResult {
   notes: string[];
 }
 
-export function marketFromWiring(s: SentimentWire | null, themes: ThemesWire | null): MarketWireResult {
+export interface MarketWireOpts {
+  /** 基准指数日K（收盘价序列即可，本层只读 date/c）：M-IDX-MA20 用它算均线 */
+  index_bars?: { date: string; c: number }[] | null;
+  index_ma_window?: number;
+  /** 近几日的全 A 成交额留档（risk_snapshot.payload）：M-TURNOVER 的均值基线 */
+  prior_turnover?: TurnoverDayWire[] | null;
+  /** 均值基线需要排除的那一日（一般是当日自己：不能拿今天当自己的历史） */
+  exclude_trade_date?: string | null;
+}
+
+/** 均线只吃「形如 YYYY-MM-DD + 正有限收盘价」的读数，脏行直接丢掉而不是当 0 */
+function cleanIndexBars(bars: { date: string; c: number }[] | null | undefined): { date: string; c: number }[] {
+  const map = new Map<string, number>();
+  for (const b of bars ?? []) {
+    const date = String(b?.date ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !isNum(b?.c) || b.c <= 0) continue;
+    map.set(date, b.c);
+  }
+  return [...map.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, c]) => ({ date, c }));
+}
+
+/** 成交额均值：只有「读数有值 + 家数确认过」的留档日才进基线 */
+export function turnoverBaseline(
+  days: TurnoverDayWire[] | null | undefined,
+  opts: { exclude_trade_date?: string | null; min_days?: number } = {},
+): { avg_yi: number | null; window: number; dropped_unconfirmed: number; note: string | null } {
+  const min = opts.min_days ?? TURNOVER_MIN_PRIOR_DAYS;
+  const ex = (opts.exclude_trade_date ?? "").slice(0, 10);
+  const usable: number[] = [];
+  let droppedUnconfirmed = 0;
+  for (const d of days ?? []) {
+    const date = String(d?.trade_date ?? "").slice(0, 10);
+    if (date && date === ex) continue; // 当日不能当自己的基线
+    const yi = d?.amount_total_yi;
+    if (!isNum(yi) || yi <= 0) continue;
+    // 旧留档没有 amount_known 这一格：它可能是 `?? 0` 全缺时补出来的 0 亿，也可能是真读数，本层无从分辨 ⇒ 不进基线
+    if (d.amount_known === null || d.amount_known <= 0) { droppedUnconfirmed++; continue; }
+    usable.push(yi);
+  }
+  if (usable.length < min) {
+    const why = days === null || days === undefined
+      ? "服务层本次没有读取成交额留档（risk_snapshot 未查或查询失败）"
+      : `本层要求 ≥${min} 天${droppedUnconfirmed ? `，另有 ${droppedUnconfirmed} 天的留档没有确认过成交额口径，未采信` : ""}`;
+    return {
+      avg_yi: null, window: usable.length, dropped_unconfirmed: droppedUnconfirmed,
+      note: `成交额基线只有 ${usable.length} 个可信用留档日（${why}）：M-TURNOVER 按缺失处理，不拿一天或自造基线判放量/缩量`,
+    };
+  }
+  return { avg_yi: usable.reduce((a, b) => a + b, 0) / usable.length, window: usable.length, dropped_unconfirmed: droppedUnconfirmed, note: null };
+}
+
+export function marketFromWiring(
+  s: SentimentWire | null,
+  themes: ThemesWire | null,
+  opts: MarketWireOpts = {},
+): MarketWireResult {
   const notes: string[] = [];
   if (!s) {
-    // 整面取数失败：给一个全 null 的输入，让 market-score-core 自己产「8 个分项全部算不出」的登记，
+    // 整面取数失败：给一个全 null 的输入，让 market-score-core 自己产「每个分项全部算不出」的登记，
     // 本层不在这里编一条「市场环境 0 分」。
     notes.push("市场面本次没有取到任何读数（computeSentiment 未返回或抛错）：市场环境这一维按缺失处理");
     return {
       input: {
         advancers: null, decliners: null, total: null, median_pct: null, index: null,
+        index_ma20: null, turnover: null,
         limit_up: null, limit_down: null, break_rate: null, main_net_sum_yi: null,
         risk_level: null, themes: null, trade_date: null, live: null,
       },
@@ -112,18 +223,46 @@ export function marketFromWiring(s: SentimentWire | null, themes: ThemesWire | n
   // 基准指数：只认 BASE_INDEX 那一条，取不到就带着名字交上去，让规则表区分「没指定」与「指定了但没读数」
   const hit = s.indices.find((i) => i.symbol === BASE_INDEX.symbol) ?? null;
   const idx = { symbol: BASE_INDEX.symbol, label: BASE_INDEX.label, change_pct: hit && typeof hit.changePct === "number" && Number.isFinite(hit.changePct) ? hit.changePct : null };
-  if (!hit) notes.push(`${BASE_INDEX.label}（${BASE_INDEX.symbol}）本次不在指数读数里（实时源未返回）：M-INDEX 分项按缺失处理，本层不会拿别的指数顶上`);
+  if (!hit) notes.push(`${BASE_INDEX.label}（${BASE_INDEX.symbol}）本次不在指数读数里（实时源未返回）：M-INDEX-PCT（基准指数当日涨跌幅，判定依据项）按缺失处理，本层不会拿别的指数顶上`);
+
+  // M-IDX-MA20：均线由本层从指数日K算（sma 是纯函数，长度不足就是 null，不拿收盘价凑均线）
+  const maWindow = opts.index_ma_window ?? INDEX_MA_WINDOW_DEFAULT;
+  const ibars = cleanIndexBars(opts.index_bars);
+  const maSeries = ibars.length ? sma(ibars.map((b) => b.c), maWindow) : [];
+  const idxMa = maSeries.length ? maSeries[maSeries.length - 1] : null;
+  const indexMa = {
+    symbol: BASE_INDEX.symbol, label: BASE_INDEX.label,
+    close: ibars.length ? ibars[ibars.length - 1].c : null,
+    ma20: isNum(idxMa) ? idxMa : null,
+    window: maWindow,
+  };
+  if (!ibars.length) notes.push("基准指数日K本次没有可用读数：M-IDX-MA20 按缺失处理（本层不会拿当日涨跌幅代替均线位置）");
+  else if (!isNum(idxMa)) notes.push(`${BASE_INDEX.label}日K只有 ${ibars.length} 根，不足 ${maWindow} 根均线窗口：M-IDX-MA20 按缺失处理，不缩短窗口`);
+
+  // M-TURNOVER：当日值同样要过「家数确认」这一关，均值基线见 turnoverBaseline
+  const amountKnown = s.amount_known;
+  const amt = s.amount_total_yi;
+  const todayAmount = !isNum(amt) || amountKnown === null || amountKnown <= 0 ? null : amt;
+  if (isNum(amt) && todayAmount === null) {
+    notes.push(amountKnown === null
+      ? "成交额：服务层没能确认快照里有多少家真实带该字段（上游用 ?? 0 累加）⇒ 当日成交额按缺失处理"
+      : `成交额：全 A ${s.total} 家里 0 家真实带 amount 字段 ⇒ 当日成交额按缺失处理，不写成「今日成交 ${amt} 亿」`);
+  }
+  const base = turnoverBaseline(opts.prior_turnover, { exclude_trade_date: (s.trade_date || "").slice(0, 10) });
+  if (base.note) notes.push(base.note);
 
   return {
     input: {
       advancers: s.advancers, decliners: s.decliners, total: s.total,
       median_pct: median,
       index: idx,
+      index_ma20: indexMa,
+      turnover: { scope: TURNOVER_SCOPE, today_yi: todayAmount, avg_yi: base.avg_yi, window: base.window || null },
       limit_up: s.limit_up, limit_down: s.limit_down,
       break_rate: s.break_rate,
       main_net_sum_yi: mainNet,
       risk_level: s.risk_level,
-      themes: themes ? { main_count: themes.main_count, top_score: themes.top_score } : null,
+      themes: themes ? { main_count: themes.main_count, top_score: themes.top_score, top_rps: themes.top_rps, rps_scope: themes.rps_scope } : null,
       trade_date: s.trade_date || null,
       live: s.live,
     },
@@ -131,10 +270,23 @@ export function marketFromWiring(s: SentimentWire | null, themes: ThemesWire | n
   };
 }
 
-/** 主线榜首强度：main 是按 score 排的分组结果，但本层不假设它排过 —— 取真实最大值 */
-export function themesWire(main: { score: number }[]): ThemesWire {
-  const scores = main.map((m) => m.score).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-  return { main_count: main.length, top_score: scores.length ? Math.max(...scores) : null };
+/**
+ * 主线榜首读数：main 是按 score 排的分组结果，但本层不假设它排过 —— 强度取真实最大值。
+ * RPS 取**榜首那条主线自己的** rps（不是最大值）：M-RPS 问的是「今天领涨的板块有多强」，
+ * 而 rps 与 score 是两套排序（score 还含扩散度/连续强势/资金），拿 max(rps) 会把「别的板块 RPS 高」
+ * 说成「榜首板块 RPS 高」。榜首按 score 最大值那一条定位，定位不到（无有效 score）⇒ RPS 也给 null。
+ */
+export function themesWire(main: { score?: number; rps?: number }[] | null | undefined, rpsScope?: string | null): ThemesWire {
+  const rows = main ?? [];
+  let topIdx = -1;
+  let topScore: number | null = null;
+  rows.forEach((m, i) => {
+    const v = typeof m?.score === "number" && Number.isFinite(m.score) ? m.score : null;
+    if (v !== null && (topScore === null || v > topScore)) { topScore = v; topIdx = i; }
+  });
+  const topRpsRaw = topIdx >= 0 ? rows[topIdx]?.rps : undefined;
+  const topRps = typeof topRpsRaw === "number" && Number.isFinite(topRpsRaw) ? topRpsRaw : null;
+  return { main_count: rows.length, top_score: topScore, top_rps: topRps, rps_scope: rpsScope ?? null };
 }
 
 // ---------- 技术面：日K序列 → TechnicalInput ----------
@@ -160,9 +312,17 @@ function atLast(series: (number | null)[], t: number): number | null {
  * `lastValues` 给的是「最后一个非 null」，日线滞后或窗口不足时它会把 20 天前的值当今天用，
  * 而 T-MACD-CROSS 要的是**当日与前一日**两组值 —— 回退一步就等于把旧结构当新结构打分。
  * 这里按序列位置取 t=last 与 t=last-1，取不到就是 null（分项不判定）。
+ *
+ * v3 补的三条（T-VOLUME / T-BREAKOUT）沿用同一条纪律：均量与压力位都只看**当日之前**的那 N 根，
+ * 不把自己算进自己的基准里（20 日均量含今日时，一次放量会同时抬高分子和分母，比值被压向 1）。
  */
-export function technicalFromBars(bars: BarsLike[] | null | undefined, opts: { rsi_period?: number } = {}): TechnicalWireResult {
+export function technicalFromBars(
+  bars: BarsLike[] | null | undefined,
+  opts: { rsi_period?: number; volume_window?: number; prior_high_window?: number } = {},
+): TechnicalWireResult {
   const rsiPeriod = opts.rsi_period ?? RSI_PERIOD_DEFAULT;
+  const volWindow = opts.volume_window ?? VOLUME_AVG_WINDOW_DEFAULT;
+  const highWindow = opts.prior_high_window ?? PRIOR_HIGH_WINDOW_DEFAULT;
   const notes: string[] = [];
   const empty: TechnicalInput = {
     ma5: null, ma10: null, ma20: null, close: null,
@@ -189,15 +349,40 @@ export function technicalFromBars(bars: BarsLike[] | null | undefined, opts: { r
   const { dif, dea, bar } = macdCalc(c);
   const rsi = rsiCalc(c, rsiPeriod);
   if (clean.length < 20) notes.push(`日K只有 ${clean.length} 根：MA20 与 MACD 需要更长窗口，取不出值的分项会记为缺失而不是补值`);
+
+  // ---- T-VOLUME 的两端：当日量与前 N 根均量（不含当日）----
+  const volTodayRaw = clean[t]?.v;
+  const priorVols = clean.slice(Math.max(0, t - volWindow), t).map((b) => b?.v).filter((v): v is number => isNum(v) && v > 0);
+  const volAvg = priorVols.length ? priorVols.reduce((a, b) => a + b, 0) / priorVols.length : null;
+  const volume = isNum(volTodayRaw) && volTodayRaw > 0 ? volTodayRaw : null;
+  if (priorVols.length === 0) {
+    notes.push("成交量：基准窗口内没有一根有效的正成交量读数（上游未给 v 字段或全是 0）⇒ T-VOLUME 按缺失处理。注意这与「今日无量」是两件事，0 不是一个放量/缩量结论");
+  } else if (priorVols.length < volWindow) {
+    notes.push(`成交量基准只用到 ${priorVols.length} 根（窗口 ${volWindow} 根里有 ${volWindow - priorVols.length} 根没有有效量读数）：均量按实际用得到的这些根算，raw 里记的是这个真实窗口`);
+  }
+
+  // ---- T-BREAKOUT 的两端：当日最高与前 N 根最高（不含当日）----
+  const highTodayRaw = clean[t]?.h;
+  const priorHighs = clean.slice(Math.max(0, t - highWindow), t).map((b) => b?.h).filter((v): v is number => isNum(v) && v > 0);
+  const priorHigh = priorHighs.length ? Math.max(...priorHighs) : null;
+  const high = isNum(highTodayRaw) && highTodayRaw > 0 ? highTodayRaw : null;
+  if (priorHighs.length === 0) {
+    notes.push("压力位：前若干根日K没有一根有效最高价 ⇒ T-BREAKOUT 按缺失处理，本层不会拿收盘价当 20 日压力");
+  } else if (priorHighs.length < highWindow) {
+    notes.push(`压力位只用到 ${priorHighs.length} 根（窗口 ${highWindow} 根里有 ${highWindow - priorHighs.length} 根没有有效最高价）：这条「20 日压力」实际是 ${priorHighs.length} 日压力，窗口记在 raw 里`);
+  }
+
   return {
     input: {
       ma5: atLast(ma5, t), ma10: atLast(ma10, t), ma20: atLast(ma20, t),
       close: atLast(c, t),
+      close_prev: t > 0 ? (isNum(clean[t - 1]?.c) ? (clean[t - 1].c as number) : null) : null,
       dif: atLast(dif, t), dea: atLast(dea, t),
       dif_prev: t > 0 ? atLast(dif, t - 1) : null, dea_prev: t > 0 ? atLast(dea, t - 1) : null,
       bar: atLast(bar, t), bar_prev: t > 0 ? atLast(bar, t - 1) : null,
       rsi: atLast(rsi, t), rsi_period: rsiPeriod,
-      // 成交量：任务书 §四 列为技术面输入、§六 无打分表 ⇒ 保持内核默认的「不补规则、不计 0 分」文案
+      volume, volume_avg: volAvg, volume_window: priorVols.length || null,
+      high, prior_high_20: priorHigh, prior_high_window: priorHighs.length || null,
     },
     bar_date: clean[t].date.slice(0, 10),
     bars_used: clean.length,
@@ -210,9 +395,18 @@ export function technicalFromBars(bars: BarsLike[] | null | undefined, opts: { r
 /**
  * 相似环境统计 → 概率面输入。只取 1/5/20 三个期限（decision-core 的 PROBABILITY_BANDS 只有这三档），
  * 其余期限原样丢弃并登记 —— 本层不擅自插值或改档。
+ *
+ * v3 多带两件事：① 引擎新算的盈亏比四格（payoff_ratio/avg_win/avg_loss/win·loss_samples）原样透传，
+ * 本层不重算、不换算；② **primary_horizon 必须显式声明**（默认 1 日，理由见 PRIMARY_HORIZON_DEFAULT 的注释），
+ * 不声明的话打分内核会把整维判成缺失 —— 那是内核的护栏，本层选择「带默认值 + 记账」而不是把维度丢掉。
  */
-export function probabilityFromSimilarEnv(stats: SimilarEnvStats | null, opts: { trade_date: string | null; scope_note?: string }): { input: ProbabilityInput | null; notes: string[] } {
+export function probabilityFromSimilarEnv(
+  stats: SimilarEnvStats | null,
+  opts: { trade_date: string | null; scope_note?: string; primary_horizon?: Horizon },
+): { input: ProbabilityInput | null; notes: string[] } {
   const notes: string[] = [opts.scope_note ?? PROBABILITY_SCOPE_NOTE];
+  const ph = opts.primary_horizon ?? PRIMARY_HORIZON_DEFAULT;
+  notes.push(`概率面按 ${ph} 日期限打分（任务书 §六 的示例句式用的是「未来 1 日」，多周期一起计会把同一维权重放大倍数）：${SUPPLEMENT_MARKER}`);
   if (!stats) {
     notes.push("概率面没有取到相似环境统计（上证日K不可用或引擎未返回）：这一维按缺失处理");
     return { input: null, notes };
@@ -227,14 +421,21 @@ export function probabilityFromSimilarEnv(stats: SimilarEnvStats | null, opts: {
       sample_size: isNum(h.sample_size) ? h.sample_size : 0,
       trade_date: opts.trade_date,
       period: stats.period ?? null,
+      payoff_ratio: isNum(h.payoff_ratio) ? h.payoff_ratio : null,
+      avg_win: isNum(h.avg_win) ? h.avg_win : null,
+      avg_loss: isNum(h.avg_loss) ? h.avg_loss : null,
+      win_samples: isNum(h.win_samples) ? h.win_samples : null,
+      loss_samples: isNum(h.loss_samples) ? h.loss_samples : null,
     });
   }
   if (dropped.length) notes.push(`相似环境引擎返回了 ${dropped.join("、")} 日期限，打分表没有这一档 ⇒ 未计入（不插值、不改档）`);
   if (!stats.period) notes.push("相似环境本次给不出样本区间（没有可用于前向统计的历史匹配日）：概率分数的窗口无法事后重建");
+  if (!readings.some((r) => r.horizon === ph)) notes.push(`本次读数里没有 ${ph} 日这一档（引擎返回 ${readings.map((r) => `${r.horizon} 日`).join("、") || "空"}）：打分内核会判这一维缺失，本层不拿别的周期顶上`);
   if (!readings.length) notes.push("概率面的三个期限本次全部算不出：这一维不计分，权重让给可算维度");
   return {
     input: {
       engine: "similar_env",
+      primary_horizon: ph,
       warnings: [...(stats.warnings ?? []), ...(stats.sample_ok ? [] : [`相似环境样本不足（${stats.sample_size}），本层照抄引擎的 sample_ok=false`])],
       readings,
       status: "HISTORICAL",
@@ -411,8 +612,15 @@ export interface DecisionView {
     technical_bar_date: string | null;
     technical_bars: number;
     rsi_period: number;
+    /** T-VOLUME 的均量窗口与 T-BREAKOUT 的压力位窗口：实际用了几根（不是声明值）由接线层记账 */
+    volume_window: number | null;
+    prior_high_window: number | null;
     probability_scope: string;
+    /** 概率面按哪个观察周期打分：换周期等于换结论口径，页面必须显示 */
+    probability_horizon: number | null;
     event_window: { start: string; end: string; rows: number; payload_broken: number; stale_after_days: number };
+    /** 成交额基线用了几个留档日（null = 本次没读到可信留档）：M-TURNOVER 的可信度全看这个数 */
+    turnover_baseline_days: number | null;
     /** 接线层的口径声明与「还原成缺失」记录，与各维度的 missing 并列展示 */
     notes: string[];
   };

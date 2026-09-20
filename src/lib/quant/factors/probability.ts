@@ -32,6 +32,16 @@ export interface WinProbStats {
     worst_return: number | null; // 持有期最差单次收益（近似回撤参考）
     // §二/§六 补齐：命中样本按时间复利的净值最大回撤（≤0，%）；样本<2 时为 null
     max_drawdown: number | null;
+    // P7-⑦：盈亏比的两个组成部分，**与 win_rate 同一次遍历、同一批样本**（另起窗口就成了两个口径）。
+    // 只按 r>0 / r<0 分组，r=0 的持平样本两边都不进 —— 它既不算一次盈利也不算一次亏损，
+    // 所以 avg_win 与 avg_loss 的样本数之和可以小于 sample_size。某一侧一个样本都没有 ⇒ null（不是 0）。
+    avg_win: number | null;
+    /** 平均亏损，保留负号（如 -3.21 表示平均亏 3.21%）；无亏损样本 ⇒ null */
+    avg_loss: number | null;
+    /** avg_win / |avg_loss|；任一侧无样本 ⇒ null：没有亏损就没有比值，用 0 或 ∞ 冒充都是假数 */
+    payoff_ratio: number | null;
+    win_samples: number;
+    loss_samples: number;
     // 同期基准（沪深300，按相同「命中日→t+h」区间）平均收益（%）与超额；无基准K线 → null（数据缺失，不填0）
     benchmark_return: number | null;
     benchmark_sample_size: number;
@@ -226,6 +236,7 @@ export function historicalWinProbability(input: ProbabilityInput): WinProbStats 
       return {
         h, win_rate: null, sample_size: 0, avg_return: null, median_return: null,
         max_return: null, worst_return: null, max_drawdown: null,
+        avg_win: null, avg_loss: null, payoff_ratio: null, win_samples: 0, loss_samples: 0,
         benchmark_return: null, benchmark_sample_size: 0, excess_return: null,
       };
     }
@@ -242,6 +253,13 @@ export function historicalWinProbability(input: ProbabilityInput): WinProbStats 
       if (cur < dd) dd = cur;
     }
     const avg = rets.reduce((s, v) => s + v, 0) / rets.length;
+    // 盈亏比的两侧各自取均值：盈利侧 = 所有 r>0 的均值；亏损侧 = 所有 r<0 的均值（带负号）。
+    // 某侧为 0 个样本时给 null 而不是 0 —— 「一次都没亏过」不等于「亏损幅度为 0%」。
+    const winRets = rets.filter((r) => r > 0);
+    const lossRets = rets.filter((r) => r < 0);
+    const avgWin = winRets.length ? winRets.reduce((s, v) => s + v, 0) / winRets.length : null;
+    const avgLoss = lossRets.length ? lossRets.reduce((s, v) => s + v, 0) / lossRets.length : null;
+    const payoff = avgWin !== null && avgLoss !== null && avgLoss < 0 ? avgWin / -avgLoss : null;
     const benchAvg = benchRets.length ? benchRets.reduce((s, v) => s + v, 0) / benchRets.length : null;
     return {
       h,
@@ -252,6 +270,11 @@ export function historicalWinProbability(input: ProbabilityInput): WinProbStats 
       max_return: sorted[sorted.length - 1],
       worst_return: sorted[0],
       max_drawdown: rets.length >= 2 ? dd : null,
+      avg_win: avgWin,
+      avg_loss: avgLoss,
+      payoff_ratio: payoff,
+      win_samples: winRets.length,
+      loss_samples: lossRets.length,
       benchmark_return: benchAvg,
       benchmark_sample_size: benchRets.length,
       excess_return: benchAvg === null ? null : avg - benchAvg,
