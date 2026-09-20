@@ -50,10 +50,22 @@ export default function StepTimeline({
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="rounded bg-accent px-1 font-mono text-[9.5px] text-muted-foreground">步 {s.step}</span>
+                  {/* P7-⑥⑥：系统按场景预取的、和模型自己决定要调的，不是一回事。
+                      混着画就会出现「模型很能干」的假象 —— 数据其实是这轮提问前我们替它取的。 */}
+                  {s.source && (
+                    <span className={"rounded border px-1 text-[9.5px] " + (s.source === "prefetch"
+                      ? "border-sky-500/30 bg-sky-500/10 text-sky-300"
+                      : "border-border text-muted-foreground")}>
+                      {s.source === "prefetch" ? "系统预取" : "模型自取"}
+                    </span>
+                  )}
                   <span>{s.label}</span>
                   <span className={meta.tone}>{meta.text}</span>
                   {s.ms != null && <span className="font-mono text-[10px] text-muted-foreground">{s.ms}ms</span>}
                 </div>
+                {s.reason && (
+                  <div className="mt-0.5 text-[10px] text-muted-foreground/80">{s.reason}</div>
+                )}
                 {s.detail && (
                   <div className="mt-0.5 break-words font-mono text-[10px] text-muted-foreground/90">{s.detail}</div>
                 )}
@@ -63,7 +75,7 @@ export default function StepTimeline({
         })}
         {!!steps?.length && (
           <div className="pt-0.5 text-[10px] text-muted-foreground/80">
-            以上是本次真实调用过的步骤；标「缺数据」表示接口这次没给值，不是数值为 0。
+            以上是本次真实调用过的步骤；标「缺数据」表示接口这次没给值，不是数值为 0；「系统预取」是这轮提问前按场景替你取的，「模型自取」才是模型自己要调的。
           </div>
         )}
         {warning && (

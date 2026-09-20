@@ -8,16 +8,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_MAX_TURNS, appendMessage, applyEvent, buildPromptMessages, emptySession, isFollowUp,
-  migrateLegacyChats, normalizeMessage, removeSession, settleRunningSteps, splitWindow,
+  DEFAULT_MAX_TURNS, MAX_TURNS_LIMIT, applyCharBudget, appendMessage, applyEvent, buildPromptMessages, clampTurns,
+  emptySession, injectSceneContext, intentBadgeOf, isFollowUp, markSnapshot, migrateLegacyChats, normalizeMessage,
+  removeSession, renderStepsLine, settleRunningSteps, splitSnapshotMessage, splitWindow, SNAPSHOT_MARK,
   summarizeDropped, titleFromMessages, trimDialog, typewriterSlices, updateMessage, upsertSession,
-  type ChatMessage, type ChatRequestMessage,
+  type ChatMessage, type ChatRequestMessage, type ContextMsg, type IntentBadge,
 } from "../../src/lib/desk/chat-core.ts";
 import {
-  asStreamEvent, createSseScanner, createToolCallAssembler, decodeStreamEvent, encodeStreamEvent,
-  isEventStream, notStreamedWarning, parseUpstreamFrame, scanSse, stepDetailOf, stepLabelFor, stepsFromTrace,
-  type StreamEvent,
+  asStreamEvent, asStreamIntent, chatRequestBody, createSseScanner, createToolCallAssembler, decodeStreamEvent,
+  encodeStreamEvent, isEventStream, notStreamedWarning, parseUpstreamFrame, pickChatEndpoint, scanSse,
+  SCENE_KEYS, stepDetailOf, stepLabelFor, stepsFromTrace, supportsToolCalling, type StreamEvent,
 } from "../../src/lib/desk/chat-stream-core.ts";
+import { CHAT_MODES, asChatMode, chatModeLabel, isChatMode } from "../../src/lib/desk/modes.ts";
 
 function msg(role: ChatMessage["role"], content: string, extra: Partial<ChatMessage> = {}): ChatMessage {
   return { id: extra.id ?? `${role}-${content.slice(0, 6)}`, role, content, ts: Date.now(), ...extra };
@@ -97,12 +99,16 @@ function dialog(turns: number): ChatMessage[] {
   return out;
 }
 
-test("窗口按轮裁：12 轮上限，被挤掉的进 dropped，且窗口一定以用户消息开头", () => {
-  const { sent, dropped } = splitWindow(dialog(20));
+test("窗口按轮裁：默认 30 轮上限，被挤掉的进 dropped，且窗口一定以用户消息开头", () => {
+  // P7-⑥③ 把默认窗口从 12 提到 30（连续追问要用得上文）。这里把常量本身钉住：
+  // 悄悄调回去会让「帮我回测一下刚才说的策略」这类提问看不到第 13 轮之前的内容。
+  assert.equal(DEFAULT_MAX_TURNS, 30);
+  const total = DEFAULT_MAX_TURNS + 8;
+  const { sent, dropped } = splitWindow(dialog(total));
   assert.equal(sent.length, DEFAULT_MAX_TURNS * 2);
-  assert.equal(sent[0].content, "第 9 问");
-  assert.equal(sent.at(-1)!.content, "第 20 答");
-  assert.equal(dropped.length, 16);
+  assert.equal(sent[0].content, `第 ${total - DEFAULT_MAX_TURNS + 1} 问`);
+  assert.equal(sent.at(-1)!.content, `第 ${total} 答`);
+  assert.equal(dropped.length, (total - DEFAULT_MAX_TURNS) * 2);
   assert.equal(dropped[0].content, "第 1 问");
 
   // 一轮内多条助手消息不会各占一轮
@@ -112,13 +118,28 @@ test("窗口按轮裁：12 轮上限，被挤掉的进 dropped，且窗口一定
   assert.deepEqual(w2.dropped.map((m) => m.content), ["问1", "答1a", "答1b"]);
 });
 
+test("轮数入参一律收进合法区间：0/负数/NaN/字符串都不能把上文清空或撑爆", () => {
+  assert.equal(clampTurns(5), 5);
+  assert.equal(clampTurns(0), DEFAULT_MAX_TURNS, "0 轮＝模型完全看不到上文，必须退回默认");
+  assert.equal(clampTurns(-3), DEFAULT_MAX_TURNS);
+  assert.equal(clampTurns(NaN), DEFAULT_MAX_TURNS);
+  assert.equal(clampTurns(undefined), DEFAULT_MAX_TURNS);
+  assert.equal(clampTurns(null, 8), 8, "带自定义兜底时按兜底走");
+  assert.equal(clampTurns("4"), 4, "请求体里是字符串也要能用");
+  assert.equal(clampTurns(9999), MAX_TURNS_LIMIT, "超出上限按上限截，不能由外部决定发多少");
+  assert.equal(clampTurns(4.7), 4, "小数轮没有意义，向下取整");
+  // 兜底本身也不能越过上限
+  assert.equal(clampTurns(undefined, 10_000), MAX_TURNS_LIMIT);
+});
+
 test("窗口开头的助手孤儿消息会被丢掉（旧存档可能以助手消息起头）", () => {
   const withOrphan = [msg("assistant", "上一轮遗留的回答"), ...dialog(1)];
   const { sent } = splitWindow(withOrphan, 5);
   assert.equal(sent[0].role, "user");
   assert.equal(sent.length, 2);
-  // maxTurns 非法也不能崩
-  assert.equal(splitWindow(dialog(3), 0).sent.length, 2);
+  // maxTurns 非法也不能崩：0 是「没传对」，按默认窗口走，而不是当成「只留 1 轮」把上文砍没
+  assert.equal(splitWindow(dialog(3), 0).sent.length, 6);
+  assert.equal(splitWindow(dialog(3), NaN).sent.length, 6);
 });
 
 test("压缩摘要是忠实截断 + 标明说话人 + 声明非实时，不是 AI 总结", () => {
@@ -151,25 +172,103 @@ test("buildPromptMessages：摘要走 system、快照只贴本轮新提问、空
   // 窗口结尾是上一轮的回答 → 快照不能塞进助手发言，只能作为 system 附带
   assert.equal(pieces.at(-1)!.role, "assistant");
   assert.ok(pieces.filter((p) => p.role !== "system").every((p) => !p.content.includes("SNAP")), "对话里不得混入快照");
-  assert.ok(pieces.some((p) => p.role === "system" && p.content === "SNAP-行情上下文"), "无新提问时快照走 system");
+  assert.ok(pieces.some((p) => p.role === "system" && p.content === markSnapshot("SNAP-行情上下文")), "无新提问时快照走 system");
 
-  // 正常情形：新提问已经追加为最后一条用户消息，快照贴它
+  // 正常情形：新提问已经追加为最后一条用户消息，快照贴它，并且带标记可被服务端摘出来
   const userLast = { messages: [...dialog(2), msg("user", "现在还能进场吗")] };
   const p2 = buildPromptMessages(userLast, { maxTurns: 3, snapshot: "SNAP" });
   assert.equal(p2.at(-1)!.role, "user");
-  assert.ok(p2.at(-1)!.content.endsWith("\n\nSNAP"));
+  assert.ok(p2.at(-1)!.content.startsWith("现在还能进场吗\n\n" + SNAPSHOT_MARK), "快照必须带标记贴在提问后面");
   assert.equal(p2.filter((x) => x.content.includes("SNAP")).length, 1, "快照只出现一次");
   // 结尾是上一轮回答时，即便同一轮里有用户消息，也不许把行情塞进旧发言
   const p4 = buildPromptMessages({ messages: [msg("user", "问 A"), msg("assistant", "答 A")] }, { snapshot: "SNAP" });
   assert.equal(p4.at(-1)!.role, "assistant");
   assert.ok(p4.at(-1)!.content === "答 A", "助手发言必须原样");
-  assert.ok(p4.some((x) => x.role === "system" && x.content === "SNAP"));
+  assert.ok(p4.some((x) => x.role === "system" && x.content === markSnapshot("SNAP")));
   // 空会话有快照时不能凭空造一条用户消息
-  assert.deepEqual(buildPromptMessages({ messages: [] }, { snapshot: "SNAP" }), [{ role: "system", content: "SNAP" }]);
+  assert.deepEqual(buildPromptMessages({ messages: [] }, { snapshot: "SNAP" }), [{ role: "system", content: markSnapshot("SNAP") }]);
   // withSummary:false 时不得带摘要
   const p3 = buildPromptMessages({ messages: dialog(20) }, { maxTurns: 2, withSummary: false });
   assert.ok(p3.every((x) => !x.content.includes("更早对话")));
   assert.equal(p3.length, 4);
+});
+
+test("快照标记可逆：服务端剥完剩下的就是用户原话（意图识别吃的是原话，不是行情文本）", () => {
+  const withSnap = buildPromptMessages({ messages: [msg("user", "688256 怎么看")] }, { snapshot: "现价 1234.5\n成交额 20 亿" }).at(-1)!.content;
+  const { question, snapshot } = splitSnapshotMessage(withSnap);
+  assert.equal(question, "688256 怎么看");
+  assert.match(snapshot, /现价 1234\.5/);
+  // 没有标记（用户在别处打的字、旧存档）时整条都是原话，不能把内容吃掉
+  assert.deepEqual(splitSnapshotMessage("今天大盘怎么样"), { question: "今天大盘怎么样", snapshot: "" });
+  assert.deepEqual(splitSnapshotMessage(""), { question: "", snapshot: "" });
+});
+
+test("助手上文带当时的取数记录：标明非实时、缺数据说缺、running 步骤不写", () => {
+  const steps = [
+    { step: 1, label: "取快照", status: "ok" as const, tool: "stock_snapshot" },
+    { step: 2, label: "取资金", status: "missing" as const, tool: "stock_fund_flow" },
+    { step: 3, label: "取快讯", status: "running" as const, tool: "market_news" },
+  ];
+  const line = renderStepsLine(steps);
+  assert.match(line, /stock_snapshot=已取到/);
+  assert.match(line, /stock_fund_flow=缺数据/);
+  assert.doesNotMatch(line, /market_news/, "没跑完的步骤不能写进上文（否则模型以为数据已到手）");
+  assert.match(line, /非实时/);
+  assert.equal(renderStepsLine([]), "");
+  assert.equal(renderStepsLine(undefined), "");
+
+  const pieces = buildPromptMessages({ messages: [msg("user", "问 A"), msg("assistant", "答 A", { steps })] });
+  assert.match(pieces.at(-1)!.content, /^答 A\n\n〔上一轮系统取数记录/);
+  // 落盘的消息本身不动：只有发给模型的那份带记录，界面看到的还是原文
+  assert.equal(pieces.length, 2);
+});
+
+test("字数预算：整轮收缩、system 件永不丢、最后一轮一定保留、并报告收缩了几轮", () => {
+  const pieces = [
+    { role: "system" as const, content: "摘" },
+    { role: "user" as const, content: "x".repeat(50) },
+    { role: "assistant" as const, content: "y".repeat(50) },
+    { role: "user" as const, content: "z".repeat(50) },
+  ];
+  const tight = applyCharBudget(pieces, 60);
+  assert.equal(tight.droppedTurns, 1);
+  assert.equal(tight.pieces[0].content, "摘", "压缩摘要不得被预算挤掉");
+  assert.deepEqual(tight.pieces.slice(1).map((p) => p.content), ["z".repeat(50)]);
+  // 预算宽松时一位不动
+  assert.equal(applyCharBudget(pieces, 10_000).droppedTurns, 0);
+  // 只剩最后一轮时也绝不把当前提问丢掉：宁可超预算，也不让模型看不到用户在问什么
+  const alone = applyCharBudget([{ role: "user", content: "q".repeat(500) }], 10);
+  assert.equal(alone.droppedTurns, 0);
+  assert.equal(alone.pieces.length, 1);
+
+  // 收缩过就要留痕：不然模型会以为自己看到的是完整上文
+  const fatTurns = (n: number): ChatMessage[] => {
+    const out: ChatMessage[] = [];
+    for (let i = 1; i <= n; i++) { out.push(msg("user", `问${i}${"字".repeat(30)}`), msg("assistant", `答${i}${"字".repeat(30)}`)); }
+    return out;
+  };
+  const built = buildPromptMessages({ messages: fatTurns(4) }, { maxTurns: 4, budgetChars: 40, withSummary: false });
+  assert.equal(built[0].role, "system");
+  assert.match(built[0].content, /未发送（不是不存在）/);
+  assert.match(built[0].content, /本会话最早的 \d+ 轮/);
+  // 压缩摘要与收缩留痕是两条不同的 system 件，预算挤的是对话轮次，不挤这两条说明
+  const withSum = buildPromptMessages({ messages: [...dialog(2), ...fatTurns(2)] }, { maxTurns: 3, budgetChars: 40 });
+  const systems = withSum.filter((p) => p.role === "system").map((p) => p.content);
+  assert.equal(systems.length, 2, `应同时有摘要与留痕两条 system：${JSON.stringify(systems.map((s) => s.slice(0, 12)))}`);
+  assert.ok(systems.some((s) => s.includes("更早对话")), "窗口外的旧轮仍走压缩摘要");
+  assert.ok(systems.some((s) => s.includes("未发送（不是不存在）")), "被预算砍掉的轮次要留痕");
+  // 入口那份固定提示词也吃额度：不算进去就是「以为留了余量其实没有」
+  const plain = buildPromptMessages({ messages: fatTurns(4) }, { maxTurns: 4, budgetChars: 200, withSummary: false });
+  const reserved = buildPromptMessages({ messages: fatTurns(4) }, { maxTurns: 4, budgetChars: 200, reservedChars: 180, withSummary: false });
+  assert.ok(reserved[0].content.includes("固定提示词已占 180 字"), `实际：${reserved[0].content}`);
+  assert.ok(reserved.length < plain.length, `同样的预算，带固定提示词时必须少发几轮：${reserved.length} vs ${plain.length}`);
+  // 固定提示词本身就把预算吃满了，也不能把当前提问砍没（至少留最后一轮）
+  const full = buildPromptMessages({ messages: dialog(2) }, { maxTurns: 2, budgetChars: 10, reservedChars: 5_000, withSummary: false });
+  assert.equal(full.at(-1)!.role, "assistant");
+  assert.ok(full.at(-1)!.content.startsWith("第 2 答"), `实际：${full.at(-1)!.content}`);
+  // 不传 budgetChars 时一律不收缩：再长的会话也原样发（老调用方行为不变，收缩必须由调用方显式要求）
+  const noBudget = buildPromptMessages({ messages: [...fatTurns(20)] }, { maxTurns: 20, withSummary: false });
+  assert.equal(noBudget.length, 40);
 });
 
 // ---------- 追问识别 ----------
@@ -383,4 +482,241 @@ test("trimDialog：服务端兜底只丢最早的用户/助手消息，system �
   assert.equal(trimDialog(msgs, 0).filter((m) => m.role !== "system").length, 1);
   // 不超长时原样返回，不重排、不改内容
   assert.deepEqual(trimDialog(msgs, 99), msgs);
+});
+
+// 生产实测（40 轮 + contextWindow=30 打 /api/ai/chat）抓到的第二条：假上游收到的第一句对话是「第11答」，
+// 窗口以助手消息起头。原因不是裁多了，而是「轮数 ×2」只是近似——本轮新提问是多出来的那一条，
+// 边界正好落在某一问与某一答之间，于是把某一轮的「问」裁掉了、只留下它的「答」。
+test("trimDialog：裁完的窗口必须以 user 起头（条数对齐不等于轮次对齐）", () => {
+  const msgs: ChatRequestMessage[] = [
+    { role: "system", content: "【更早对话摘要】…" },
+    { role: "user", content: "q1" }, { role: "assistant", content: "a1" },
+    { role: "assistant", content: "a1 补答" },
+    { role: "user", content: "q2" }, { role: "assistant", content: "a2" },
+  ];
+  // 留 3 条：按条数会切出 [a1 补答, q2, a2] —— 开头是助手，模型会把它当成自己说的话续下去
+  const out = trimDialog(msgs, 3);
+  assert.deepEqual(out.map((m) => m.content), ["【更早对话摘要】…", "q2", "a2"]);
+  assert.equal(out.filter((m) => m.role !== "system")[0].role, "user", "窗口第一条对话必须是用户");
+
+  // 工具调用环往同一批消息里塞的 tool 回执也算「非 user 的开头」，一样要丢到窗口外
+  // （这一层的入参形状只有 role 是确定的，所以用结构化类型而不是 ChatRequestMessage）
+  const withTool: { role: string; content: string }[] = [
+    { role: "user", content: "q1" }, { role: "assistant", content: "a1" },
+    { role: "tool", content: "回执" }, { role: "assistant", content: "a2" },
+    { role: "user", content: "q2" }, { role: "assistant", content: "a3" },
+  ];
+  assert.deepEqual(trimDialog(withTool, 3).map((m) => m.content), ["q2", "a3"]);
+});
+
+test("trimDialog：整窗没有 user 时不动它（清空上下文比开头别扭更糟）", () => {
+  const msgs: ChatRequestMessage[] = [
+    { role: "assistant", content: "a1" }, { role: "assistant", content: "a2" }, { role: "assistant", content: "a3" },
+  ];
+  assert.deepEqual(trimDialog(msgs, 2), [msgs[1], msgs[2]]);
+});
+
+// ---------- P7-⑥⑤：场景件注入位置（两个聊天端点共用一条规则） ----------
+
+const sys = (role: "system", content: string): ContextMsg => ({ role, content });
+
+test("injectSceneContext：场景提示词接在开头 system 之后，数据块插到最后一条提问之前", () => {
+  const msgs: ContextMsg[] = [
+    { role: "system", content: "入口系统提示词" },
+    { role: "user", content: "q1" }, { role: "assistant", content: "a1" },
+    { role: "user", content: "q2" },
+  ];
+  const out = injectSceneContext(msgs, { prompt: "场景：行情查询", block: "[实时数据]\n最新价 100.00" }, sys);
+  assert.deepEqual(
+    out.map((m) => m.content),
+    ["入口系统提示词", "场景：行情查询", "q1", "a1", "[实时数据]\n最新价 100.00", "q2"],
+    "数据块必须在提问之前：放在数组末尾等于「先看到回答任务、再补数据」，某些上游会把它当无关说明忽略",
+  );
+  assert.equal(out.every((m) => m.role === "system" || m.role === "user" || m.role === "assistant"), true);
+  assert.equal(msgs.length, 4, "不能原地改写调用方传进来的数组");
+});
+
+test("injectSceneContext：开头多条 system 前置件（摘要、快照说明）之后才是场景提示词", () => {
+  const msgs: ContextMsg[] = [
+    { role: "system", content: "入口" }, { role: "system", content: "【更早对话摘要】" },
+    { role: "user", content: "q" },
+  ];
+  const out = injectSceneContext(msgs, { prompt: "场景提示词" }, sys);
+  assert.deepEqual(out.map((m) => m.content), ["入口", "【更早对话摘要】", "场景提示词", "q"]);
+});
+
+test("injectSceneContext：空内容一律不插（一个空 system 件会把轻量模型的整轮口径带偏）", () => {
+  const msgs: ContextMsg[] = [{ role: "system", content: "入口" }, { role: "user", content: "q" }];
+  assert.deepEqual(injectSceneContext(msgs, {}, sys), msgs);
+  assert.deepEqual(injectSceneContext(msgs, { prompt: "", block: "   \n " }, sys), msgs);
+  assert.deepEqual(injectSceneContext(msgs, { prompt: undefined, block: undefined }, sys), msgs);
+  // 只有一件时另一件也不能留下空位
+  const only = injectSceneContext(msgs, { prompt: "  ", block: "数据" }, sys);
+  assert.deepEqual(only.map((m) => m.content), ["入口", "数据", "q"]);
+});
+
+test("injectSceneContext：没有用户提问时插到末尾；只有首条提问时数据块紧挨在它前面", () => {
+  const noUser: ContextMsg[] = [{ role: "system", content: "入口" }, { role: "assistant", content: "a1" }];
+  assert.deepEqual(injectSceneContext(noUser, { prompt: "p", block: "b" }, sys).map((m) => m.content), ["入口", "p", "a1", "b"]);
+  const firstOnly: ContextMsg[] = [{ role: "user", content: "q" }];
+  assert.deepEqual(injectSceneContext(firstOnly, { prompt: "p", block: "b" }, sys).map((m) => m.content), ["p", "b", "q"]);
+});
+
+test("injectSceneContext：造什么形状的件由调用方给（两个端点的消息类型不同）", () => {
+  type Msg = ContextMsg & { id: string };
+  const out = injectSceneContext<Msg>(
+    [{ role: "user", content: "q", id: "u1" }],
+    { prompt: "p", block: "b" },
+    (role, content) => ({ role, content, id: `sys:${content}` }),
+  );
+  assert.deepEqual(out.map((m) => m.id), ["sys:p", "sys:b", "u1"]);
+  assert.equal(out[2].role, "user", "原消息件不受影响");
+});
+
+// ---------- P7-⑥⑤：场景徽章（服务端判 -> 事件 -> 会话存档，一条链上的三个关口） ----------
+
+const rawIntent = {
+  scene: "quote", label: "行情查询", hits: ["现价"], alternates: [] as string[],
+  symbol: "688256.SH", symbolSource: "question", inherited: false, followUp: true,
+};
+
+test("intentBadgeOf：只带真实判定结果，没有的键不留空壳", () => {
+  const b = intentBadgeOf(rawIntent);
+  assert.deepEqual(b, {
+    scene: "quote", label: "行情查询", hits: ["现价"], symbol: "688256.SH", symbolSource: "question",
+    inherited: false, followUp: true, skipped: [],
+  });
+  assert.equal("alternates" in b, false, "空 alternates 不该出现一个空数组键");
+  assert.equal("prefetchChars" in b, false, "本轮没注入数据就不写这个键（0 与「没说」不能混）");
+  assert.equal("prefetchChars" in intentBadgeOf(rawIntent, { prefetchChars: 0 }), false);
+  const withOpts = intentBadgeOf({ ...rawIntent, alternates: ["screener"] }, { skipped: ["watchlist：自选清单为空"], prefetchChars: 320 });
+  assert.deepEqual(withOpts.alternates, ["screener"]);
+  assert.equal(withOpts.prefetchChars, 320);
+});
+
+test("intentBadgeOf：数组是复制的，事后改判定层的数据不会改掉已经发出去的徽章", () => {
+  const hits = ["现价"];
+  const skipped = ["watchlist：自选清单为空"];
+  const b = intentBadgeOf({ ...rawIntent, hits }, { skipped, prefetchChars: 10 });
+  hits.push("成交额");
+  skipped.push("又改了一次");
+  b.skipped.push("改徽章本身");
+  assert.deepEqual(intentBadgeOf({ ...rawIntent, hits }).hits, ["现价", "成交额"]);
+  assert.equal(b.prefetchChars, 10);
+});
+
+test("徽章穿过 SSE 一帧不丢：编码 -> 解码 -> applyEvent -> 存档归一，四步之后字段完全一样", () => {
+  const badge: IntentBadge = intentBadgeOf({ ...rawIntent, alternates: ["screener"] }, { skipped: ["watchlist：自选清单为空"], prefetchChars: 512 });
+  const frame = encodeStreamEvent({ type: "done", data: { fullText: "结论", intent: badge } });
+  const ev = decodeStreamEvent(frame.replace(/^data: /, ""));
+  assert.equal(ev?.type, "done");
+  if (ev?.type !== "done") return;
+  assert.deepEqual(ev.data.intent, badge, "往返必须无损：漏一个键界面上就是一个假徽章");
+  const applied = applyEvent(msg("assistant", "", { id: "a1" }), ev);
+  assert.deepEqual(applied.intent, badge);
+  assert.equal(applied.streaming, false);
+  assert.deepEqual(normalizeMessage(applied, "s1").intent, badge, "重载存档后徽章不能丢");
+  // 服务端没判场景（没带 scene）时不留空壳，界面就不会画一个「按通用问答处理」的假徽章
+  assert.equal("intent" in applyEvent(msg("assistant", "", { id: "a2" }), { type: "done", data: { fullText: "x" } }), false);
+});
+
+test("asStreamIntent：判不出来就整体 null，绝不拼半个看着像真话的徽章", () => {
+  for (const bad of [null, undefined, 0, "quote", {}, { scene: "" }, { scene: 42 }]) {
+    assert.equal(asStreamIntent(bad), null, `${JSON.stringify(bad) ?? "undefined"} 不是徽章`);
+  }
+});
+
+test("asStreamIntent：缺的字段按诚实默认补，类型不对的逐项丢弃", () => {
+  assert.deepEqual(asStreamIntent({ scene: "sentiment" }), {
+    scene: "sentiment", label: "sentiment", hits: [], symbol: null, symbolSource: "none",
+    inherited: false, followUp: false, skipped: [],
+  });
+  const i = asStreamIntent({
+    scene: "sector", label: "", hits: ["板块", 7, null], symbol: "", symbolSource: 3,
+    inherited: "yes", followUp: true, skipped: "not-an-array", alternates: [], prefetchChars: -5,
+  });
+  assert.equal(i?.label, "sector", "label 缺失就用场景名兜底，不显示空白");
+  assert.deepEqual(i?.hits, ["板块"], "非字符串的命中词丢掉");
+  assert.equal(i?.symbol, null);
+  assert.equal(i?.symbolSource, "none");
+  assert.equal(i?.inherited, false, "只有真 true 才算沿用");
+  assert.equal(i?.followUp, true);
+  assert.deepEqual(i?.skipped, []);
+  assert.equal("alternates" in i!, false);
+  assert.equal(i?.prefetchChars, 0, "负数收成 0，不能留一个负字数");
+  assert.equal(asStreamIntent({ scene: "q", prefetchChars: NaN })?.prefetchChars, undefined);
+  assert.equal(asStreamIntent({ scene: "q", prefetchChars: Infinity })?.prefetchChars, undefined);
+  assert.equal(asStreamIntent({ scene: "q", prefetchChars: 2.9 })?.prefetchChars, 2);
+});
+
+// ---------- P7-⑥⑤：请求体契约（两个端点对「这一轮是不是对话」的口径） ----------
+
+test("chatRequestBody：plain 端点把 scene 三键搬进 body.scene，且始终声明", () => {
+  const msgs = [{ role: "user" as const, content: "q" }];
+  const body = chatRequestBody("plain", msgs, {
+    focusSymbol: "688256.SH", sessionSymbol: null, prevScene: "quote", contextWindow: 30, watchlist: [],
+  });
+  assert.deepEqual(body.scene, { focusSymbol: "688256.SH", sessionSymbol: null, prevScene: "quote" });
+  for (const k of SCENE_KEYS) assert.equal(k in body, false, `${k} 搬进 scene 后顶层不能再留一份（两份迟早对不上）`);
+  assert.deepEqual(body.contextWindow, 30);
+  assert.equal(body.stream, true);
+  assert.equal(body.messages, msgs);
+  // 三个字段一个都没有也要写 scene：这条声明本身就是「这一轮是对话」的凭据
+  assert.deepEqual(chatRequestBody("plain", msgs).scene, {});
+});
+
+test("chatRequestBody：tools 端点保持平铺，并且不带 scene（那个路由本身就是对话端点）", () => {
+  const body = chatRequestBody("tools", [{ role: "user", content: "q" }], {
+    mode: "decision", focusSymbol: "600519.SH", sessionSymbol: null, prevScene: null,
+  });
+  assert.equal("scene" in body, false);
+  assert.equal(body.mode, "decision");
+  assert.equal(body.focusSymbol, "600519.SH");
+  assert.equal(body.sessionSymbol, null);
+});
+
+// ---------- P7-⑥⑥：端点按服务商能力选 ----------
+
+test("pickChatEndpoint：OpenAI 兼容族才有工具调用环，其余如实退回纯对话", () => {
+  for (const p of ["openai", "deepseek", "moonshot", "openrouter", "ollama", "custom"]) {
+    assert.equal(supportsToolCalling(p), true, p);
+    assert.equal(pickChatEndpoint(p, "auto"), "tools", p);
+  }
+  // 大小写与首尾空格不影响判断：服务商 id 是从设置里的下拉来的，但手改过的存档也要认得
+  assert.equal(pickChatEndpoint(" DeepSeek ", "auto"), "tools");
+  for (const p of ["anthropic", "gemini", "", "  ", null, undefined, "unknown-relay"]) {
+    assert.equal(supportsToolCalling(p), false, `${String(p)} 没有工具环`);
+    assert.equal(pickChatEndpoint(p, "auto"), "plain");
+  }
+  // 显式指定优先于能力判断（页面钉死某条路时不被动改写）
+  assert.equal(pickChatEndpoint("anthropic", "tools"), "tools");
+  assert.equal(pickChatEndpoint("deepseek", "plain"), "plain");
+  assert.equal(pickChatEndpoint("deepseek"), "tools", "want 省略＝auto");
+});
+
+// ---------- P7-⑥⑥：回答风格只有一份定义 ----------
+
+test("CHAT_MODES：键唯一、四个模式、说法齐全（首页下拉与对话页 chip 共用这一份）", () => {
+  assert.deepEqual(CHAT_MODES.map((m) => m.key), ["decision", "judge", "deep", "search"]);
+  assert.equal(new Set(CHAT_MODES.map((m) => m.key)).size, CHAT_MODES.length, "键不能重复：重复会让选中态对不上");
+  for (const m of CHAT_MODES) {
+    assert.ok(m.label.trim() && m.desc.trim(), `${m.key} 的文案不能为空`);
+    assert.equal(chatModeLabel(m.key), m.label);
+  }
+});
+
+test("isChatMode / asChatMode / chatModeLabel：外部输入（被改坏的存档、乱来的请求体）不冒充合法值", () => {
+  for (const v of ["decision", "judge", "deep", "search"]) assert.equal(isChatMode(v), true);
+  for (const v of ["", "DECISION", " decision", "hackson", null, undefined, 42, { key: "deep" }]) {
+    assert.equal(isChatMode(v), false, `${String(v)} 不该被认成模式`);
+  }
+  // 服务端拿 mode 当查表键之前先过这道门：认不出的按默认口径答，而不是静默少一段风格说明
+  assert.equal(asChatMode("judge"), "judge");
+  assert.equal(asChatMode("hackson"), "decision");
+  assert.equal(asChatMode(undefined), "decision");
+  assert.equal(asChatMode("", "deep"), "deep");
+  // 认不出的值不套一个说法：写「未选」而不是默认显示「决策模式」，免得界面和实际发出去的值不一致
+  assert.equal(chatModeLabel(undefined), "未选");
+  assert.equal(chatModeLabel("hackson"), "未选");
+  assert.equal(chatModeLabel("deep"), "深度思考");
 });

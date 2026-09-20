@@ -1,14 +1,19 @@
 "use client";
 // 右下角浮动智能助手小窗：与分析页侧栏、智能助手页共用同一份会话记录
 // P7-⑤：发送逻辑收敛到 useChatSend（同一套流式回填 / 降级 / 步骤时间线），小窗只保留图表上下文注入。
+// P7-⑥⑥：端点改成 auto（按服务商能力选，不再固定 plain），兜底也交回 useChatSend 的默认实现。
+// 之前小窗固定纯对话端点、首页固定工具端点，同一句问题在两个入口拿到的能力不同；
+// 现在三个入口的端点选择、场景调度与降级参数都出自同一处，小窗独有的只剩「当前图表上下文」。
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Send, Square, X } from "lucide-react";
+import { Bot, MessagesSquare, Send, Square, X } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
-import { aiChat, aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
+import { aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
 import { fetchNewsBlock } from "@/lib/desk/market";
 import type { ChatMessage } from "@/lib/desk/chat-core";
 import { useChatSend } from "@/lib/desk/use-chat";
+import { pickChatEndpoint } from "@/lib/desk/chat-stream-core";
 import Markdown from "./Markdown";
+import SceneBadge from "./SceneBadge";
 import StepTimeline from "./StepTimeline";
 
 const CHIPS = ["关键位在哪", "多周期趋势总结", "现在适合进场吗", "给我一个风控清单"];
@@ -21,6 +26,7 @@ export default function AssistantWidget({
   chartContext: () => string;
 }) {
   const newSession = useDesk((s) => s.newSession);
+  const go = useDesk((s) => s.go);
   const ai = useDesk((s) => s.ai);
   const focusSymbol = useDesk((s) => s.focusSymbol);
 
@@ -39,11 +45,18 @@ export default function AssistantWidget({
   }, [chartContext]);
 
   const { send, busy, stop, sessions, activeSessionId } = useChatSend({
-    endpoint: "plain",
+    // 与助手页同一个口径：能力够就走工具调用环，否则退回纯对话端点，两条路共用同一份场景接线
+    endpoint: "auto",
     systemPrompt: assistantSystemPrompt,
     snapshot,
-    fallback: async (cfg, messages) => ({ text: await aiChat(cfg, messages, { timeoutMs: 120_000 }) }),
+    // 小窗挂在分析页上，「这只股」指的就是图表里那只：交给服务端，并如实标注来源
+    // 回答风格取 store 里那份共享设置（小窗不另画一套选择器，但也不能默默用别的口径）
+    extra: () => ({ focusSymbol, mode: useDesk.getState().assistantMode }),
+    onNotConfigured: () => go("settings"),
   });
+
+  // 界面要如实写明这一轮走的是哪条端点：工具环不是所有服务商都有，不能话术上假装都有
+  const toolsOn = pickChatEndpoint(ai.provider, "auto") === "tools";
 
   const session = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
   const messages: ChatMessage[] = session?.messages ?? [];
@@ -70,7 +83,7 @@ export default function AssistantWidget({
           <div className="min-w-0">
             <div className="text-[13px] font-semibold">智能助手 · 随问</div>
             <div className="truncate text-[10.5px] text-muted-foreground">
-              {session?.title} · {session?.stock ?? focusSymbol}
+              {session?.title} · {session?.stock ?? focusSymbol} · {toolsOn ? "工具调用端点" : "纯对话端点（该服务商无工具环）"}
             </div>
           </div>
         </div>
@@ -78,6 +91,11 @@ export default function AssistantWidget({
           <button onClick={() => { newSession(); }}
             className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground">
             新会话
+          </button>
+          {/* 会话记录本来就共享：这里只是把那页铺满，不是「换一条链重问一遍」 */}
+          <button onClick={() => { go("copilot"); onClose(); }} title="在助手页继续（同一份会话）"
+            className="rounded-md border border-border p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+            <MessagesSquare size={14} />
           </button>
           <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="收起">
             <X size={15} />
@@ -109,6 +127,7 @@ export default function AssistantWidget({
               </div>
             ) : (
               <div className="max-w-[92%] rounded-lg border border-border bg-background/70 px-3 py-2 text-[12.5px] leading-5">
+                <SceneBadge intent={m.intent} />
                 <Markdown content={m.content} />
                 {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-[6px] translate-y-0.5 animate-pulse bg-sky-400" />}
                 <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming} />

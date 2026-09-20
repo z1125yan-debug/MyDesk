@@ -1,21 +1,29 @@
 "use client";
-// 智能助手页（P7-⑤ 起：流式回答 + 步骤时间线 + 会话持久化）
+// 智能助手页 —— P7-⑥⑥ 起它是**唯一的对话页**：AI 首页的大输入框和右下角随问小窗都把话交到这里发。
 //
 // 这一页只保留「本页特有的东西」：行情快照怎么取、系统提示词怎么拼；
-// 发送、流式回填、降级、价格校验都在 useChatSend 里，和首页 / 随问小窗共用同一份实现。
+// 发送、流式回填、降级、价格校验、端点选择都在 useChatSend 里，和首页 / 小窗共用同一份实现。
+// 会话是同一份 store：从小窗「在助手页继续」＝切到同一条会话，不复制消息。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Loader2, PenLine, Plus, Settings2, Send, Square, Trash2 } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
-import { aiChat, aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
+import { aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
 import { fetchQuoteCards, fetchTechSnapshot, fetchNewsBlock, isDemoSymbol, searchSymbols } from "@/lib/desk/market";
 import { shanghaiStamp } from "@/lib/desk/session";
 import {
   guardPriceOf, provenanceOfQuote, provenanceOfTechSnapshot, renderMarketContext, type CtxRow,
 } from "@/lib/desk/ai-context-core";
 import { isFollowUp, type ChatMessage, type ChatSession } from "@/lib/desk/chat-core";
+import { pickChatEndpoint } from "@/lib/desk/chat-stream-core";
+import { CHAT_MODES } from "@/lib/desk/modes";
 import { useChatSend, type SnapshotResult } from "@/lib/desk/use-chat";
 import Markdown from "../Markdown";
+import SceneBadge from "../SceneBadge";
 import StepTimeline from "../StepTimeline";
+
+// 回答风格的清单一处定义在 @/lib/desk/modes（首页的下拉用的就是同一份），
+// 当前选中的值存在 store.assistantMode：两个画法共享一个设置，不会出现「首页选了研判、这里按决策发」。
+// 只有落到工具调用端点（服务端按 mode 改口径）时它才生效，纯对话端点上这一项会显式禁用。
 
 const QUICK_ASKS = [
   "分析一下当前品种的结构",
@@ -98,9 +106,14 @@ export default function AssistantPage() {
   const renameSession = useDesk((s) => s.renameSession);
 
   const [input, setInput] = useState("");
+  // 模式来自 store（与首页下拉同一份设置）；发送时按 use-chat 的口径在「真要发的那一刻」读当前值，
+  // 所以这里不需要再养一份 ref 来绕开 setState 的异步性。
+  const mode = useDesk((s) => s.assistantMode);
+  const setMode = useDesk((s) => s.setAssistantMode);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  const takePendingAsk = useDesk((s) => s.takePendingAsk);
 
   // 本轮快照：识别问题里的品种（关注品种兜底），带来源分层；追问则沿用会话已关联的标的
   const snapshot = useCallback(async (session: ChatSession, question: string): Promise<SnapshotResult | null> => {
@@ -135,12 +148,27 @@ export default function AssistantPage() {
   }, [focusSymbol]);
 
   const { send, busy, stop, sessions, activeSessionId } = useChatSend({
-    endpoint: "plain",
+    // 端点按服务商能力选：OpenAI 兼容接口走工具调用环（模型能自己补取数），其余退回纯对话端点。
+    // 两条路的场景识别与自动取数是同一份接线，所以换端点不会换「这一轮按哪个场景答」的口径。
+    endpoint: "auto",
     systemPrompt: assistantSystemPrompt,
     snapshot,
-    fallback: async (cfg, messages) => ({ text: await aiChat(cfg, messages, { timeoutMs: 120_000 }) }),
+    // 当前关注品种交给服务端：说「这只股」时它才知道指谁，并且会如实标注「分析页当前品种」
+    // 模式在发送那一刻从 store 现读：首页刚改完风格就提交，这一轮用的就是新值，不依赖渲染节奏
+    extra: () => ({ focusSymbol, mode: useDesk.getState().assistantMode }),
     onNotConfigured: () => go("settings"),
   });
+
+  const endpoint = pickChatEndpoint(ai.provider, "auto");
+  const toolsOn = endpoint === "tools";
+
+  // 首页交过来的那一句：进页面取一次就清掉，刷新不会重发。
+  // 这里刻意不做任何 setState：模式已经在 store 里由首页那次点击写好了，本轮发送时现读即可。
+  useEffect(() => {
+    const pending = takePendingAsk();
+    if (!pending) return;
+    void send(pending);
+  }, [send, takePendingAsk]);
 
   const session = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
   const messages: ChatMessage[] = session?.messages ?? [];
@@ -221,7 +249,9 @@ export default function AssistantPage() {
           <div className="flex shrink-0 items-center gap-2">
             {/* 这里说的是「模型接口通不通」，不是行情数据来源，所以不用 SourceBadge（避免把配置状态画成数据状态） */}
             <span className={"rounded border px-1.5 py-0.5 text-[10px] " + (configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300")}>
-              {configured ? `接口已配置 · ${ai.model}` : "接口未配置"}
+              {configured
+                ? `接口已配置 · ${ai.model} · ${toolsOn ? "工具调用端点" : "纯对话端点（该服务商无工具环）"}`
+                : "接口未配置"}
             </span>
             {!configured && (
               <button onClick={() => go("settings")}
@@ -257,6 +287,8 @@ export default function AssistantPage() {
                 </div>
               ) : (
                 <div className="w-full rounded-lg border border-border bg-background/70 px-4 py-3 text-[14.5px] leading-7">
+                  {/* 场景徽章：这一轮按哪个场景答、依据哪个词、取了哪些数、什么没取，都在这条里 */}
+                  <SceneBadge intent={m.intent} />
                   <Markdown content={m.content} />
                   {m.streaming && <span className="ml-0.5 inline-block h-4 w-[7px] translate-y-0.5 animate-pulse bg-sky-400" />}
                   <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming} />
@@ -268,6 +300,19 @@ export default function AssistantPage() {
           <div ref={endRef} />
         </div>
 
+        {/* 回答风格：只有工具调用端点会按 mode 改服务端口径，纯对话端点上这条禁用并说明原因，
+            而不是让用户以为选了就会变。场景本身不用选：服务端每轮按这句话自动判（见场景徽章）。 */}
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-3.5 pt-2.5">
+          <span className="text-[10.5px] text-muted-foreground">回答风格</span>
+          {CHAT_MODES.map((m) => (
+            <button key={m.key} onClick={() => setMode(m.key)} disabled={!configured || !toolsOn} title={m.desc}
+              className={"rounded-full border px-2.5 py-1 text-[11.5px] transition-colors disabled:opacity-40 " +
+                (mode === m.key && toolsOn ? "border-sky-500/50 bg-sky-500/12 text-sky-300" : "border-border text-muted-foreground hover:text-foreground")}>
+              {m.label}
+            </button>
+          ))}
+          {!toolsOn && <span className="text-[10.5px] text-muted-foreground/80">（当前服务商无工具调用环，风格项不生效）</span>}
+        </div>
         <div className="flex flex-wrap gap-1.5 border-t border-border px-3.5 pt-2.5">
           {["关键位在哪", "多周期趋势总结", "现在适合进场吗", "给我一个风控清单"].map((q) => (
             <button key={q} onClick={() => submit(q)} disabled={busy || !configured}
