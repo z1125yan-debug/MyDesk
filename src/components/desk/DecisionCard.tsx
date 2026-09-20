@@ -9,16 +9,24 @@
 // 3) **每一路来源单独标状态与所属日**。取数失败的那一路显示「本次未取到」，不渲染成 0，也不留空白。
 // 4) **缺维度就说缺**：被剔除的维度、重归一后的实际权重、接线层的口径声明都要出现在卡面上，
 //    所以同一个字面结论在「四维齐全」与「只有技术面」时看起来明显不同，这是刻意的。
+// 5) **字面分 ≠ 加权分**（v3）：维度卡上显示的是折算分，旁边必须跟着「字面 xx」与本维极值，
+//    否则读者拿页面上的 +63 去对任何一张打分表都对不上。`role="basis"` 的旧表分项虚线框显示、
+//    标「依据」并写明它在自己那张表里的字面分，视觉上就不与计分项混在一起。
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { SourceBadge } from "./SourceBadge";
 import { fetchDecisionView } from "@/lib/desk/quant-api";
-import { DIMENSION_LABEL, type Decision, type DimensionResult, type ScoreItem } from "@/lib/quant/screener/decision-core";
+import { DIMENSION_LABEL, decisionSections, type Decision, type DimensionResult, type ScoreItem } from "@/lib/quant/screener/decision-core";
 import { DATA_STATUS_TEXT } from "@/lib/quant/screener/datastatus-core";
 import type { DecisionView } from "@/lib/quant/screener/decision-wiring-core";
 
+/**
+ * 六档趋势等级的着色（P7-⑦ 任务书的档位名）：红涨绿跌，中性档不抢眼。
+ * 档位名以内核产出的字符串为键 —— 内核改了档位名，这里立刻缺键变灰，而不是一直显示旧配色。
+ */
 const GRADE_TONE: Record<string, string> = {
-  看涨: "text-red-500", 偏强震荡: "text-red-400", 中性: "text-foreground/80", 偏弱: "text-emerald-400", 看跌: "text-emerald-500",
+  强势看多: "text-red-500", 偏强看多: "text-red-400", 震荡偏强: "text-orange-400",
+  中性震荡: "text-foreground/80", 偏弱: "text-emerald-400", 弱势看空: "text-emerald-500",
 };
 
 const fmtSigned = (x: number) => `${x > 0 ? "+" : ""}${Math.round(x * 10) / 10}`;
@@ -54,7 +62,7 @@ export default function DecisionCard({ symbol }: { symbol: string }) {
         <div className="ml-auto flex items-center gap-2">
           {view && (
             <SourceBadge
-              status={view.decision.dimensions.some((d) => d.status === "MISSING") ? "DEGRADED 部分维度未计入" : "DERIVED"}
+              status={view.decision.excluded.length > 0 ? "DEGRADED 部分维度未计入" : "DERIVED"}
               source={`协议 ${view.decision.protocol_version}`}
               time={view.as_of.slice(11, 19)}
             />
@@ -85,6 +93,7 @@ export default function DecisionCard({ symbol }: { symbol: string }) {
 function CardBody({ view }: { view: DecisionView }) {
   const d = view.decision;
   const w = view.wiring;
+  const sec = decisionSections(d);
   return (
     <div className="space-y-3">
       {/* 结论行 */}
@@ -94,7 +103,7 @@ function CardBody({ view }: { view: DecisionView }) {
         ) : (
           <div className="flex items-end gap-2">
             <span className={`text-3xl font-bold leading-none ${scoreTone(d.final_score)}`}>{fmtSigned(d.final_score)}</span>
-            <span className="text-[11px] text-muted-foreground">综合得分（加权结果，不是百分率）</span>
+            <span className="text-[11px] text-muted-foreground">综合评分（−100~+100 折算刻度，不是百分率）</span>
           </div>
         )}
         {d.grade && <span className={`text-xl font-bold ${GRADE_TONE[d.grade] ?? ""}`}>{d.grade}</span>}
@@ -106,6 +115,22 @@ function CardBody({ view }: { view: DecisionView }) {
         )}
       </div>
       <div className="text-[12.5px] leading-relaxed">{d.statement}</div>
+
+      {/* 三段式的后两段：主要判断依据 / 核心风险点（与 AI 上下文共用同一份 decisionSections） */}
+      <div className="grid gap-2 lg:grid-cols-2">
+        <div className="rounded-lg border border-border/70 bg-accent/20 px-3 py-2">
+          <div className="text-[11px] font-medium text-muted-foreground">② 主要判断依据（参与加权的分项与折算记账）</div>
+          <ul className="mt-1 space-y-0.5 text-[11.5px]">
+            {sec.basis.map((b, i) => <li key={i}>· {b}</li>)}
+          </ul>
+        </div>
+        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2">
+          <div className="text-[11px] font-medium text-amber-300/90">③ 核心风险点（反向分项、缺口与未计入的维度）</div>
+          <ul className="mt-1 space-y-0.5 text-[11.5px]">
+            {sec.risk.map((r, i) => <li key={i}>· {r}</li>)}
+          </ul>
+        </div>
+      </div>
 
       {/* 四维 */}
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -146,6 +171,8 @@ function CardBody({ view }: { view: DecisionView }) {
         <div className="mt-1.5 grid gap-0.5 text-[10.5px] text-muted-foreground/80 sm:grid-cols-2">
           <span>接线版本 {w.wiring_version}｜基准指数 {w.base_index.label}（{w.base_index.symbol}）</span>
           <span>技术面日K {w.technical_bars} 根，最后一根 {w.technical_bar_date ?? "无"}｜RSI 周期 {w.rsi_period}</span>
+          <span>概率面打分周期 {w.probability_horizon ?? "未声明"} 日｜成交额基线 {w.turnover_baseline_days ?? 0} 个可信用留档日</span>
+          <span>技术面窗口：均量 {w.volume_window ?? "无有效读数"} 根／压力位 {w.prior_high_window ?? "无有效读数"} 根</span>
           <span>事件窗口 {w.event_window.start} → {w.event_window.end}（{w.event_window.stale_after_days} 天内），取到 {w.event_window.rows} 行{w.event_window.payload_broken ? `，${w.event_window.payload_broken} 行不可解析` : ""}</span>
           <span>决策参考日 {view.trade_date}（取数时刻 {view.as_of}）</span>
         </div>
@@ -179,19 +206,24 @@ function CardBody({ view }: { view: DecisionView }) {
 }
 
 function DimHeader({ dim }: { dim: DimensionResult }) {
-  const tone = scoreTone(dim.score);
+  // v3 起「计没计分」看的是 norm_score：字面分可以算出来却没有本维极值可折算，那种情况一律没进加权。
+  const counted = dim.norm_score !== null;
+  const tone = scoreTone(counted ? dim.norm_score : null);
+  const scoredItems = dim.items.filter((i) => i.role !== "basis");
   return (
-    <div className={`rounded-lg border px-3 py-2 ${dim.score === null ? "border-amber-500/25 bg-amber-500/5" : "border-border bg-accent/20"}`}>
+    <div className={`rounded-lg border px-3 py-2 ${counted ? "border-border bg-accent/20" : "border-amber-500/25 bg-amber-500/5"}`}>
       <div className="flex items-center justify-between text-[11px]">
         <span className="text-muted-foreground">{DIMENSION_LABEL[dim.key]}</span>
         <span className="font-mono text-[10px] text-muted-foreground">权重 {pct(dim.weight_applied)}</span>
       </div>
       <div className="mt-0.5 flex items-baseline gap-1.5">
-        <span className={`text-lg font-bold ${tone}`}>{dim.score === null ? "未计入" : fmtSigned(dim.score)}</span>
-        <span className="text-[10px] text-muted-foreground">{dim.items.filter((i) => i.points !== null).length}/{dim.items.length} 项有分</span>
+        <span className={`text-lg font-bold ${tone}`}>{counted ? fmtSigned(dim.norm_score as number) : "未计入"}</span>
+        <span className="text-[10px] text-muted-foreground">
+          {counted ? `折算分（字面 ${dim.raw_score === null ? "算不出" : fmtSigned(dim.raw_score)}）` : dim.raw_score === null ? "没有读数" : `字面 ${fmtSigned(dim.raw_score)} 未折算`}
+        </span>
       </div>
       <div className="mt-0.5 truncate text-[10px] text-muted-foreground/80" title={dim.rule_version ?? "无规则读数"}>
-        {dim.rule_version ?? "本次没有规则读数"}
+        {scoredItems.filter((i) => i.points !== null).length}/{scoredItems.length} 项有分（另有 {dim.items.length - scoredItems.length} 项只作依据）｜{dim.rule_version ?? "本次没有规则读数"}
       </div>
     </div>
   );
@@ -199,16 +231,20 @@ function DimHeader({ dim }: { dim: DimensionResult }) {
 
 function DimDetail({ dim }: { dim: DimensionResult }) {
   if (!dim.items.length && !dim.missing.length) return null;
+  const open = dim.norm_score !== null;
   return (
-    <details className="rounded-lg border border-border/70 px-3 py-2" open={dim.score !== null}>
+    <details className="rounded-lg border border-border/70 px-3 py-2" open={open}>
       <summary className="cursor-pointer text-[11.5px]">
         <span className="font-medium">{DIMENSION_LABEL[dim.key]}分项</span>
         <span className="ml-2 text-[10.5px] text-muted-foreground">
-          {dim.score === null ? "本次不计分" : `合计 ${fmtSigned(dim.score)}（生效权重 ${pct(dim.weight_applied)}）`}｜{dim.status}
+          {dim.norm_score === null
+            ? (dim.raw_score === null ? "本次不计分" : `字面 ${fmtSigned(dim.raw_score)}，但${dim.excluded_reason ? "未参与加权" : "无法折算"}`)
+            : `字面 ${dim.raw_score === null ? "—" : fmtSigned(dim.raw_score)} → 折算 ${fmtSigned(dim.norm_score)}（生效权重 ${pct(dim.weight_applied)}）`}
+          ｜本维极值 {dim.bounds ? `${dim.bounds.min}~${dim.bounds.max}` : "未声明"}｜{dim.status}
         </span>
       </summary>
       <ul className="mt-1.5 space-y-1.5">
-        {dim.items.map((it, i) => <ItemRow key={`${it.rule}-${i}`} it={it} />)}
+        {dim.items.map((it, i) => <ItemRow key={`${it.rule}-${i}`} it={it} dimVersion={dim.rule_version} />)}
         {dim.missing.map((m, i) => (
           <li key={`m-${i}`} className="text-[11px] text-amber-300/90">⚠ {m}</li>
         ))}
@@ -217,20 +253,30 @@ function DimDetail({ dim }: { dim: DimensionResult }) {
   );
 }
 
-function ItemRow({ it }: { it: ScoreItem }) {
+function ItemRow({ it, dimVersion }: { it: ScoreItem; dimVersion: string | null }) {
   const nullish = it.points === null;
+  const basis = it.role === "basis";
   return (
-    <li className="rounded-md bg-accent/20 px-2.5 py-1.5">
+    <li className={`rounded-md px-2.5 py-1.5 ${basis ? "border border-dashed border-border/70 bg-background/40" : "bg-accent/20"}`}>
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className={`text-[12px] font-medium ${scoreTone(it.points)}`}>{nullish ? "算不出" : `${fmtSigned(it.points as number)} 分`}</span>
+        <span className={`text-[12px] font-medium ${basis ? "text-muted-foreground" : scoreTone(it.points)}`}>
+          {basis ? "依据" : nullish ? "算不出" : `${fmtSigned(it.points as number)} 分`}
+        </span>
         <span className="text-[12px]">{it.label}</span>
         <span className="font-mono text-[10px] text-muted-foreground/70">{it.rule}</span>
         <span className="text-[10px] text-muted-foreground/70">{it.status}</span>
+        <span className="text-[10px] text-muted-foreground/60">表 {it.rule_version ?? dimVersion ?? "无"}</span>
       </div>
       <div className="mt-0.5 text-[11px] text-muted-foreground">{it.raw}</div>
+      {basis && (
+        <div className="mt-0.5 text-[10.5px] text-muted-foreground/80">
+          这条是判定依据，不进本维求和（新表已有同一指标，重复计权等于把同一个读数算两遍）
+          {it.points !== null && `；它在自己那张表里的字面分是 ${fmtSigned(it.points)}`}
+        </div>
+      )}
       {it.note && (
-        <div className={`mt-0.5 text-[10.5px] ${nullish ? "text-amber-300/80" : "text-muted-foreground/80"}`}>
-          {nullish && <b>【缺读数，不是 0 分】</b>}{it.note}
+        <div className={`mt-0.5 text-[10.5px] ${nullish && !basis ? "text-amber-300/80" : "text-muted-foreground/80"}`}>
+          {nullish && !basis && <b>【缺读数，不是 0 分】</b>}{it.note}
         </div>
       )}
     </li>

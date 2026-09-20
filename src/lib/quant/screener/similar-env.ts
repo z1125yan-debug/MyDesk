@@ -13,6 +13,16 @@ export interface SimilarEnvStats {
     avg_return: number | null;
     median_return: number | null;
     worst_return: number | null;
+    // P7-⑦ 决策层概率面的「盈亏比」子项要这两侧的均值，口径与 win_rate 同一批相似日。
+    // 声明成可选而不是必填：这份统计会被落库/回传（旧的 probability_snapshot 就没有这两格），
+    // 缺格 = 本次没有盈亏比读数 = 算不出，调用方不许把它读成 0。
+    avg_win?: number | null;
+    /** 平均亏损，带负号；无亏损样本 ⇒ null */
+    avg_loss?: number | null;
+    /** avg_win / |avg_loss|；任一侧缺样本 ⇒ null */
+    payoff_ratio?: number | null;
+    win_samples?: number;
+    loss_samples?: number;
   }[];
   warnings: string[];
 }
@@ -55,17 +65,28 @@ export function similarReturnForward(
       const a = closes[i].c, b = closes[i + h].c;
       if (a > 0 && b > 0) fwd.push((b / a - 1) * 100);
     }
-    if (!fwd.length) return { h, win_rate: null, sample_size: 0, avg_return: null, median_return: null, worst_return: null };
+    if (!fwd.length) return { h, win_rate: null, sample_size: 0, avg_return: null, median_return: null, worst_return: null, avg_win: null, avg_loss: null, payoff_ratio: null, win_samples: 0, loss_samples: 0 };
     const sorted = [...fwd].sort((a, b) => a - b);
     const mid = Math.floor(sorted.length / 2);
     const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    // 盈亏两侧各自取均值（r=0 的持平日两边都不进）。没有亏损样本 ⇒ payoff=null，
+    // 「一次都没跌」不能被读成「亏损为 0」而给 +10 分。
+    const winRets = fwd.filter((x) => x > 0);
+    const lossRets = fwd.filter((x) => x < 0);
+    const avgWin = winRets.length ? winRets.reduce((s, v) => s + v, 0) / winRets.length : null;
+    const avgLoss = lossRets.length ? lossRets.reduce((s, v) => s + v, 0) / lossRets.length : null;
     return {
       h,
-      win_rate: (fwd.filter((x) => x > 0).length / fwd.length) * 100,
+      win_rate: (winRets.length / fwd.length) * 100,
       sample_size: fwd.length,
       avg_return: fwd.reduce((s, v) => s + v, 0) / fwd.length,
       median_return: median,
       worst_return: sorted[0],
+      avg_win: avgWin,
+      avg_loss: avgLoss,
+      payoff_ratio: avgWin !== null && avgLoss !== null && avgLoss < 0 ? avgWin / -avgLoss : null,
+      win_samples: winRets.length,
+      loss_samples: lossRets.length,
     };
   });
   const sampleSize = Math.max(...horizonStats.map((s) => s.sample_size), 0);

@@ -26,6 +26,12 @@ export interface SentimentResult {
   limit_up_broken: number; // 炸板数 = 触板 - 封板
   break_rate: number | null; // 炸板率 %；触板为 0 时 null（列入 missing）
   amount_total_yi: number;
+  /**
+   * 全 A 快照里 **amount 真实有值**的家数（P7-⑦ 为 M-TURNOVER 补的口径登记，与 main_net_known 同理）。
+   * `amount_total_yi` 是 `+= m.amount ?? 0` 累加出来的：一家都没抓到该字段时它同样是 0，
+   * 而「今日全 A 成交 0 亿」是个结论，「这个数没读到」是另一回事。
+   */
+  amount_known: number;
   main_net_sum_yi: number;
   /**
    * 全 A 快照里 **mainNet 真实有值**的家数（P7-④ 接线补的口径登记）。
@@ -62,7 +68,7 @@ export async function computeSentiment(): Promise<SentimentResult> {
 
   let advancers = 0, decliners = 0, flat = 0, limitUp = 0, limitDown = 0;
   let touched = 0, broken = 0, limitUnknown = 0;
-  let amountSum = 0, mainNetSum = 0, mainNetKnown = 0;
+  let amountSum = 0, amountKnown = 0, mainNetSum = 0, mainNetKnown = 0;
   const pcts: number[] = [];
   for (const m of metas) {
     const pct = m.changePct;
@@ -90,6 +96,7 @@ export async function computeSentiment(): Promise<SentimentResult> {
     mainNetSum += m.mainNet ?? 0;
     // 家数登记：上面那行 `?? 0` 让「字段缺失」和「净额正好 0」长得一样，下游需要一个能区分的口径
     if (typeof m.mainNet === "number" && Number.isFinite(m.mainNet)) mainNetKnown++;
+    if (typeof m.amount === "number" && Number.isFinite(m.amount)) amountKnown++;
   }
   const breakRate = touched > 0 ? (broken / touched) * 100 : null;
   pcts.sort((a, b) => a - b);
@@ -137,6 +144,7 @@ export async function computeSentiment(): Promise<SentimentResult> {
     limit_up_broken: broken,
     break_rate: breakRate,
     amount_total_yi: amountSum / 1e8,
+    amount_known: amountKnown,
     main_net_sum_yi: mainNetYi,
     main_net_known: mainNetKnown,
     median_pct: median,

@@ -1,4 +1,4 @@
-// P7-④ 决策服务层（唯一的决策取数入口）：把真实读数取回来 → 交纯接线内核映射 → 调 buildDecision。
+// P7-④ 决策服务层（P7-⑦ v3 起为唯一的决策取数入口）：把真实读数取回来 → 交纯接线内核映射 → 调 buildDecision。
 //
 // 三条硬边界：
 // 1) **只读**。不写库、不触发扫描、不调模型。事件面读的是 P6-B **已落库**的 event_interpretation：
@@ -10,19 +10,21 @@
 //
 // 取数来源（逐条对应页面上的来源标签，不写本项目没有的源）：
 //   - 日K（标的 + 基准指数）：eltdx 网关优先、腾讯日K兜底（data/hybrid.ts，逐只观测结论见 hybrid-core.ts）；
-//   - 市场广度/涨跌停/炸板率/主力净额/风险等级/指数：screener/sentiment.ts（东财全A快照 + 腾讯指数）；
-//   - 板块主线：screener/themes.ts（东财板块榜 + 成分扩散）；
+//   - 市场广度/涨跌停/炸板率/主力净额/成交额/风险等级/指数：screener/sentiment.ts（东财全A快照 + 腾讯指数）；
+//   - 放量/缩量的历史均值基线：risk_snapshot 表（P5 起的每日 /api/market/risk 响应留档，只读）；
+//   - 板块主线（含榜首 RPS 与口径原文）：screener/themes.ts（东财板块榜 + 成分扩散）；
 //   - 事件解释：event_interpretation 表（AI_INTERPRETATION 层，不是事实本身）。
 import { db } from "@/lib/db";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import { getProvider } from "@/lib/quant/data/index";
 import { fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
 import type { BarsLike } from "@/lib/quant/factors/fields.ts";
-import { buildDecision, decisionToText } from "./decision-core";
+import { buildDecision, decisionToText, type Horizon } from "./decision-core";
 import {
-  BASE_INDEX, WIRING_VERSION, eventsFromInterpretations, interpretationWireFromRow,
+  BASE_INDEX, INDEX_MA_WINDOW_DEFAULT, PRIMARY_HORIZON_DEFAULT, WIRING_VERSION,
+  eventsFromInterpretations, interpretationWireFromRow,
   marketFromWiring, probabilityFromSimilarEnv, technicalFromBars, themesWire, windowStart,
-  type DecisionSourceBadge, type DecisionView, type InterpretationWire, type SentimentWire, type ThemesWire,
+  type DecisionSourceBadge, type DecisionView, type InterpretationWire, type SentimentWire, type ThemesWire, type TurnoverDayWire,
 } from "./decision-wiring-core";
 import { eventExternal, EVENT_STALE_AFTER_DAYS_DEFAULT } from "./event-score-core";
 import { marketExternal } from "./market-score-core";
@@ -51,9 +53,12 @@ const errText = (e: unknown) => clip(String((e as Error)?.message ?? e ?? "未�
  * SentimentResult → SentimentWire。本层唯一一处「按上游写法解释上游字段」的地方：
  * 主力净额的家数登记（main_net_known）就是为 sentiment 里那句 `mainNetSum += m.mainNet ?? 0` 准备的，
  * 旧版本没有这个字段时按「未确认口径」传 null，让打分表把它记成缺失而不是 0 亿。
+ * 成交额（amount_*）同理：上游那句 `amountSum += m.amount ?? 0` 也需要一个家数才能被解释成读数。
  */
 export function sentimentWireOf(s: SentimentResult): SentimentWire {
-  const known = (s as unknown as { main_net_known?: number | null }).main_net_known;
+  const box = s as unknown as { main_net_known?: number | null; amount_known?: number | null };
+  const known = box.main_net_known;
+  const amtKnown = box.amount_known;
   return {
     trade_date: s.trade_date,
     live: s.live,
@@ -65,16 +70,58 @@ export function sentimentWireOf(s: SentimentResult): SentimentWire {
     break_rate: s.break_rate,
     main_net_sum_yi: s.main_net_sum_yi,
     main_net_known: typeof known === "number" ? known : null,
+    amount_total_yi: Number.isFinite(s.amount_total_yi) ? s.amount_total_yi : null,
+    amount_known: typeof amtKnown === "number" ? amtKnown : null,
     median_pct: s.median_pct,
     indices: s.indices.map((i) => ({ symbol: i.symbol, changePct: Number.isFinite(i.changePct) ? i.changePct : null })),
     risk_level: s.risk.level,
   };
 }
 
-/** ThemeDiscovery.main → 榜首强度（不假设数组排过，取真实最大值） */
-export function themesWireOf(main: { score?: number }[] | null | undefined): ThemesWire | null {
+/** ThemeDiscovery.main → 榜首读数（强度取真实最大值；RPS 取榜首那条自己的，口径带 themes 自报的那句） */
+export function themesWireOf(
+  main: { score?: number; rps?: number }[] | null | undefined,
+  rpsScope?: string | null,
+): ThemesWire | null {
   if (!main) return null;
-  return themesWire(main.map((m) => ({ score: typeof m?.score === "number" ? m.score : NaN })));
+  return themesWire(main.map((m) => ({ score: typeof m?.score === "number" ? m.score : NaN, rps: typeof m?.rps === "number" ? m.rps : undefined })), rpsScope ?? null);
+}
+
+/**
+ * 成交额基线的数据源：本项目自己的 risk_snapshot 留档（P5 起的每日 /api/market/risk 响应存档）。
+ * 为什么不是别处：全 A 成交额是「逐只快照累加」的口径，只有这份留档与今日读数同源；
+ * 指数日K（腾讯/通达信）没有成交额列，拿它当基线等于换口径。留档不够 ⇒ 交 null，由接线层登记。
+ */
+const TURNOVER_ARCHIVE_ROWS = 40;
+
+export async function readTurnoverArchive(): Promise<TurnoverDayWire[]> {
+  const rows = await db.riskSnapshot.findMany({
+    orderBy: [{ computedAt: "desc" }, { id: "desc" }],
+    take: TURNOVER_ARCHIVE_ROWS,
+    select: { tradeDate: true, payload: true },
+  });
+  // 同一 tradeDate 可能有多次留档（同日多次真实计算）：按留档倒序取，每个交易日只认最近那一次
+  const byDate = new Map<string, TurnoverDayWire>();
+  for (const r of rows) {
+    let o: Record<string, unknown> | null = null;
+    try {
+      const v = JSON.parse(String(r.payload ?? "")) as unknown;
+      o = v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+    } catch {
+      o = null;
+    }
+    const ak = o?.amount_known;
+    const at = o?.amount_total_yi;
+    const wire: TurnoverDayWire = {
+      trade_date: typeof r.tradeDate === "string" ? r.tradeDate.slice(0, 10) : null,
+      amount_total_yi: typeof at === "number" && Number.isFinite(at) ? at : null,
+      // 旧留档没有这一格：null 表示「口径未确认」，接线层不会拿它进基线（不是 0 家）
+      amount_known: typeof ak === "number" && Number.isFinite(ak) ? ak : null,
+    };
+    const key = wire.trade_date ?? `__no_date_${byDate.size}`;
+    if (!byDate.has(key)) byDate.set(key, wire);
+  }
+  return [...byDate.values()].sort((a, b) => ((a.trade_date ?? "") < (b.trade_date ?? "") ? 1 : -1));
 }
 
 /**
@@ -83,7 +130,7 @@ export function themesWireOf(main: { score?: number }[] | null | undefined): The
  */
 export async function buildDecisionForSymbol(
   symbolRaw: string,
-  opts: { stale_after_days?: number; rsi_period?: number } = {},
+  opts: { stale_after_days?: number; rsi_period?: number; horizon?: Horizon } = {},
 ): Promise<DecisionView> {
   const subject = String(symbolRaw ?? "").trim().toUpperCase();
   const tradeDate = shanghaiDate();
@@ -160,7 +207,10 @@ export async function buildDecisionForSymbol(
   let themesArg: ThemesWire | null = null;
   try {
     const t = await discoverThemes();
-    themesArg = themesWireOf(t.main);
+    // RPS 口径原文就写在 themes 自报的 missing 里（"RPS=行业+概念合并榜内涨幅百分位（非全市场）"）：
+    // 换一个地方再抄一遍这句话迟早和上游漂移，所以直接从读数里取，取不到时由打分表登记「口径未声明」。
+    const rpsLine = t.missing.find((m) => m.startsWith("RPS=")) ?? null;
+    themesArg = themesWireOf(t.main, rpsLine);
     sources.push({
       id: "themes", label: "板块主线强度",
       detail: `${t.source.provider}｜主线 ${t.main.length} 个${t.missing.length ? `｜上游自报口径 ${t.missing.length} 条` : ""}`,
@@ -171,7 +221,29 @@ export async function buildDecisionForSymbol(
     sources.push({ id: "themes", label: "板块主线强度", detail: `取数抛错：${errText(e)}`, used: false, as_of: null });
     notes.push(`板块主线读取失败（${errText(e)}）：M-THEME 按缺失处理 —— 本层不会把「没读到」写成「当日未判出主线」，那是两个不同的事实`);
   }
-  const market = marketFromWiring(sentWire, themesArg);
+
+  // ---- 3b) 成交额基线：risk_snapshot 留档（M-TURNOVER 的均值只能来自这里，见 readTurnoverArchive 注释） ----
+  let priorTurnover: TurnoverDayWire[] | null = null;
+  try {
+    priorTurnover = await readTurnoverArchive();
+    const confirmed = priorTurnover.filter((d) => typeof d.amount_known === "number" && d.amount_known > 0).length;
+    sources.push({
+      id: "turnover-archive", label: "全 A 成交额留档（放量/缩量的基线）",
+      detail: `risk_snapshot 表（只读）｜不同交易日 ${priorTurnover.length} 天，其中成交额口径可确认 ${confirmed} 天`,
+      used: priorTurnover.length > 0,
+      as_of: priorTurnover[0]?.trade_date ?? null,
+    });
+  } catch (e) {
+    sources.push({ id: "turnover-archive", label: "全 A 成交额留档（放量/缩量的基线）", detail: `查询抛错：${errText(e)}`, used: false, as_of: null });
+    notes.push(`成交额留档读取失败（${errText(e)}）：M-TURNOVER 按缺失处理，本层不拿别处的成交额凑基线`);
+  }
+
+  const market = marketFromWiring(sentWire, themesArg, {
+    index_bars: (barsBySymbol.get(BASE_INDEX.symbol) ?? []).map((b) => ({ date: String(b.date), c: b.c })),
+    index_ma_window: INDEX_MA_WINDOW_DEFAULT,
+    prior_turnover: priorTurnover,
+    exclude_trade_date: tradeDate,
+  });
   notes.push(...market.notes);
 
   // ---- 4) 概率面：相似环境（口径序列＝基准指数，本层显式声明，不留给读者猜） ----
@@ -180,12 +252,15 @@ export async function buildDecisionForSymbol(
     .filter((b) => /^\d{4}-\d{2}-\d{2}$/.test(b.date) && Number.isFinite(b.c) && b.c > 0);
   const sim = indexBars.length >= SIMILAR_ENV_MIN_BARS ? similarReturnForward(indexBars) : null;
   if (!sim) notes.push(`${BASE_INDEX.label}的可用日K不足 ${SIMILAR_ENV_MIN_BARS} 根（本次 ${indexBars.length} 根）：相似环境无法计算，概率面按缺失处理`);
-  const prob = probabilityFromSimilarEnv(sim, { trade_date: indexBars.length ? indexBars[indexBars.length - 1].date : null });
+  const prob = probabilityFromSimilarEnv(sim, {
+    trade_date: indexBars.length ? indexBars[indexBars.length - 1].date : null,
+    primary_horizon: opts.horizon ?? PRIMARY_HORIZON_DEFAULT,
+  });
   notes.push(...prob.notes);
   sources.push({
     id: "similar-env", label: "历史概率（相似环境统计）",
     detail: sim
-      ? `${BASE_INDEX.label} ${BASE_INDEX.symbol}｜涨跌幅带宽 ${sim.band}pp｜样本 ${sim.sample_size}（sample_ok=${sim.sample_ok}）｜样本区间 ${sim.period ? `${sim.period.start}→${sim.period.end}` : "未给出"}`
+      ? `${BASE_INDEX.label} ${BASE_INDEX.symbol}｜打分周期 ${prob.input?.primary_horizon ?? "未声明"} 日｜涨跌幅带宽 ${sim.band}pp｜样本 ${sim.sample_size}（sample_ok=${sim.sample_ok}）｜样本区间 ${sim.period ? `${sim.period.start}→${sim.period.end}` : "未给出"}`
       : "本次无统计结果",
     used: !!sim,
     as_of: prob.input?.readings[0]?.trade_date ?? null,
@@ -257,12 +332,16 @@ export async function buildDecisionForSymbol(
       technical_bar_date: tech.bar_date,
       technical_bars: tech.bars_used,
       rsi_period: tech.input.rsi_period ?? 14,
+      volume_window: tech.input.volume_window ?? null,
+      prior_high_window: tech.input.prior_high_window ?? null,
       probability_scope: prob.notes[0] ?? "",
+      probability_horizon: prob.input?.primary_horizon ?? null,
       event_window: {
         start: eventStart, end: eventEnd,
         rows: eventRows?.length ?? 0, payload_broken: payloadBroken,
         stale_after_days: staleAfter,
       },
+      turnover_baseline_days: market.input.turnover?.window ?? null,
       notes,
     },
     sources,
