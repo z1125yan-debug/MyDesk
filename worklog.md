@@ -1006,3 +1006,66 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 
 奇门遁甲排盘算法（P7-⑨）、三栏右侧面板与回测异步轮询（P7-⑦之后）、可视化面板（已批准挂起）、把结论卡接进 AI 上下文、真实 Key 端到端复测。#89（外部开发文档更新）继续等待。按批准规范分两笔：代码 + 测试一条，本 worklog 条目一条。
 
+## P7 第七阶段 P7-⑦ 决策层 v3：撤销「上涨概率」范式，改综合评分 + 六档趋势等级（2026-09-21：内核四张表 + 五份测试升到 v3，本轮工作止于单元测试层）
+
+### 批准的三项口径（改动范围以这三条为准，没有扩边界）
+
+1. **每维先按本维极值归一到 ±100，再按 40 / 30 / 20 / 10 加权**。折算公式在 `decision-core.ts` 的 `normalizeScore(raw, b) = clamp(raw / max(|b.min|, b.max|) × 100, ±100)`；技术面与市场面各有单维限制 ±50（`DIMENSION_CLAMP`），先夹字面分再折算，夹取动作写进 `missing[]`（「夹取是任务书的规定，不是本层藏的口径」）。文本与页面上「字面分 / 本维极值 / 折算分 / 生效权重 / 分层」五格同屏，不给读者一个对不上任何表的数。
+2. **新表为主 + 旧表并入**：同一指标按新分法计分，旧分项不删不丢、降级为 `role:"basis"`（照常算、照常显示读数、不再计权，`rule_version` 停在 `p7.s3.*`）；新表没有这个指标的（中位涨跌幅、涨跌停净差、炸板率、主力净额、风险等级、主线数量）作为附加项继续计分。维度级版本升 `p7.s7.*`，每项各带自己的版本 —— 出处不能糊在一起。
+3. **盈亏比扩概率引擎算真实值**，不拿「支撑→阻力价位比」代替：`probability.ts` / `similar-env.ts` 在**同一次遍历、同一批相似日**里补 `avg_win / avg_loss / payoff_ratio / win_samples / loss_samples`（`r=0` 的持平日两侧都不进 ⇒ 两侧样本数之和可以小于 `sample_size`；某一侧 0 个样本 ⇒ `null` 而不是 0，「一次都没亏过」不等于「亏损幅度 0%」）。判据 ≥1.2 +10 / 0.8~1.2 0 / <0.8 −10，阈值线是本层补的，打 `SUPPLEMENT_MARKER`。
+
+### v3 四条硬规则（每条都有断言，不是注释里的愿望）
+
+- 缺数据 ≠ 0 分 ≠ 中性：`points=null` + 进 `missing[]`；整维算不出 ⇒ `score=null`，权重从分母里拿掉。
+- 没有规则的维度不参与加权（「有权重无规则」的维度一旦出现，页面就会有个追问不出处的数）。
+- 不产出「可信度 xx%」：全量文本里百分号只出现在带四要素（样本数量 / 时间范围 / 观察周期 / 数据来源）的历史概率读数中。
+- 本维没声明极值 ⇒ 无法折算 ⇒ 该维不进分母（`scoreBounds` 随之收窄，六档可达性 `attainable.unreachable_grades` 当场说清哪几档今天打不出来）。
+
+### 落点与分层（纯内核全部 `node --test` 直跑，无 `"use client"`、无 `@/`）
+
+- `decision-core.ts`（1145 行）：`DECISION_PROTOCOL_VERSION="p7.decision.v3"`、技术面 v3 表（T-MA-STRUCT 多头 +15 / 空头 −15、T-BREAKOUT ±10、T-MACD-CROSS +15/+8/−15、T-VOLUME、T-RSI；任务书未定义的组合本层补 0 并打标记）、主周期拆成 `P-SAMPLE / P-WINRATE / P-PAYOFF`（非主周期降 basis `P-{h}D`）、六档 `p7.s7.six.v1`、三段式 `decisionSections()` + `decisionToText()`、`attainable` 可达性自检。
+- `market-score-core.ts`（466 行）：10 条计分 + 2 条 basis，`MARKET_EXTREMES` ±50（表内字面极值实为 −57~+60 ⇒ 两侧都会触发夹取，夹取留痕有测试）。
+- `event-score-core.ts`（523 行）：计分项收拢成 `EV-LEVEL` 五档（±20，任务书原文），P7-③ 四条老分项（E-TILT / E-HIGH / E-SCOPE / E-SUBJECT）整体降 basis 且仍是 EV-LEVEL 的计算来源；`EVENT_EXTREMES` 从 ±25 改成 ±20（尺子必须跟计分档同步），±25 留成 `EVENT_LEGACY_EXTREMES` 只作对照。本维输入来自 AI 解释层 ⇒ 分项 `status` 一律 `AI_INTERPRETATION`，不冒充 REAL。
+- `decision-wiring-core.ts`（628 行）：`BASE_INDEX` 固定声明为 000001.SH（M-INDEX-PCT 不接受裸数字，上证 +0.5% 与创业板 +0.5% 在血缘里必须长得不一样）、`PRIMARY_HORIZON_DEFAULT=1` 且默认值本身记账、`INDEX_MA_WINDOW_DEFAULT=20`、`TURNOVER_MIN_PRIOR_DAYS=5`、`turnoverBaseline()`（未确认口径的留档天剔除并计数）、`themesWire()` 的 RPS **跟榜首那条走、不取 max**。
+- `decision-service.ts`（349 行）：真实读数 → MarketInput/EventInput 的映射 + 只读 `readTurnoverArchive()`（成交额基线只能来自本项目 `risk_snapshot` 留档）。`sentiment.ts` 补 `amount_known`：`amount_total_yi` 是 `?? 0` 累加出来的，一家都没抓到该字段时它同样是 0，而「今日全 A 成交 0 亿」是个结论，「这个数没读到」是另一回事。
+- `DecisionCard.tsx`（284 行）：六档 + 折算/字面同屏；basis 虚线框、缺读数写「【缺读数，不是 0 分】」；「计没计分」看的是 `norm_score`（字面分算得出来却没有尺子可折算 ⇒ 一律没进加权）。
+
+### 三处文案不诚实：在源码层修掉，不是改测试顺过去
+
+1. RPS 档「嘴上写 >80、手上按 ≥80 判」：任务书在 80 这个端点上同时给了「50–80」和「>80」，没交代正好 80 归谁。改 label/note 明写「≥80」+「80 这一端任务书两头都写了，本层按左闭归入强势档」，测试改为断言 10 分并检查措辞。
+2. `M-INDEX-PCT` 在「有名字没读数」时 raw 里丢了指数名 ⇒ 补回 `${label ?? symbol ?? "未命名指数"}（…）本次无涨跌幅读数`，保住 v2 那条「raw 里要看得出本来读的是哪条指数」的纪律。
+3. `decisionToText()` 的 basis 行把出处（`｜表 p7.s3.market.v1`）打两遍 ⇒ 改成出处固定放句尾一次。
+
+### 五份测试的 v2 → v3 升级（不删测试、不降断言，逐条在文件头写明「为何变」）
+
+方法：先在仓库外 `D:/Zai/p7-check/` 用只读探针量出 v3 的真实数字与文案原文，再据实写断言（不抄实现、不猜文案）。断言只增不减：新增「夹取留痕」「basis 不计权」「出处唯一性」「样本数存在性」「缺读数不是 0 分」「RPS 不取 max」等类。
+
+- `p7-decision.test.ts`（31 通过）：字面分→折算刻度、六档边界左闭右开、三段式与可达性、不产出可信度百分号。
+- `p7-market-score.test.ts`（18 通过）：STRONG 27 / WEAK −32、CEILFULL +50 与 DEEPWEAK −50 的夹取留痕、端到端 66.6 / 32.4（震荡偏强）/ 70.2、`scoreBounds` 随维度增减变化。
+- `p7-event-score.test.ts`（19 通过）：EV-LEVEL 五档 + 四条老分项降 basis、confidence 不参与计算、不被条数灌分、旧闻不计扰动。
+- `p7-payoff.test.ts`（7 通过，新增文件）：合成夹具只钉字段语义（哪些进盈利侧/亏损侧、缺一侧给什么），文件头明写「不是行情事实，不能当样本引用」；交替夹具的 19 个命中样本按 warmup 公式手算写在注释里，避免断言被当成从实现里抄的。
+- `p7-wiring.test.ts`（18 通过，完全重写到 v3）：全 A 成交额三条路 + 基线剔除未确认留档、指数均线窗口不足/脏行、四维齐全端到端 `[25,25,43,10]` 字面 → `[50,62.5,86,50]` 折算 → `final_score 61` / `偏强看多` / `attainable {−88.75,100,无打不出的档}`；只传技术面时 `final_score 50` 且三条 excluded 写明哪些维度没进分母。
+
+### 验收（全部当场重跑）
+
+- `npx tsc --noEmit` 退出码 **0**。
+- 五份 v3 测试合跑 **93 通过 / 0 失败**；全量 `tests/**/*.test.ts` = **555 tests / 546 pass / 0 fail / 9 skipped**（P7-⑥ 收尾基线 449/440/9 ⇒ **+106**，全部来自 P7-⑦：`p7-payoff.test.ts` 新增 + 四份 v2 测试件的 v3 断言扩充），既有测试未删、断言未降。
+- `npx eslint` 对本阶段全部改动文件：唯一一条 `react-hooks/set-state-in-effect` 在 `DecisionCard.tsx:55`，同一条语句在 HEAD 的第 47 行就已存在（本轮只挪了行号）⇒ **未新增告警**。
+- `git diff --stat -- package.json package-lock.json` = **0 行** ⇒ 未新增依赖。
+- 凭据自查：对 `git diff -U0` 与五份测试跑 `sk_[a-zA-Z0-9]{8,}|inceptionlabs|mercury-2|Bearer …` ⇒ 命中项全部是 `risk_snapshot` 里的 `sk_snapshot` 假阳性（已用排除式复核为 0），本轮未在文件/日志里读取或落地任何密钥。
+- 探针与只读脚本在仓库外 `D:/Zai/p7-check/`（`wire*.mts`），未入库；`git status` 只见本阶段的 12 个改动文件 + 1 个新测试。
+
+### 本轮的边界（必须说清）
+
+- 五份测试里的数字全部来自**合成夹具**（`2026-01-01 ~ 2026-01-07` 这类拼接 K 线、逐日涨跌幅序列），只用于钉规则表的语义，**不是行情事实、不能当样本引用**；`p7-wiring.test.ts` 里的行情片段同样是 fixture。
+- 服务层新读数（`readTurnoverArchive`）与结论卡六档渲染**尚未在 `next build` + `next start` 下复跑**，也没有跑过真实库的端到端决策快照 ⇒ 属 #109，本轮只到类型与单元测试层。真实模型链路接入评分（Agent 输出）与回测验证体系同样未做。
+- 未 commit，等分项报告确认。
+
+### 登记不修（本层观察，交用户定夺）
+
+1. 概率面口径边界不变：这一维量的是「上证相似环境下的历史后续」（`PROBABILITY_SCOPE_NOTE`），不是本标的的条件概率；主周期默认 1 日由接线层声明并记账。
+2. `probability_snapshot` 缺 `period` 列（旧账）：v3 的 `avg_win/avg_loss/payoff_ratio` 在 `similar-env.ts` 里声明为**可选**，回传到旧表/旧快照时缺格 = 没有读数，调用方不许读成 0。
+3. 事件面真实输入仍受 P6-B 影响：`event_interpretation` 真实库行数少 ⇒ 生产上 `EV-LEVEL` 常走 null（这一维权重被剔除），与「消息面平静」是两件事，页面必须看得见。
+4. 技术面 T-VOLUME 恒 DEGRADED 的历史待办仍在。
+5. 任务书未给事件面单维限制（±50 只写在技术面与市场面），本层不替它补一条限制。
+
