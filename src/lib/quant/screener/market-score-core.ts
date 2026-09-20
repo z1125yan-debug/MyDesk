@@ -8,10 +8,10 @@
 // `p7.taskbook.s6` 明确区分；有一条测试专门钉住这件事，防止将来有人以为 §六 里真有这张表。
 //
 // 输入取自哪里（全部是项目里已经在跑、已经有出处的真实读数，本层不取数、不补字段）：
-//   - 涨跌家数 / 中位涨跌幅 / 涨跌停家数 / 炸板率 / 主力净额 / 风险等级 / 指数涨跌幅 → sentiment.ts:15
-//     的 SentimentResult（全 A 快照 + 腾讯指数实时）；
-//   - 主线数量与榜首强度 → themes.ts:7 的 ThemeDiscovery（scoreTheme 的 0~100 综合分）。
-//   接线由后续阶段做（本阶段按用户约束只交付规则表 + 计算逻辑 + 测试，不动 UI、不动 prisma）。
+//   - 涨跌家数 / 中位涨跌幅 / 涨跌停家数 / 炸板率 / 主力净额 / 风险等级 / 指数涨跌幅 → sentiment.ts
+//     导出的 SentimentResult（全 A 快照 + 腾讯指数实时）；
+//   - 主线数量与榜首强度 → themes.ts 导出的 ThemeDiscovery（scoreTheme 的 0~100 综合分）。
+//   取数与接线在 P7-④ 由 decision-service.ts 做（映射判断在 decision-wiring-core.ts，那里可测）。
 //
 // 三条与 P7-① 同源的硬口径：
 //   1) **缺读数 = null，不是 0 分**。每个分项都收 `number | null`；null 分项不进求和、并且出现在
@@ -21,13 +21,13 @@
 //      引用概率是概率面的事。这也保证将来把结论文本喂给 agent-loop-core 的 probabilityCheck 时，
 //      不会因为市场面文案凭空要求 trade_date/sample/horizon 三项概率口径。
 //
-// 三个必须写下来的坑（都对应着本文件里的一条测试）：
-//   - 炸板率：sentiment.ts:86 在「今日触板数为 0」时给的是 null，并进了 s.missing。这是「算不出」，
-//     不是「0% 炸板」。调用方若把 null 换成 0，本层就会按最低档给 +2 分 ⇒ 脏数据变成结论。
-//   - 主力净额：sentiment.ts:83 是 `mainNetSum += m.mainNet ?? 0` 的累加，全 A 都没这个字段时也会得到 0。
+// 三个必须写下来的坑（都对应着本文件里的一条测试；引用上游时写表达式而不是行号，行号会随上游改动漂移）：
+//   - 炸板率：sentiment.ts 的 `breakRate = touched > 0 ? … : null` 在「今日触板数为 0」时给的是 null，
+//     并进了 s.missing。这是「算不出」，不是「0% 炸板」。调用方若把 null 换成 0，本层就会按最低档给 +2 分 ⇒ 脏数据变成结论。
+//   - 主力净额：sentiment.ts 的 `mainNetSum += m.mainNet ?? 0` 是这种累加，全 A 都没这个字段时也会得到 0。
 //     所以本层的 `main_net_sum_yi` 要调用方**确认过口径**再传，没确认就传 null；传 0 就等于宣称
 //     「今日全 A 主力净额 0 亿」，那是个结论，不是占位。
-//   - 风险等级：sentiment.ts:91-109 的 level 是由涨跌家数比、跌停家数、主力净额、中位涨跌幅、炸板率
+//   - 风险等级：sentiment.ts 的 level 段（triggers/worse）是由涨跌家数比、跌停家数、主力净额、中位涨跌幅、炸板率
 //     推出来的，与本表前几项**同源**。它进加权就是有意为之的重复计权（§七 把「风险模型」和「市场环境」
 //     一起摊进 market_score），但重复必须留痕：M-RISK 的 note 里明写同源，页面不得把它当独立证据。
 
@@ -218,7 +218,7 @@ export function marketItems(input: MarketInput): ScoreItem[] {
 
   // M-BREAK 炸板率
   if (!isNum(input.break_rate)) {
-    items.push(missingItem("M-BREAK", "炸板率", "炸板率无读数（引擎在当日触板数为 0 时返回 null）", "sentiment.ts:86 的 null 是「触板 0 家、比率无定义」，不是 0% 炸板；按 0% 计入会白送 +2 分"));
+    items.push(missingItem("M-BREAK", "炸板率", "炸板率无读数（引擎在当日触板数为 0 时返回 null）", "sentiment 里 breakRate 的 null 是「触板 0 家、比率无定义」，不是 0% 炸板；按 0% 计入会白送 +2 分"));
   } else if (input.break_rate < 0 || input.break_rate > 100) {
     items.push(missingItem("M-BREAK", "炸板率", `炸板率 ${n1(input.break_rate)}% 越出 0–100`, "越界读数一律不判定：脏数据不能变成一个分数"));
   } else {
@@ -227,7 +227,7 @@ export function marketItems(input: MarketInput): ScoreItem[] {
 
   // M-MAINFLOW 主力净额
   if (!isNum(input.main_net_sum_yi)) {
-    items.push(missingItem("M-MAINFLOW", "全 A 主力净额", "主力净额无可信读数", "sentiment.ts:83 是 `?? 0` 累加，字段全缺时也是 0；调用方未确认口径时传 null，本项就不判定而不是判成「0 亿」"));
+    items.push(missingItem("M-MAINFLOW", "全 A 主力净额", "主力净额无可信读数", "sentiment 里的 mainNetSum 是 `?? 0` 累加，字段全缺时也是 0；调用方未确认口径时传 null，本项就不判定而不是判成「0 亿」"));
   } else {
     items.push(hitItem("M-MAINFLOW", pickBand(MARKET_MAFLOW_BANDS, input.main_net_sum_yi)!, `全 A 主力净额 ${signed(n1(input.main_net_sum_yi))} 亿`));
   }
@@ -292,14 +292,17 @@ export function marketDimension(input: MarketInput): MarketDimensionResult {
 /** 直接喂给 buildDecision 的 external 入口（对齐 P7-① 的 ExternalDimension 契约，不做二次转换） */
 export function marketExternal(input: MarketInput): ExternalDimension {
   const d = marketDimension(input);
-  return { key: "market", score: d.score, rule_version: MARKET_RULE_VERSION, items: d.items, missing: d.missing, status: d.status };
+  // bounds 只给 decision-core 做「可达区间」对账用，不参与打分；不带它的话内核会把市场面按不建模算，
+  // 报出的区间比真实区间窄（P7-④ 接线时补上的这一格）。
+  return { key: "market", score: d.score, rule_version: MARKET_RULE_VERSION, items: d.items, missing: d.missing, status: d.status, bounds: MARKET_EXTREMES };
 }
 
 /**
  * 本表的极值：每条规则各取自己能给的最高/最低分（同组互斥档不会同时命中）。
- * 用途只有一个 —— 和 decision-core 的 `scoreBounds` 对账。后者按 P7-① 的口径只建模技术面与概率面
- * （它自己的注释就写了「不建模外部维度的极值，所以地板偏乐观」），所以四维齐全时
- * `Decision.attainable` 报出的区间**窄于**本层真实区间。这一点由测试钉成已知偏差，不冒充可达性结论。
+ * 用途有两个 —— ① 随 `marketExternal()` 的 `bounds` 交给 decision-core 的 `scoreBounds`，让
+ * `Decision.attainable` 报出**四维真实**区间（默认权重下 −33.6 ~ +41）；② 自证上下限真有一组输入打得到
+ * （CEILING/WEAK 两组读数在测试里就是干这件事的）。
+ * 注意它是「这张表能给几分」的账面极值，不是「今天市场能差到哪」的预测。
  */
 export const MARKET_EXTREMES: { min: number; max: number } = (() => {
   const groups: number[][] = [

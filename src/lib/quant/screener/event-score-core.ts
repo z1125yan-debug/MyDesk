@@ -338,11 +338,13 @@ export function eventDimension(input: EventInput): EventDimensionResult {
 /** 直接喂给 buildDecision 的 external 入口（对齐 ExternalDimension 契约） */
 export function eventExternal(input: EventInput): ExternalDimension {
   const d = eventDimension(input);
-  return { key: "event", score: d.score, rule_version: EVENT_RULE_VERSION, items: d.items, missing: d.missing, status: d.status };
+  // bounds 只用于 decision-core 的可达区间对账，不参与打分（见 market-score-core 同一格的理由）。
+  return { key: "event", score: d.score, rule_version: EVENT_RULE_VERSION, items: d.items, missing: d.missing, status: d.status, bounds: EVENT_EXTREMES };
 }
 
 /**
- * 本表的极值，用途同 MARKET_EXTREMES：与 decision-core 的 scoreBounds 对账。
+ * 本表的极值，用途同 MARKET_EXTREMES：随 `eventExternal()` 的 `bounds` 交给 decision-core 的
+ * `scoreBounds`，并自证 ±25 两端真有一组事件读数打得到（CEILING/FLOOR 两组 fixture）。
  * 事件面天然对称（±25）：四个分项都按「净差/倾向」取值，利多与利空走同一张表的两侧，
  * 所以不会出现市场面那种 +30 / −33 的不对称 —— 那一侧的不等来自风险等级只有看空方向才扣分。
  */

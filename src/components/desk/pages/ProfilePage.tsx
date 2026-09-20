@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Search } from "lucide-react";
 import Markdown from "../Markdown";
+import DecisionCard from "../DecisionCard";
 import { SourceBadge, PctText, NumText } from "../SourceBadge";
 import { useDesk } from "@/lib/desk/store";
 import { searchSymbols } from "@/lib/desk/market";
@@ -145,6 +146,9 @@ export default function ProfilePage() {
               以下数据块暂缺（不参与结论，不冒充实数）：{data.missing.join("；")}
             </div>
           )}
+
+          {/* 四维决策结论（P7-④）：独立取数，慢不阻塞下面的画像区块 */}
+          <DecisionCard symbol={data.symbol} />
 
           {/* 资金状态 */}
           <Section title="📊 资金状态" badge={data.blocks.trades?.source ?? data.blocks.fundflow?.source}>
