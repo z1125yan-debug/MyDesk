@@ -3,9 +3,12 @@
 import type { ScreenerCond, WinProbStats } from "@/lib/quant/factors/probability";
 import type { EventFact, EventInterpretation, summarizeInterpretations } from "@/lib/quant/screener/event-interpret-core";
 import type { EvidenceLine, ResearchReport, SourceProbe } from "@/lib/quant/screener/research-core";
+import type { DecisionView } from "@/lib/quant/screener/decision-wiring-core";
 import { MODE_TEXT, modeFromBasis } from "@/lib/quant/screener/incremental-core";
 
 export type { ScreenerCond, WinProbStats };
+/** P7-④ 结论卡响应契约：类型定义在纯接线内核里（服务端模块不能进客户端图） */
+export type { DecisionView };
 
 export interface FactorFieldDef {
   key: string;
@@ -1037,4 +1040,15 @@ export interface AgentToolsCatalogClient {
 export async function fetchAgentTools(): Promise<AgentApi<AgentToolsCatalogClient>> {
   const res = await fetch("/api/agent/tools");
   return agentJson<AgentToolsCatalogClient>(res);
+}
+
+/**
+ * GET /api/quant/decision?symbol= — P7-④ 四维决策结论（只读：不写库、不扫描、不调模型）。
+ * 失败时把服务端原文（含「为什么这一维没算进来」）抛给调用方显示，不静默回退成空结论。
+ */
+export async function fetchDecisionView(symbol: string): Promise<DecisionView> {
+  const res = await fetch(`/api/quant/decision?symbol=${encodeURIComponent(symbol)}`);
+  const j = (await res.json().catch(() => null)) as (DecisionView & { ok?: boolean; error?: string }) | null;
+  if (!res.ok || !j || j.ok !== true) throw new Error(j?.error || `决策结论获取失败（HTTP ${res.status}）`);
+  return j;
 }

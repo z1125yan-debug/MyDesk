@@ -11,6 +11,9 @@
 //    只有「读数存在、按表归入 0 分档」才是 0 分（这类项在 note 里都写明了是 0 而非 null）。
 // 2) 没有打分规则的维度不许参与加权。任务书 §六 只给了技术面规则，market_score / event_score
 //    只有 §七 的权重没有规则 ⇒ 本层不替它发明规则；调用方若自带规则版本，必须显式传 rule_version。
+//    P7-③ 补出了这两张自认规则的表（p7.s3.market.v1 / p7.s3.event.v1，前缀刻意不是 taskbook），
+//    P7-④ 接线后 RULE_VERSIONS 的两格不再是 null —— 但这条纪律本身没变：**空 rule_version 依旧等于没带规则**，
+//    调用方不传这一维仍然走「未计入」出口（有测试钉住），补表不等于给缺失数据兜底。
 // 3) 输出是「得分 + 分级」，不产出百分号形式的可信度。得分是规则加权的结果，不是「明天对的概率」；
 //    写成 72% 会直接撞上已提交的概率出处判据（agent-loop-core.ts 的 probabilityCheck：
 //    答案里出现「概率/胜率」就要求 trade_date/sample/horizon 三项口径）。概率要展示就单独展示原始口径。
@@ -24,18 +27,30 @@
 
 import type { DataStatus } from "./datastatus-core";
 
-/** 决策层输出契约版本：页面、AI 层与落库都引用它，避免新旧口径的结论卡混读 */
-export const DECISION_PROTOCOL_VERSION = "p7.decision.v1";
+/**
+ * 决策层输出契约版本。
+ * v1 → v2（P7-④）：① 市场/事件两维的规则版本不再是 null（P7-③ 补表后接线）；
+ * ② attainable 从「只建模技术+概率」变成按输入声明的外部维度极值一起算。
+ * 落库/页面上的旧 v1 结论卡不得按 v2 口径解读。
+ */
+export const DECISION_PROTOCOL_VERSION = "p7.decision.v2";
 
 /** 映射表出处：§七 原阈值作废 → 评审确认结论 §一·规格 A（A1）→ A1 的看跌线补丁（<−40 够不到，提到 <−30） */
 export const GRADE_MAPPING_VERSION = "p7.review.s1.A1.1";
 
-/** 打分规则版本表：null = 任务书里没有这张表 ⇒ 该维度按规则就不可算（与「本次没数据」是两件事） */
+/**
+ * 打分规则版本表。
+ * 市场/事件两格在 P7-① 里是 null —— 那时任务书 §六 确实没有这两张表，「有权重无规则」的维度
+ * 一旦参与加权，页面就会出现一个没人能追问出处的数。P7-③ 补出了两张自认出处的规则表
+ * （market-score-core.ts / event-score-core.ts，版本号前缀 `p7.s3.*` 而非 `p7.taskbook.*`），
+ * P7-④ 接线后这里不再是 null。字面量与两张表里的常量必须一致，由 p7-decision.test.ts 钉住
+ * （依赖方向保持「规则表 → 决策内核」，不让内核反向 import 规则表）。
+ */
 export const RULE_VERSIONS: Record<DimensionKey, string | null> = {
   technical: "p7.taskbook.s6",
   probability: "p7.taskbook.s5",
-  market: null,
-  event: null,
+  market: "p7.s3.market.v1",
+  event: "p7.s3.event.v1",
 };
 
 export type DimensionKey = "technical" | "probability" | "market" | "event";
@@ -199,7 +214,11 @@ export interface Decision {
   weights: { requested: Record<DimensionKey, number>; applied: Record<DimensionKey, number>; renormalized: boolean };
   /** 本次结论涉及的来源分层（REAL/DERIVED/HISTORICAL/AI_INTERPRETATION…），混层时页面要标出来 */
   layers: DataStatus[];
-  /** 打分表在当前权重下的得分可达区间（见 scoreBounds：现表下「看涨/看跌」两档不可达） */
+  /**
+   * 打分表在**本次生效权重**下的得分可达区间。参与加权的外部维度只有把规则表极值（`ExternalDimension.bounds`）
+   * 带进来才会被建模；没带进来的那些维不在区间里，basis 的可达性那句话会点名说它「区间比真实区间窄」。
+   * 四维全参与、§七 原权重下的参考区间是 −33.6 ~ +41（见 scoreBounds 的注释）。
+   */
   attainable: { min: number; max: number; unreachable_grades: string[] };
   sources: DecisionSource[];
   basis: string;
@@ -374,19 +393,30 @@ export interface ExternalDimension {
   items?: ScoreItem[];
   missing?: string[];
   status?: DataStatus;
+  /**
+   * 这张规则表能给出的最高/最低分（P7-③ 两个 core 里的 `*_EXTREMES`）。
+   * 只用于 `attainable` 的可达区间对账，**不参与任何打分**。不带它 ⇒ 本层不知道这一维能走多远，
+   * 区间就按不建模处理（宁可报窄并在 basis 里登记，也不猜一个极值把区间撑宽）。
+   */
+  bounds?: { min: number; max: number } | null;
 }
 
 function resolveExternal(key: "market" | "event", d: ExternalDimension | undefined, label: string, weight: number): DimensionResult {
   if (!d || !d.rule_version) {
     return {
       key, score: null, rule_version: null, items: [],
-      missing: [`${label}面在 P7 任务书 §六 里没有打分表（§七 却给了 ${n1(weight * 100)}/100 的权重）：本层不替它发明规则，整维度不计分、权重从分母里拿掉`],
+      missing: [`${label}面本次没有传入打分结果（§七 挂了 ${n1(weight * 100)}/100 的权重，§六 原本没有这张表、P7-③ 补出的规则表版本是 ${RULE_VERSIONS[key]}）：没有规则读数就不计分、权重从分母里拿掉，本层也不替它把「没算」写成 0 分`],
       status: "MISSING", weight_applied: 0,
     };
   }
+  const driftNote = d.rule_version !== RULE_VERSIONS[key]
+    ? `｜注意：本次传入的规则版本是「${d.rule_version}」，与内核登记的「${RULE_VERSIONS[key]}」不一致 —— 有一边过期了，这条结论的版本归属要重新核对`
+    : "";
   return {
     key: d.key, score: d.score, rule_version: d.rule_version, items: d.items ?? [],
-    missing: d.score === null ? [`${label}面自带规则「${d.rule_version}」，但本次没算出得分`] : (d.missing ?? []),
+    missing: d.score === null
+      ? [`${label}面自带规则「${d.rule_version}」，但本次没算出得分`]
+      : [...(d.missing ?? []), ...(driftNote ? [driftNote.slice(1)] : [])],
     status: d.score === null ? "MISSING" : (d.status ?? "DERIVED"), weight_applied: 0,
   };
 }
@@ -436,19 +466,35 @@ function probabilityExtremes(): { min: number; max: number } {
 
 /**
  * 当前打分表能把 final_score 推到哪。唯一用途是让「映射表里有档位永远出不来」变成可断言、
- * 可显示的事实。技术面极值 +55 / −35，概率面 +35 / −35，市场面与事件面在拿到规则之前不贡献分数：
- * 按任务书 §七 的 0.4/0.3 原权重是 **+32.5 ~ −24.5**；两维被重归一到 0.5714/0.4286 后是
- * **+46.4 ~ −35**；只剩技术面独占权重时是 **+55 ~ −35**。
- * A1 阈值把「看涨(≥30)」救活了，但「看跌(<−40)」仍不可达（地板 −35 够不到 −40），这个残留死档已上报，
- * 用户据此把看跌线提到 <−30（A1.1）⇒ 三种**真实**组合（技术独占 / 概率独占 / 技术+概率重归一）下五档全部可达，
- * 这一点由测试穷举断言钉住。DEFAULT_WEIGHTS 那一组是纸面情形（市场/事件面各自拿到规则并记 0 分才会出现），
- * scoreBounds 不建模外部维度的极值，所以它的地板会偏乐观——不代表真实可达性。
+ * 可显示的事实。
+ *
+ * 技术面极值 +55 / −35，概率面 +35 / −35，两者恒参与建模。市场面与事件面由调用方把各自规则表的
+ * 极值（`MARKET_EXTREMES` / `EVENT_EXTREMES`）通过第二个参数声明进来：
+ *   - 四维全参与、按 §七 原权重 0.4/0.3/0.2/0.1 ⇒ **−33.6 ~ +41**
+ *     （技术 55×0.4 + 概率 35×0.3 + 市场 30×0.2 + 事件 25×0.1 = 41；
+ *      技术 −35×0.4 + 概率 −35×0.3 + 市场 −33×0.2 + 事件 −25×0.1 = −33.6）；
+ *   - 不声明外部极值时本函数退回 P7-① 的两维口径（+32.5 ~ −24.5），报出的区间**偏窄**，
+ *     调用方必须自己说明为什么没带（buildDecision 会把它登记进 basis）。
+ * 历史说明：P7-① 时期这两维还没有规则表，所以本函数不建模它们；A1 的「看跌 <−40」在那套地板下
+ * 够不到，用户据此把线提到 <−30（A1.1）。现行表下五档全部可达，unreachable_grades 应为空——
+ * 一旦它非空，说明打分表或权重被动过，要回到评审重新拍板，不是在页面上加个兜底文案。
  */
-export function scoreBounds(weights: Record<DimensionKey, number> = DEFAULT_WEIGHTS): { min: number; max: number; unreachable_grades: string[] } {
+export function scoreBounds(
+  weights: Record<DimensionKey, number> = DEFAULT_WEIGHTS,
+  external: Partial<Record<"market" | "event", { min: number; max: number } | null | undefined>> = {},
+): { min: number; max: number; unreachable_grades: string[] } {
   const tech = technicalExtremes();
   const prob = probabilityExtremes();
-  const max = n1(tech.max * (weights.technical || 0) + prob.max * (weights.probability || 0));
-  const min = n1(tech.min * (weights.technical || 0) + prob.min * (weights.probability || 0));
+  let max = tech.max * (weights.technical || 0) + prob.max * (weights.probability || 0);
+  let min = tech.min * (weights.technical || 0) + prob.min * (weights.probability || 0);
+  for (const k of ["market", "event"] as const) {
+    const b = external[k];
+    if (!b) continue; // 没声明极值 = 不知道这一维能走多远，不猜
+    max += b.max * (weights[k] || 0);
+    min += b.min * (weights[k] || 0);
+  }
+  max = n1(max);
+  min = n1(min);
   const unreachable = GRADE_ORDER.filter((label) => {
     const g = GRADE_BANDS[label];
     const reachable = max >= g.min && (g.max === null ? true : min < g.max);
@@ -552,11 +598,26 @@ export function buildDecision(input: BuildDecisionInput): Decision {
   // 这正是必须每次重算、不能写死一张表的原因。
   const effWeights: Record<DimensionKey, number> = { technical: 0, probability: 0, market: 0, event: 0 };
   for (const d of includedDims) effWeights[d.key] = d.weight_applied;
-  const bounds = scoreBounds(includedDims.length ? effWeights : DEFAULT_WEIGHTS);
+  // 外部维度的极值只认「本次真的参与加权、且调用方把规则表的极值带过来了」的那几维。
+  // 没带就不是没有区间，而是本层不知道它能走多远 ⇒ 按不建模算，区间偏窄，并在 basis 里登记（不静默）。
+  const externalExtremes: Partial<Record<"market" | "event", { min: number; max: number }>> = {};
+  const unmodeled: ("market" | "event")[] = [];
+  for (const ext of input.external ?? []) {
+    if (!(effWeights[ext.key] > 0)) continue;
+    if (ext.bounds && Number.isFinite(ext.bounds.min) && Number.isFinite(ext.bounds.max)) {
+      externalExtremes[ext.key] = ext.bounds;
+    } else if (!unmodeled.includes(ext.key)) {
+      unmodeled.push(ext.key);
+    }
+  }
+  const bounds = scoreBounds(includedDims.length ? effWeights : DEFAULT_WEIGHTS, externalExtremes);
   const effText = DECISION_DIMENSIONS.filter((k) => effWeights[k] > 0).map((k) => `${DIMENSION_LABEL[k]} ${effWeights[k]}`).join("、");
+  const unmodeledNote = unmodeled.length
+    ? `；${unmodeled.map((k) => DIMENSION_LABEL[k]).join("、")}参与加权但没带规则表极值，本层不猜它能给几分 ⇒ 区间比真实区间窄`
+    : "";
   const attainingNote = includedDims.length === 0
     ? "没有任何维度参与加权，综合得分无区间可言"
-    : `按本次生效权重（${effText}）综合得分只能落在 ${bounds.min} ~ ${bounds.max}${bounds.unreachable_grades.length ? `，映射表里的「${bounds.unreachable_grades.join("、")}」在这个区间内永远打不出来（阈值现按评审 A1.1，出现这句说明打分表或权重被动过，需回到评审重新拍板）` : "，映射表五档全部可达"}；维度被剔除会让权重落到剩余维度上、区间随之变宽，所以同一个字面结论取决于有几维参与`;
+    : `按本次生效权重（${effText}）综合得分只能落在 ${bounds.min} ~ ${bounds.max}${bounds.unreachable_grades.length ? `，映射表里的「${bounds.unreachable_grades.join("、")}」在这个区间内永远打不出来（阈值现按评审 A1.1，出现这句说明打分表或权重被动过，需回到评审重新拍板）` : "，映射表五档全部可达"}；维度被剔除会让权重落到剩余维度上、区间随之变窄或变宽，所以同一个字面结论取决于有几维参与${unmodeledNote}`;
 
   return {
     protocol_version: DECISION_PROTOCOL_VERSION,

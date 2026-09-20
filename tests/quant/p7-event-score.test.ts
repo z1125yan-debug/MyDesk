@@ -83,17 +83,18 @@ const probHigh = (win_rate: number): ProbabilityInput => ({
   readings: [{ horizon: 1, win_rate, sample_size: 200, trade_date: REF, period: { start: "2024-08-06", end: "2026-08-20" } }],
 });
 
-test("P7-③ 出处：事件面版本号不是 taskbook 前缀，note 全带出处，且没有回头改 P7-① 的规则版本表", () => {
+test("P7-③ 出处：事件面版本号不是 taskbook 前缀，note 全带出处；P7-④ 接线后内核登记的仍是这张表", () => {
   assert.equal(EVENT_RULE_VERSION, "p7.s3.event.v1");
   assert.ok(!EVENT_RULE_VERSION.startsWith("p7.taskbook"), "本层的表标成任务书原文 = 给一个没人定过的分数找出处（市场面同一条纪律）");
-  assert.equal(RULE_VERSIONS.event, null, "decision-core 那一格必须仍是 null：任务书 §六 确实没有事件面打分表");
+  // P7-① 那一格是 null，因为那时没有这张表；现在内核登记的就是本表的版本号，前缀区分仍然成立。
+  assert.equal(RULE_VERSIONS.event, EVENT_RULE_VERSION);
   assert.match(EVENT_RULE_PROVENANCE, /非任务书原文/);
   for (const i of eventItems(BULLISH).items) {
     if (i.points !== null) assert.ok((i.note ?? "").includes(EVENT_RULE_PROVENANCE), `${i.rule} 的 note 没带出处声明`);
   }
   const bare = buildDecision({ external: [{ key: "event", score: 18, rule_version: "" }] });
   assert.equal(bare.included.includes("event"), false);
-  assert.match(bare.excluded.find((e) => e.key === "event")!.reason, /没有打分表|不替它发明规则/);
+  assert.match(bare.excluded.find((e) => e.key === "event")!.reason, /没有传入打分结果|不替它把「没算」写成 0 分/);
 });
 
 test("P7-③ 缺失三条路之一「算不出」：当日 0 条事件 ⇒ 四个分项全 null、score=null，不补一个 0 分的中性", () => {
@@ -132,11 +133,15 @@ test("P7-③ 值域自证：CEILING/FLOOR 真打到 ±25，事件面天然对称
   assert.equal(EVENT_EXTREMES.min, -EVENT_EXTREMES.max, "四个分项都是净差/倾向的双向档 ⇒ 不该出现市场面那种 ±不对称");
   const w = DEFAULT_WEIGHTS;
   assert.equal(Math.round(EVENT_EXTREMES.max * w.event * 100) / 100, 2.5, "事件面 10/100 权重下最多贡献 ±2.5，短期扰动就该是这个量级");
-  // 已知偏差：scoreBounds 只建模技术+概率（decision-core.ts:447 的注释自己写着「不建模外部维度」），
-  // 四维齐全时它给的区间比真实区间窄。本层不改它（约束 1），只把差值钉成断言。
+  // P7-④ 接线：极值随 eventExternal() 的 bounds 进内核后，四维区间就是 −33.6 ~ +41；
+  // 而**不带极值**时仍是两维口径的 32.5（差 8.5 分）。两个数都钉住，是为了让人一眼看出
+  // 「漏传 bounds」会静默把区间报窄，而不是让某个调用方拿两维区间当四维区间读。
   const b = scoreBounds(DEFAULT_WEIGHTS);
-  assert.equal(b.max, 32.5, "55×0.4 + 35×0.3：这是两维口径的上限");
-  assert.equal(Math.round((b.max + MARKET_EXTREMES.max * w.market + EVENT_EXTREMES.max * w.event) * 10) / 10, 41, "四维真实上限 41：读 attainable 当四维区间会低估 8.5 分");
+  assert.equal(b.max, 32.5, "55×0.4 + 35×0.3：这是不建模外部维度时的上限");
+  const four = scoreBounds(DEFAULT_WEIGHTS, { market: MARKET_EXTREMES, event: EVENT_EXTREMES });
+  assert.equal(four.max, 41, "四维真实上限：55×0.4 + 35×0.3 + 30×0.2 + 25×0.1");
+  assert.equal(four.min, -33.6, "四维真实地板：−35×0.4 − 35×0.3 − 33×0.2 − 25×0.1");
+  assert.equal(Math.round((b.max + MARKET_EXTREMES.max * w.market + EVENT_EXTREMES.max * w.event) * 10) / 10, 41, "两维口径与四维口径的差值恰好等于两张表极值的加权和");
 });
 
 test("P7-③ 防越界①：confidence 不参与计算 —— 同批事件换把握度分数一字不变，只在 raw 里回显", () => {
@@ -356,8 +361,12 @@ test("P7-③ 接进决策内核：事件面参与加权（缺市场面时重归�
   assert.match(subjectText, /事件影响：\+22 分（生效权重 100\/100/);
 });
 
-test("P7-③ 本阶段只交付规则表：不接 UI、不接服务层，P7-①/② 的文案一字未变", () => {
+test("P7-④ 接线后：不传 external 时事件面仍走「未计入」出口，且本层依旧不查库、不取时钟", () => {
   const d = buildDecision({});
-  assert.match(d.basis, /事件=无（本层不补规则）/, "decision-core 封版口径不改：接线属下一阶段");
+  assert.match(d.basis, /事件=p7\.s3\.event\.v1/, "口径行印的是 P7-③ 那张表的版本号（出处仍是 p7.s3.*，不是 taskbook）");
+  const ev = d.dimensions.find((x) => x.key === "event")!;
+  assert.equal(ev.rule_version, null, "没有传入读数 ⇒ 本层不替它把版本号填上，规则版本只能由调用方带进来");
+  assert.match(ev.missing.join(""), /没有传入打分结果/, "没传读数就还是未计入 —— 补表不等于给缺失数据兜底");
+  assert.equal(d.final_score, null, "四维一条都没传 ⇒ 依旧不给综合分，P7-① 的空输入出口一字未改");
   assert.equal(eventDimension(BULLISH).tally.total, 4, "本层只吃传入的事件数组：不查库、不取时钟（ref_date 由调用方给）");
 });

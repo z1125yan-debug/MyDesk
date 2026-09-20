@@ -4,7 +4,8 @@
 // 1) 出处要说清楚：本表不是任务书 §六 的原文 —— 规则版本、每条 note、断言三处都要看得出来；
 // 2) 缺失走三条路：算不出（null）/ 读数存在按表归 0 / 越界或枚举外的脏数据不判定，三者不得压成同一个数字；
 // 3) 值域要自证：MARKET_EXTREMES 的上下限必须真有一组输入打得到，并与 decision-core 的 scoreBounds 对得上账
-//    （后者按 P7-① 口径不建模外部维度 ⇒ 四维真实区间比它宽，这是已知偏差，钉成断言而不是靠猜）；
+//    （P7-④ 起 marketExternal() 会把本表极值随 ExternalDimension.bounds 交进内核 ⇒ 区间的 ± 端由本层声明，
+//     不再是「内核只建模两维」的已知偏差；这条对账从不等式升级为精确等式）；
 // 4) 文案不得出现「可信度 xx%」，出现的百分号只能属于真实读数（涨跌家数占比、涨跌幅、炸板率）。
 //
 // 测试里的输入全部是**合成读数**（用来验查表逻辑），不是任何一天的真实行情；这一点在各条断言里不冒充事实。
@@ -50,10 +51,12 @@ const probHigh = (win_rate: number): ProbabilityInput => ({
   readings: [{ horizon: 1, win_rate, sample_size: 200, trade_date: "2026-09-19", period: { start: "2024-08-06", end: "2026-08-20" } }],
 });
 
-test("P7-③ 出处：版本号不是 taskbook 前缀，每条 note 带出处，且没有回头改 P7-① 的规则版本表", () => {
+test("P7-③ 出处：版本号不是 taskbook 前缀，每条 note 带出处；P7-④ 接线后内核登记的仍是这张表", () => {
   assert.equal(MARKET_RULE_VERSION, "p7.s3.market.v1");
   assert.ok(!MARKET_RULE_VERSION.startsWith("p7.taskbook"), "把本层的表标成任务书原文 = 给一个没人定过的分数找出处");
-  assert.equal(RULE_VERSIONS.market, null, "decision-core 那一格必须仍是 null：它说的是「任务书里没有这张表」，本层补表不改写这个事实");
+  // P7-① 把这一格写成 null 是因为那时真的没有这张表；P7-③ 补表、P7-④ 接线后它等于本表的版本号。
+  // 「登记的是哪张表」与「这张表不是任务书原文」是两件事，后一件必须继续可断言。
+  assert.equal(RULE_VERSIONS.market, MARKET_RULE_VERSION);
   assert.match(MARKET_RULE_PROVENANCE, /非任务书原文/);
   for (const i of marketItems(STRONG)) {
     if (i.points !== null) assert.ok((i.note ?? "").includes(MARKET_RULE_PROVENANCE), `${i.rule} 的 note 没带出处声明`);
@@ -61,7 +64,7 @@ test("P7-③ 出处：版本号不是 taskbook 前缀，每条 note 带出处，
   // P7-① 的入口纪律不变：不带 rule_version 就等于没带规则 ⇒ 仍然未计入，不给 0 分
   const bare = buildDecision({ external: [{ key: "market", score: 22, rule_version: "" }] });
   assert.equal(bare.included.includes("market"), false);
-  assert.match(bare.excluded.find((e) => e.key === "market")!.reason, /没有打分表|不替它发明规则/);
+  assert.match(bare.excluded.find((e) => e.key === "market")!.reason, /没有传入打分结果|不替它把「没算」写成 0 分/);
 });
 
 test("P7-③ 全缺输入：八个分项全 null、整维度 score=null，理由进 missing[] 而不是补一个 0", () => {
@@ -99,11 +102,15 @@ test("P7-③ 值域自证：CEILING/WEAK 真的打到 MARKET_EXTREMES 两端，�
   const w = DEFAULT_WEIGHTS;
   assert.equal(Math.round(MARKET_EXTREMES.max * w.market * 100) / 100, 6, "市场面对综合得分的最大贡献 = 30×0.2");
   assert.equal(Math.round(MARKET_EXTREMES.min * w.market * 100) / 100, -6.6);
-  // 已知偏差：scoreBounds 只建模技术+概率（decision-core.ts:447 的注释自己写着「不建模外部维度」），
-  // 所以四维齐全时它给的区间比真实区间窄。本层不改它（约束 1），只把这个偏差钉成断言。
+  // P7-④ 接线后不再有「attainable 是两维口径」这个偏差：marketExternal() 会把本表的极值随
+  // ExternalDimension.bounds 一起交进内核，所以传了市场面的那次决策，区间上限就要等于
+  // 本表上限×生效权重 + 其余各维的上限。这里用**精确等式**替掉原来那条「会低估」的不等式。
   const b = buildDecision({ technical: fullTech, probability: probHigh(60), external: [marketExternal(WEAK)] });
-  assert.ok(b.attainable.max < MARKET_EXTREMES.max * w.market + 55 * w.technical + 35 * w.probability, "attainable 是两维口径，读它当四维区间会低估");
-  assert.ok(MARKET_EXTREMES.min * w.market <= -6, "市场面单独就能贡献 ≤ −6 ⇒ 四维下综合得分可以跌破 −30，「看跌」档自此不再依赖权重巧合才可达");
+  assert.deepEqual(b.weights.applied, { technical: 0.4444, probability: 0.3333, market: 0.2222, event: 0 });
+  // 42.8 = 55×0.4444 + 35×0.3333 + 30×0.2222；−34.6 = −35×0.4444 − 35×0.3333 − 33×0.2222
+  assert.deepEqual(b.attainable, { min: -34.6, max: 42.8, unreachable_grades: [] }, "市场面的 ± 极值已经进区间：P7-① 那套「上限 32.5」两维口径在这里不再出现");
+  assert.equal(b.dimensions.find((x) => x.key === "market")!.rule_version, MARKET_RULE_VERSION);
+  assert.ok(MARKET_EXTREMES.min * DEFAULT_WEIGHTS.market <= -6, "市场面单独就能贡献 ≤ −6 ⇒ 四维下综合得分可以跌破 −30，「看跌」档自此不再依赖权重巧合才可达");
   assert.equal(gradeForScore(-31), "看跌", "A1.1 的 <−30 判据（可达性核对用，不是本层新发明）");
 });
 
@@ -225,12 +232,14 @@ test("P7-③ 接进决策内核：市场面参与加权（22/100），并真的�
   const text = decisionToText(withMarket);
   assert.match(text, /市场环境：-33 分（生效权重 22\/100，分层 DERIVED）/);
   assert.match(text, /· 普跌（上涨占比 <25%） -6｜上涨 600 家 \/ 下跌 4500 家（占比 11\.8%）/, "分项归因与真实读数要出现在文本里");
-  assert.match(text, /未计入（不是 0 分，是没算）：\n  事件影响/, "没传事件面时仍走 P7-① 的「无规则」出口");
+  assert.match(text, /未计入（不是 0 分，是没算）：\n  事件影响/, "没传事件面时仍走未计入出口（理由文案变了，出口本身没变）");
   assert.ok(!/可信度\s*[:：]?\s*\d+(\.\d+)?%/.test(text));
 });
 
-test("P7-③ 本阶段只交付规则表：不传 external 时决策内核的文案一字未变", () => {
+test("P7-④ 接线后：不传 external 时内核仍走「未计入」出口，只是把该找的表指出来", () => {
   const d = buildDecision({});
-  assert.match(d.basis, /市场=无（本层不补规则）/, "P7-① 封版文案不改；接线属下一阶段（约束 3：本阶段不动 UI、不动 prisma）");
+  assert.match(d.basis, /市场=p7\.s3\.market\.v1/, "口径行印的是 P7-③ 那张表的版本号（出处仍是 p7.s3.*，不是 taskbook）");
+  assert.match(d.dimensions.find((x) => x.key === "market")!.missing.join(""), /没有传入打分结果/, "没传读数就还是未计入 —— 补表不等于给缺失数据兜底");
+  assert.equal(d.final_score, null, "四维一条都没传 ⇒ 依旧不给综合分，P7-① 的空输入出口一字未改");
   assert.equal(d.protocol_version, DECISION_PROTOCOL_VERSION);
 });

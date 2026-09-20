@@ -16,6 +16,10 @@ import {
   probabilityPointsFor, scoreBounds, technicalItems,
   type ProbabilityInput, type TechnicalInput,
 } from "../../src/lib/quant/screener/decision-core.ts";
+// P7-④ 接线后要拿两张规则表自己的版本号和极值来跟内核对账（依赖方向仍是 测试 → 两边，
+// 决策内核不 import 规则表，所以这里就是防止两边各写一份数字的唯一一道闸）。
+import { EVENT_EXTREMES, EVENT_RULE_VERSION } from "../../src/lib/quant/screener/event-score-core.ts";
+import { MARKET_EXTREMES, MARKET_RULE_VERSION } from "../../src/lib/quant/screener/market-score-core.ts";
 
 const fullTech: TechnicalInput = {
   ma5: 12, ma10: 11, ma20: 10, close: 12.5,
@@ -102,7 +106,8 @@ test("P7-① 缺规则的维度不进分母，权重按剩余维度重归一（�
   const d = buildDecision({ technical: fullTech, probability: prob([{ ...r1(60), horizon: 20 }]) });
   assert.deepEqual(d.included, ["technical", "probability"]);
   assert.deepEqual(d.excluded.map((e) => e.key).sort(), ["event", "market"]);
-  assert.match(d.excluded.find((e) => e.key === "market")!.reason, /没有打分表/);
+  assert.match(d.excluded.find((e) => e.key === "market")!.reason, /没有传入打分结果/, "P7-④ 后市场面有规则表了：这里未计入的理由是「本次没传读数」，不再是「没有这张表」");
+  assert.match(d.excluded.find((e) => e.key === "market")!.reason, /p7\.s3\.market\.v1/, "未计入的说明要把现行规则表版本一起报出来，读的人才知道该去找哪张表");
   assert.equal(d.weights.applied.technical, 0.5714, "生效权重取四位小数，页面按 n/100 显示，不做浮点等值断言");
   assert.equal(d.weights.applied.probability, 0.4286);
   assert.ok(Math.abs(d.weights.applied.technical + d.weights.applied.probability - 1) < 1e-9, "生效权重必须自和为 1，否则得分量纲会随缺失维度漂移");
@@ -110,12 +115,12 @@ test("P7-① 缺规则的维度不进分母，权重按剩余维度重归一（�
   // 技术 55 + 概率 20（20 日 ≥55%）⇒ 加权 55*(4/7)+20*(3/7) = 40
   assert.equal(d.final_score, 40, "55*0.5714 + 20*0.4286 = 31.43 + 8.57 = 40");
   assert.match(d.basis, /重归一为 技术结构 0\.5714、历史概率 0\.4286/);
-  assert.match(d.basis, /市场=无（本层不补规则） 事件=无（本层不补规则）/, "basis 里要能看到「这两维没有规则」这件事本身，而不是只看到它们没分");
+  assert.match(d.basis, /市场=p7\.s3\.market\.v1 事件=p7\.s3\.event\.v1/, "basis 里的规则版本要说清是哪张表；这两维本次未计入是「没传读数」，不是「没有规则」");
 });
 
 test("P7-① 外部维度必须自带规则版本才承认，否则同样是未计入（不给 0 分）", () => {
   const noRule = buildDecision({ technical: fullTech, external: [{ key: "market", score: null, rule_version: "" }] });
-  assert.deepEqual(noRule.excluded.map((e) => e.key).sort(), ["event", "market", "probability"], "rule_version 传空串等同于没带规则 ⇒ 仍然未计入");
+  assert.deepEqual(noRule.excluded.map((e) => e.key).sort(), ["event", "market", "probability"], "rule_version 传空串等同于没带规则 ⇒ 仍然未计入（P7-③ 补表之后这条纪律一字未改）");
   const withRule = buildDecision({
     technical: fullTech,
     external: [{ key: "market", score: 10, rule_version: "p7.market.v0-draft", status: "DERIVED" }],
@@ -123,6 +128,11 @@ test("P7-① 外部维度必须自带规则版本才承认，否则同样是未�
   assert.deepEqual(withRule.included, ["technical", "market"]);
   assert.equal(withRule.dimensions.find((x) => x.key === "market")!.rule_version, "p7.market.v0-draft");
   assert.ok(withRule.final_score !== null && withRule.final_score < TECH_MAX, "市场面参与后必须稀释技术面，说明它真进了加权");
+  // 版本漂移：传入的规则版本与内核登记的不一致 ⇒ 照常加权（分数是那张表算的，不撒谎），但必须留痕
+  const drift = withRule.dimensions.find((x) => x.key === "market")!.missing.join(" / ");
+  assert.match(drift, /p7\.market\.v0-draft/, "缺口里要点名是哪份版本传进来了");
+  assert.match(drift, /p7\.s3\.market\.v1/);
+  assert.match(drift, /不一致/);
 });
 
 test("P7-① 结论映射按评审 A1 + 看跌线补丁（A1.1）：五档左闭右开，§七 原阈值与 A1 的 −40 都已作废", () => {
@@ -150,8 +160,8 @@ test("P7-① 可达区间自检（A1.1）：任意真实生效权重组合下五
   const b = scoreBounds(DEFAULT_WEIGHTS);
   assert.equal(b.max, 32.5, "技术极值 55*0.4 + 概率极值 35*0.3");
   assert.equal(b.min, -24.5);
-  // 这一组是纸面情形：只有市场/事件面各自拿到规则并记 0 分才会用原权重，而 scoreBounds 不建模外部维度极值，
-  // 所以它给出的 −24.5 地板比真实可达性乐观；buildDecision 产出的生效权重必自和为 1，见下面的穷举。
+  // 这一组是**不声明外部极值**时的两维口径（P7-① 原样）：它给出的 −24.5 地板比四维真实可达性乐观，
+  // 所以它只能当「技术+概率」的区间读，不能当结论卡的区间读。声明极值后的四维区间见下一条测试。
   assert.deepEqual(b.unreachable_grades, ["看跌"], "地板 −24.5 够不到 −30 ⇒ 这个假想权重下看跌仍不可达（不代表真实组合）");
   // 只算技术+概率（市场/事件因缺规则被剔除、权重落到 0.571/0.429）时区间变宽 ⇒ 同一字面结论取决于参与维度数
   const onlyTwo = { technical: 0.4 / 0.7, probability: 0.3 / 0.7, market: 0, event: 0 };
@@ -181,6 +191,37 @@ test("P7-① 可达区间自检（A1.1）：任意真实生效权重组合下五
   assert.equal(scoreBounds(DEFAULT_WEIGHTS).max, 32.5, "同一份打分表、四维权重下的上限只有 32.5");
   assert.match(buildDecision({ technical: fullTech }).statement, /得分是规则加权的结果，不是概率/);
   assert.match(buildDecision({ technical: fullTech }).basis, /映射表五档全部可达/, "可达性结论要出现在默认视图的口径行里，而不是只活在测试断言里");
+});
+
+// P7-④ 接线：区间从「两维口径」升成「四维真实」。这条测试同时钉住三件事 ——
+// 内核登记的规则版本必须等于两张表自己的版本号（否则结论卡会印出一个没人定过的版本），
+// 外部维度把极值带进来时 attainable 才是 −33.6 ~ +41，以及**没带**时不得静默报窄。
+test("P7-④ 四维真实可达区间 −33.6 ~ +41：极值由调用方声明，没声明就在 basis 里登记「区间偏窄」", () => {
+  const four = scoreBounds(DEFAULT_WEIGHTS, { market: MARKET_EXTREMES, event: EVENT_EXTREMES });
+  assert.equal(four.max, 41, "55×0.4 + 35×0.3 + 30×0.2 + 25×0.1 = 41");
+  assert.equal(four.min, -33.6, "−35×0.4 − 35×0.3 − 33×0.2 − 25×0.1 = −33.6");
+  assert.deepEqual(four.unreachable_grades, [], "四维区间下五档仍然全部可达（A1.1 的承诺没被新维度破坏）");
+  assert.equal(RULE_VERSIONS.market, MARKET_RULE_VERSION, "内核写死的版本字符串必须与 market-score-core 一致");
+  assert.equal(RULE_VERSIONS.event, EVENT_RULE_VERSION);
+  assert.deepEqual(MARKET_EXTREMES, { min: -33, max: 30 });
+  assert.deepEqual(EVENT_EXTREMES, { min: -25, max: 25 });
+
+  const ext = (bounds: boolean) => ([
+    { key: "market" as const, score: 0, rule_version: MARKET_RULE_VERSION, status: "DERIVED" as const, ...(bounds ? { bounds: MARKET_EXTREMES } : {}) },
+    { key: "event" as const, score: 0, rule_version: EVENT_RULE_VERSION, status: "AI_INTERPRETATION" as const, ...(bounds ? { bounds: EVENT_EXTREMES } : {}) },
+  ]);
+  const wired = buildDecision({ technical: fullTech, probability: prob([r1(60)]), external: ext(true) });
+  assert.deepEqual(wired.included, ["technical", "probability", "market", "event"], "两张表都带 rule_version ⇒ 四维全参与，不再重归一");
+  assert.equal(wired.weights.renormalized, false);
+  assert.deepEqual(wired.attainable, { min: -33.6, max: 41, unreachable_grades: [] }, "结论卡上印的区间就是这一组，P7-① 的 32.5/−24.5 不再出现在四维场景");
+  assert.equal(wired.final_score, 23.5, "55×0.4 + 5×0.3 + 0×0.2 + 0×0.1");
+  // 极值只用于区间对账：带不带 bounds 不得改变 final_score / grade
+  const blind = buildDecision({ technical: fullTech, probability: prob([r1(60)]), external: ext(false) });
+  assert.equal(blind.final_score, wired.final_score, "bounds 不参与打分：漏传极值不能改变结论");
+  assert.equal(blind.grade, wired.grade);
+  assert.deepEqual(blind.attainable, { min: -24.5, max: 32.5, unreachable_grades: ["看跌"] }, "不声明极值 ⇒ 退回两维口径，区间偏窄");
+  assert.match(blind.basis, /市场环境、事件影响参与加权但没带规则表极值/, "窄区间必须自己承认，不能让读的人拿它当四维可达性");
+  assert.match(blind.basis, /区间比真实区间窄/);
 });
 
 test("P7-① B1 补分留痕：三处替任务书补的分数都带「本层补充，非原始任务书定义」标记", () => {
@@ -305,10 +346,13 @@ test("P7-① 冲突判定独立于维度归并：detectConflict 只看技术分�
   assert.equal(c.probability_win_rate, 10);
 });
 
-test("P7-① 规则版本表：市场/事件面在任务书里没有规则，这件事本身要可断言", () => {
-  assert.deepEqual(RULE_VERSIONS, { technical: "p7.taskbook.s6", probability: "p7.taskbook.s5", market: null, event: null });
+test("P7-① 规则版本表：四维都有版本了，但「不传读数仍然未计入」这条纪律一字未改", () => {
+  assert.deepEqual(RULE_VERSIONS, {
+    technical: "p7.taskbook.s6", probability: "p7.taskbook.s5",
+    market: "p7.s3.market.v1", event: "p7.s3.event.v1",
+  }, "技术/概率是任务书原文（p7.taskbook.*），市场/事件是 P7-③ 自认的表（p7.s3.*）：两种前缀不得混");
   const d = buildDecision({ technical: fullTech });
-  assert.equal(d.dimensions.find((x) => x.key === "market")!.rule_version, null);
-  assert.match(d.basis, /市场=无（本层不补规则）/);
+  assert.equal(d.dimensions.find((x) => x.key === "market")!.rule_version, null, "内核有版本 ≠ 本次有读数：没传进来仍是 null");
+  assert.match(d.basis, /市场=p7\.s3\.market\.v1/, "口径行里印的是现行规则表版本，接线后要能顺着它找到那张表");
   assert.match(d.basis, /区间口径：概率分档与技术分档一律左闭右开/);
 });
