@@ -1,6 +1,8 @@
 "use client";
 // 客户端行情取数：优先本地真实数据源（服务端直连腾讯/东财），失败时自动回退本机演示数据。
 import { buildQuote, buildCandles, buildRanking, buildDetail, autoLevels } from "./data";
+import { suffixOf } from "./intent-core";
+import type { SectorRef } from "./link-core";
 import type { Candle, QuoteCard, SectorRow, SectorDetail } from "./types";
 
 export interface SuggestItem {
@@ -17,6 +19,8 @@ export function isDemoSymbol(symbol: string): boolean {
 }
 
 // TradingView 品种格式 → MyDesk 格式：SSE:688825 → 688825.SH，SZSE:000001 → 000001.SZ，BSE:920819 → 920819.BJ
+// 显式带了交易所前缀的以前缀为准；裸 6 位代码补后缀走 intent-core 的唯一一份号段口径
+// （这里原来也自己抄了一份 `startsWith("6")→SH / [4892]→BJ`，把 5xxxxx 整个漏掉、又把 90xxxx 沪市 B 股算成北交所）。
 export function normalizeTradingViewSymbol(raw: string): string {
   const s = raw.trim().toUpperCase();
   const m = /^([A-Z]+)[:\-](\d{6})$/.exec(s);
@@ -25,11 +29,7 @@ export function normalizeTradingViewSymbol(raw: string): string {
     if (m[1] === "SZSE") return `${m[2]}.SZ`;
     if (m[1] === "BSE") return `${m[2]}.BJ`;
   }
-  if (/^\d{6}$/.test(s)) {
-    if (s.startsWith("6")) return `${s}.SH`;
-    if (/^[0-3]/.test(s)) return `${s}.SZ`;
-    if (/^[4892]/.test(s)) return `${s}.BJ`;
-  }
+  if (/^\d{6}$/.test(s)) return `${s}.${suffixOf(s)}`;
   return s;
 }
 
@@ -154,6 +154,25 @@ export async function fetchBoardRows(
   }
   const tab = kind === "region" ? "地域" : kind === "concept" ? "概念" : "行业";
   return { rows: buildRanking(tab, dir, 0), source: "demo" };
+}
+
+/**
+ * P7-⑧② 板块链接的白名单：对话正文里哪些板块名可以点。
+ * 走 SectorsPage 同一个 /api/market/sectors（点过去看到的就是这份榜单），失败时返回空数组 = 一个板块链接都不生成。
+ * 这里**故意不像 fetchBoardRows 那样回退演示数据**：白名单里的名字必须能在板块榜页真的找得到，
+ * 否则点一下就是一个查无此板块的页面——链接的可用性本身就是数据真实性的一部分。
+ */
+export async function fetchSectorRefs(): Promise<SectorRef[]> {
+  try {
+    const r = await fetch("/api/market/sectors", { cache: "no-store" });
+    const j = await r.json();
+    if (!r.ok || !j.ok) return [];
+    return (j.list ?? [])
+      .map((row: { code?: unknown; name?: unknown }) => ({ code: String(row.code ?? ""), name: String(row.name ?? "") }))
+      .filter((s: SectorRef) => /^BK\d+$/i.test(s.code) && s.name.length >= 2);
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchDetailFor(

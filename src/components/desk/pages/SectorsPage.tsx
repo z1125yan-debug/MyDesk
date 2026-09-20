@@ -1,7 +1,7 @@
 "use client";
 // 行业板块排行（P1-2，需求文档 三十四）：板块榜 + 点击展开成分股 + 跳个股画像
 // REAL_DATA_ONLY：现有封装取不到的列显式「暂无数据」，不做演示兜底。
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { LayoutGrid, Loader2, RefreshCw, X } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
 import { useDesk } from "@/lib/desk/store";
@@ -29,6 +29,7 @@ interface MemberRow {
 export default function SectorsPage() {
   const go = useDesk((s) => s.go);
   const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
+  const takeFocusSector = useDesk((s) => s.takeFocusSector);
 
   const [list, setList] = useState<SectorRow[] | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
@@ -39,28 +40,26 @@ export default function SectorsPage() {
   const [members, setMembers] = useState<MemberRow[] | null>(null);
   const [membersBusy, setMembersBusy] = useState(false);
   const [membersError, setMembersError] = useState("");
+  /**
+   * P7-⑧② 跳转联动的结算结果：从对话正文点板块名过来时，store 里留下一个待定位的 BK 代码（focusSector）。
+   * 这里只记「这一跳结算成了哪种」，用来把话说明白：展开了 / 本来就已展开 / 查无此板块 / 榜单没取到。
+   * 判「查无此板块」必须等榜单到手，否则等于把「这次没取到」说成「市面上不存在」。
+   */
+  const [jump, setJump] = useState<{
+    code: string;
+    outcome: "expanded" | "already" | "absent" | "no-list";
+    name?: string;
+    total?: number;
+    reason?: string;
+  } | null>(null);
 
-  const load = useCallback(async () => {
-    setBusy(true); setError("");
-    try {
-      const res = await fetch("/api/market/sectors");
-      const j = await res.json();
-      if (!res.ok || !j.ok) throw new Error(j.error || "板块榜获取失败");
-      setList(j.list ?? []);
-      setMissing(j.missing ?? []);
-      setAsOf(j.as_of ?? "");
-    } catch (e) {
-      setError(String((e as Error).message || e));
-      setList(null);
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  // 结算那一跳时要知道「这个板块此刻是不是已经开着」：那一刻还处在异步回调里，闭包中的 openBoard 是旧值。
+  // ref 只在 effect 里同步，不在渲染期写。
+  const openBoardRef = useRef(openBoard);
+  useEffect(() => { openBoardRef.current = openBoard; }, [openBoard]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const openMembers = async (code: string) => {
-    if (openBoard === code) { setOpenBoard(null); setMembers(null); return; }
+  // 展开某个板块的成分股（只负责「开」，「关」由行点击走 closeBoard：这样跳转侧不必知道现在开着谁）
+  const openMembers = useCallback(async (code: string) => {
     setOpenBoard(code); setMembers(null); setMembersError(""); setMembersBusy(true);
     try {
       const res = await fetch(`/api/market/sectors/${encodeURIComponent(code)}`);
@@ -73,10 +72,63 @@ export default function SectorsPage() {
     } finally {
       setMembersBusy(false);
     }
-  };
+  }, []);
+  const closeBoard = useCallback(() => { setOpenBoard(null); setMembers(null); }, []);
 
+  /**
+   * 结算递过来的那一跳：取一次即清（takeFocusSector），命中就展开成分股，查不到就只留一条提示——
+   * 不静默跳转，也不拿「上一个板块」的成分股顶数。
+   * rows 由调用方把手上那份榜单传进来：此刻 setList 还没提交，读 state 只会读到旧的。
+   */
+  const settleJump = useCallback((rows: SectorRow[] | null, reason: string) => {
+    const code = takeFocusSector();
+    if (!code) return;
+    if (!rows) { setJump({ code, outcome: "no-list", reason }); return; }
+    const hit = rows.find((b) => b.code.toUpperCase() === code.toUpperCase());
+    if (!hit) { setJump({ code, outcome: "absent", total: rows.length }); return; }
+    const wasOpen = openBoardRef.current === hit.code;
+    if (!wasOpen) void openMembers(hit.code);
+    setJump({ code, outcome: wasOpen ? "already" : "expanded", name: hit.name });
+  }, [openMembers, takeFocusSector]);
+
+  const load = useCallback(async () => {
+    setBusy(true); setError("");
+    try {
+      const res = await fetch("/api/market/sectors");
+      const j = await res.json();
+      if (!res.ok || !j.ok) throw new Error(j.error || "板块榜获取失败");
+      const rows = (j.list ?? []) as SectorRow[];
+      setList(rows);
+      setMissing(j.missing ?? []);
+      setAsOf(j.as_of ?? "");
+      // 榜单到手才结算这一跳（await 之后，不在 effect 体内同步改状态）
+      settleJump(rows, "");
+    } catch (e) {
+      const msg = String((e as Error).message || e);
+      setError(msg);
+      setList(null);
+      // 取不到也要交代：跳转不能无声消失，否则用户以为是页面坏了
+      settleJump(null, msg);
+    } finally {
+      setBusy(false);
+    }
+  }, [settleJump]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // 为什么只在这里结算、不给 store 加订阅：板块页是 `page === "sectors"` 才挂载的（AppShell 里条件渲染），
+  // 而带可点正文的两个入口（助手页、分析页小窗）都在别的页面上——点链接必然是「先切页、后挂载」，
+  // 挂载必然带上一次 load()，交接就在那里结算。哪天板块页改成常驻渲染、或本页上出现了对话面，
+  // 这里才需要补一个订阅；现在写订阅就是给不存在的场景写代码。
   const openProfile = (symbol: string) => { setFocusSymbol(symbol); go("profile"); };
   const boardName = list?.find((b) => b.code === openBoard)?.name ?? openBoard;
+
+  // 四种结算结果各说一句实话，写在页面上而不是只留在 console
+  const jumpNotice = !jump ? ""
+    : jump.outcome === "no-list" ? `想定位「${jump.code}」，但板块榜这次没取到${jump.reason ? `（${jump.reason}）` : ""}，未展开任何成分股`
+    : jump.outcome === "absent" ? `「${jump.code}」不在当前板块榜（共 ${jump.total ?? 0} 个板块）里，未展开成分股`
+    : jump.outcome === "already" ? `已定位到「${jump.name}」（${jump.code}）：该行本来就已展开，未重复开合`
+    : `已按对话里的链接展开「${jump.name}」（${jump.code}）的成分股`;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-4">
@@ -99,6 +151,15 @@ export default function SectorsPage() {
           暂无数据列（现有数据源封装不含该字段，拒绝演示兜底）：{missing.join("；")}。RPS 为榜单内涨幅百分位，非全市场口径。
         </div>
       )}
+      {/* P7-⑧②：从对话正文点板块名跳过来时把结果写明白（命中/已展开过/查无此板块/榜单没取到），不做静默跳转 */}
+      {jumpNotice && (
+        <div className="flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-[11px] text-sky-200">
+          <span className="flex-1">{jumpNotice}</span>
+          <button onClick={() => setJump(null)} aria-label="关闭跳转提示" className="text-muted-foreground hover:text-sky-300">
+            <X size={12} />
+          </button>
+        </div>
+      )}
 
       {list && (
         <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -115,7 +176,7 @@ export default function SectorsPage() {
                 <SectorBlock key={b.code} rank={i + 1} board={b}
                   expanded={openBoard === b.code}
                   busy={membersBusy} error={membersError} members={members}
-                  onToggle={() => openMembers(b.code)} onOpenProfile={openProfile} />
+                  onToggle={() => (openBoard === b.code ? closeBoard() : void openMembers(b.code))} onOpenProfile={openProfile} />
               ))}
             </tbody>
           </table>

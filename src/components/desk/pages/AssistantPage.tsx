@@ -17,6 +17,7 @@ import { isFollowUp, type ChatMessage, type ChatSession } from "@/lib/desk/chat-
 import { pickChatEndpoint } from "@/lib/desk/chat-stream-core";
 import { CHAT_MODES } from "@/lib/desk/modes";
 import { useChatSend, type SnapshotResult } from "@/lib/desk/use-chat";
+import { useDeskLinks } from "@/lib/desk/use-desk-links";
 import Markdown from "../Markdown";
 import SceneBadge from "../SceneBadge";
 import StepTimeline from "../StepTimeline";
@@ -114,6 +115,9 @@ export default function AssistantPage() {
   const [renameText, setRenameText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const takePendingAsk = useDesk((s) => s.takePendingAsk);
+  // P7-⑧②：正文里的 6 位代码 / 清单内板块名渲染成可点片段。板块白名单与跳转动作出自共用 hook
+  // （右下角小窗用的是同一份），这里只负责把它递给 Markdown。
+  const { sectors, openLink } = useDeskLinks();
 
   // 本轮快照：识别问题里的品种（关注品种兜底），带来源分层；追问则沿用会话已关联的标的
   const snapshot = useCallback(async (session: ChatSession, question: string): Promise<SnapshotResult | null> => {
@@ -289,7 +293,8 @@ export default function AssistantPage() {
                 <div className="w-full rounded-lg border border-border bg-background/70 px-4 py-3 text-[14.5px] leading-7">
                   {/* 场景徽章：这一轮按哪个场景答、依据哪个词、取了哪些数、什么没取，都在这条里 */}
                   <SceneBadge intent={m.intent} />
-                  <Markdown content={m.content} />
+                  {/* 正文里的代码/板块在对话链路里可点（P7-⑧②）：点代码切 K 线品种，点板块跳板块榜并展开 */}
+                  <Markdown content={m.content} sectors={sectors} onLink={openLink} />
                   {m.streaming && <span className="ml-0.5 inline-block h-4 w-[7px] translate-y-0.5 animate-pulse bg-sky-400" />}
                   <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming} />
                 </div>

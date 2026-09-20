@@ -53,10 +53,18 @@ interface DeskState {
    * 缺的只是「在哪一页发」——再给首页写一套 send() 就是本轮要避免的「两边各做一套」。
    */
   pendingAsk: string | null;
+  /**
+   * P7-⑧②：对话正文点了某个板块名之后，板块榜页要展开哪一块（存 BK 代码）。
+   * 一次性交接、不进 partialize：和 pendingAsk 同理，刷新后还替用户展开一块会莫名其妙。
+   */
+  focusSector: string | null;
 
   go: (p: PageKey) => void;
   toggleSidebar: () => void;
   setFocusSymbol: (s: string) => void;
+  /** 请板块榜页展开某个板块（跳页联动用），读完即清 */
+  setFocusSector: (code: string | null) => void;
+  takeFocusSector: () => string | null;
   setAssistantMode: (m: ChatMode) => void;
   addWatch: (w: WatchItem) => void;
   removeWatch: (symbol: string) => void;
@@ -144,10 +152,17 @@ export const useDesk = create<DeskState>()(
       frozenPools: [],
       assistantMode: "decision",
       pendingAsk: null,
+      focusSector: null,
 
       go: (p) => set({ page: p }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setFocusSymbol: (sym) => set({ focusSymbol: sym }),
+      setFocusSector: (code) => set({ focusSector: code }),
+      takeFocusSector: () => {
+        const code = get().focusSector;
+        if (code) set({ focusSector: null });
+        return code;
+      },
       setAssistantMode: (m) => set({ assistantMode: m }),
       addWatch: (w) => set((s) => (s.watchlist.some((x) => x.symbol === w.symbol) ? s : { watchlist: [w, ...s.watchlist] })),
       removeWatch: (sym) => set((s) => ({ watchlist: s.watchlist.filter((x) => x.symbol !== sym) })),
