@@ -809,3 +809,71 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 - **本部分没做**：服务层接线、UI、首页入口、`next build`/`next start` 实测（纯函数层无服务端运行时行为，接线那一步再按 §三十七 口径实测）、Key 相关任何操作（按用户指示「key 暂时不动」）。计划按 P7-①/② 同一规范分两个 commit：代码四个文件一条，本 worklog 条目一条。
 - **两条上报已回到用户手上并落定（2026-09-20 答复，记为本层的设计取舍留痕）**：① **接受**「风险面并入市场面 `M-RISK`、不再作为独立顶层维度」这一口径 —— 任务书 §四 列五类维度而 §七 只有四项权重，差额就按这个方式收口，代价是风险等级与涨跌家数/跌停家数/主力净额/中位涨跌幅/炸板率**同源**（`sentiment.ts` 一次 `computeSentiment` 算出来的），属有意重复计权，所以 `MARKET_RISK_NOTE` 与每条 note 都必须写着「不能当成独立证据」，页面与 AI 上下文引用时不得把 M-RISK 当成第 9 个独立信号；这条取舍自此固定，后续要拆回独立维度必须同时补 §七 的第五项权重并重新走评审。② `scoreBounds` 的四维真实区间修正（−33.6 ~ +41、去掉「看跌不可达」那句 `basis` 文案，改为按外部维度极值建模）**排进下一阶段修订 `decision-core`** —— 本层仍一行未改 P7-①，只用测试把差值钉住（市场面 `30×0.2/−33×0.2`、事件面 `±25×0.1`），修的时候必须一并处理「生效维度数不同 ⇒ 区间不同」这条已有逻辑，不许把 −33.6~+41 写成写死的常量。
 - **P7-③ 封版**：commit **`12bddb7`**（`feat(P7-③): market/event score rule tables as pure cores, missing never scored as 0`），逐路径 add 四个新文件、未用 `git add .`，`git show --stat` 确认本次提交只含 `market-score-core.ts`(+316)、`event-score-core.ts`(+358)、`p7-market-score.test.ts`(+236)、`p7-event-score.test.ts`(+363) = **+1273/−0**，不含本文件、不含 `decision-core.ts`/P7-② 三个文件/schema/UI；提交后 `git status --short` 只剩本文件。提交前重跑实测：`npx tsc --noEmit` 退出码 **0**、全量 `node --experimental-strip-types --test tests/quant/*.test.ts` = **411 tests / 402 pass / 0 fail / 9 skipped**、`git diff --cached --check` 干净、暂存新增行里凭证形态字面量（`sk_xxx` / `api_key` / `Bearer` / 服务商域名）**0 命中**。项目基线随之更新为 **411/402/9**（P7-② 封版是 379/370/9）。本条 hash 记录随之单独提交（`docs(worklog): P7-③ market/event score rule tables completed`）。**下一阶段候选**：① 按上面第 ② 条修订 `scoreBounds`；② 市场/事件接线（服务层把 `computeSentiment()` 与 `event_interpretation` 映射成两张表的输入）+ 结论卡 UI，届时需按 §三十七 口径在 `next build` + `next start` 下实测，并处理「用户 3010 实例仍跑 P6-D 构建」那条保留待办。
+
+## P7 第四阶段 P7-④ 接线（2026-09-20：真实读数 → 纯映射 → buildDecision → 结论卡上屏，三步已按批准的顺序做完）
+
+按批准的开工范围（`P7开发文档核对回复.txt` 第 2/3 条）只做三步：① `scoreBounds` 四维真实区间；② 服务层把 `computeSentiment()` / `discoverThemes()` / `event_interpretation` 映射成 `MarketInput` / `EventInput` 后调 `buildDecision`；③ 结论卡 UI 上屏。**本条写完后停住等确认，未自行 commit。**
+
+### 交付物（5 个新文件 + 9 个改动，223 插入 / 67 删除 只在改动侧）
+
+- 新增：`src/lib/quant/screener/decision-wiring-core.ts`（420 行，纯映射内核）、`src/lib/quant/screener/decision-service.ts`（270 行，取数层）、`src/app/api/quant/decision/route.ts`（47 行）、`src/components/desk/DecisionCard.tsx`（238 行）、`tests/quant/p7-wiring.test.ts`（317 行 / 16 条）。
+- 改动（`git diff --numstat` 原样）：`decision-core.ts` +81/−20、`market-score-core.ts` +18/−15、`event-score-core.ts` +4/−2、`sentiment.ts` +11/−1（**P0 文件，改动见下节单独上报**）、`quant-api.ts` +14/−0（客户端封装）、`ProfilePage.tsx` +4/−0（挂卡）、`p7-decision.test.ts` +53/−9、`p7-market-score.test.ts` +20/−11、`p7-event-score.test.ts` +18/−9（后两条的删除行见「测试口径变更」一节，不是放宽断言）。
+- **分层理由**：所有「把上游补出来的 0 还原成缺失」的判断都落在 `decision-wiring-core.ts`（无 DB、无 fetch、无时钟，`node --test` 直跑），`decision-service.ts` 只取数、拼装并如实登记取数过程。若把映射写在服务层，本层 16 条测试一条也钉不住。
+
+### ① `scoreBounds`：区间是算出来的，不是写死的常量
+
+- 第二条参数 `external` 接收调用方带进来的规则表极值（`MARKET_EXTREMES` / `EVENT_EXTREMES`，经 `ExternalDimension.bounds` 传递），默认权重下 **−33.6 ~ +41**（55×0.4 + 35×0.3 + 30×0.2 + 25×0.1 = 41；−35×0.4 − 35×0.3 − 33×0.2 − 25×0.1 = −33.6），`unreachable_grades` 实测为空 ⇒ 五档全部可达，P7-① 那句「看跌不可达」的 `basis` 文案随历史说明改写（保留「A1.1 是在两维地板下作的决定」这一事实，不抹掉评审留痕）。
+- **没带 `bounds` 不等于没有区间**：那一维按「不建模」处理，区间偏窄，并写进 `basis`（「××参与加权但没带规则表极值，本层不猜它能给几分 ⇒ 区间比真实区间窄」）——宁可报窄并登记，不猜一个极值把区间撑宽。
+- `RULE_VERSIONS.market/event` 由 `null` 变为 `p7.s3.market.v1` / `p7.s3.event.v1`，字面量一致性由测试钉住（依赖方向仍是「规则表 → 决策内核」，内核不反向 import 规则表）。**P7-① 的纪律没变**：空 `rule_version` 依旧走「未计入」出口，另有测试钉住；本次新增一条「传入版本与内核登记版本不一致 ⇒ `missing` 里登记漂移」的断言（20→21 条就是它）。`DECISION_PROTOCOL_VERSION` v1→v2，注释明写「落库/页面上的旧 v1 结论卡不得按 v2 口径解读」。
+
+### ② 接线：还原动作逐条有出处，不冒用「0」
+
+- `marketFromWiring`：`total === 0` 时中位涨跌幅按缺失（`0/0` 无定义）；`main_net_known` 为 0 或未确认 ⇒ 主力净额还原 `null`，note 直接点名 `mainNetSum += m.mainNet ?? 0` 这行写法；指数只认 `BASE_INDEX`，别的指数读数不进 `M-INDEX`（避免 raw 长得像有出处的上证指数）。
+- `technicalFromBars`：`atLast(series, t)` **按位置取最后一根、绝不回退**，防止上游 `lastValues` 那种「前面缺就往后找」的补位把 5 月结构当成今天结构；`bar_date !== trade_date` 时登记「这一维说的不是 2026-09-20 当天的结构」。
+- `probabilityFromSimilarEnv`：`notes[0]` 恒为口径声明（相似环境口径、描述大盘而非本标的条件胜率、换标的不影响这一维），页面上单独一行常驻，不折进可展开区。
+- `eventsFromInterpretations` / `interpretationWireFromRow`：`payload` 列为空或空白 ⇒ 判 `broken`（「解释内容没有落库，按缺失处理，不生成一条字段全空的读数」），本轮修的就是这个 —— 之前它会产出一个各字段全 null 的假读数参与统计；`relatesToSubject` 拿到空相关性清单 ⇒ `null`（本层不拿标题猜相关）。
+- 事件表**只读**：不触发扫描、不现场生成解释。`DECISION_EVENT_LIMIT = 200` 封顶并登记，条数不进分数（`E-TILT` 是归一化倾向）。
+- `DecisionView` / `DecisionSourceBadge` 契约放在纯内核（客户端不能 import 服务端模块），页面与服务层共用同一份字段名，防止两套口径漂移。
+
+### 本轮查出并修掉两个真实缺陷（另有一次我自己误判、已按事实纠正并回退）
+
+- **缺陷 A（route 参数）**：`Number(null) === 0` 使「没传 `stale_after_days`」被读成「传了 0」，事件窗口从 3 天被悄悄压成 0 天。改为 `optInt(raw, min, max)` 只接受真整数，注释里明写这个坑。实测：不传参 ⇒ `stale_after_days: 3`；传 `abc` ⇒ 忽略并回到 3；传 7 ⇒ 窗口起日 2026-09-13。
+- **缺陷 B（Prisma orderBy）**：事件查询写成两键对象 `{ asOf: "desc", publishedAt: "desc" }`，Prisma 6.19.3 直接抛 `Argument 'orderBy': Invalid value provided. Expected EventInterpretationOrderByWithRelationInput[], provided Object`，而该抛错被本层 `catch` 吞成「事件面本次未取到」——**症状像没数据，根因是查询压根没跑成**。改为数组 `[{asOf:"desc"},{publishedAt:"desc"}]`，并把真实报错原文与这条排查提示写进注释。
+- **误诊记录（如实留痕）**：缺陷 B 起初被我判成「Prisma 不允许对 String 列做 `gte/lte` 范围比较」，据此实现过 `windowDates()` 枚举日期 + 一条配套测试。用 prisma 直接复现拿到真实报错后回退到 `where: {asOf:{gte,lte}}`，**并删除 `windowDates`、其测试与其 import** —— 错误的判断不留在代码里当「防御」。
+
+### 测试口径变更（有删除行，逐条说明为什么不是放宽断言）
+
+`p7-market-score.test.ts` / `p7-event-score.test.ts` 里被替换掉的三类旧断言，都是 P7-③ 时为「本层不许改 P7-①」而钉的**已知偏差**，本阶段正是用户批准修那个偏差的时点：
+
+- `assert.equal(RULE_VERSIONS.market, null)` → `assert.equal(RULE_VERSIONS.market, MARKET_RULE_VERSION)`：断言对象从「内核没有这张表」变成「内核登记的就是这张表」，而「前缀不是 `p7.taskbook.*`、note 必须写明非任务书原文」这两条**原样保留**（补表不改写「任务书里没有这张表」这个事实）。
+- `assert.ok(b.attainable.max < …)`（不等式，意为「读 attainable 当四维区间会低估」）→ `assert.deepEqual(b.attainable, {min:-34.6, max:42.8, unreachable_grades:[]})`（精确等式，市场面极值已进区间，权重 0.4444/0.3333/0.2222）；不等号换成等号是**收紧**。
+- `assert.equal(b.max, 32.5)` 保留，但含义改注为「不建模外部维度时的上限」，并新增 `four.max === 41` / `four.min === -33.6` 两条 —— 两个数同时钉住，是为了让人看出「漏传 `bounds`」会静默把区间报窄。
+- 未计入出口的断言全部保留（`final_score === null`、`rule_version === null`、`/没有传入打分结果/`、`未计入（不是 0 分，是没算）`），只把文案匹配从「§六 没有打分表」改到新的「本次没有传入打分结果」，出口本身一字未改。
+
+### `sentiment.ts`（P0 文件）改动上报
+
+只加一个字段：`main_net_known: number`（全 A 快照里 `mainNet` 真实有值的家数）+ 对应累加处与自报缺口文案。目的只有一个：让下游能区分「今日主力净额 0 亿」与「这个数根本没读到」。未改任何既有计算、口径、返回值语义。`sentimentWireOf()` 在读不到该字段（旧版本）时传 `null` 表示「未确认口径」，由打分表还原成缺失。
+
+### 验收（全部当场重跑，真实数据）
+
+- `npx tsc --noEmit` 退出码 **0**；`p7-wiring.test.ts` **16/16**；全量 `tests/quant/*.test.ts` = **428 tests / 419 pass / 0 fail / 9 skipped**（P7-③ 封版 411/402/9，+17 = wiring 16 + decision 1）⇒ 无回归；既有测试**未删除、未降低强度**，只有下面「测试口径变更」一节逐条列出的三处替换（两处由不等式升级为精确等式、一处断言对象随批准修订而变），全部当场重跑通过。基线更新为 **428/419/9**。
+- `npx next build` 成功 + `npx next start -p 3014`（**隔离实例 + 仓库外副本库** `D:/Zai/p7-check/p74-smoke.db`，`DESK_SCHEDULER=0`）：真实库 `prisma/db/custom.db` 的 md5 实测前后均为 `9b98e11cedff742e1a077af3b767c0e2`（未被写）；用户的 3010 实例（PID 21208）未动；3014 两次自启（PID 55252 / 52952）已各自 `taskkill` 收尾，收尾后 `netstat` 复核 3014 无监听、3010 仍在、真实库 md5 复查仍是 `9b98e11cedff742e1a077af3b767c0e2`。
+- 事件面在生产库里没有真实数据（`event_interpretation` 实测 0 行），故**只在副本库**插入 2 行合成解读（`eventKey: smoke-1/smoke-2`，标题写明「【冒烟合成】…（非真实快讯）」）用于验证这条链路；验证完成后已删除（`{copy_db_before:2, deleted:2, copy_db_after:0}`），副本库在仓库外、不进 git。
+- curl 实测（以下数字都是当场原样输出，不是复述上一轮）：
+  - `GET /api/quant/decision?symbol=600519.SH` → `http=200`，`ok true | subject 600519.SH | name 贵州茅台 | as_of 2026-09-20 19:03:43 | trade_date 2026-09-20`；`final 0.1 中性`；`attainable {"min":-33.6,"max":41,"unreachable_grades":[]}`；`dims technical:-35(DEGRADED) probability:30(HISTORICAL) market:24(DERIVED) event:3(AI_INTERPRETATION)`；`weights requested=applied {0.4,0.3,0.2,0.1} renormalized:false`；`event_window {"start":"2026-09-17","end":"2026-09-20","rows":2,"payload_broken":0,"stale_after_days":3}`；`sources bars:600519.SH=REAL bars:000001.SH=REAL universe=REAL sentiment=REAL themes=REAL similar-env=REAL events=REAL`；`notes 6`。
+  - `?symbol=600519` → `http=400 {"ok":false,"error":"需要 symbol 参数，格式 600519.SH / 000001.SZ（本接口不猜交易所后缀）"}`。
+  - `?symbol=600519.SH&stale_after_days=abc` → `http=200`，窗口仍 3 天；`&stale_after_days=7` → 窗口起日 `2026-09-13`、`stale_after_days:7`。
+- **事件面为空时的生产路径也实测了**（把副本库里那 2 行合成解读删干净后重启 3014，此时 `event_interpretation` 与真实库同为 0 行）：`http=200 time=1.956s`，`event_window {"rows":0,"stale_after_days":3}`、`sources … events=MISSING`、`dims … event:null(MISSING,w=0)`、`excluded [{"key":"event","reason":"事件影响面自带规则「p7.s3.event.v1」，但本次没算出得分"}]`、`weights.applied {0.4444,0.3333,0.2222,0}`、`renormalized:true`、`attainable {"min":-34.6,"max":42.8}`、`layers ["DEGRADED","DERIVED","MISSING","HISTORICAL"]` ⇒ 缺的那一维是从分母里拿掉的，不是被记成 0 分。
+- 浏览器实机（`next start` 生产构建，ProfilePage）：真实渲染出「🧭 四维决策结论」——综合得分 `+0.1` 与「中性」均**不带百分号**、可达区间行 `-33.6 ~ 41`、四维各自展开（技术 5/6 项有分、概率 3/3 带样本 213/区间/读数所属日、市场 8/8 带读数所属日、事件 4/4 且分层 `AI_INTERPRETATION`）；`T-VOLUME` 显示 **「算不出」+【缺读数，不是 0 分】**，与 0 分档并排可见；每路来源 `REAL 已取到` / `MISSING 本次未取到`（指数作为标的时「全A快照（标的属性）」如实 MISSING：「当日快照里没有这只票」）；接线 6 条 notes、完整文字口径、免责声明均可展开且已核对内容。「重新取数」按钮实测发出第二次 `/api/quant/decision?symbol=600519.SH`（网络面板 6 条 fetch 里两条决策请求，均 200）。
+- 凭据自查（对全部 14 个新增/改动文件 + 本文件跑 `grep -E "sk_[A-Za-z0-9]{6,}|apikey|inceptionlabs|mercury-2"` 与 `"api_key|Bearer"`）：**代码与测试文件 0 命中**；唯一命中在本 worklog 的历史条目里，且是 `risk_snapshot` / `theme_snapshot` / `probability_snapshot` 这类表名撞上 `sk_` + 6 字母的模式（假阳性）。无任何密钥落地；本轮未读取、未搬运、未代填任何 Key（按用户指示「key 暂时不动」，上述实测全部走「AI 未配置」下的纯规则链路）。
+
+### 遗留观察（本层未修，交用户定夺）
+
+1. 技术面因 `T-VOLUME` 永远 `points=null`（§六 无成交量打分表）而**恒为 DEGRADED**，即使日K读数完整也一样 —— 是诚实的，但页面每次都带 ⚠ 行；是否把「无规则」与「有规则无读数」拆成两种 status，需回到评审。
+2. 真实库 `event_interpretation` 现有 0 行 ⇒ 生产上事件面目前是「本次未取到」（该路径已实测，见上一节最后一条），要它参与必须先有人点 Events 页的「AI 理解今日事件」；本层不会为了把结论凑完整而现场生成解释。
+3. 日K两路本次都走**腾讯兜底通道**（eltdx 网关未运行），已在 notes 里登记降级；主通道下的实测留待网关恢复。
+4. 3010 实例仍跑 P6-D 构建，而 `.next` 已被本次 build 覆盖 —— 需要用户点头才重启（沿用保留待办）。`probability_snapshot` 缺 `period` 列仍在待办里。
+
+### 本部分没做
+
+§2.2 会话持久化 / §2.3 SSE、§2.1 意图识别 + 场景提示词、§2.5 回测异步链、§2.7 三栏布局、§2.8 数据可视化面板（已按批准挂起）、§2.10 奇门遁甲；首页入口融合；把结论卡接进 AI 上下文（下一步做）。计划按 P7-①/②/③ 同一规范分两个 commit：代码文件一条，本 worklog 条目一条。
