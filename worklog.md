@@ -877,3 +877,56 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 ### 本部分没做
 
 §2.2 会话持久化 / §2.3 SSE、§2.1 意图识别 + 场景提示词、§2.5 回测异步链、§2.7 三栏布局、§2.8 数据可视化面板（已按批准挂起）、§2.10 奇门遁甲；首页入口融合；把结论卡接进 AI 上下文（下一步做）。计划按 P7-①/②/③ 同一规范分两个 commit：代码文件一条，本 worklog 条目一条。
+
+## P7 第五阶段 P7-⑤ 基础对话升级（2026-09-20：第一部分 = SSE 流式 / 步骤时间线 / Markdown 结构化 / 多轮上下文 / 会话持久化，五项按批准范围做完）
+
+### 范围（用户批准口径）
+
+只做这五件。智能分析、Agent 融合、可视化面板、回测、奇门遁甲本次全部搁置；#89（外部开发文档更新）继续等待。
+
+### 落点与分层（纯内核先行，界面只做展示）
+
+- 三个新纯内核（无 `"use client"`、可 `node --test` 直跑）：
+  - `src/lib/desk/chat-stream-core.ts`（305 行）：五类事件 `step/delta/warning/done/error` 的编解码 + `createSseScanner()`（跨 chunk 半截帧、`\r\n`、多行 `data:`、注释保活、`flush()` 取残帧）+ `parseUpstreamFrame()`（正文增量 / tool_calls 分片 / `[DONE]` / finish_reason / 坏帧一律不崩）+ `createToolCallAssembler()`（分片按 index 归并成可执行调用，缺 id 补稳定占位）+ `isEventStream` / `notStreamedWarning` / `stepLabelFor` / `stepDetailOf` / `stepsFromTrace`。
+  - `src/lib/desk/chat-core.ts`（322 行）：会话与消息形状、`migrateLegacyChats`、`splitWindow`（按轮裁、窗口必须以 user 开头，开头的助手孤儿消息丢掉）、`summarizeDropped`、`buildPromptMessages`（旧对话走 system，实时快照贴本轮新提问那条用户消息）、`trimDialog`（服务端兜底裁窗，**system 件永不静默丢**）、`applyEvent` / `settleRunningSteps` / `typewriterSlices`。
+  - `src/lib/desk/chat-stream-client.ts`（142 行）：`streamChat()` 消费 SSE + `playTypewriter()`。
+- 服务端不新建第二套对话后端：`/api/ai/chat` 的 `runToolLoop` **一份逻辑跑两种传输**（`stream:true` 或 `Accept: text/event-stream` 走 SSE，否则维持 `{content, trace, mode}` JSON，`emit` 换成空函数，判定与取数一字不差）；`/api/ai/proxy` 复用同一 SSE 骨架，但**只有 OpenAI 兼容协议有逐字能力**，Anthropic / Gemini 原生这一版仍整体返回。
+- 前端：`StepTimeline.tsx`（77 行）、`Markdown.tsx` 九类模块卡片（decision/fundamental/risk/action/capital/technical/event/market/note，先按 emoji 前缀再按关键词命中，认不出就落回普通标题）、`use-chat.ts`（227 行）、`store.ts` 会话升级（persist `version:2` + `migrate` 把旧 `chats[][]` 迁成 `sessions`，`partialize` 落盘前清 `streaming`，`MAX_SESSIONS=30` 按更新时间淘汰），两个页面接入。
+
+### 刻意钉住的三条诚实口径
+
+1. **「上游没流式」≠「本机在打字」**：上游返回非 event-stream 时发 `warning` 并带上真实 content-type，界面写「本机按整体结果展示」，不伪造逐字节奏。
+2. **旧对话压缩不冒充理解**：`summarizeDropped` 是忠实截断 + 标说话人 + 抬头声明「本机存档摘要，非实时数据；其中的价格、结论都属于当时」，不叫「总结」（真要摘要得再调模型，那是另一件事）。
+3. **中断不谎称完成**：没等到结束事件的步骤由 `settleRunningSteps` 标成「未收到该步骤的结束事件」；流没有 `[DONE]` 时发 warning「以上内容到此处为止，未补全」；配置错误在流式下走 `error` 事件而不是 400 JSON（头已经发出去了）。
+
+### 验收（全部当场重跑；本轮用「假上游 + 毫秒时间戳」把逐帧到达变成可观测事实）
+
+- `npx tsc --noEmit` 退出码 **0**；全量 `tests/quant/*.test.ts` = **449 tests / 440 pass / 0 fail / 9 skipped**（P7-④ 基线 428/419/9，+21 全部来自新增 `p7-chat.test.ts`：迁移与会话 4、窗口与压缩 4、追问判定 1、事件应用 3、SSE 编解码与扫描 3、上游帧解析与归并 2、步骤口径 2、标题与服务端兜底裁窗 2）⇒ 无回归；既有测试未删除、未降低强度。
+- `npx next build` ✓ Compiled successfully。隔离生产实例 = 仓库外副本库 `D:/Zai/p7-check/p7chat-3014.db` + `DESK_SCHEDULER=0` + `npx next start -p 3014`；真实库 `prisma/db/custom.db` 的 md5 本轮前后均为 `9b98e11cedff742e1a077af3b767c0e2`（未被写）；用户的 3010（PID 21208）未动。
+- `curl -N` 逐行打点（`date +%H:%M:%S.%3N`，20:55–20:56 当场原样输出）：
+  - `/api/ai/proxy`（SSE 假上游）：**10 个 data 帧落在 20:55:54.999 / 55.709 / 56.423 / 57.140 / 57.859 / 58.548 / 59.239 / 59.967 / 56:00.664 / done 20:56:01.373**，跨度 6.4s、间隔 ~700ms 恒定 ⇒ 确实是逐条流式，不是一次性返回完整文本（真实模型做不到这种恒定间隔，所以这里用假上游）。
+  - `/api/ai/chat`（工具环 + SSE）：`step{1,取最新快讯,running}` @20:56:28.493 → `step{1,ok,ms=162}` @20:56:28.631（**这一步取的是真实东财快讯**）→ 9 条 delta @28.678→34.356 → done @20:56:35.052 ⇒ 步骤先于正文，两者都逐帧到达。
+  - `/api/ai/proxy`（只回 JSON 的上游）：`warning`「上游未以 SSE 返回（content-type: application/json; charset=utf-8），本机按整体结果展示…」@20:56:46.291 → 单条完整 delta → done ⇒ 降级路径如实，不装逐字。
+  - 流式下配置缺失：`data: {"type":"error","data":{"message":"AI 未配置：请到「设置 → AI 接口」填写接口地址与模型"}}`，不是 400 JSON。
+- 多轮上下文：靠假上游日志里的「消息件数」序列 2→3→4→5 反推 —— +1 是价位校验触发的重生成、+2 才是新一轮用户回合 ⇒ 摘要件与快照不串轮。
+- 浏览器实机（生产构建 3014）：会话新建 / 切换 / 重命名 / 删除、打字机逐字、九类模块卡片、步骤时间线均实测到位。截图不可用（in-app browser 视口 hidden → `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`），视觉证据为 DOM 级。
+- **本轮实测的边界（必须说清）**：浏览器验收连的是本机假上游（`provider=ollama` 免 Key 口径，全程未读取、未搬运、未代填任何密钥），正文是脚本内置常量并在内容里自标「不构成任何行情事实」；只有 `market_news` 那一步取到真实东财快讯。**这不等于真实模型的回答质量已验收**，带真实 Key 的端到端复测留待用户点头（Key 按指示暂不动）。
+- lint：`npx eslint --fix` 只作用于两个 route 文件，移除 6 处未被启用的 `@typescript-eslint/no-explicit-any` disable 指令（含 HEAD 遗留 2 处），两文件现在 0 问题；全仓告警数未增加（既有基线 33 × `react-hooks/set-state-in-effect` + 2 × `react-hooks/refs`，均在我未改动的文件里）。
+- 凭据自查（对 14 个新增/改动文件跑 `sk_[A-Za-z0-9]{4,}|Bearer [A-Za-z0-9]{12,}|api[_-]?key["']?\s*[:=]\s*["'][A-Za-z0-9]{12,}|inceptionlabs|mercury-2|AKIA[0-9A-Z]{16}`）：**仅 1 处假阳性**（`quant-api.ts:1035` 的 `risk_level` / `side_effect` 字段名）。`apiKey` 出现处全是 `req.headers.get("x-ai-api-key")` 透传与 `Authorization: \`Bearer ${apiKey}\`` 模板，无任何字面量密钥落地。
+
+### 本阶段发现并修掉的缺陷
+
+- **窄屏没有会话入口**：会话列表原为 `hidden … md:flex`，<768px 时「新建 / 切换 / 删除」整套操作直接无入口 —— 而这正是本阶段要交付的能力。改为常显 `flex w-40 md:w-56`（窄屏收一点宽度，不换第二套控件），重建后 531px 视口实测可管会话。
+- **渲染期写 ref**：React 19 的 lint 规则不允许，且 store 本身就是可读的当前值 —— 删掉 `sessionsRef`，改为发送时 `useDesk.getState().sessions` 现取（顺带修掉「切换会话后仍用旧快照」的潜在错位）。
+- 测试件（仓库外、不入库）自身两处问题：假上游对**没有 `tools`** 的 `/api/ai/proxy` 也回了 tool_calls ⇒ 补 `wantsToolCall()` 判定；下游提前断开使假上游进程崩溃 ⇒ 补 `res.on("error")`。
+
+### 登记不修（本层观察，交用户定夺）
+
+1. 沿用 P7-④ 待办：`T-VOLUME` 恒 DEGRADED、`event_interpretation` 真实库 0 行、日K走腾讯兜底、`probability_snapshot` 缺 `period` 列、Key 暂不轮换。
+2. `/api/ai/chat` 非流式分支仍给上游发 `Accept: text/event-stream`（结果正确，只是白拿一份流式解析）。
+3. `AssistantWidget` 只在分析页挂载，其他页没有对话小窗入口（既有设计，本阶段未扩）。
+4. AiHomePage 的 `loadSentiment` 效应仍是既有 `set-state-in-effect` 告警，未为消警而动逻辑。
+
+### 本部分没做
+
+§2.1 意图识别 + 场景提示词、§2.5 回测异步链、§2.7 三栏布局、§2.8 数据可视化面板（已批准挂起）、§2.10 奇门遁甲；把结论卡接进 AI 上下文（下一步做）。按批准规范分两个 commit：代码文件一条，本 worklog 条目一条。
