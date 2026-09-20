@@ -4,6 +4,7 @@ import type { ScreenerCond, WinProbStats } from "@/lib/quant/factors/probability
 import type { EventFact, EventInterpretation, summarizeInterpretations } from "@/lib/quant/screener/event-interpret-core";
 import type { EvidenceLine, ResearchReport, SourceProbe } from "@/lib/quant/screener/research-core";
 import type { DecisionView } from "@/lib/quant/screener/decision-wiring-core";
+import type { IntentBadge, StepInfo } from "@/lib/desk/chat-core";
 import { MODE_TEXT, modeFromBasis } from "@/lib/quant/screener/incremental-core";
 
 export type { ScreenerCond, WinProbStats };
@@ -183,8 +184,14 @@ export interface AiChatTrace { name: string; args: Record<string, unknown>; ms: 
 export async function aiChatTools(
   ai: { provider: string; baseUrl: string; apiKey: string; model: string; proxy?: string },
   messages: { role: "user" | "assistant" | "system"; content: string }[],
-  opts?: { mode?: string; focusSymbol?: string; contextWindow?: number; timeoutMs?: number },
-): Promise<{ content: string; trace: AiChatTrace[] }> {
+  opts?: {
+    mode?: string; focusSymbol?: string; contextWindow?: number; timeoutMs?: number;
+    /** P7-⑥④：本机自选清单（服务端不读浏览器存档，自选股场景只能靠请求体里这份） */
+    watchlist?: { symbol: string; name?: string | null }[];
+    /** P7-⑥⑤：追问要沿用的标的与上一轮场景（都来自上一条助手消息的场景徽章，不是会话字段） */
+    sessionSymbol?: string | null; prevScene?: string | null;
+  },
+): Promise<{ content: string; trace: AiChatTrace[]; steps?: StepInfo[]; intent?: IntentBadge; warning?: string }> {
   const res = await fetch("/api/ai/chat", {
     method: "POST",
     headers: {
@@ -200,13 +207,23 @@ export async function aiChatTools(
       messages,
       mode: opts?.mode ?? "decision",
       focusSymbol: opts?.focusSymbol,
+      ...(opts?.sessionSymbol ? { sessionSymbol: opts.sessionSymbol } : {}),
+      ...(opts?.prevScene ? { prevScene: opts.prevScene } : {}),
       ...(opts?.contextWindow ? { contextWindow: opts.contextWindow } : {}),
+      ...(opts?.watchlist?.length ? { watchlist: opts.watchlist } : {}),
     }),
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 120_000),
   });
   const j = await res.json();
   if (!res.ok) throw new Error(j.error || `AI 请求失败（${res.status}）`);
-  return { content: j.content ?? "", trace: j.trace ?? [] };
+  return {
+    content: j.content ?? "",
+    trace: j.trace ?? [],
+    // P7-⑥⑤：非流式没有 step 事件可走，自动调度的步骤与场景徽章随 JSON 一起回，缺了就是界面上一片空白
+    ...(Array.isArray(j.steps) && j.steps.length ? { steps: j.steps as StepInfo[] } : {}),
+    ...(j.intent ? { intent: j.intent as IntentBadge } : {}),
+    ...(j.warning ? { warning: String(j.warning) } : {}),
+  };
 }
 
 // ---------- P1-1 候选池（服务端冻结 + 次日验证） ----------

@@ -19,6 +19,14 @@ export interface StepInfo {
   tool?: string;
   detail?: string;
   ms?: number | null;
+  /**
+   * P7-⑥④：这一步是「谁」要来的。
+   * prefetch＝系统按场景在提问前就替你取的（自动调度），model＝模型自己发起的工具调用。
+   * 必须分开：不说的话，用户会以为模型真的会自己取数，而某些服务商根本没有工具环。
+   */
+  source?: "prefetch" | "model";
+  /** 为什么要取这一步（自动调度带的理由原文，界面上要能看出「因为判成个股分析所以取快照」） */
+  reason?: string;
 }
 
 export interface ChatMessage {
@@ -28,12 +36,38 @@ export interface ChatMessage {
   ts: number;
   /** 回答附带的工作步骤（真实调用过哪些工具、耗时、状态） */
   steps?: StepInfo[];
+  /** P7-⑥⑤：本轮判到的场景（展示用，来自 done 事件；不是行情事实来源） */
+  intent?: IntentBadge;
   /** 这条消息生成时快照到的标的/价位/时刻：只作展示与追溯，不是行情事实来源 */
   context?: { stock?: string; price?: number | null; time?: string };
   /** 生成中：用于画光标 */
   streaming?: boolean;
   /** 流式/降级过程中如实登记的提示（例如「上游未流式，本机节奏展示」） */
   warning?: string;
+}
+
+/**
+ * 意图判定的展示件（不是 intent-core 的 Intent 本体）。
+ * 为什么不直接把 Intent 塞进消息：Intent 带着 question、symbols 等一堆过程字段，
+ * 存进 localStorage 会让会话存档越来越大，而且界面只需要「判成什么、凭什么、没取什么」。
+ * scene/symbolSource 用 string 而不是联合类型：纯展示层反向依赖判定层是多余的耦合。
+ */
+export interface IntentBadge {
+  scene: string;
+  label: string;
+  /** 命中的场景词：徽章要能说出「为什么判成这个场景」，判不出来就是空数组 */
+  hits: string[];
+  /** 同一句里还问到别的场景（模型需要自己补取数据时点名用） */
+  alternates?: string[];
+  symbol: string | null;
+  symbolSource: string;
+  /** 本轮是否沿用上一轮场景（追问） */
+  inherited: boolean;
+  followUp: boolean;
+  /** 本轮没预取的项与原因：界面上必须能看到「没取」而不是以为「取到了空」 */
+  skipped: string[];
+  /** 场景自动调度取到的真实数据块字数（0 = 本轮没注入数据） */
+  prefetchChars?: number;
 }
 
 export interface ChatSession {
@@ -48,8 +82,34 @@ export interface ChatSession {
   updatedAt: number;
 }
 
-/** 上下文窗口：保留最近 N 轮（一轮 = 一条用户消息 + 其后的助手消息） */
-export const DEFAULT_MAX_TURNS = 12;
+/**
+ * 上下文窗口：保留最近 N 轮（一轮 = 一条用户消息 + 其后的助手消息）。
+ * P7-⑥③ 从 12 提到 30：要支持「那这个股明天怎么看」「帮我回测一下刚才说的策略」这种连续追问，
+ * 12 轮在真实问答里三五分钟就见底，追问一多就变成「系统忘了前面问过什么」。
+ * 上限不是免费的：窗口越大越可能撞上游的上下文长度，所以超过字数预算时由 applyCharBudget 从最早一轮开始收缩，
+ * 并另起一条 system 件如实写明「本轮为控制长度少发了几轮」（见 buildPromptMessages）。
+ */
+export const DEFAULT_MAX_TURNS = 30;
+/** 窗口能设的最大值（服务端兜底裁窗用的是同一个数，两边不能各写一套） */
+export const MAX_TURNS_LIMIT = 30;
+
+/** 把外部传来的轮数收进 [1, MAX_TURNS_LIMIT]；非法值退回默认而不是 0（0 会让模型完全看不到上文） */
+export function clampTurns(n: unknown, fallback: number = DEFAULT_MAX_TURNS): number {
+  const v = typeof n === "number" ? Math.trunc(n) : Number(n);
+  if (!Number.isFinite(v) || v <= 0) return Math.min(fallback, MAX_TURNS_LIMIT);
+  return Math.min(MAX_TURNS_LIMIT, v);
+}
+
+/**
+ * 发给模型的一轮对话的字数预算（含压缩摘要、行情快照，以及调用方那份固定 system 提示词）。
+ *
+ * 说清楚这是什么、不是什么：这是**字符数**的粗护栏，不是 token 账。
+ * 本项目不能新增依赖，装不了各家的 tokenizer，而中文大致 1 字 ≈ 1 token，
+ * 所以按字符数收一个保守上限，宁可少带几轮历史，也不要让上游直接报上下文超长
+ * （超长是整问失败，用户只会看到「AI 调用失败」，比少带几轮更糟）。
+ * 收缩是整轮收缩并留痕（见 applyCharBudget），不是静默截断。
+ */
+export const DEFAULT_PROMPT_BUDGET_CHARS = 20_000;
 
 // ---------- id / 标题 ----------
 
@@ -100,6 +160,7 @@ export function normalizeMessage(m: Partial<ChatMessage> & { content?: string; r
     content: typeof m.content === "string" ? m.content : "",
     ts: typeof m.ts === "number" && isFinite(m.ts) ? m.ts : now,
     ...(m.steps?.length ? { steps: m.steps } : {}),
+    ...(m.intent ? { intent: m.intent } : {}),
     ...(m.context ? { context: m.context } : {}),
   };
 }
@@ -123,7 +184,7 @@ export function splitWindow(messages: ChatMessage[], maxTurns: number = DEFAULT_
     if (m.role === "user" || !turns.length) turns.push([m]);
     else turns[turns.length - 1].push(m);
   }
-  const keep = Math.max(1, Math.floor(maxTurns));
+  const keep = clampTurns(maxTurns);
   const keptTurns = turns.slice(-keep);
   const droppedTurns = turns.slice(0, Math.max(0, turns.length - keep));
   const dropped = droppedTurns.flat();
@@ -174,38 +235,220 @@ export type ChatRequestMessage = PromptPiece;
 /**
  * 组装发给模型的对话数组：窗口内原样 + 窗口外压缩摘要（system）+ 实时快照（贴本轮新提问那条用户消息）。
  * 快照贴用户消息而不是 system：轻量模型对靠后的用户消息遵循度更高（沿用 P6 的实测结论）。
+ * P7-⑥③：助手消息带上「那一轮取过哪些数」的记录（renderStepsLine）——连续追问要看得到上文的数据口径，
+ * 但必须标明是当时的记录，否则模型会把上一轮的快照当今天的行情引用。
  */
 export function buildPromptMessages(session: Pick<ChatSession, "messages">, opts: {
   maxTurns?: number;
   summary?: string | null;
   snapshot?: string | null;
   withSummary?: boolean;
+  /** 字数预算：超了就从最早一轮开始收缩（见 applyCharBudget），并如实告知模型少发了几轮 */
+  budgetChars?: number;
+  /**
+   * 调用方自己那份固定 system 提示词已经占掉的字数（各入口的 sysPrompt、服务端目录之类）。
+   * 预算必须把它算进去：只按对话部分算，等于以为留了余量其实没有，超长照样会被上游拒。
+   */
+  reservedChars?: number;
 } = {}): PromptPiece[] {
   const { sent, dropped } = splitWindow(session.messages.filter((m) => m.content.trim()), opts.maxTurns);
+  const summaryText = opts.withSummary === false ? "" : (opts.summary ?? summarizeDropped(dropped));
   const pieces: PromptPiece[] = [];
-  const summary = opts.withSummary === false ? "" : (opts.summary ?? summarizeDropped(dropped));
-  if (summary) pieces.push({ role: "system", content: summary });
-  const window = sent.map((m) => ({ role: m.role, content: m.content }) as PromptPiece);
+  if (summaryText) pieces.push({ role: "system", content: summaryText });
+  const window = sent.map((m) => ({
+    role: m.role,
+    content: m.role === "assistant" ? `${m.content}${renderStepsLine(m.steps)}` : m.content,
+  }) as PromptPiece);
   if (opts.snapshot) {
     // 快照只贴「本轮的新提问」，也就是窗口结尾那条用户消息。
     // 结尾是上一轮回答时（历史回看/补答场景）不能往旧提问或助手发言里塞行情，只能作为 system 附带。
     const last = window[window.length - 1];
-    if (last && last.role === "user") window[window.length - 1] = { ...last, content: `${last.content}\n\n${opts.snapshot}` };
-    else pieces.push({ role: "system", content: opts.snapshot });
+    if (last && last.role === "user") window[window.length - 1] = { ...last, content: `${last.content}\n\n${markSnapshot(opts.snapshot)}` };
+    else pieces.push({ role: "system", content: markSnapshot(opts.snapshot) });
   }
-  return [...pieces, ...window];
+  const merged = [...pieces, ...window];
+  if (!opts.budgetChars) return merged;
+  // 固定提示词先占掉一部分额度：剩下的才是对话能用的（至少留 1 字，别算成 0 把上文全砍光）
+  const reserved = Math.max(0, Math.trunc(opts.reservedChars ?? 0) || 0);
+  const room = Math.max(1, Math.trunc(opts.budgetChars) - reserved);
+  const budget = applyCharBudget(merged, room);
+  if (!budget.droppedTurns) return budget.pieces;
+  // 收缩必须留痕：不说的话，模型会以为自己看到的是完整上文，进而把「没提过」当成「没有这回事」。
+  // 这条留痕本身不再参与预算核算（它是几句固定说明）：为一句解释再多砍一轮，等于用省略来承认省略。
+  const note = `【上下文长度受限】整轮请求限 ${opts.budgetChars} 字（本入口固定提示词已占 ${reserved} 字），为满足预算，本会话最早的 ${budget.droppedTurns} 轮未发送（不是不存在）。回答涉及「之前说过什么」时，如摘要里没有就直说看不到，不要推断。`;
+  return [{ role: "system", content: note }, ...budget.pieces];
+}
+
+/**
+ * 把判定结果收成展示件（服务端在 done 事件与 JSON 响应里发的是这一份）。
+ * 参数写成结构而不是 import intent-core 的 Intent：chat-core 是更底下的一层，
+ * 反向依赖判定层就会形成循环（intent-core 本来就 import 这里）。
+ */
+export function intentBadgeOf(
+  i: {
+    scene: string; label: string; hits: string[]; alternates?: string[]; symbol: string | null;
+    symbolSource: string; inherited: boolean; followUp: boolean;
+  },
+  opts: { skipped?: string[]; prefetchChars?: number } = {}
+): IntentBadge {
+  return {
+    scene: i.scene,
+    label: i.label,
+    hits: [...(i.hits ?? [])],
+    ...(i.alternates?.length ? { alternates: [...i.alternates] } : {}),
+    symbol: i.symbol,
+    symbolSource: i.symbolSource,
+    inherited: i.inherited,
+    followUp: i.followUp,
+    skipped: [...(opts.skipped ?? [])],
+    ...(opts.prefetchChars ? { prefetchChars: opts.prefetchChars } : {}),
+  };
+}
+
+// ---------- 快照注入标记 ----------
+
+/**
+ * 客户端把实时行情贴在提问后面的标记。
+ * 为什么要写进字符串而不是只在字段里传：快照必须贴着用户消息才有遵循度（见上），
+ * 而服务端做意图识别时要把「用户自己打的那句话」摘出来，没有标记就只能猜哪段是行情。
+ */
+export const SNAPSHOT_MARK = "<<系统注入·实时行情快照>>";
+
+export function markSnapshot(snapshot: string): string {
+  return `${SNAPSHOT_MARK}\n${(snapshot ?? "").trim()}`;
+}
+
+/** 从一条用户消息里拆出「用户原话」与注入的快照（服务端意图识别用；没有标记时整条都是原话） */
+export function splitSnapshotMessage(content: string): { question: string; snapshot: string } {
+  const text = content ?? "";
+  const i = text.indexOf(SNAPSHOT_MARK);
+  if (i === -1) return { question: text.trim(), snapshot: "" };
+  return { question: text.slice(0, i).trim(), snapshot: text.slice(i + SNAPSHOT_MARK.length).trim() };
+}
+
+// ---------- 场景件注入（两个聊天端点共用一套插入位置） ----------
+
+/** 消息件的最小形状：chat-core 与 chat-stream-core 都按这个形状读写，不引第三方类型 */
+export interface ContextMsg {
+  role: string;
+  content: string;
+}
+
+/**
+ * 把「场景提示词 + 本轮自动取到的真实数据」插进要发给模型的消息数组。
+ *
+ * 位置是这条函数的全部意义，所以两个端点必须共用它：
+ *  - 场景提示词放在最前面（紧跟入口自己的那份 system），它管整轮口径，不该被后面的历史淹掉；
+ *  - 数据块放在最后一条用户提问**之前**。放在数组末尾等于「先看到回答任务、再补数据」，
+ *    某些上游会把尾巴上的 system 件当成无关说明忽略掉，那这笔预取就白做了。
+ * 空内容一律不插：一个空 system 件会把轻量模型的整轮口径带偏（这条在 use-chat 里已经吃过一次）。
+ * mk 由调用方给：两个端点的消息类型不同（一个带 tool_calls），这里不替它们造壳。
+ */
+export function injectSceneContext<T extends ContextMsg>(
+  messages: T[],
+  turn: { prompt?: string; block?: string },
+  mk: (role: "system", content: string) => T,
+): T[] {
+  const prompt = (turn.prompt ?? "").trim();
+  const block = (turn.block ?? "").trim();
+  const list = messages ?? [];
+  if (!prompt && !block) return list;
+  let at = list.length;          // 最后一条用户提问的下标（没有用户提问时插到末尾）
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]?.role === "user") { at = i; break; }
+  }
+  let sysEnd = 0;                // 开头那串 system 件的末尾：场景提示词接在它们后面
+  while (sysEnd < at && list[sysEnd]?.role === "system") sysEnd++;
+  const out = [...list];
+  // 先插靠后的那个，前面的下标才不会因为插入而错位
+  if (block) out.splice(at, 0, mk("system", block));
+  if (prompt) out.splice(sysEnd, 0, mk("system", prompt));
+  return out;
+}
+
+// ---------- 工具调用历史 → 上文 ----------
+
+const STEP_STATUS_WORD: Record<StepInfo["status"], string> = {
+  ok: "已取到", running: "未结束", missing: "缺数据", error: "取数失败",
+};
+
+/** 最多列几步：追问时模型需要知道上文取过什么，不需要一份完整调用日志 */
+const STEPS_LINE_MAX = 8;
+
+/**
+ * 把一轮的取数步骤并成一行，拼在当时的助手回答后面发给模型。
+ * 两个措辞是硬要求：标明「当时的记录」，并且缺数据要说缺 ——
+ * 不然模型会拿上一轮的快照当今天行情引用，或者把 missing 那步当成取到了 0。
+ */
+export function renderStepsLine(steps?: StepInfo[]): string {
+  const done = (steps ?? []).filter((s) => s && s.status !== "running");
+  if (!done.length) return "";
+  const parts = done.slice(0, STEPS_LINE_MAX).map((s) => `${s.tool ?? s.label}=${STEP_STATUS_WORD[s.status] ?? s.status}`);
+  const more = done.length > STEPS_LINE_MAX ? `；另有 ${done.length - STEPS_LINE_MAX} 步未列出` : "";
+  return `\n\n〔上一轮系统取数记录（当时的真实调用，非实时，不得当今日行情引用）：${parts.join("、")}${more}〕`;
+}
+
+// ---------- 字数预算 ----------
+
+export interface BudgetResult {
+  pieces: PromptPiece[];
+  /** 因预算被收缩掉的轮数（0 = 没收缩） */
+  droppedTurns: number;
+  /** 收缩后的总字数 */
+  chars: number;
+}
+
+function pieceChars(pieces: PromptPiece[]): number {
+  return pieces.reduce((n, p) => n + p.content.length, 0);
+}
+
+/**
+ * 字数预算：从最早一轮开始整轮收缩，至少保留最后一轮。
+ * 规则说清楚三件事：
+ *  - system 件（压缩摘要、快照说明、收缩留痕）永不丢 —— 丢了就等于「压缩白做 + 模型不知道少发了」；
+ *  - 按轮丢而不是按条丢：只丢用户消息会留下一条没有提问的回答，模型会当成用户在继续说别人的话；
+ *  - 最后一轮一定保留，哪怕它自己就超预算（那说明该收缩的是单条长度，不是砍掉用户当前问题）。
+ */
+export function applyCharBudget(pieces: PromptPiece[], budgetChars: number): BudgetResult {
+  const budget = Math.max(1, Math.trunc(budgetChars) || 1);
+  const head: PromptPiece[] = [];
+  const dialog: PromptPiece[] = [];
+  for (const p of pieces) (p.role === "system" ? head : dialog).push(p);
+
+  // 对话件按「用户消息起头」分组 = 一轮
+  const turns: PromptPiece[][] = [];
+  for (const p of dialog) {
+    if (p.role === "user" || !turns.length) turns.push([p]);
+    else turns[turns.length - 1].push(p);
+  }
+  let droppedTurns = 0;
+  const flat = () => [...head, ...turns.flat()];
+  while (turns.length > 1 && pieceChars(flat()) > budget) { turns.shift(); droppedTurns++; }
+  const out = flat();
+  return { pieces: out, droppedTurns, chars: pieceChars(out) };
 }
 
 /**
  * 服务端兜底裁窗：只从最早的「用户 / 助手」消息开始丢，system 件（压缩摘要、快照说明）一律保留。
  * 为什么不是 slice(-n)：那样先被挤掉的正是开头那条摘要，等于把上面的上下文压缩白做一遍。
+ *
+ * 裁完还要把开头的非 user 件再丢一轮（和 splitWindow 同一口径）：服务端按「轮数 ×2」兜底时，
+ * 条数对齐只是近似——本轮新提问是多出来的那一条，边界会正好落在某一问与某一答之间，
+ * 于是窗口可能以助手消息起头，模型会把上文当成自己在说话、接着往下编。
+ * 生产实测里这一条是真出现过的：40 轮 + contextWindow=30 打 /api/ai/chat，
+ * 上游收到的第一条对话消息是「第11答」（助手）。
+ * 只剩一条时不再丢：宁可窗口开头是助手，也不能把上文清空（清空等于这轮没有上下文）。
  */
 export function trimDialog<T extends { role: string }>(messages: T[], maxDialogMessages: number): T[] {
   const keep = Math.max(1, Math.floor(maxDialogMessages));
   const dialogIdx: number[] = [];
   messages.forEach((m, i) => { if (m.role !== "system") dialogIdx.push(i); });
-  const drop = new Set(dialogIdx.slice(0, Math.max(0, dialogIdx.length - keep)));
-  return messages.filter((_, i) => !drop.has(i));
+  let kept = dialogIdx.slice(Math.max(0, dialogIdx.length - keep));
+  const firstUser = kept.findIndex((i) => messages[i].role === "user");
+  // 一个 user 都没有（整窗都是助手/tool 回执）时不动：宁可开头别扭，也不能把上文清空
+  if (firstUser > 0) kept = kept.slice(firstUser);
+  const keepSet = new Set(kept);
+  return messages.filter((m, i) => m.role === "system" || keepSet.has(i));
 }
 
 // ---------- 追问识别 ----------
@@ -234,7 +477,7 @@ export type AppliedEvent =
   | { type: "step"; data: StepInfo }
   | { type: "delta"; data: { content: string } }
   | { type: "warning"; data: { text: string } }
-  | { type: "done"; data?: { fullText?: string } }
+  | { type: "done"; data?: { fullText?: string; intent?: IntentBadge } }
   | { type: "error"; data: { message: string } };
 
 /** 把一条流事件并入助手消息草稿；同一 step 序号的重复事件按「后到的覆盖状态」处理 */
@@ -252,7 +495,13 @@ export function applyEvent(msg: ChatMessage, ev: AppliedEvent): ChatMessage {
     case "warning":
       return { ...msg, warning: [msg.warning, ev.data?.text].filter(Boolean).join("；") };
     case "done":
-      return { ...msg, streaming: false, ...(ev.data?.fullText ? { content: ev.data.fullText } : {}) };
+      return {
+        ...msg,
+        streaming: false,
+        ...(ev.data?.fullText ? { content: ev.data.fullText } : {}),
+        // 场景徽章只在服务端真的回了的时候记；没有就不留空壳，否则界面会画一个「按通用问答处理」的假徽章
+        ...(ev.data?.intent ? { intent: ev.data.intent } : {}),
+      };
     case "error":
       return {
         ...msg,

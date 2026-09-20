@@ -10,6 +10,10 @@
 
 // ---------- 事件契约 ----------
 
+// 只 import 类型：node --strip-types 会擦掉这一行，纯内核之间因此不会形成运行时依赖，
+// 但字段口径只有一份（改 chat-core 的徽章字段，这里编译期就跟着变，不会出现「服务端发了、前端解不出」）。
+import type { IntentBadge } from "./chat-core.ts";
+
 export type StepStatus = "running" | "ok" | "error" | "missing";
 
 export interface StreamStep {
@@ -19,13 +23,25 @@ export interface StreamStep {
   tool?: string;
   detail?: string;
   ms?: number | null;
+  /** P7-⑥④：prefetch＝系统按场景预先取的，model＝模型自己调的。界面上必须分开，不能都算成模型的能力 */
+  source?: "prefetch" | "model";
+  /** 为什么要取这一步（自动调度给的理由） */
+  reason?: string;
 }
+
+/**
+ * P7-⑥⑤：done 事件带回来的场景判定 —— 直接沿用 chat-core 的展示件类型，不再各写一份字段表：
+ * 两边字段对不上的时候，界面上就是一个假徽章或一个空徽章，而这正是最不容易被发现的那种错。
+ * 校验仍在 asStreamEvent 里按白名单做：上游/代理可能整段不回，缺了就当没判场景，
+ * 不能让一个坏掉的徽章把已经收到的回答一起带崩。
+ */
+export type StreamIntent = IntentBadge;
 
 export type StreamEvent =
   | { type: "step"; data: StreamStep }
   | { type: "delta"; data: { content: string } }
   | { type: "warning"; data: { text: string } }
-  | { type: "done"; data: { fullText: string; steps?: StreamStep[] } }
+  | { type: "done"; data: { fullText: string; steps?: StreamStep[]; intent?: StreamIntent } }
   | { type: "error"; data: { message: string } };
 
 export const STREAM_EVENT_TYPES = ["step", "delta", "warning", "done", "error"] as const;
@@ -67,19 +83,124 @@ export function asStreamEvent(obj: unknown): StreamEvent | null {
       // 只带真的存在的字段：留下 detail: undefined 会让「原样往返」多出无意义的键
       if (typeof d.tool === "string") data.tool = d.tool;
       if (typeof d.detail === "string") data.detail = d.detail;
+      // 预取/模型自取必须穿得过这层解码：丢了前端的步骤时间线就没法说明「这步是系统替你取的」
+      if (d.source === "prefetch" || d.source === "model") data.source = d.source;
+      if (typeof d.reason === "string") data.reason = d.reason;
       return { type: "step", data };
     }
     case "delta":
       return typeof o.data.content === "string" ? { type: "delta", data: { content: o.data.content } } : null;
     case "warning":
       return typeof o.data.text === "string" ? { type: "warning", data: { text: o.data.text } } : null;
-    case "done":
-      return { type: "done", data: { fullText: typeof o.data.fullText === "string" ? o.data.fullText : "" } };
+    case "done": {
+      const ev: StreamEvent = { type: "done", data: { fullText: typeof o.data.fullText === "string" ? o.data.fullText : "" } };
+      const intent = asStreamIntent(o.data.intent);
+      if (intent) ev.data.intent = intent;
+      return ev;
+    }
     case "error":
       return { type: "error", data: { message: typeof o.data.message === "string" ? o.data.message : "未知错误" } };
     default:
       return null;
   }
+}
+
+// ---------- done 事件的场景徽章（同样按白名单宽松解码） ----------
+
+function stringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+/**
+ * 解码 done 事件里的场景徽章。
+ * 判不出来（缺字段、类型不对、上游根本没回）就整体返回 null，而不是拼一个半成品：
+ * 半个徽章会画出「场景：undefined」这种看着像真话的界面，比不画更糟。
+ */
+export function asStreamIntent(v: unknown): StreamIntent | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.scene !== "string" || !o.scene) return null;
+  const label = typeof o.label === "string" && o.label ? o.label : o.scene;
+  const out: StreamIntent = {
+    scene: o.scene,
+    label,
+    hits: stringArray(o.hits),
+    symbol: typeof o.symbol === "string" && o.symbol ? o.symbol : null,
+    symbolSource: typeof o.symbolSource === "string" ? o.symbolSource : "none",
+    inherited: o.inherited === true,
+    followUp: o.followUp === true,
+    skipped: stringArray(o.skipped),
+  };
+  const alternates = stringArray(o.alternates);
+  if (alternates.length) out.alternates = alternates;
+  if (typeof o.prefetchChars === "number" && isFinite(o.prefetchChars)) out.prefetchChars = Math.max(0, Math.trunc(o.prefetchChars));
+  return out;
+}
+
+// ---------- 请求体契约（两个端点对「这一轮是不是对话」的说法必须一致） ----------
+
+/**
+ * 有工具调用环的服务商（OpenAI 兼容协议族）。
+ * 这份名单只放在纯层一处：服务端路由拿它判「这个服务商能不能自己取数」，
+ * 浏览器拿它选端点，两边各写一份就会出现「前端发到 /api/ai/chat、后端回一句请换接口」。
+ */
+export const OPENAI_COMPAT_PROVIDERS: readonly string[] = ["openai", "deepseek", "moonshot", "openrouter", "ollama", "custom"];
+
+export function supportsToolCalling(provider: string | null | undefined): boolean {
+  // 服务商 id 正常来自设置里的下拉（小写），但存档是本机可改的：大小写/空格差一下就判成「没有工具环」，
+  // 会让 DeepSeek 用户白白拿不到自动取数。认得宽一点，能力是真有的。
+  return OPENAI_COMPAT_PROVIDERS.includes((provider ?? "").trim().toLowerCase());
+}
+
+/**
+ * 选端点：
+ *  - tools = AI 交易员（服务端有工具调用环，模型可以自己补取数据）；
+ *  - plain = 智能助手（没有工具环，但场景识别与系统按场景预取照样有）。
+ * auto 按服务商能力走：Anthropic / Gemini 原生协议没有这条路，硬发过去只会得到一句报错，
+ * 所以对这类服务商自动退回 plain —— 两条路的场景口径是同一份，用户看到的徽章与数据来源不会因为退回而变。
+ */
+export function pickChatEndpoint(
+  provider: string | null | undefined,
+  want: "auto" | "plain" | "tools" = "auto",
+): "plain" | "tools" {
+  if (want === "plain") return "plain";
+  if (want === "tools") return "tools";
+  return supportsToolCalling(provider) ? "tools" : "plain";
+}
+
+/** 会发给模型的最小消息形状：与 chat-core 的 ChatRequestMessage 同形，这里不重复引类型以免形成依赖 */
+export interface BodyMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+/**
+ * 场景识别要用的三个字段（放在 body.scene 里，而不是平铺在顶层）。
+ * 顺序与含义都由这份常量定：客户端多传一个键、少搬一个键，就会出现「首页有徽章、小窗没徽章」这种两边不一致。
+ */
+export const SCENE_KEYS = ["focusSymbol", "sessionSymbol", "prevScene"] as const;
+
+/**
+ * 组装聊天请求体。
+ *  - tools 端点（/api/ai/chat）本身就是对话端点，字段平铺即可；
+ *  - plain 端点（/api/ai/proxy）同时服务研究页、事件理解、Agent 循环、连通性自检，
+ *    它靠 body.scene 判断「这是对话轮，要做意图识别 + 场景自动取数」。
+ * 即使三个字段都为空也照样写 scene（写的是 {}）：这条声明本身才是「这一轮是对话」的凭据，
+ * 不声明就退化成一次普通转发，一句多余的提示词都不加 —— 反过来也不能让非对话请求被误判成对话。
+ */
+export function chatRequestBody(
+  endpoint: "plain" | "tools",
+  messages: BodyMessage[],
+  extra?: Record<string, unknown>,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { messages, stream: true, ...(extra ?? {}) };
+  if (endpoint === "plain") {
+    const scene: Record<string, unknown> = {};
+    for (const k of SCENE_KEYS) if (extra?.[k] !== undefined) scene[k] = extra[k];
+    for (const k of SCENE_KEYS) delete body[k];
+    body.scene = scene;
+  }
+  return body;
 }
 
 // ---------- SSE 帧扫描（增量，服务端读上游 / 前端读本地路由都要用） ----------
@@ -253,6 +374,7 @@ export const TOOL_STEP_LABELS: Record<string, string> = {
   stock_kline_summary: "取日 K 并计算技术状态",
   stock_fund_flow: "取近 14 日主力资金流",
   market_news: "取最新快讯",
+  watchlist_overview: "取自选股实时总览（清单来自本机存档）",
   factor_screener: "跑全 A 条件选股",
   historical_probability: "统计历史条件概率",
   model_answer: "模型生成回答",

@@ -9,6 +9,10 @@ import {
   removeSession as dropSessionById, updateMessage as patchSessionMessage,
   upsertSession, type ChatMessage, type ChatSession,
 } from "./chat-core";
+import type { ChatMode } from "./modes";
+
+// 回答风格的清单只有一份（modes.ts），这里原样转出键类型，页面不再各自声明一遍联合类型
+export type { ChatMode };
 
 // 冻结候选池（需求文档 二十三：冻结后原始候选结果不得被覆盖）
 export interface FrozenPool {
@@ -37,10 +41,23 @@ interface DeskState {
   refreshInterval: number;     // 秒
   extensionKey: string;
   frozenPools: FrozenPool[];
+  /**
+   * 回答风格（决策/研判/深度/搜索）。放在 store 而不是页面 useState：
+   * 首页的下拉和对话页的 chip 是同一个设置的两种画法，各存一份就会出现「首页选了研判、
+   * 对话页按决策发」这种看不出来的错位。
+   */
+  assistantMode: ChatMode;
+  /**
+   * P7-⑥⑥：首页把「这一句」交给唯一的对话页去发。
+   * 一次性交接、不进存档（partialize 不收它）：会话本来就共用同一份 store，
+   * 缺的只是「在哪一页发」——再给首页写一套 send() 就是本轮要避免的「两边各做一套」。
+   */
+  pendingAsk: string | null;
 
   go: (p: PageKey) => void;
   toggleSidebar: () => void;
   setFocusSymbol: (s: string) => void;
+  setAssistantMode: (m: ChatMode) => void;
   addWatch: (w: WatchItem) => void;
   removeWatch: (symbol: string) => void;
   addTracker: (t: TrackerPlan) => void;
@@ -48,6 +65,10 @@ interface DeskState {
   removeTracker: (id: string) => void;
   addHistory: (h: HistoryEntry) => void;
   clearHistory: () => void;
+  /** 把一句话交给助手页发送（跳页 + 一次性交接），首页与小窗都用它，自己不发请求 */
+  askInAssistant: (content: string) => void;
+  /** 对话页取走待发送的那一句：取一次就清掉，刷新页面不会重发 */
+  takePendingAsk: () => string | null;
   newSession: () => string;
   switchSession: (id: string) => void;
   dropSession: (id: string) => void;
@@ -73,6 +94,15 @@ const DEFAULT_AI: AiSettings = {
 
 function randKey() {
   return "mdk_" + Array.from({ length: 24 }, () => "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 36)]).join("");
+}
+
+/**
+ * 随对话请求带出的自选清单（P7-⑥④）。
+ * 服务端不读浏览器存档、也不查任何账号库，所以「我的自选怎么样」这类问题只能靠这份清单；
+ * 只带代码与名称：kind、加入时间这些本机界面字段不发出去。清单为空时工具层会如实回 missing。
+ */
+export function watchlistPayload(): { symbol: string; name: string | null }[] {
+  return useDesk.getState().watchlist.map((w) => ({ symbol: w.symbol, name: w.name ?? null }));
 }
 
 const FIRST_SESSION = emptySession();
@@ -112,10 +142,13 @@ export const useDesk = create<DeskState>()(
       refreshInterval: 60,
       extensionKey: randKey(),
       frozenPools: [],
+      assistantMode: "decision",
+      pendingAsk: null,
 
       go: (p) => set({ page: p }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setFocusSymbol: (sym) => set({ focusSymbol: sym }),
+      setAssistantMode: (m) => set({ assistantMode: m }),
       addWatch: (w) => set((s) => (s.watchlist.some((x) => x.symbol === w.symbol) ? s : { watchlist: [w, ...s.watchlist] })),
       removeWatch: (sym) => set((s) => ({ watchlist: s.watchlist.filter((x) => x.symbol !== sym) })),
       addTracker: (t) => set((s) => ({ tracker: [t, ...s.tracker] })),
@@ -124,6 +157,17 @@ export const useDesk = create<DeskState>()(
       removeTracker: (id) => set((s) => ({ tracker: s.tracker.filter((x) => x.id !== id) })),
       addHistory: (h) => set((s) => ({ history: [h, ...s.history].slice(0, 100) })),
       clearHistory: () => set({ history: [] }),
+      askInAssistant: (content) => {
+        const question = content.trim();
+        // 空正文不交接：跳过去看到一个空会话，比留在原页更让人困惑（也不动页）
+        if (!question) return;
+        set({ pendingAsk: question, page: "copilot" });
+      },
+      takePendingAsk: () => {
+        const pending = get().pendingAsk;
+        if (pending) set({ pendingAsk: null });
+        return pending;
+      },
       // 已有空会话时不重复创建：连着点「新会话」不该刷出一排空壳
       newSession: () => {
         const s = get();
@@ -211,6 +255,7 @@ export const useDesk = create<DeskState>()(
         })),
         activeSessionId: s.activeSessionId,
         ai: s.ai,
+        assistantMode: s.assistantMode,
         mcpServers: s.mcpServers,
         refreshInterval: s.refreshInterval,
         extensionKey: s.extensionKey,

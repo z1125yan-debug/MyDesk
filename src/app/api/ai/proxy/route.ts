@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ProxyAgent, fetch as undiciFetch, type RequestInit as UndiciInit } from "undici";
-import type { ChatRequestMessage } from "@/lib/desk/chat-core";
+import {
+  injectSceneContext, type ChatRequestMessage, type ContextMsg, type StepInfo,
+} from "@/lib/desk/chat-core";
+import { prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
+import type { ToolCtx } from "@/lib/desk/chat-tools";
+import { quantBootstrap } from "@/lib/quant/bootstrap";
+import { shanghaiDate } from "@/lib/desk/session";
 import {
   createSseScanner, encodeStreamEvent, isEventStream, notStreamedWarning, parseUpstreamFrame,
   type StreamEvent,
@@ -23,6 +29,22 @@ export const maxDuration = 120;
 // 入参契约与 /api/ai/chat 同一份（见 chat-core.ChatRequestMessage）：两个端点收到的是同一种消息件，
 // 校验、裁窗口径就不会各说各话。
 type MsgIn = ChatRequestMessage;
+
+/** 只有对话入口会带这个字段：其余 /api/ai/proxy 的调用方是「一次一问的取数请求」，不该被塞交易场景提示词 */
+interface SceneReq {
+  focusSymbol?: string | null;
+  sessionSymbol?: string | null;
+  prevScene?: string | null;
+}
+
+interface ProxyBody {
+  messages?: MsgIn[];
+  stream?: boolean;
+  /** P7-⑥④：本机自选清单（和 /api/ai/chat 同一份口径：服务端不读浏览器存档） */
+  watchlist?: { symbol: string; name?: string | null }[];
+  /** P7-⑥⑤：带上＝这一轮是对话，要做意图识别 + 场景自动调度；不带＝原样转发 */
+  scene?: SceneReq;
+}
 
 // ---------- 代理解析 ----------
 
@@ -294,7 +316,7 @@ function sseResponse(run: (emit: (ev: StreamEvent) => void) => Promise<void>): R
 }
 
 export async function POST(req: NextRequest) {
-  let body: { messages?: MsgIn[]; stream?: boolean } | null = null;
+  let body: ProxyBody | null = null;
   try {
     const provider = req.headers.get("x-ai-provider") ?? "openai";
     const baseUrl = req.headers.get("x-ai-base-url") ?? "";
@@ -307,7 +329,7 @@ export async function POST(req: NextRequest) {
     }
     if (!model) return NextResponse.json({ error: "缺少 x-ai-model" }, { status: 400 });
 
-    body = (await req.json().catch(() => null)) as { messages?: MsgIn[]; stream?: boolean } | null;
+    body = (await req.json().catch(() => null)) as ProxyBody | null;
     const messages = body?.messages ?? [];
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: "messages 为空" }, { status: 400 });
@@ -318,35 +340,85 @@ export async function POST(req: NextRequest) {
     const wantStream = body?.stream === true || /text\/event-stream/i.test(req.headers.get("accept") ?? "");
     const openaiCompat = !["anthropic", "gemini"].includes(provider);
 
+    /**
+     * 判场景 + 按场景预取真实数据（emit 只在流式下给，非流式靠返回值带出去）。
+     * 没带 scene 就是「一次一问的转发请求」（研究页、事件理解、Agent 循环、连通性自检都算），
+     * 它们要的是一句原文回答，给它们注入交易场景提示词只会污染口径 —— 所以这里按调用方显式声明才做。
+     */
+    const prepare = async (emit?: (ev: StreamEvent) => void): Promise<SceneTurn | null> => {
+      if (!body?.scene) return null;
+      // 取数工具和 /api/ai/chat 是同一份注册表，量化引擎那套初始化也必须在这里做一次（幂等）
+      quantBootstrap();
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      return prepareSceneTurn({
+        userContent: typeof lastUser?.content === "string" ? lastUser.content : "",
+        ctx: { watchlist: Array.isArray(body.watchlist) ? body.watchlist : [] } as ToolCtx,
+        focusSymbol: body.scene.focusSymbol ?? null,
+        sessionSymbol: body.scene.sessionSymbol ?? null,
+        prevScene: body.scene.prevScene ?? null,
+        today: shanghaiDate(),
+        emit,
+        isCancelled: () => req.signal.aborted,
+      });
+    };
+    // 这一路没有工具调用环（Anthropic/Gemini 原生协议更是连 tools 字段都不认），
+    // 所以预取就是本轮唯一的取数途径：数据由系统取好、随提示词一起给模型，模型不再自己调接口。
+    const withScene = (turn: SceneTurn | null): MsgIn[] =>
+      injectSceneContext(messages, turn ? { prompt: turn.prompt, block: turn.block } : {}, (role, content) => ({ role, content }));
+
     // 流式：只有 OpenAI 兼容协议有逐字能力。其余服务商走整体返回，
     // 客户端会因为拿不到 event-stream 而如实登记「本机节奏」。
     if (wantStream && openaiCompat) {
       return sseResponse(async (emit) => {
+        let turn: SceneTurn | null = null;
         try {
-          const content = await callOpenAIStream(baseUrl, apiKey, model, messages, agent, emit, req.signal);
+          turn = await prepare(emit);
+        } catch (e) {
+          turn = null;
+          emit({ type: "warning", data: { text: `场景自动调度未完成，本轮按「无自动取数」继续回答：${(e as Error).message}` } });
+        }
+        try {
+          const content = await callOpenAIStream(baseUrl, apiKey, model, withScene(turn), agent, emit, req.signal);
           if (!content) {
             emit({ type: "error", data: { message: `上游未返回内容${via}` } });
             return;
           }
-          emit({ type: "done", data: { fullText: content } });
+          emit({ type: "done", data: { fullText: content, ...(turn ? { intent: turn.badge } : {}) } });
         } catch (e) {
           emit({ type: "error", data: { message: proxyErrorMessage(e) } });
         }
       });
     }
 
+    let turn: SceneTurn | null = null;
+    let sceneFailure: string | null = null;
+    try {
+      turn = await prepare();
+    } catch (e) {
+      turn = null;
+      sceneFailure = (e as Error).message || "场景自动调度失败";
+    }
+    const upstreamMessages = withScene(turn);
+
     let content = "";
     if (provider === "anthropic") {
-      content = await callAnthropic(baseUrl, apiKey, model, messages, agent);
+      content = await callAnthropic(baseUrl, apiKey, model, upstreamMessages, agent);
     } else if (provider === "gemini") {
-      content = await callGemini(baseUrl, apiKey, model, messages, agent);
+      content = await callGemini(baseUrl, apiKey, model, upstreamMessages, agent);
     } else {
       // openai / deepseek / moonshot / openrouter / ollama / custom 全部 OpenAI 兼容
-      content = await callOpenAI(baseUrl, apiKey, model, messages, agent);
+      content = await callOpenAI(baseUrl, apiKey, model, upstreamMessages, agent);
     }
 
     if (!content) return NextResponse.json({ error: `上游未返回内容${via}` }, { status: 502 });
-    return NextResponse.json({ content });
+    const steps: StepInfo[] = turn?.steps ?? [];
+    return NextResponse.json({
+      content,
+      // 非流式没有 step 事件可走，徽章与步骤只能随 JSON 一起回（客户端把它们并成同一种时间线）
+      ...(turn ? { intent: turn.badge } : {}),
+      ...(steps.length ? { steps } : {}),
+      ...(sceneFailure ? { warning: `本轮未做场景自动取数：${sceneFailure}` } : {}),
+    });
   } catch (e) {
     return NextResponse.json({ error: proxyErrorMessage(e) }, { status: 502 });
   }

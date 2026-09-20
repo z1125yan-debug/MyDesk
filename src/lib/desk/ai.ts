@@ -1,6 +1,7 @@
 // 客户端 AI 调用辅助：所有请求走本地 /api/ai/proxy，
 // Key 只放在请求头里转发给所选服务商，不写入数据库、不打印日志。
 import type { AiProvider, AiSettings } from "./types";
+import type { IntentBadge, StepInfo } from "./chat-core";
 
 export interface ProviderPreset {
   label: string;
@@ -29,8 +30,34 @@ export function aiConfigured(ai: AiSettings): boolean {
 export async function aiChat(
   ai: AiSettings,
   messages: { role: "user" | "assistant" | "system"; content: string }[],
-  opts?: { timeoutMs?: number }
+  opts?: { timeoutMs?: number; watchlist?: { symbol: string; name?: string | null }[] }
 ): Promise<string> {
+  return (await aiChatPlain(ai, messages, opts)).text;
+}
+
+// P7-⑥⑤：aiChat 只回一句正文，而对话的非流式兜底还要拿回「这一步是谁取的、按哪个场景答的」。
+// 拆成两个函数而不是给 aiChat 加返回值：研究页/事件理解/Agent 循环/连通性自检都要的是一句话，
+// 让它们各自去解构 {text} 只会多出噪声，两条路共用同一份实现又不会漂移。
+export interface PlainChatResult {
+  text: string;
+  /** 场景自动调度取到的步骤（服务端已判好状态） */
+  steps?: StepInfo[];
+  /** 场景徽章；服务端没判（没带 scene）就没有，前端不画半个假徽章 */
+  intent?: IntentBadge;
+  /** 一次性返回里的留痕（例如「本轮未做场景自动取数：原因」） */
+  warning?: string;
+}
+
+export async function aiChatPlain(
+  ai: AiSettings,
+  messages: { role: "user" | "assistant" | "system"; content: string }[],
+  opts?: {
+    timeoutMs?: number;
+    watchlist?: { symbol: string; name?: string | null }[];
+    /** 带 scene＝这一轮是对话，服务端才做意图识别 + 自动取数；不带＝原样转发 */
+    scene?: { focusSymbol?: string | null; sessionSymbol?: string | null; prevScene?: string | null };
+  }
+): Promise<PlainChatResult> {
   const res = await fetch("/api/ai/proxy", {
     method: "POST",
     headers: {
@@ -41,12 +68,23 @@ export async function aiChat(
       "x-ai-model": ai.model,
       ...(ai.proxy?.trim() ? { "x-ai-proxy": ai.proxy.trim() } : {}),
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({
+      messages,
+      // P7-⑥④：与流式请求体同一份口径 —— 自选清单由浏览器带，服务端不读 localStorage
+      ...(opts?.watchlist?.length ? { watchlist: opts.watchlist } : {}),
+      ...(opts?.scene ? { scene: opts.scene } : {}),
+    }),
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 60000),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((json as { error?: string })?.error || `请求失败（${res.status}）`);
-  return (json as { content?: string }).content ?? "";
+  const j = json as { content?: string; steps?: StepInfo[]; intent?: IntentBadge; warning?: string };
+  return {
+    text: j.content ?? "",
+    ...(Array.isArray(j.steps) && j.steps.length ? { steps: j.steps } : {}),
+    ...(j.intent ? { intent: j.intent } : {}),
+    ...(j.warning ? { warning: j.warning } : {}),
+  };
 }
 
 // 从模型回复里尽量解析出 JSON（兼容被 ```json 包裹的情况）

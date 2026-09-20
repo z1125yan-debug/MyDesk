@@ -5,7 +5,8 @@
 // 降级口径：拿不到 event-stream（Anthropic/Gemini 原生、或上游/路由整体返回 JSON）时，
 // 结果仍然是真的，只是没有逐字节奏 —— 这里如实返回 usedStream:false，由界面改成本机节奏并写明原因。
 import type { AiSettings } from "./types";
-import { decodeStreamEvent, isEventStream, type StreamEvent } from "./chat-stream-core";
+import type { StepInfo } from "./chat-core";
+import { asStreamIntent, chatRequestBody, decodeStreamEvent, isEventStream, type StreamEvent, type StreamStep } from "./chat-stream-core";
 
 export const CHAT_ENDPOINTS = {
   /** AI 交易员：带真实数据工具调用，因此有 step 事件 */
@@ -41,7 +42,7 @@ export async function streamChat(opts: {
   ai: AiSettings;
   endpoint?: keyof typeof CHAT_ENDPOINTS;
   messages: { role: "user" | "assistant" | "system"; content: string }[];
-  /** 端点专属参数：/api/ai/chat 用 mode / focusSymbol / contextWindow */
+  /** 端点专属参数：mode / focusSymbol / contextWindow / sessionSymbol / prevScene / watchlist */
   extra?: Record<string, unknown>;
   timeoutMs?: number;
   onEvent: (ev: StreamEvent) => void;
@@ -52,18 +53,24 @@ export async function streamChat(opts: {
   const res = await fetch(url, {
     method: "POST",
     headers: aiHeaders(opts.ai),
-    body: JSON.stringify({ messages: opts.messages, stream: true, ...(opts.extra ?? {}) }),
+    body: JSON.stringify(chatRequestBody(opts.endpoint ?? "plain", opts.messages, opts.extra)),
     signal: opts.signal ? mergeSignals(opts.signal, timeout) : timeout,
   });
   const ct = res.headers.get("content-type");
 
   if (!isEventStream(ct)) {
-    const json = (await res.json().catch(() => ({}))) as { content?: string; error?: string };
+    const json = (await res.json().catch(() => ({}))) as {
+      content?: string; error?: string; warning?: string; steps?: StepInfo[]; intent?: unknown;
+    };
     if (!res.ok || json.error) throw new Error(json.error || `请求失败（${res.status}）`);
     const content = json.content ?? "";
     opts.onEvent({ type: "warning", data: { text: "该服务商本次整体返回（未走 SSE），界面按本机节奏逐段画出，不是上游逐字流。" } });
+    if (json.warning) opts.onEvent({ type: "warning", data: { text: json.warning } });
+    // 非 SSE 时自动调度的步骤与场景徽章随 JSON 一起回来：不并进来的话，时间线和徽章会在降级路上凭空消失
+    for (const s of Array.isArray(json.steps) ? json.steps : []) opts.onEvent({ type: "step", data: s });
     if (content) opts.onEvent({ type: "delta", data: { content } });
-    opts.onEvent({ type: "done", data: { fullText: content } });
+    const intent = asStreamIntent(json.intent);
+    opts.onEvent({ type: "done", data: { fullText: content, ...(intent ? { intent } : {}) } });
     return { usedStream: false, fullText: content, error: null, events: content ? 3 : 2 };
   }
 
