@@ -182,8 +182,8 @@ export interface AiChatTrace { name: string; args: Record<string, unknown>; ms: 
 
 export async function aiChatTools(
   ai: { provider: string; baseUrl: string; apiKey: string; model: string; proxy?: string },
-  messages: { role: "user" | "assistant"; content: string }[],
-  opts?: { mode?: string; focusSymbol?: string; timeoutMs?: number },
+  messages: { role: "user" | "assistant" | "system"; content: string }[],
+  opts?: { mode?: string; focusSymbol?: string; contextWindow?: number; timeoutMs?: number },
 ): Promise<{ content: string; trace: AiChatTrace[] }> {
   const res = await fetch("/api/ai/chat", {
     method: "POST",
@@ -195,7 +195,13 @@ export async function aiChatTools(
       "x-ai-model": ai.model,
       ...(ai.proxy?.trim() ? { "x-ai-proxy": ai.proxy.trim() } : {}),
     },
-    body: JSON.stringify({ messages, mode: opts?.mode ?? "decision", focusSymbol: opts?.focusSymbol }),
+    // 非流式兜底用的老契约：一次拿回 {content, trace}，trace 由前端归一成步骤时间线
+    body: JSON.stringify({
+      messages,
+      mode: opts?.mode ?? "decision",
+      focusSymbol: opts?.focusSymbol,
+      ...(opts?.contextWindow ? { contextWindow: opts.contextWindow } : {}),
+    }),
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 120_000),
   });
   const j = await res.json();

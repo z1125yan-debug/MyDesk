@@ -1,14 +1,21 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { Loader2, Send, Plus, Trash2, Settings2, Bot } from "lucide-react";
+// 智能助手页（P7-⑤ 起：流式回答 + 步骤时间线 + 会话持久化）
+//
+// 这一页只保留「本页特有的东西」：行情快照怎么取、系统提示词怎么拼；
+// 发送、流式回填、降级、价格校验都在 useChatSend 里，和首页 / 随问小窗共用同一份实现。
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Bot, Loader2, PenLine, Plus, Settings2, Send, Square, Trash2 } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
-import { aiChat, aiConfigured, assistantSystemPrompt, priceBandOk } from "@/lib/desk/ai";
-import { fetchQuoteCards, fetchTechSnapshot, searchSymbols, fetchNewsBlock, isDemoSymbol } from "@/lib/desk/market";
+import { aiChat, aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
+import { fetchQuoteCards, fetchTechSnapshot, fetchNewsBlock, isDemoSymbol, searchSymbols } from "@/lib/desk/market";
 import { shanghaiStamp } from "@/lib/desk/session";
 import {
   guardPriceOf, provenanceOfQuote, provenanceOfTechSnapshot, renderMarketContext, type CtxRow,
 } from "@/lib/desk/ai-context-core";
+import { isFollowUp, type ChatMessage, type ChatSession } from "@/lib/desk/chat-core";
+import { useChatSend, type SnapshotResult } from "@/lib/desk/use-chat";
 import Markdown from "../Markdown";
+import StepTimeline from "../StepTimeline";
 
 const QUICK_ASKS = [
   "分析一下当前品种的结构",
@@ -68,7 +75,6 @@ async function marketBlockFor(symbol: string): Promise<{ rows: CtxRow[]; block: 
   }
 }
 
-// 价格数量级校验：回答里至少要有一个接近现价的数字，否则视为幻觉（只在有真实现价时才做，见 guardPriceOf）
 // 从自然语言问题中提取品种搜索词（整句搜索接口是不认的）
 export function questionCandidates(q: string): string[] {
   const out = new Set<string>();
@@ -83,137 +89,147 @@ export function questionCandidates(q: string): string[] {
 }
 
 export default function AssistantPage() {
-  const chats = useDesk((s) => s.chats);
-  const activeChat = useDesk((s) => s.activeChat);
-  const setActiveChat = useDesk((s) => s.setActiveChat);
-  const setChats = useDesk((s) => s.setChats);
-  const newChat = useDesk((s) => s.newChat);
-  const dropChat = useDesk((s) => s.dropChat);
   const go = useDesk((s) => s.go);
   const ai = useDesk((s) => s.ai);
   const focusSymbol = useDesk((s) => s.focusSymbol);
+  const switchSession = useDesk((s) => s.switchSession);
+  const newSession = useDesk((s) => s.newSession);
+  const dropSession = useDesk((s) => s.dropSession);
+  const renameSession = useDesk((s) => s.renameSession);
 
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [ctx, setCtx] = useState("");
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
-  const messages = chats[activeChat] ?? [];
-  const configured = aiConfigured(ai);
 
-  // 关注品种的行情上下文（进入页面时注入一次）
-  useEffect(() => {
-    let dead = false;
-    marketBlockFor(focusSymbol).then((r) => { if (!dead) setCtx(r.block); });
-    return () => { dead = true; };
-  }, [focusSymbol]);
-
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length, busy]);
-
-  const send = async (preset?: string) => {
-    const content = (preset ?? input).trim();
-    if (!content || busy) return;
-    if (!configured) { go("settings"); return; }
-    setBusy(true); setInput("");
-    const base = chats.map((c, i) => (i === activeChat ? [...c, { role: "user" as const, content, ts: Date.now() }] : c));
-    setChats(base);
-    try {
-      // 从问题里识别提到的品种（整句搜不到时用提取出的候选词逐个试），连同关注品种一起注入实时快照
-      let targets = [focusSymbol];
+  // 本轮快照：识别问题里的品种（关注品种兜底），带来源分层；追问则沿用会话已关联的标的
+  const snapshot = useCallback(async (session: ChatSession, question: string): Promise<SnapshotResult | null> => {
+    const carried = isFollowUp(question) ? session.stock : undefined;
+    let targets = [carried ?? focusSymbol];
+    let hit: string | undefined = carried;
+    if (!carried) {
       try {
-        for (const cand of questionCandidates(content)) {
+        for (const cand of questionCandidates(question)) {
           const found = await searchSymbols(cand);
           if (found.length) {
             targets = [...new Set([found[0].symbol, focusSymbol])].slice(0, 2);
+            hit = found[0].symbol;
             break;
           }
         }
       } catch { /* 识别失败则仅注入关注品种 */ }
-      const blocks = await Promise.all(targets.map((s) => marketBlockFor(s)));
-      const allRows: CtxRow[] = blocks.flatMap((b) => b.rows);
-      const marketBlock = renderMarketContext(allRows, { takenAt: shanghaiStamp() });
-      // 校验锚点只认真实报价：演示品种/缺失品种的 price 已经是 null，不会再拿假价判模型幻觉
-      const guardPrice = blocks.map((b) => b.price).find((p) => p != null) ?? null;
-      const newsBlock = await fetchNewsBlock();
-
-      // 快照注入最后一条用户消息：部分轻量模型对 system 消息的遵循度低
-      const sent = [...base[activeChat].slice(-12)];
-      const lastMsg = sent[sent.length - 1];
-      sent[sent.length - 1] = {
-        ...lastMsg,
-        content: allRows.length ? `[行情快照·逐条标注来源分层]\n${marketBlock}\n\n用户问题：${lastMsg.content}` : lastMsg.content,
-      };
-      const callMessages = [
-        { role: "system" as const, content: assistantSystemPrompt([marketBlock, newsBlock].filter(Boolean).join("\n\n")) },
-        ...sent.map((m) => ({ role: m.role, content: m.content })),
-      ];
-      let reply = await aiChat(ai, callMessages);
-
-      // 价格数量级校验：不符则带警告自动重试一次，仍不符则在回答上标注
-      if (guardPrice && !priceBandOk(reply, guardPrice)) {
-        const corrective = [
-          { role: "system" as const, content: assistantSystemPrompt([marketBlock, newsBlock].filter(Boolean).join("\n\n")) },
-          {
-            role: "system" as const,
-            content: `警告：你上一次回答中的价位数值与实时行情快照严重不符（最新价应为 ${guardPrice.toFixed(2)} 元），属于幻觉，已被系统拦截。重新回答：所有价位只允许来自快照，数量级必须与最新价一致。`,
-          },
-          ...sent.map((m) => ({ role: m.role, content: m.content })),
-        ];
-        const reply2 = await aiChat(ai, corrective);
-        reply = priceBandOk(reply2, guardPrice)
-          ? reply2
-          : `${reply2}\n\n> ⚠ 系统提示：本回答中的价位与实时行情可能不符，请以快照中的最新价 ${guardPrice.toFixed(2)} 元为准。`;
-      }
-
-      setChats(base.map((c, i) => (i === activeChat ? [...c, { role: "assistant" as const, content: reply, ts: Date.now() }] : c)));
-    } catch (e) {
-      setChats(base.map((c, i) => (i === activeChat ? [...c, { role: "assistant" as const, content: `请求出错：${(e as Error).message}`, ts: Date.now() }] : c)));
-    } finally {
-      setBusy(false);
     }
+    const blocks = await Promise.all(targets.map((s) => marketBlockFor(s)));
+    const allRows = blocks.flatMap((b) => b.rows);
+    const marketBlock = allRows.length
+      ? `[行情快照·逐条标注来源分层]\n${renderMarketContext(allRows, { takenAt: shanghaiStamp() })}`
+      : "";
+    const newsBlock = await fetchNewsBlock().catch(() => "");
+    return {
+      // 快照为空时返回空串：提示词会写「状态 MISSING」，比塞一段假装有数据的文本诚实
+      snapshot: [marketBlock, newsBlock].filter(Boolean).join("\n\n"),
+      // 校验锚点只认真实报价：演示品种/缺失品种的 price 已经是 null，不会再拿假价判模型幻觉
+      guardPrice: blocks.map((b) => b.price).find((p) => p != null) ?? null,
+      stock: hit,
+    };
+  }, [focusSymbol]);
+
+  const { send, busy, stop, sessions, activeSessionId } = useChatSend({
+    endpoint: "plain",
+    systemPrompt: assistantSystemPrompt,
+    snapshot,
+    fallback: async (cfg, messages) => ({ text: await aiChat(cfg, messages, { timeoutMs: 120_000 }) }),
+    onNotConfigured: () => go("settings"),
+  });
+
+  const session = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
+  const messages: ChatMessage[] = session?.messages ?? [];
+  const configured = aiConfigured(ai);
+
+  const submit = (preset?: string) => {
+    const content = (preset ?? input).trim();
+    if (!content) return;
+    setInput("");
+    void send(content);
   };
+
+  // 自动跟随：流式期间内容一直在长，只按条数滚动会停在半屏
+  const tail = `${messages.length}:${messages.at(-1)?.content.length ?? 0}`;
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [tail]);
 
   return (
     <div className="flex h-[calc(100vh-8.5rem)] w-full gap-4 px-5 py-4">
-      {/* 会话列表 */}
-      <div className="hidden w-56 shrink-0 flex-col rounded-xl border border-border bg-card md:flex">
-        <button onClick={newChat}
+      {/* 会话列表：新建 / 切换 / 重命名 / 删除（存档在浏览器 localStorage，跨刷新保留） */}
+      {/* 窄屏也要能管会话：原来写的是 hidden + md:flex，小于 768px 时整套会话操作直接没有入口，
+          而「新建/切换/删除会话」正是这一项要交付的能力，不能只在宽屏存在。窄屏收一点宽度，不换第二套控件。 */}
+      <div className="flex w-40 shrink-0 flex-col rounded-xl border border-border bg-card md:w-56">
+        <button onClick={() => { newSession(); }}
           className="m-2.5 inline-flex items-center justify-center gap-1.5 rounded-md bg-sky-500/90 py-2 text-[12.5px] font-medium text-white hover:bg-sky-500">
           <Plus size={14} /> 新会话
         </button>
         <div className="desk-scroll flex-1 space-y-1 overflow-y-auto px-2 pb-2">
-          {chats.map((c, i) => (
-            <div key={i}
-              onClick={() => setActiveChat(i)}
+          {sessions.map((c) => (
+            <div key={c.id}
+              onClick={() => switchSession(c.id)}
               className={"group flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-2 text-[12.5px] " +
-                (i === activeChat ? "bg-sky-500/12 text-sky-300" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
-              <span className="truncate">{c[0]?.content.slice(0, 14) || `会话 ${i + 1}`}</span>
-              <button onClick={(e) => { e.stopPropagation(); dropChat(i); }}
-                className="ml-auto opacity-0 transition-opacity hover:text-rose-400 group-hover:opacity-100">
+                (c.id === activeSessionId ? "bg-sky-500/12 text-sky-300" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
+              {renaming === c.id ? (
+                <input autoFocus value={renameText}
+                  onChange={(e) => setRenameText(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { renameSession(c.id, renameText); setRenaming(null); }
+                    if (e.key === "Escape") setRenaming(null);
+                  }}
+                  onBlur={() => { renameSession(c.id, renameText); setRenaming(null); }}
+                  className="min-w-0 flex-1 rounded border border-sky-500/50 bg-background px-1 text-[12.5px] outline-none" />
+              ) : (
+                <span className="truncate" title={c.title}>{c.title}</span>
+              )}
+              <button onClick={(e) => { e.stopPropagation(); setRenaming(c.id); setRenameText(c.title); }}
+                title="重命名"
+                className="shrink-0 opacity-0 transition-opacity hover:text-sky-300 group-hover:opacity-100">
+                <PenLine size={12} />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); dropSession(c.id); }}
+                title="删除会话"
+                className="shrink-0 opacity-0 transition-opacity hover:text-rose-400 group-hover:opacity-100">
                 <Trash2 size={12.5} />
               </button>
             </div>
           ))}
+        </div>
+        <div className="border-t border-border/70 px-3 py-2 text-[10px] leading-4 text-muted-foreground/80">
+          会话存在本机浏览器里，最多保留最近 30 个；删除只清本机记录，不动任何行情数据。
         </div>
       </div>
 
       {/* 对话区 */}
       <div className="flex min-w-0 flex-1 flex-col rounded-xl border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600">
               <Bot size={16} className="text-white" />
             </div>
-            <div>
-              <div className="text-[14px] font-semibold">智能助手</div>
-              <div className="text-[11.5px] text-muted-foreground">像 AI 分析师一样拆解品种：结构 · 关键位 · 思路 · 风险</div>
+            <div className="min-w-0">
+              <div className="truncate text-[14px] font-semibold">{session?.title ?? "智能助手"}</div>
+              <div className="text-[11.5px] text-muted-foreground">
+                {session?.stock ? <>关联标的 <span className="font-mono text-sky-300">{session.stock}</span> · 追问沿用</> : "结构 · 关键位 · 思路 · 风险"}
+              </div>
             </div>
           </div>
-          {!configured && (
-            <button onClick={() => go("settings")}
-              className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[12px] text-amber-300 hover:bg-amber-500/20">
-              <Settings2 size={13} /> 先去配置 AI
-            </button>
-          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {/* 这里说的是「模型接口通不通」，不是行情数据来源，所以不用 SourceBadge（避免把配置状态画成数据状态） */}
+            <span className={"rounded border px-1.5 py-0.5 text-[10px] " + (configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300")}>
+              {configured ? `接口已配置 · ${ai.model}` : "接口未配置"}
+            </span>
+            {!configured && (
+              <button onClick={() => go("settings")}
+                className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[12px] text-amber-300 hover:bg-amber-500/20">
+                <Settings2 size={13} /> 先去配置 AI
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="desk-scroll flex-1 space-y-3 overflow-y-auto px-4 py-4">
@@ -222,16 +238,19 @@ export default function AssistantPage() {
               <div className="text-[13.5px] font-medium">问点什么吧</div>
               <div className="flex max-w-md flex-wrap justify-center gap-1.5">
                 {QUICK_ASKS.map((q) => (
-                  <button key={q} onClick={() => send(q)}
+                  <button key={q} onClick={() => submit(q)}
                     className="rounded-full border border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300">
                     {q}
                   </button>
                 ))}
               </div>
+              <div className="max-w-sm text-[11px] leading-5 text-muted-foreground/80">
+                每轮都会现取一次行情快照（真实/派生/演示/缺失逐条标注），旧对话按窗口压缩后带入，不替模型宣称事实。
+              </div>
             </div>
           )}
-          {messages.map((m, i) => (
-            <div key={i} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
+          {messages.map((m) => (
+            <div key={m.id} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
               {m.role === "user" ? (
                 <div className="max-w-[70%] whitespace-pre-wrap rounded-lg bg-sky-500/90 px-4 py-2.5 text-[14.5px] leading-7 text-white">
                   {m.content}
@@ -239,17 +258,19 @@ export default function AssistantPage() {
               ) : (
                 <div className="w-full rounded-lg border border-border bg-background/70 px-4 py-3 text-[14.5px] leading-7">
                   <Markdown content={m.content} />
+                  {m.streaming && <span className="ml-0.5 inline-block h-4 w-[7px] translate-y-0.5 animate-pulse bg-sky-400" />}
+                  <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming} />
                 </div>
               )}
             </div>
           ))}
-          {busy && <Loader2 size={15} className="ml-1 animate-spin text-sky-400" />}
+          {busy && messages.at(-1)?.role !== "assistant" && <Loader2 size={15} className="ml-1 animate-spin text-sky-400" />}
           <div ref={endRef} />
         </div>
 
         <div className="flex flex-wrap gap-1.5 border-t border-border px-3.5 pt-2.5">
           {["关键位在哪", "多周期趋势总结", "现在适合进场吗", "给我一个风控清单"].map((q) => (
-            <button key={q} onClick={() => send(q)} disabled={busy || !configured}
+            <button key={q} onClick={() => submit(q)} disabled={busy || !configured}
               className="rounded-full border border-border px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
               {q}
             </button>
@@ -257,14 +278,21 @@ export default function AssistantPage() {
         </div>
         <div className="flex items-center gap-2 border-t border-border p-3.5">
           <input value={input} onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder={configured ? "输入问题，回车发送…" : "配置 AI 接口后即可对话"}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
+            placeholder={configured ? "输入问题，回车发送…（流式输出，可随时停止）" : "配置 AI 接口后即可对话"}
             disabled={!configured}
             className="h-11 flex-1 rounded-md border border-border bg-background px-4 text-[14px] outline-none focus:border-sky-500/60 disabled:opacity-60" />
-          <button onClick={() => send()} disabled={busy || !configured}
-            className="flex h-11 w-11 items-center justify-center rounded-md bg-sky-500 text-white hover:bg-sky-400 disabled:opacity-50">
-            <Send size={16} />
-          </button>
+          {busy ? (
+            <button onClick={stop} title="停止本次回答（保留已生成的部分）"
+              className="flex h-11 w-11 items-center justify-center rounded-md border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20">
+              <Square size={15} />
+            </button>
+          ) : (
+            <button onClick={() => submit()} disabled={!configured}
+              className="flex h-11 w-11 items-center justify-center rounded-md bg-sky-500 text-white hover:bg-sky-400 disabled:opacity-50">
+              <Send size={16} />
+            </button>
+          )}
         </div>
       </div>
     </div>

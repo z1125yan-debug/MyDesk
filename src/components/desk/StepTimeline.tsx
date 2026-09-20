@@ -1,0 +1,77 @@
+"use client";
+// P7-⑤③ 步骤时间线：把「这次回答到底调过哪些真实接口、每一步什么状态」摆在明面上。
+//
+// 为什么单独成组件：AI 首页（工具调用）、智能助手页、右下角随问小窗三处都要展示同一种东西，
+// 各自画一套就会各自漂移（P6 时已经吃过「同一个来源两种说法」的亏）。
+// 口径：running=正在等这一步；ok=真的取到了；missing=没取到（不是 0，也不是失败）；error=调用抛错。
+import { CheckCircle2, CircleDashed, AlertTriangle, XCircle, Loader2 } from "lucide-react";
+import type { StepInfo } from "@/lib/desk/chat-core";
+
+const STATUS_META: Record<StepInfo["status"], { icon: typeof Loader2; text: string; tone: string }> = {
+  running: { icon: Loader2, text: "进行中", tone: "text-sky-300" },
+  ok: { icon: CheckCircle2, text: "已取到", tone: "text-emerald-300" },
+  missing: { icon: AlertTriangle, text: "缺数据", tone: "text-amber-300" },
+  error: { icon: XCircle, text: "调用失败", tone: "text-red-300" },
+};
+
+export default function StepTimeline({
+  steps,
+  warning,
+  streaming,
+  defaultOpen,
+}: {
+  steps?: StepInfo[];
+  warning?: string;
+  streaming?: boolean;
+  defaultOpen?: boolean;
+}) {
+  if (!steps?.length && !warning) return null;
+  const missing = steps?.filter((s) => s.status === "missing").length ?? 0;
+  const failed = steps?.filter((s) => s.status === "error").length ?? 0;
+  return (
+    <details open={defaultOpen ?? (streaming === true && !!steps?.length)} className="group/step">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground">
+        {streaming && steps?.some((s) => s.status === "running")
+          ? <Loader2 size={11} className="animate-spin text-sky-400" />
+          : <CircleDashed size={11} />}
+        <span>
+          工作过程 · {steps?.length ?? 0} 步
+          {missing ? ` · ${missing} 步缺数据` : ""}
+          {failed ? ` · ${failed} 步失败` : ""}
+        </span>
+      </summary>
+      <div className="mt-1.5 space-y-1 border-l border-border/70 pl-2.5">
+        {steps?.map((s) => {
+          const meta = STATUS_META[s.status] ?? STATUS_META.ok;
+          const Icon = meta.icon;
+          return (
+            <div key={`${s.step}-${s.tool ?? s.label}`} className="flex items-start gap-1.5 text-[11px] leading-4">
+              <Icon size={11.5} className={"mt-0.5 shrink-0 " + meta.tone + (s.status === "running" ? " animate-spin" : "")} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="rounded bg-accent px-1 font-mono text-[9.5px] text-muted-foreground">步 {s.step}</span>
+                  <span>{s.label}</span>
+                  <span className={meta.tone}>{meta.text}</span>
+                  {s.ms != null && <span className="font-mono text-[10px] text-muted-foreground">{s.ms}ms</span>}
+                </div>
+                {s.detail && (
+                  <div className="mt-0.5 break-words font-mono text-[10px] text-muted-foreground/90">{s.detail}</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {!!steps?.length && (
+          <div className="pt-0.5 text-[10px] text-muted-foreground/80">
+            以上是本次真实调用过的步骤；标「缺数据」表示接口这次没给值，不是数值为 0。
+          </div>
+        )}
+        {warning && (
+          <div className="mt-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10.5px] leading-4 text-amber-200">
+            {warning}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
