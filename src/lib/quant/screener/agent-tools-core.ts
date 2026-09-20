@@ -210,7 +210,7 @@ const SPECS: Record<string, Spec> = {
     ],
   },
   sentiment: { exec: EN("engine.sentiment", 35000), out: "涨跌家数/涨停跌停/炸板率/成交额等情绪字段 + live 标记（收盘值不写成盘中）" },
-  risk: { exec: EN("engine.risk", 35000), out: "风险分项读数（与 /api/market/risk 同一份实现）" },
+  risk: { exec: EN("engine.risk", 35000), out: "风险分项读数（与 /api/market/risk 同一份实现）；similar_env 给 trade_date/sample/horizon + period_start/period_end（引用概率要带前三项口径，样本区间一并回显）" },
   themes: {
     exec: EN("engine.themes", 35000),
     out: "theme_id/name/strength/扩散度等主线判定读数",

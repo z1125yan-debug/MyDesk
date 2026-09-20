@@ -305,12 +305,15 @@ async function riskObs(ms: number): Promise<ToolObservation> {
   if (bars.length >= 40) hist = similarReturnForward(bars.map((b) => ({ date: b.date, c: b.c })), 0.8);
   else notes.push(`相似日统计本次没有可用日K（取到 ${bars.length} 根，不足 40 根）：只有当日风险分项，没有历史参照${hb.error ? `（原因：${hb.error}）` : ""}`);
   const hz = hist?.horizons.find((x) => x.win_rate !== null);
+  // P7-②：样本区间提成第二层标量。period 本来是 {start,end} 对象，落在 extractRefs 的 depth>2 位置（agent-loop-core.ts 的 walk），
+  // 永远进不了台账 refs——这就是 P6-D 那次「同一台机器 5 分钟内相似日样本 113→225，事后却无法从库里重建窗口」的根因。
+  const envWindow = hist?.period ? `，样本区间 ${hist.period.start}→${hist.period.end}` : "，样本区间未给出（引擎没返回 period，不猜窗口）";
   return okObs({
-    summary: clipText(`风险等级「${s.risk.level}」（触发：${s.risk.triggers?.length ? s.risk.triggers.join("、") : "本次无指标越线；空不等于安全，只是没触发这套阈值"}）；涨跌家数 ${s.advancers}/${s.decliners}；炸板率 ${s.break_rate === null ? "算不出（触板 0）" : `${n1(s.break_rate)}%`}；${hist ? `上证相似环境后续统计：样本 ${hist.sample_size} 个${hz ? `，${hz.h}日胜率 ${n1(hz.win_rate)}%（HISTORICAL，不是今天的预测）` : "，各期限胜率都算不出"}${hist.sample_ok ? "" : "；样本不足 30：仅供参考"}` : "本次没有相似日历史参照"}`),
+    summary: clipText(`风险等级「${s.risk.level}」（触发：${s.risk.triggers?.length ? s.risk.triggers.join("、") : "本次无指标越线；空不等于安全，只是没触发这套阈值"}）；涨跌家数 ${s.advancers}/${s.decliners}；炸板率 ${s.break_rate === null ? "算不出（触板 0）" : `${n1(s.break_rate)}%`}；${hist ? `上证相似环境后续统计：样本 ${hist.sample_size} 个${hz ? `，${hz.h}日胜率 ${n1(hz.win_rate)}%（HISTORICAL，不是今天的预测）` : "，各期限胜率都算不出"}${envWindow}${hist.sample_ok ? "" : "；样本不足 30：仅供参考"}` : "本次没有相似日历史参照"}`),
     payload: {
       trade_date: s.trade_date, level: s.risk.level, triggers: s.risk.triggers ?? [], live: s.live,
       advancers: s.advancers, decliners: s.decliners, break_rate: s.break_rate, main_net_sum_yi: s.main_net_sum_yi,
-      similar_env: hist ? { sample: hist.sample_size, sample_ok: hist.sample_ok, period: hist.period, horizon: hz ? hz.h : null, horizons: capRows(hist.horizons.map((x) => ({ horizon: x.h, win_rate: x.win_rate, sample: x.sample_size })), 3) } : null,
+      similar_env: hist ? { sample: hist.sample_size, sample_ok: hist.sample_ok, period: hist.period, period_start: hist.period?.start ?? null, period_end: hist.period?.end ?? null, horizon: hz ? hz.h : null, horizons: capRows(hist.horizons.map((x) => ({ horizon: x.h, win_rate: x.win_rate, sample: x.sample_size })), 3) } : null,
     },
     source: "sentiment 引擎风险分项 + 上证相似日统计（similar-env）", as_of: s.as_of, data_status: "DERIVED", notes,
   });

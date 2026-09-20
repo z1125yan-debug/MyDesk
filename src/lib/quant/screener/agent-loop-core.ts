@@ -301,7 +301,9 @@ export function evidenceLayerOf(status: DataStatus): ServerLayer | null {
   return LAYER_BY_STATUS[status];
 }
 
-const REF_KEYS = ["theme_id", "finding_id", "event_id", "factor_key", "trade_date", "sample", "horizon", "board_code", "symbol", "report_key", "id"];
+// P7-②：period_start/period_end 是「这批历史样本来自哪一段」的口径。§十九 的必需三项仍是 trade_date/sample/horizon
+//（probabilityCheck 只查那三项），这里多收两项只为让事后能重建窗口——同一台机器 5 分钟内样本数变化不再无从解释。
+const REF_KEYS = ["theme_id", "finding_id", "event_id", "factor_key", "trade_date", "sample", "horizon", "period_start", "period_end", "board_code", "symbol", "report_key", "id"];
 
 /** 从观测原文里抽业务主键（只抽白名单字段，不整包塞进血缘，否则台账会胀成不可读的一坨） */
 export function extractRefs(payload: unknown, max = 12): string[] {
