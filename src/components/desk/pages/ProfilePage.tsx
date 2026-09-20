@@ -6,7 +6,7 @@ import Markdown from "../Markdown";
 import DecisionCard from "../DecisionCard";
 import { SourceBadge, PctText, NumText } from "../SourceBadge";
 import { useDesk } from "@/lib/desk/store";
-import { searchSymbols } from "@/lib/desk/market";
+import { searchSymbols, normalizeTradingViewSymbol } from "@/lib/desk/market";
 import { fetchStockProfile, aiChatTools, type ProfileResp } from "@/lib/desk/quant-api";
 import { aiConfigured } from "@/lib/desk/ai";
 
@@ -58,7 +58,8 @@ export default function ProfilePage() {
   const submit = () => {
     const q = input.trim().toUpperCase();
     const m = /^(\d{6})$/.exec(q);
-    const sym = m ? (/^(60|68|9)/.test(m[1]) ? `${m[1]}.SH` : /^(43|83|87|92)/.test(m[1]) ? `${m[1]}.BJ` : `${m[1]}.SZ`) : q;
+    // 补后缀不再在本页抄一份号段：全工程只有 intent-core.suffixOf 一处判交易所（经 normalizeTradingViewSymbol 转出）
+    const sym = m ? normalizeTradingViewSymbol(m[1]) : q;
     if (/^\d{6}\.(SH|SZ|BJ)$/.test(sym)) setSymbol(sym);
     else setError("代码格式：688256 或 688256.SH");
   };

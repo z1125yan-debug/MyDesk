@@ -73,11 +73,55 @@ const SCENE_RULES: { scene: Scene; words: string[] }[] = [
 
 // ---------- 代码识别 ----------
 
-/** 无后缀代码按交易所号段补后缀（与 chat-tools.normalizeSymbol 同一套号段口径） */
-function suffixOf(six: string): "SH" | "SZ" | "BJ" {
-  if (/^(60|68|9|5)/.test(six)) return "SH";
+/**
+ * 无后缀代码按交易所号段补后缀（全工程只有这一份号段口径：
+ * chat-tools.normalizeSymbol、market.normalizeTradingViewSymbol、ProfilePage 的搜索框都已改为委托这里）。
+ *
+ * BJ 必须在 SH 之前判：SH 那条里有单独的 `9`，而北交所新代码段是 92xxxx，
+ * 先判 SH 会把 920819 这类真实的北交所标的算成 920819.SH（沪市），
+ * 于是取数取不到、跳转跳去一只不存在的标的——三个副本都曾这么错过。
+ * 90xxxx（沪市 B 股）仍归 SH：BJ 只认 43/83/87/92 四个前缀。
+ */
+export function suffixOf(six: string): "SH" | "SZ" | "BJ" {
   if (/^(43|83|87|92)/.test(six)) return "BJ";
+  if (/^(60|68|9|5)/.test(six)) return "SH";
   return "SZ";
+}
+
+/**
+ * 代码形状正则的**唯一出处**。为什么给工厂而不是导出了一个常量：带 /g 的正则是有状态的
+ * （exec 会推进 lastIndex），跨模块共享一个实例迟早出现「同一句正文两次调用抽出不同结果」这种查不动的错位。
+ * 前后都不能再贴数字：否则日期 20260919 的前六位会被当成一个股票代码，把整轮问答带去看一只不存在的票。
+ */
+export function codeRe(): RegExp {
+  return /(?<!\d)\d{6}(?:\.(?:SH|SZ|BJ))?(?!\d)/gi;
+}
+
+/** 正文里的一处代码出现：raw 是原样那串（可能不带后缀），symbol 是补全后的完整代码，start/end 是它在正文里的位置 */
+export interface SymbolMatch {
+  raw: string;
+  symbol: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * 逐个出现地报（不去重）：链接层要知道「第几处」才能就地换成可点片段。
+ * extractSymbols 只要「有哪些」，两者共用这一份匹配，避免出现两套代码形状口径。
+ */
+export function findSymbolMatches(text: string): SymbolMatch[] {
+  const out: SymbolMatch[] = [];
+  const re = codeRe();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text ?? ""))) {
+    out.push({
+      raw: m[0],
+      symbol: m[0].includes(".") ? m[0].toUpperCase() : `${m[0].slice(0, 6)}.${suffixOf(m[0].slice(0, 6))}`,
+      start: m.index,
+      end: m.index + m[0].length,
+    });
+  }
+  return out;
 }
 
 /**
@@ -87,13 +131,8 @@ function suffixOf(six: string): "SH" | "SZ" | "BJ" {
  */
 export function extractSymbols(text: string): string[] {
   const out: string[] = [];
-  // 前后都不能再贴数字：否则日期 20260919 的前六位会被当成一个股票代码，把整轮问答带去看一只不存在的票。
-  const re = /(?<!\d)\d{6}(?:\.(?:SH|SZ|BJ))?(?!\d)/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text ?? ""))) {
-    const six = m[0].slice(0, 6);
-    const sym = m[0].includes(".") ? m[0].toUpperCase() : `${six}.${suffixOf(six)}`;
-    if (!out.includes(sym)) out.push(sym);
+  for (const mt of findSymbolMatches(text)) {
+    if (!out.includes(mt.symbol)) out.push(mt.symbol);
   }
   return out;
 }

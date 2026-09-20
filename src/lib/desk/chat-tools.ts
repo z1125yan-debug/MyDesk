@@ -16,6 +16,7 @@ import { historicalWinProbability, type ScreenerCond } from "@/lib/quant/factors
 import { getProvider } from "@/lib/quant/data/index";
 import { fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
 import { tdxQuotes, tdxDepth, tdxTradesMoney } from "./tdx";
+import { suffixOf } from "./intent-core";
 import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, fetchBoardReal, symbolToSecid } from "./em";
 import { shanghaiDate } from "./session";
 
@@ -31,14 +32,15 @@ export interface ToolCtx {
  */
 export const WATCHLIST_MAX = 200;
 
+/**
+ * 工具入参的代码归一：只认 6 位（可带后缀），补后缀交回 intent-core 的唯一一份号段口径。
+ * 原来这里自己抄了一份 `^(60|68|9)→SH` 先判，于是 92xxxx（北交所新代码段）被判成沪市，
+ * 与 em-provider 的 BJ 判定对不上——同一个代码在两层各说一个交易所。
+ */
 export function normalizeSymbol(raw: string): string | null {
   const s = raw.trim().toUpperCase();
   if (/^\d{6}\.(SH|SZ|BJ)$/.test(s)) return s;
-  if (/^\d{6}$/.test(s)) {
-    if (/^(60|68|9)/.test(s)) return `${s}.SH`;
-    if (/^(43|83|87|92)/.test(s)) return `${s}.BJ`;
-    return `${s}.SZ`;
-  }
+  if (/^\d{6}$/.test(s)) return `${s}.${suffixOf(s)}`;
   return null;
 }
 

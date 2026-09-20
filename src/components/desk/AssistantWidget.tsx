@@ -11,6 +11,7 @@ import { aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
 import { fetchNewsBlock } from "@/lib/desk/market";
 import type { ChatMessage } from "@/lib/desk/chat-core";
 import { useChatSend } from "@/lib/desk/use-chat";
+import { useDeskLinks } from "@/lib/desk/use-desk-links";
 import { pickChatEndpoint } from "@/lib/desk/chat-stream-core";
 import Markdown from "./Markdown";
 import SceneBadge from "./SceneBadge";
@@ -32,6 +33,8 @@ export default function AssistantWidget({
 
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  // P7-⑧②：正文里的代码/板块可点，跳转口径与助手页同一份 hook（两个入口不各判一套）
+  const { sectors, openLink } = useDeskLinks();
 
   // 小窗的快照来自分析页当前图表（含品种与实时字段）；快讯每次现取，失败就只带图表那一段。
   // guardPrice 留空：图表上下文的组成由分析页决定，小窗不去猜锚点，宁可不校验也不拿可疑数字当现价的量级标准。
@@ -128,7 +131,8 @@ export default function AssistantWidget({
             ) : (
               <div className="max-w-[92%] rounded-lg border border-border bg-background/70 px-3 py-2 text-[12.5px] leading-5">
                 <SceneBadge intent={m.intent} />
-                <Markdown content={m.content} />
+                {/* 与小窗外的助手页同一种可点正文：点代码切 K 线品种，点板块跳板块榜 */}
+                <Markdown content={m.content} sectors={sectors} onLink={openLink} />
                 {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-[6px] translate-y-0.5 animate-pulse bg-sky-400" />}
                 <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming} />
               </div>

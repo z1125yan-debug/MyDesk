@@ -37,6 +37,14 @@ test("extractSymbols：补后缀、去重、只认 6 位代码形状", () => {
   assert.deepEqual(extractSymbols("看下 300750。"), ["300750.SZ"]);
 });
 
+test("extractSymbols：92xxxx 是北交所不是沪市（号段判定必须先判 BJ）", () => {
+  // 补后缀的三条号段规则里 SH 含一个单独的 9，早先 SH 先判 → 920819 被算成 920819.SH，
+  // 于是「取数取不到 + 跳转跳去一只不存在的标的」。90xxxx（沪市 B 股）仍归 SH。
+  assert.deepEqual(extractSymbols("920819 能买吗"), ["920819.BJ"]);
+  assert.deepEqual(extractSymbols("900901 与 430139"), ["900901.SH", "430139.BJ"]);
+  assert.deepEqual(extractSymbols("500001 是基金代码段"), ["500001.SH"]);
+});
+
 test("extractSymbols：不认识的名称不做反查（名称→代码是取数层的事）", () => {
   assert.deepEqual(extractSymbols("寒武纪明天怎么看"), []);
 });
