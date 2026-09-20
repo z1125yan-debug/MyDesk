@@ -1,4 +1,4 @@
-// AI 交易员对话后端（需求文档 六/二十五/二十六/二十七）
+// AI 交易员对话后端（需求文档 六/二十五/二十六/二十七 + P7-⑤ §2.3 流式）
 // 流程：用户问题 → LLM 生成 Tool Plan → 并行执行工具（真实数据）→ 结果回填 → LLM 生成回答。
 // 硬规则：
 //  - AI 不得编造数据：所有市场数据一律由工具返回的真实接口数据提供；
@@ -6,6 +6,11 @@
 //  - 输出必须区分【事实】/【模型推断】/【风险】；不给买卖建议；
 //  - 证据链：每次工具调用记录名称/参数/耗时/状态，随响应返回前端展示。
 // 仅支持 OpenAI 兼容接口（tools 能力）；Anthropic/Gemini 原生协议请用「智能助手」页。
+//
+// P7-⑤① 加了 SSE 传输：body.stream=true（或 Accept: text/event-stream）时逐帧发
+// step / delta / warning / done / error 五类事件，否则维持原来的 {content, trace, mode} JSON。
+// 两种传输跑的是同一份 runToolLoop —— 事件只是「什么时候告诉前端」，不改变任何取数与判定，
+// 所以不会出现「流式的答案和非流式的答案口径不同」（模型在工具调用前的过渡语除外，见下面的注释）。
 import { NextRequest, NextResponse } from "next/server";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
@@ -18,6 +23,11 @@ import { fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
 import { tdxQuotes, tdxDepth, tdxTradesMoney } from "@/lib/desk/tdx";
 import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, fetchBoardReal, symbolToSecid } from "@/lib/desk/em";
 import { shanghaiDate } from "@/lib/desk/session";
+import {
+  createSseScanner, createToolCallAssembler, encodeStreamEvent, isEventStream, notStreamedWarning,
+  parseUpstreamFrame, stepDetailOf, stepLabelFor, type StreamEvent,
+} from "@/lib/desk/chat-stream-core";
+import { trimDialog, type ChatRequestMessage } from "@/lib/desk/chat-core";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -300,86 +310,259 @@ function systemPrompt(mode: string, focusSymbol?: string): string {
 
 interface ToolCallMsg { id: string; type: "function"; function: { name: string; arguments: string } }
 
+interface ChatTraceItem { name: string; args: Record<string, unknown>; ms: number; status: "ok" | "error"; summary: string }
+
+interface ChatBody {
+  messages?: ChatRequestMessage[];
+  mode?: string;
+  focusSymbol?: string;
+  /** 开发文档 §2.2 的多轮上下文口径：客户端内核按轮裁窗 + 压缩旧对话；路由只兜底，且从不静默丢 system 件 */
+  contextWindow?: number;
+  /** P7-⑤①：走 SSE 传输 */
+  stream?: boolean;
+}
+
+/**
+ * 校验配置。非流式沿用原来的「400 + JSON 错误」口径；流式下头已经发出去了，只能走 error 事件。
+ */
+function validateConfig(provider: string, baseUrl: string, model: string, body: ChatBody | null): string | null {
+  if (!OPENAI_COMPAT.has(provider)) {
+    return "AI 交易员的工具调用需要 OpenAI 兼容接口（DeepSeek/OpenAI/Moonshot/OpenRouter/Ollama/自定义中转），请在设置中切换";
+  }
+  if (!baseUrl || !model) return "AI 未配置：请到「设置 → AI 接口」填写接口地址与模型";
+  if (!(body?.messages ?? []).length) return "消息为空";
+  return null;
+}
+
+/**
+ * 工具调用环（流式 / 非流式共用）。
+ * emit 只在流式下真的往队列里塞事件；非流式下传一个空函数，判定与取数一字不差。
+ */
+async function runToolLoop(opts: {
+  url: string;
+  apiKey: string;
+  model: string;
+  messages: Record<string, unknown>[];
+  agent: ProxyAgent | null;
+  emit: (ev: StreamEvent) => void;
+  /** 前端断开或超时后停止推进：不再取数、不再发事件，也不谎称回答完成 */
+  isCancelled: () => boolean;
+}): Promise<{ content: string; trace: ChatTraceItem[]; cancelled: boolean }> {
+  const { url, apiKey, model, messages, agent, emit, isCancelled } = opts;
+  const tools = TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.desc, parameters: t.params } }));
+  const trace: ChatTraceItem[] = [];
+  let content = "";
+  let stepNo = 0;
+  // 是不是「五轮都用完还没拿到结论」：只有这种情况才能说轮次达上限，模型回了空正文不能算在它头上
+  let roundsExhausted = true;
+
+  for (let round = 0; round < 5; round++) {
+    if (isCancelled()) return { content, trace, cancelled: true };
+    const res = await undiciFetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({ model, messages, tools, tool_choice: "auto", temperature: 0.3, stream: true }),
+      dispatcher: agent ?? undefined,
+      signal: AbortSignal.timeout(90_000),
+    });
+
+    // 上游拒绝流式（不认识 stream 参数）时按整体返回处理：结果是真的，只是没有逐字节奏 —— 必须如实登记
+    let roundText = "";
+    const assembler = createToolCallAssembler();
+    let finishReason: string | null = null;
+    let upstreamErr: string | null = null;
+
+    if (isEventStream(res.headers.get("content-type"))) {
+      const scanner = createSseScanner();
+      const decoder = new TextDecoder();
+      let sawDone = false;
+       
+      const body: any = res.body;
+      if (body) {
+        for await (const chunk of body) {
+          if (isCancelled()) {
+            try { body.destroy?.(); } catch { /* 已经断了 */ }
+            return { content, trace, cancelled: true };
+          }
+          const frames = scanner.push(decoder.decode(chunk as Uint8Array, { stream: true }));
+          for (const f of frames) {
+            const d = parseUpstreamFrame(f);
+            if (d.text) {
+              roundText += d.text;
+              emit({ type: "delta", data: { content: d.text } });
+            }
+            if (d.toolCalls.length) assembler.push(d.toolCalls);
+            if (d.finishReason) finishReason = d.finishReason;
+            if (d.done) sawDone = true;
+          }
+          if (sawDone) break;
+        }
+      }
+      for (const f of scanner.flush()) {
+        const d = parseUpstreamFrame(f);
+        if (d.text) { roundText += d.text; emit({ type: "delta", data: { content: d.text } }); }
+        if (d.toolCalls.length) assembler.push(d.toolCalls);
+        if (d.finishReason) finishReason = d.finishReason;
+      }
+      if (!sawDone && !finishReason) {
+        emit({ type: "warning", data: { text: "上游流未正常收尾（没有 [DONE] 也没有 finish_reason），以上内容到此处为止，未补全。" } });
+      }
+    } else {
+       
+      const j = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok) upstreamErr = j?.error?.message || `上游返回 ${res.status}`;
+      const msg = j?.choices?.[0]?.message;
+      roundText = String(msg?.content ?? "");
+      finishReason = j?.choices?.[0]?.finish_reason ?? null;
+      for (const tc of (msg?.tool_calls ?? []) as ToolCallMsg[]) {
+        assembler.push([{ index: 0, id: tc.id, name: tc.function?.name, argsFragment: tc.function?.arguments }]);
+      }
+      if (!upstreamErr) {
+        emit({ type: "warning", data: { text: notStreamedWarning(res.headers.get("content-type")) } });
+        if (roundText) emit({ type: "delta", data: { content: roundText } });
+      }
+    }
+    if (upstreamErr) throw new Error(upstreamErr);
+    if (!res.ok) throw new Error(`上游返回 ${res.status}`);
+
+    const calls = assembler.result();
+    if (!calls.length) {
+      content = roundText;
+      roundsExhausted = false;
+      break;
+    }
+    // 工具调用轮里模型偶尔先说一句过渡语：流式下它已经发出去了，如实留着，不回滚也不谎称是结论。
+    messages.push({ role: "assistant", content: roundText, tool_calls: calls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.argsText } })) });
+    const results = await Promise.all(calls.map(async (c) => {
+      const step = ++stepNo;
+      let parsedArgs: Record<string, unknown> = {};
+      try { parsedArgs = JSON.parse(c.argsText || "{}"); } catch { /* 参数坏 → 下面按未知/失败处理 */ }
+      const label = stepLabelFor(c.name, parsedArgs);
+      emit({ type: "step", data: { step, label, status: "running", tool: c.name } });
+      const started = Date.now();
+      let out: unknown;
+      let status: "ok" | "error" = "ok";
+      try {
+        const fn = TOOLS.find((t) => t.name === c.name);
+        if (!fn) out = { missing: `未知工具 ${c.name}` };
+        // 各工具入参形状不同（TS 把联合函数的参数取成交集），运行时传的就是模型给的那份 JSON：
+        // 每个工具体内自己 normalizeSymbol / 判空并回 missing，所以这里按通用形状转发，不在这里替模型猜参数。
+        else out = await (fn.fn as (args: Record<string, unknown>) => Promise<unknown>)(parsedArgs);
+      } catch (e) {
+        out = { missing: `工具执行失败：${(e as Error).message}` };
+        status = "error";
+      }
+      const ms = Date.now() - started;
+      const text = JSON.stringify(out);
+      trace.push({ name: c.name, args: parsedArgs, ms, status, summary: text.length > 120 ? text.slice(0, 120) + "…" : text });
+      const judged = stepDetailOf(out);
+      emit({
+        type: "step",
+        data: {
+          step, label, tool: c.name, ms,
+          // 工具本身抛错＝error；返回 missing 字段＝missing（缺数据不是失败，两者在界面上必须分开）
+          status: status === "error" ? "error" : judged.status,
+          detail: judged.detail,
+        },
+      });
+      return { role: "tool", tool_call_id: c.id, content: text.slice(0, 6000) };
+    }));
+    messages.push(...results);
+    if (isCancelled()) return { content, trace, cancelled: true };
+  }
+  // 两种「没有正文」必须分开说：轮次用满 ≠ 模型没话说，混为一谈就是把系统的限制写成模型的表现。
+  if (!content) {
+    content = roundsExhausted
+      ? "（工具调用轮次已达上限，未能生成结论；请缩小问题范围后重试）"
+      : "（上游这次没有返回正文，只回了空的回答；请把问题拆细后重试）";
+  }
+  return { content, trace, cancelled: false };
+}
+
 export async function POST(req: NextRequest) {
   quantBootstrap();
   const provider = req.headers.get("x-ai-provider") ?? "";
   const baseUrl = (req.headers.get("x-ai-base-url") ?? "").trim();
   const apiKey = req.headers.get("x-ai-api-key") ?? "";
   const model = (req.headers.get("x-ai-model") ?? "").trim();
-  if (!OPENAI_COMPAT.has(provider)) {
-    return NextResponse.json({ error: "AI 交易员的工具调用需要 OpenAI 兼容接口（DeepSeek/OpenAI/Moonshot/OpenRouter/Ollama/自定义中转），请在设置中切换" }, { status: 400 });
-  }
-  if (!baseUrl || !model) {
-    return NextResponse.json({ error: "AI 未配置：请到「设置 → AI 接口」填写接口地址与模型" }, { status: 400 });
-  }
-  const body = (await req.json().catch(() => null)) as {
-    messages?: { role: "user" | "assistant"; content: string }[];
-    mode?: string;
-    focusSymbol?: string;
-  } | null;
-  const history = (body?.messages ?? []).slice(-12);
-  if (!history.length) return NextResponse.json({ error: "消息为空" }, { status: 400 });
+  const body = (await req.json().catch(() => null)) as ChatBody | null;
+  const wantStream = body?.stream === true || /text\/event-stream/i.test(req.headers.get("accept") ?? "");
 
+  const invalid = validateConfig(provider, baseUrl, model, body);
+  if (invalid) {
+    if (!wantStream) return NextResponse.json({ error: invalid }, { status: 400 });
+    return sseResponse(async (emit) => { emit({ type: "error", data: { message: invalid } }); });
+  }
+
+  // 上下文窗口：客户端内核（chat-core.splitWindow）已按轮裁好、并把旧对话压成一条 system 摘要。
+  // 这里再兜一道，但规则要说清楚：只从最早的用户/助手消息开始丢，system 件（摘要、快照说明）永不静默丢弃——
+  // 从尾部无脑 slice 会正好把摘要挤掉，等于「压缩白做」。
+  const keepTurns = Math.min(30, Math.max(1, Math.trunc(body?.contextWindow ?? 12)));
+  const history = trimDialog(body?.messages ?? [], keepTurns * 2);
   const agent = await resolveProxy(req, baseUrl);
   const apiBase = baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
   const url = `${apiBase}/v1/chat/completions`;
-  const tools = TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.desc, parameters: t.params } }));
-
   const messages: Record<string, unknown>[] = [
     { role: "system", content: systemPrompt(body?.mode ?? "decision", body?.focusSymbol) },
     ...history,
   ];
+  const mode = body?.mode ?? "decision";
+  const isCancelled = () => req.signal.aborted;
 
-  const trace: { name: string; args: Record<string, unknown>; ms: number; status: "ok" | "error"; summary: string }[] = [];
-  let content = "";
-  try {
-    for (let round = 0; round < 5; round++) {
-      const res = await undiciFetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
-        body: JSON.stringify({ model, messages, tools, tool_choice: "auto", temperature: 0.3 }),
-        dispatcher: agent ?? undefined,
-        signal: AbortSignal.timeout(90_000),
-      });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const j = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok) {
-        return NextResponse.json({ error: j?.error?.message || `上游返回 ${res.status}` }, { status: 502 });
-      }
-      const msg = j?.choices?.[0]?.message;
-      const toolCalls: ToolCallMsg[] = msg?.tool_calls ?? [];
-      if (!toolCalls.length) {
-        content = String(msg?.content ?? "");
-        break;
-      }
-      messages.push({ role: "assistant", content: msg?.content ?? "", tool_calls: toolCalls });
-      const results = await Promise.all(toolCalls.map(async (tc) => {
-        const started = Date.now();
-        let out: unknown;
-        let status: "ok" | "error" = "ok";
-        try {
-          const fn = TOOLS.find((t) => t.name === tc.function.name);
-          if (!fn) out = { missing: `未知工具 ${tc.function.name}` };
-          else out = await fn.fn(JSON.parse(tc.function.arguments || "{}"));
-        } catch (e) {
-          out = { missing: `工具执行失败：${(e as Error).message}` };
-          status = "error";
-        }
-        const ms = Date.now() - started;
-        const text = JSON.stringify(out);
-        trace.push({
-          name: tc.function.name,
-          args: (() => { try { return JSON.parse(tc.function.arguments || "{}"); } catch { return {}; } })(),
-          ms, status,
-          summary: text.length > 120 ? text.slice(0, 120) + "…" : text,
-        });
-        return { role: "tool", tool_call_id: tc.id, content: text.slice(0, 6000) };
-      }));
-      messages.push(...results);
+  if (!wantStream) {
+    try {
+      const r = await runToolLoop({ url, apiKey, model, messages, agent, emit: () => {}, isCancelled });
+      return NextResponse.json({ content: r.content, trace: r.trace, mode });
+    } catch (e) {
+      return NextResponse.json({ error: `AI 调用失败：${(e as Error).message}`, trace: [] }, { status: 502 });
     }
-    if (!content) content = "（工具调用轮次已达上限，未能生成结论；请缩小问题范围后重试）";
-    return NextResponse.json({ content, trace, mode: body?.mode ?? "decision" });
-  } catch (e) {
-    return NextResponse.json({ error: `AI 调用失败：${(e as Error).message}`, trace }, { status: 502 });
   }
+
+  return sseResponse(async (emit) => {
+    try {
+      const r = await runToolLoop({ url, apiKey, model, messages, agent, emit, isCancelled });
+      if (r.cancelled) {
+        emit({ type: "error", data: { message: "客户端已断开，本次回答提前结束（结束后不会再取数）" } });
+        return;
+      }
+      emit({ type: "done", data: { fullText: r.content } });
+    } catch (e) {
+      emit({ type: "error", data: { message: `AI 调用失败：${(e as Error).message}` } });
+    }
+  });
+}
+
+/**
+ * SSE 响应骨架。
+ * 这里不用 NextResponse.json 那种「先拿全再返回」的写法，ReadableStream 会真的逐帧 flush；
+ * 是否真的逐帧到达以 next build + next start 下 `curl -N` 的时间戳为准（见 worklog），不看代码想当然。
+ */
+function sseResponse(run: (emit: (ev: StreamEvent) => void) => Promise<void>): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const emit = (ev: StreamEvent) => {
+        try {
+          controller.enqueue(encoder.encode(encodeStreamEvent(ev)));
+        } catch { /* 客户端已断开：enqueue 抛错交给循环里的 isCancelled 收尾 */ }
+      };
+      try {
+        await run(emit);
+      } finally {
+        try { controller.close(); } catch { /* 已关闭 */ }
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

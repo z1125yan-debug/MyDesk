@@ -1,11 +1,15 @@
 "use client";
 // 右下角浮动智能助手小窗：与分析页侧栏、智能助手页共用同一份会话记录
-import { useEffect, useRef, useState } from "react";
-import { Bot, Send, X, Loader2, Plus } from "lucide-react";
+// P7-⑤：发送逻辑收敛到 useChatSend（同一套流式回填 / 降级 / 步骤时间线），小窗只保留图表上下文注入。
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Bot, Send, Square, X } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { aiChat, aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
 import { fetchNewsBlock } from "@/lib/desk/market";
+import type { ChatMessage } from "@/lib/desk/chat-core";
+import { useChatSend } from "@/lib/desk/use-chat";
 import Markdown from "./Markdown";
+import StepTimeline from "./StepTimeline";
 
 const CHIPS = ["关键位在哪", "多周期趋势总结", "现在适合进场吗", "给我一个风控清单"];
 
@@ -16,59 +20,62 @@ export default function AssistantWidget({
   onClose: () => void;
   chartContext: () => string;
 }) {
-  const chats = useDesk((s) => s.chats);
-  const activeChat = useDesk((s) => s.activeChat);
-  const setChats = useDesk((s) => s.setChats);
-  const newChat = useDesk((s) => s.newChat);
+  const newSession = useDesk((s) => s.newSession);
   const ai = useDesk((s) => s.ai);
+  const focusSymbol = useDesk((s) => s.focusSymbol);
 
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
-  const messages = chats[activeChat] ?? [];
+
+  // 小窗的快照来自分析页当前图表（含品种与实时字段）；快讯每次现取，失败就只带图表那一段。
+  // guardPrice 留空：图表上下文的组成由分析页决定，小窗不去猜锚点，宁可不校验也不拿可疑数字当现价的量级标准。
+  const snapshot = useCallback(async (): Promise<{ snapshot: string; guardPrice: null }> => {
+    const chart = chartContext();
+    const news = await fetchNewsBlock().catch(() => "");
+    return {
+      snapshot: [chart ? `[当前图表实时数据]\n${chart}` : "", news].filter(Boolean).join("\n\n"),
+      guardPrice: null,
+    };
+  }, [chartContext]);
+
+  const { send, busy, stop, sessions, activeSessionId } = useChatSend({
+    endpoint: "plain",
+    systemPrompt: assistantSystemPrompt,
+    snapshot,
+    fallback: async (cfg, messages) => ({ text: await aiChat(cfg, messages, { timeoutMs: 120_000 }) }),
+  });
+
+  const session = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
+  const messages: ChatMessage[] = session?.messages ?? [];
   const configured = aiConfigured(ai);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length, busy]);
-
-  const send = async (preset?: string) => {
+  const submit = (preset?: string) => {
     const content = (preset ?? input).trim();
-    if (!content || busy) return;
-    setBusy(true); setInput("");
-    const base = chats.map((c, i) => (i === activeChat ? [...c, { role: "user" as const, content, ts: Date.now() }] : c));
-    setChats(base);
-    try {
-      const snapshot = chartContext();
-      const news = await fetchNewsBlock();
-      const sent = [...base[activeChat].slice(-12)];
-      const lastMsg = sent[sent.length - 1];
-      sent[sent.length - 1] = {
-        ...lastMsg,
-        content: snapshot ? `${lastMsg.content}\n\n[当前图表实时数据]\n${snapshot}` : lastMsg.content,
-      };
-      const reply = await aiChat(ai, [
-        { role: "system", content: assistantSystemPrompt([snapshot, news].filter(Boolean).join("\n\n")) },
-        ...sent.map((m) => ({ role: m.role, content: m.content })),
-      ]);
-      setChats(base.map((c, i) => (i === activeChat ? [...c, { role: "assistant" as const, content: reply, ts: Date.now() }] : c)));
-    } catch (e) {
-      setChats(base.map((c, i) => (i === activeChat ? [...c, { role: "assistant" as const, content: `请求出错：${(e as Error).message}`, ts: Date.now() }] : c)));
-    } finally {
-      setBusy(false);
-    }
+    if (!content) return;
+    setInput("");
+    void send(content);
   };
+
+  const tail = `${messages.length}:${messages.at(-1)?.content.length ?? 0}`;
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [tail]);
 
   return (
     <div className="fixed bottom-5 right-5 z-[90] flex h-[520px] w-[380px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
       {/* 头部 */}
       <div className="flex items-center justify-between border-b border-border px-3.5 py-2.5">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600">
             <Bot size={14} className="text-white" />
           </div>
-          <span className="text-[13px] font-semibold">智能助手 · 随问</span>
+          <div className="min-w-0">
+            <div className="text-[13px] font-semibold">智能助手 · 随问</div>
+            <div className="truncate text-[10.5px] text-muted-foreground">
+              {session?.title} · {session?.stock ?? focusSymbol}
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <button onClick={newChat}
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button onClick={() => { newSession(); }}
             className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground">
             新会话
           </button>
@@ -78,7 +85,7 @@ export default function AssistantWidget({
         </div>
       </div>
 
-      {/* 消息区 */}
+      {/* 消息区：与智能助手页同一种渲染（会话共用，所以这里看到的和那页看到的是同一份记录） */}
       <div className="desk-scroll flex-1 space-y-3 overflow-y-auto px-3.5 py-3">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
@@ -86,7 +93,7 @@ export default function AssistantWidget({
             <div className="text-[11.5px] text-muted-foreground">上下文自动带入当前图表品种与行情</div>
             <div className="flex max-w-[300px] flex-wrap justify-center gap-1.5 pt-1">
               {CHIPS.map((q) => (
-                <button key={q} onClick={() => send(q)} disabled={!configured}
+                <button key={q} onClick={() => submit(q)} disabled={!configured}
                   className="rounded-full border border-border px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
                   {q}
                 </button>
@@ -94,8 +101,8 @@ export default function AssistantWidget({
             </div>
           </div>
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
+        {messages.map((m) => (
+          <div key={m.id} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
             {m.role === "user" ? (
               <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-sky-500/90 px-3 py-2 text-[12.5px] leading-5 text-white">
                 {m.content}
@@ -103,18 +110,24 @@ export default function AssistantWidget({
             ) : (
               <div className="max-w-[92%] rounded-lg border border-border bg-background/70 px-3 py-2 text-[12.5px] leading-5">
                 <Markdown content={m.content} />
+                {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-[6px] translate-y-0.5 animate-pulse bg-sky-400" />}
+                <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming} />
               </div>
             )}
           </div>
         ))}
-        {busy && <Loader2 size={14} className="ml-1 animate-spin text-sky-400" />}
+        {!configured && (
+          <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+            未配置 AI 接口：到「设置 → AI 接口」填写后才能对话。
+          </div>
+        )}
         <div ref={endRef} />
       </div>
 
       {/* 快捷指令 + 输入 */}
       <div className="flex flex-wrap gap-1.5 border-t border-border px-3 pt-2">
         {CHIPS.map((q) => (
-          <button key={q} onClick={() => send(q)} disabled={busy || !configured}
+          <button key={q} onClick={() => submit(q)} disabled={busy || !configured}
             className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
             {q}
           </button>
@@ -122,14 +135,21 @@ export default function AssistantWidget({
       </div>
       <div className="flex items-center gap-2 p-2.5">
         <input value={input} onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder={configured ? "问智能助手…" : "先去设置配置 AI 接口"}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
+          placeholder={configured ? "问智能助手…（流式，可停止）" : "先去设置配置 AI 接口"}
           disabled={!configured}
           className="h-9 flex-1 rounded-md border border-border bg-background px-3 text-[12.5px] outline-none focus:border-sky-500/60 disabled:opacity-60" />
-        <button onClick={() => send()} disabled={busy || !configured}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-sky-500 text-white hover:bg-sky-400 disabled:opacity-50">
-          <Send size={14} />
-        </button>
+        {busy ? (
+          <button onClick={stop} title="停止本次回答（保留已生成的部分）"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20">
+            <Square size={14} />
+          </button>
+        ) : (
+          <button onClick={() => submit()} disabled={!configured}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-sky-500 text-white hover:bg-sky-400 disabled:opacity-50">
+            <Send size={14} />
+          </button>
+        )}
       </div>
     </div>
   );
