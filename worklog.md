@@ -930,3 +930,79 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 ### 本部分没做
 
 §2.1 意图识别 + 场景提示词、§2.5 回测异步链、§2.7 三栏布局、§2.8 数据可视化面板（已批准挂起）、§2.10 奇门遁甲；把结论卡接进 AI 上下文（下一步做）。按批准规范分两个 commit：代码文件一条，本 worklog 条目一条。
+
+## P7 第六阶段 P7-⑥ 场景意图识别 + 统一对话融合（2026-09-20～09-21：批准的四项全部做完，实测另抓出六条口径缺陷，逐条修到并有断言）
+
+### 范围（用户任务书四条 + 边界）
+
+1. **意图识别层**：`/api/ai/chat` 一侧加场景判定（大盘情绪 / 量化选股 / 行业板块 / 行情查询 / 自选股 / LLM 个股分析 / 奇门遁甲 / 通用对话），按判出的场景注入对应系统提示词，用户不选菜单。
+2. **统一对话入口**：首页大输入框、`AssistantPage`、右下角 `AssistantWidget` 共用同一份会话 store 与同一条发送链，首页提问直接落到对话页。
+3. **多轮追问**：上下文窗口从 `slice(-12)` 升到 30 轮，工具调用历史一起保留，支持「那这个股明天怎么看」这类关联提问。
+4. **现有工具自动调度**：识别到行情 / 情绪 / 选股即自动调对应接口取真实数据，结果嵌在对话里，用户不 @ 工具。
+边界（同样按批准）：不新增 npm 依赖；奇门只做入口 + 提示词占位（排盘留 P7-⑨）；三栏右侧面板与回测异步轮询留到 P7-⑦之后；先服务层映射 + 单元测试、再 UI；3010 主实例不动，隔离测试全部在 `D:/Zai/p7-check/`。
+
+### 落点与分层（纯内核先行，route 与界面只剩接线）
+
+- 三个新纯内核 + 一个扩写（均无 `"use client"`、无 `@/`，`node --test` 直跑）：
+  - `src/lib/desk/intent-core.ts`（448 行）：`SCENE_RULES` 关键词表（**数组顺序即优先级**）、`sceneHits` 命中词留痕、`classifyIntent` 出 `Intent{scene,label,hits,alternates,symbol,symbolSource,inherited,followUp,skipped?,prefetchChars?}`、`extractSymbols`（六位代码补 .SH/.SZ 后缀）、`isFollowUp`、`asScene`（外部回传的场景串过白名单，认不了等于「上一轮没判过」）、`scenePrompt`（八份提示词：只写「这类问题怎么答、缺数据怎么说」，**不复述任何行情数字**）、`toolsForScene`、`planDispatch`（预取计划 + 每项没取的原因）、`renderDispatchBlock`（只并成功块）。
+  - `src/lib/desk/dispatch-core.ts`（148 行）：`runDispatchPlan` 把「执行计划」和「怎么执行」分开，执行函数由服务层注入；步骤编号 `stepStart = turn.nextStep` 保证 prefetch 与 model 两段连号。
+  - `src/lib/desk/modes.ts`（32 行）：回答风格（决策/研判/深度思考/实时搜索）唯一定义处，首页下拉与对话页共用。
+  - `src/lib/desk/chat-core.ts`（+275 行）：`splitWindow` 按轮裁 + **窗口必须以 user 起头**、`summarizeDropped`、`buildPromptMessages`（字数预算 + 快照挂本轮新提问）、`trimDialog` 服务端兜底裁窗、`applyEvent`。
+- 两个新服务层文件：`chat-tools.ts`（320 行，工具实现从 chat route 整搬出来并新增 `watchlist_overview`，chat 与 proxy 共用一份）、`scene-dispatch.ts`（157 行，`prepareSceneTurn` = 判意图 → 取真实数据 → 并成注入块；**if/else 判定全部在纯内核里**，服务层不做判断）。
+- 两处因此变薄：`src/app/api/ai/chat/route.ts` 636 → 442 行（+117/−243），`AiHomePage.tsx` 294 → 194 行（+118/−218，首页不再自己发流、自己判服务商）。`ai.ts` 的 `chatRequestBody` 定死两份请求形状（plain 把 `focusSymbol/sessionSymbol/prevScene` 装进 `body.scene`，tools 平铺），`pickChatEndpoint` + `supportsToolCalling` 决定走哪条。
+- 前端三入口收成一条链：`use-chat.ts` 的 `useChatSend`（+146 行）是唯一发送口，`endpoint: "auto"`、兜底参数集中在 `defaultFallback`；首页 → 对话页用 `pendingAsk` 一次性交接（不进 `partialize`，`takePendingAsk()` 取完即清）；小窗与对话页共用 `store.sessions`；`SceneBadge.tsx`（68 行）是唯一画法。发送入口文件里已无 `streamChat(` / `aiChatPlain(` / `aiChatTools(` 直调，`fallback:` 也不允许在页面各写一套（p7-dispatch 有源码断言钉住）。
+
+### 刻意钉住的几条诚实口径
+
+1. **判不出来就是 general**，不允许凭「像行情」硬塞进某个交易场景；scene 判错会连带注入错提示词 + 预取错数据，所以每个场景都有用例，误判改的是表里一行、`hits` 当场显示依据。
+2. **选股场景不预取**：条件必须由模型从用户原话里抽，本机不替用户猜「缩量回调」的阈值（`planDispatch` 返回 `calls: []` + skipped 写明「未预取」）。
+3. **预取只取真实数据，且没取的原因要留在徽章上**：客户端快照已带该品种（不重复取数、避免两个数）、自选清单为空（空清单不是取数失败）、奇门未接入 —— 三类都写进 `skipped`，界面「未取：…」与提示词同源。
+4. **奇门只登记入口**：提示词明写排盘算法未接入，禁止虚构盘局，也不取数（不画一个必然失败的步骤）。
+5. **回测没接进对话链路就不声称跑过**：`backtestReady` 默认 false，「帮我回测刚才说的策略」这一轮只能如实说没接。
+
+### 验收（全部当场重跑）
+
+- `npx tsc --noEmit` 退出码 **0**；全量 `tests/quant/*.test.ts` = **531 tests / 522 pass / 0 fail / 9 skipped**（P7-⑤ 收尾基线 449/440/9，**+82** 全部来自本阶段：`p7-intent.test.ts` 42、`p7-dispatch.test.ts` 19、`p7-chat.test.ts` 新增 21）⇒ 无回归，既有测试未删、断言未降。
+- `npx eslint` 对本阶段改动的四个文件（`intent-core.ts` / `use-chat.ts` / 两个测试件）**0 问题**；全仓 `npx eslint .` = **37 problems**，逐条为 `33 × react-hooks/set-state-in-effect` + `2 × react-hooks/refs` + `1 × AnalysisPage.tsx:61 未启用的 eslint-disable` + `1 × em-provider.ts:193 no-empty-object-type`，**全部落在本阶段未改动的文件里**（`git status` 未列 `AnalysisPage.tsx` / `em-provider.ts`）⇒ 未新增告警。
+- `npx next build` ✓ Compiled successfully；隔离生产实例 = 仓库外副本库 `D:/Zai/p7-check/p7chat-3014.db` + `DESK_SCHEDULER=0` + `npx next start -p 3014`。真实库 `prisma/db/custom.db` 本轮前后 md5 均为 `9b98e11cedff742e1a077af3b767c0e2`（未被写），`data/factor-verified.json` 未改，用户 3010（PID 21208）未动。
+- `curl` 关键证据（16:51–16:53 UTC 当场原样输出，假上游 `D:/Zai/p7-check/fake-sse-upstream.mjs` 带 `FAKE_DUMP=1` 把「上游真正收到的消息数组」打出来）：
+  - 大盘情绪（`今天大盘情绪怎么样？风险等级是多少？`）→ `http=200 time=3.18s`，事件计数 `9 delta / 4 step / 1 done`，徽章 `{scene:"sentiment",hits:["大盘","情绪","风险等级"],symbol:null,symbolSource:"none",prefetchChars:600}`。
+  - 自选股（`我的自选股现在整体怎么样？`）→ `http=200 time=2.70s`，`{scene:"watchlist",hits:["自选"],alternates:["screener"],prefetchChars:442}`（并列场景记进 alternates，选股工具仍由模型自取）。
+  - 奇门（`用奇门遁甲帮我排一盘…方位吉凶`）→ `http=200 time=2.72s`，只有 2 个 step（模型自取的快讯），`skipped:["奇门遁甲本轮只做入口：排盘算法未接入，不取数"]`。
+  - 追问 · tools 契约（`/api/ai/chat`，平铺 `sessionSymbol:"688256"` + `prevScene:"stock_analysis"`，末轮「帮我回测一下刚才说的策略」）→ `http=200 time=13.64s`，`{scene:"stock_analysis",hits:["回测"],symbol:"688256",symbolSource:"session",followUp:true,prefetchChars:1262}`，步骤 `stock_snapshot / stock_kline_summary / stock_fund_flow` 三条 `source:"prefetch"` + `market_news` `source:"model"` ⇒ 「刚才那只」被正确沿用、取的是真实数据。
+  - 追问 · plain 契约（同体发 `/api/ai/proxy`，`scene` 嵌套）→ `http=200 time=1.93s`，`6 step / 9 delta / 1 done`，同一份徽章 ⇒ 两条端点各自形状都走得通（见下面缺陷 6）。
+  - 40 轮长会话（`contextWindow:30`，81 件请求体）→ 上游实收 64 件，`#0` 模式提示词、`#1` 场景提示词、对话第一件是 `#2 user「第12问」`、末件 `#61 user` 本轮提问，`system=3` ⇒ 裁的是整轮（最早的 11 轮一起丢），窗口以用户消息起头，压缩摘要没被挤掉。
+- 浏览器实机（生产构建 3014，只读 `provider/baseUrl/model` 三项存在性与 `apiKeyPresent` 布尔，全程未读取、未搬运、未代填任何密钥）：
+  - 首页输入「我的自选股现在整体怎么样？」回车 → 落 `#/copilot`，消息 12→14（**只发一次**），徽章 `场景 · 自选股 / 依据：自选 / 还问到：量化选股（未预取）/ 自动取数 518 字`，步骤 `1:watchlist_overview:prefetch:ok`、`2:market_news:model:ok`。
+  - 小窗（分析页右下角）输入「688256 现在什么价」→ 同一会话 14→16，`{scene:"quote",hits:["什么价"],symbol:"688256.SH",symbolSource:"question",prefetchChars:312}`，步骤 `1:取个股实时快照:prefetch:ok`（真实快照：寒武纪 1113.14 / +0.65%）、`2:取最新快讯:model:ok`。
+  - 点窗内「在助手页继续（同一份会话）」→ `page=copilot`、`activeSessionId` 与会话消息数不变（16），两条徽章（自选股 / 行情查询）同屏同画法。
+  - 刷新（`location.reload()`）→ 消息数仍 16、假上游日志 **0 增长**、无残留「停止生成」态 ⇒ `pendingAsk` 不重发。
+  - 新会话四步链：`688256 现在什么价` →（点快捷问）`关键位在哪` → `均线多头排列该怎么理解？` → `那它明天怎么看`，末轮徽章 `场景 · 个股分析 / 依据：怎么看 / 按追问处理 / 标的 688256.SH（沿用本会话前面问的那只）/ 自动取数 1035 字 / 未取：stock_snapshot · 688256.SH：客户端快照已带该品种实时数据，未重复取数`，步骤 1–3 预取 + 4 模型自取。
+- 截图不可用（in-app browser 视口 hidden → `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`），`click` / `press_key` 同样不可用，浏览器操作全部走 `evaluate_script` 的 DOM 事件（`el.click()`、原生 value setter + `input` + `Enter` keydown）⇒ **视觉证据为 DOM 级，不是可信指针点击**；「回车提交」验的是提交处理逻辑，不保证真实键盘事件路径。
+- **本轮实测的边界（必须说清）**：以上端到端跑的是本机假上游（`provider=ollama` 免 Key 口径），正文是脚本内置常量且自标「不构成任何行情事实」；真实数据只出现在 `stock_snapshot / stock_kline_summary / stock_fund_flow / watchlist_overview / market_news` 这些取数步骤里。**这不等于真实模型的回答质量已验收**；Anthropic / Gemini 原生协议分支的运行时行为本轮同样未实测（无 Key 不可测）。带真实 Key 的复测按用户指示留到开发完了再做。
+- 凭据自查：对 14 个改动 / 新增文件与 `git diff -U0` 跑 `sk_[a-zA-Z0-9]{8,}|inceptionlabs|mercury-2|Bearer [A-Za-z0-9_-]{16,}|api[_-]?key["']?\s*[:=]\s*["'][^"']{12,}` ⇒ **0 命中**；`D:/Zai/p7-check/` 的测试请求体与假上游脚本同样无 `apiKey` / `authorization` 字段。
+
+### 本阶段发现并修掉的六条缺陷
+
+1. **「我的自选股现在整体怎么样」被判成量化选股**（curl 抓到的第一条误判）：纯子串匹配下「自**选股**」里含着「选股」。修法是把 `watchlist` 排到 `screener` 前面（自选优先于全市场筛选），选股能力不丢 —— 记进 `alternates` 且工具仍开。补 3 条断言。
+2. **裁完的窗口以助手消息起头**（40 轮 + `contextWindow=30` 抓到）：`trimDialog` 只按条数裁，一轮的助手侧可能占多条（正文 + 工具回执），条数一算就把某一问整轮切掉、只留它的回答，模型会把自己的话续下去。修法与 `splitWindow` 同口径：**裁完必须落在 user 上**，整窗无 user 时不动它（清空上下文比开头别扭更糟）。补 2 条断言。
+3. **流式那一轮「有步骤、没徽章」**（浏览器实测抓到）：`done` 会把累计全文再回放一遍，去重逻辑把整个事件丢了，徽章跟着没 —— 而徽章是追问继承与界面显示的唯一载体，丢它同时破坏这两件事。修成只丢全文、徽章单独并回消息，并加源码断言钉住「去重前先确认有没有徽章」。
+4. **界面自己摆的快捷问点一下退化成通用问答**：小窗四条里「关键位在哪」「现在适合进场吗」「给我一个风控清单」一个关键词都没命中 → 徽章「通用问答」且一步数据都不取。补 `阻力 / 关键位 / 进场 / 风控` 四个词，并加 3 条测试 —— 其中一条**从组件源码里抽快捷问清单**再逐个判定（界面临时改一句快捷问，测试会立刻说出「这句现在不取数」），而不是在测试里抄一份清单。
+5. **追问被中间一轮没标的的问句清空标的**（浏览器实测）：`688256 现价` → 一句无标的的通用问 → `那它明天怎么看`，`sessionSymbol` 只看上一条徽章，结果退到分析页当前品种 600519.SH，**一个「它」答成了另一只票**，而徽章写的还是「分析页当前品种」。修法是把两份回看长度分开：场景仍只看上一条徽章（更早的场景不该套到新问题），标的往前找**最近一条带标的的徽章**。加 2 条源码断言（含「不许写回 `sessionSymbol: prevIntent?.symbol`」）。
+6. **测试体自己的契约形状用错了**：手写 fixture 把 plain 契约（`scene` 嵌套）发给了 tools 端点 `/api/ai/chat`，服务端读平铺字段 ⇒ 拿到 `symbol: null`。这不是产品缺陷（两条端点各自形状在 `chatRequestBody` 与两个 route 里都有断言），是本轮证据的错；两条路各自重跑并留证（见上一节两条 curl）。
+
+### 登记不修（本层观察，交用户定夺）
+
+1. 沿用前面几阶段的待办：`T-VOLUME` 恒 DEGRADED、真实库 `event_interpretation` 0 行、日K走腾讯兜底通道、`probability_snapshot` 缺 `period` 列、Key 暂不轮换。
+2. `/api/ai/chat` 非流式分支仍给上游发 `Accept: text/event-stream`。
+3. `AssistantWidget` 只在分析页挂载；AiHomePage 的 `loadSentiment` 既有 `set-state-in-effect` 告警未为消警动逻辑；`AssistantPage` 的 `pendingAsk` effect 仍依赖 `send`。
+4. 两个 route 各自重复 `windowsSystemProxy / resolveProxy / isLanUrl`（本阶段没动网络层）。
+5. 关键词规则的固有边界：句子里出现场景词的翻译类提问会被判进那个场景（如「帮我把『风险等级』翻译成英文」→ 大盘情绪），`hits` 里看得见依据，不打算为此引入评分黑箱。
+6. 外部回传的 `sessionSymbol` 不做代码补后缀（客户端一定带 `.SH/.SZ`；裸代码时取数工具自己会补，徽章原样显示）。
+7. 追问继承的另一面：会话里已有标的与场景时，含「该 / 再 / 那」等字的新话题会被当追问沿用那只票（本轮「均线多头排列该怎么理解？」在会话里就走了个股分析）。徽章写明「沿用本会话前面问的那只」，取的是真实数据，故暂不动 —— 若用户希望这类概念问句不绑标的，改的是 `FOLLOWUP_WORDS` 里单字条目。
+8. Anthropic / Gemini 原生协议分支运行时未实测（无 Key 不可测）；真实模型回答质量本轮未验收。
+
+### 本部分没做
+
+奇门遁甲排盘算法（P7-⑨）、三栏右侧面板与回测异步轮询（P7-⑦之后）、可视化面板（已批准挂起）、把结论卡接进 AI 上下文、真实 Key 端到端复测。#89（外部开发文档更新）继续等待。按批准规范分两笔：代码 + 测试一条，本 worklog 条目一条。
+
