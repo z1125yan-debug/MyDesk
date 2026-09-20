@@ -368,7 +368,8 @@ export function injectSceneContext<T extends ContextMsg>(
 
 // ---------- 工具调用历史 → 上文 ----------
 
-const STEP_STATUS_WORD: Record<StepInfo["status"], string> = {
+/** 状态词的唯一出处：发给模型的取数记录行（renderStepsLine）与 P7-⑧③ 的上下文面板都用它，两处不会各写一套说法 */
+export const STEP_STATUS_WORD: Record<StepInfo["status"], string> = {
   ok: "已取到", running: "未结束", missing: "缺数据", error: "取数失败",
 };
 

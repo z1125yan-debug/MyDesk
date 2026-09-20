@@ -5,7 +5,7 @@
 // 发送、流式回填、降级、价格校验、端点选择都在 useChatSend 里，和首页 / 小窗共用同一份实现。
 // 会话是同一份 store：从小窗「在助手页继续」＝切到同一条会话，不复制消息。
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Loader2, PenLine, Plus, Settings2, Send, Square, Trash2 } from "lucide-react";
+import { Bot, Info, Loader2, PenLine, Plus, Settings2, Send, Square, Trash2 } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
 import { fetchQuoteCards, fetchTechSnapshot, fetchNewsBlock, isDemoSymbol, searchSymbols } from "@/lib/desk/market";
@@ -18,9 +18,11 @@ import { pickChatEndpoint } from "@/lib/desk/chat-stream-core";
 import { CHAT_MODES } from "@/lib/desk/modes";
 import { useChatSend, type SnapshotResult } from "@/lib/desk/use-chat";
 import { useDeskLinks } from "@/lib/desk/use-desk-links";
+import { pickPanelSymbol } from "@/lib/desk/context-panel-core";
 import Markdown from "../Markdown";
 import SceneBadge from "../SceneBadge";
 import StepTimeline from "../StepTimeline";
+import ContextPanel from "../ContextPanel";
 
 // 回答风格的清单一处定义在 @/lib/desk/modes（首页的下拉用的就是同一份），
 // 当前选中的值存在 store.assistantMode：两个画法共享一个设置，不会出现「首页选了研判、这里按决策发」。
@@ -101,6 +103,7 @@ export default function AssistantPage() {
   const go = useDesk((s) => s.go);
   const ai = useDesk((s) => s.ai);
   const focusSymbol = useDesk((s) => s.focusSymbol);
+  const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
   const switchSession = useDesk((s) => s.switchSession);
   const newSession = useDesk((s) => s.newSession);
   const dropSession = useDesk((s) => s.dropSession);
@@ -118,6 +121,9 @@ export default function AssistantPage() {
   // P7-⑧②：正文里的 6 位代码 / 清单内板块名渲染成可点片段。板块白名单与跳转动作出自共用 hook
   // （右下角小窗用的是同一份），这里只负责把它递给 Markdown。
   const { sectors, openLink } = useDeskLinks();
+  // P7-⑧③：右栏在宽屏（xl）常驻，窄屏默认收起，靠标题栏那个「上下文」按钮拉成抽屉。
+  // 三栏在手机宽度里挤一起会把对话正文压得没法读，所以窄屏必须能收。
+  const [panelOpen, setPanelOpen] = useState(false);
 
   // 本轮快照：识别问题里的品种（关注品种兜底），带来源分层；追问则沿用会话已关联的标的
   const snapshot = useCallback(async (session: ChatSession, question: string): Promise<SnapshotResult | null> => {
@@ -177,6 +183,22 @@ export default function AssistantPage() {
   const session = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
   const messages: ChatMessage[] = session?.messages ?? [];
   const configured = aiConfigured(ai);
+
+  // P7-⑧③ 右栏读的是「最近一条助手回答」那一份判定与取数记录：服务端回了什么就是什么，
+  // 本地不再认一遍代码（否则同一轮会出现两套标的）。流式期间 steps 会一直长，面板跟着长。
+  const lastAnswer = [...messages].reverse().find((m) => m.role === "assistant");
+  const panel = pickPanelSymbol({
+    intent: lastAnswer?.intent ?? null,
+    sessionStock: session?.stock ?? null,
+    focusSymbol,
+  });
+  // 面板里的跳转：先把标的写进界面焦点再切页（与分析页/画像页共用同一个 store 字段，
+  // 目标页是条件挂载的，切过去自然按新焦点取数，不需要额外通知）。
+  const openPanelSymbol = useCallback((symbol: string, page: "analysis" | "profile") => {
+    setFocusSymbol(symbol);
+    go(page);
+    setPanelOpen(false); // 窄屏抽屉不自动关的话，跳过去也只看到半屏面板
+  }, [go, setFocusSymbol]);
 
   const submit = (preset?: string) => {
     const content = (preset ?? input).trim();
@@ -263,6 +285,13 @@ export default function AssistantPage() {
                 <Settings2 size={13} /> 先去配置 AI
               </button>
             )}
+            {/* P7-⑧③：宽屏右栏常驻，这个按钮只在窄屏出现（拉出抽屉）。没有标的时也能开：
+                大盘/板块类问题没有行情快照可看，但本轮的取数记录与分析依据照样要能看到。 */}
+            <button onClick={() => setPanelOpen(true)}
+              title="本轮行情快照、取数记录与分析依据"
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:border-sky-500/40 hover:text-sky-300 xl:hidden">
+              <Info size={12} /> 上下文{panel.symbol ? <span className="font-mono text-sky-300">{panel.symbol}</span> : ""}
+            </button>
           </div>
         </div>
 
@@ -345,6 +374,25 @@ export default function AssistantPage() {
           )}
         </div>
       </div>
+
+      {/* P7-⑧③ 右栏：宽屏（xl 起）是常驻的第三栏，窄屏是点开的抽屉 + 遮罩。
+          两种画法用的是同一个组件、同一份 props，所以「收起与否」不会让读数口径变掉。
+          窄屏抽屉高度吃满视口（inset-y-0），面板内部自己滚动，不会把输入框顶出屏。 */}
+      {panelOpen && (
+        <button aria-label="关闭上下文面板" onClick={() => setPanelOpen(false)}
+          className="fixed inset-0 z-30 bg-black/55 xl:hidden" />
+      )}
+      <aside className={"xl:static xl:z-auto xl:flex xl:w-64 xl:shrink-0 " + (panelOpen ? "fixed inset-y-0 right-0 z-40 w-[17.5rem] p-1 shadow-2xl " : "hidden")}>
+        <ContextPanel
+          symbol={panel.symbol}
+          basis={panel.basis}
+          intent={lastAnswer?.intent ?? null}
+          steps={lastAnswer?.steps}
+          warning={lastAnswer?.warning}
+          onOpenSymbol={openPanelSymbol}
+          onClose={() => setPanelOpen(false)}
+        />
+      </aside>
     </div>
   );
 }
