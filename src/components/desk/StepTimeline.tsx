@@ -4,7 +4,9 @@
 // 为什么单独成组件：AI 首页（工具调用）、智能助手页、右下角随问小窗三处都要展示同一种东西，
 // 各自画一套就会各自漂移（P6 时已经吃过「同一个来源两种说法」的亏）。
 // 口径：running=正在等这一步；ok=真的取到了；missing=没取到（不是 0，也不是失败）；error=调用抛错。
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, CircleDashed, AlertTriangle, XCircle, Loader2 } from "lucide-react";
+import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import type { StepInfo } from "@/lib/desk/chat-core";
 
 const STATUS_META: Record<StepInfo["status"], { icon: typeof Loader2; text: string; tone: string }> = {
@@ -25,22 +27,41 @@ export default function StepTimeline({
   streaming?: boolean;
   defaultOpen?: boolean;
 }) {
-  if (!steps?.length && !warning) return null;
+  // hooks 一律在 early-return 之前跑完：steps 会从「没有」变「有」，条件之后挂 hook 就是按次数不一致渲染。
   const missing = steps?.filter((s) => s.status === "missing").length ?? 0;
   const failed = steps?.filter((s) => s.status === "error").length ?? 0;
+  // 原来靠原生 details 的 open 属性做「开流自动展开、流毕自动收起，中途用户手点也作数」；
+  // radix 受控要自己管：派生值翻转时才强制对齐，其余时候 open 状态归用户。
+  const pinned = defaultOpen ?? (streaming === true && !!steps?.length);
+  const [open, setOpen] = useState(pinned);
+  const prevPinned = useRef(pinned);
+  useEffect(() => {
+    if (prevPinned.current !== pinned) {
+      prevPinned.current = pinned;
+      setOpen(pinned);
+    }
+  }, [pinned]);
+  if (!steps?.length && !warning) return null;
   return (
-    <details open={defaultOpen ?? (streaming === true && !!steps?.length)} className="group/step">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground">
-        {streaming && steps?.some((s) => s.status === "running")
-          ? <Loader2 size={11} className="animate-spin text-sky-400" />
-          : <CircleDashed size={11} />}
-        <span>
-          工作过程 · {steps?.length ?? 0} 步
-          {missing ? ` · ${missing} 步缺数据` : ""}
-          {failed ? ` · ${failed} 步失败` : ""}
-        </span>
-      </summary>
-      <div className="mt-1.5 space-y-1 border-l border-border/70 pl-2.5">
+    <DeskCollapse
+      open={open}
+      onOpenChange={setOpen}
+      className="text-[11px]"
+      triggerClassName="text-[11px]"
+      title={
+        <>
+          {streaming && steps?.some((s) => s.status === "running")
+            ? <Loader2 size={11} className="animate-spin text-sky-400" />
+            : <CircleDashed size={11} />}
+          <span>
+            工作过程 · {steps?.length ?? 0} 步
+            {missing ? ` · ${missing} 步缺数据` : ""}
+            {failed ? ` · ${failed} 步失败` : ""}
+          </span>
+        </>
+      }
+    >
+      <div className="mt-0.5 space-y-1 border-l border-border/70 pl-2.5">
         {steps?.map((s) => {
           const meta = STATUS_META[s.status] ?? STATUS_META.ok;
           const Icon = meta.icon;
@@ -84,6 +105,6 @@ export default function StepTimeline({
           </div>
         )}
       </div>
-    </details>
+    </DeskCollapse>
   );
 }

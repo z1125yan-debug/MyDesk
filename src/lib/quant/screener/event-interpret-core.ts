@@ -541,7 +541,7 @@ export function statusDataLayer(_s: InterpretStatus): DataStatus {
 
 /**
  * 「原始事件 → AI 提取 → AI 解释 → 哪些没站住」的四段文本。
- * 同一份函数既给页面 <details> 用，也给 AI 上下文注入用，避免两处两种说法。
+ * 同一份函数既给页面折叠面板（DeskCollapse）用，也给 AI 上下文注入用，避免两处两种说法。
  */
 export function renderInterpretationTrace(itp: EventInterpretation): string {
   const conf = itp.confidence === null ? "未给出（不猜）" : `${itp.confidence.toFixed(2)}（AI 对这段解释的把握度，不是上涨概率）`;

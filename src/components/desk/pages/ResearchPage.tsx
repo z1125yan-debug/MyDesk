@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Microscope, RefreshCw, Sparkles } from "lucide-react";
 import { SourceBadge } from "../SourceBadge";
+import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import { useDesk } from "@/lib/desk/store";
 import { aiReady } from "@/lib/desk/ai";
 import { RESEARCH_RUN_STATUS_TEXT, runMarketResearch, type ResearchRunResult } from "@/lib/desk/research-run";
@@ -67,12 +68,16 @@ function SectionItem({ item }: { item: ResearchReport["interpretation"][number] 
         )) : <span className="rounded border border-amber-500/40 px-1.5 py-0.5 text-amber-300">无台账引用：不可回溯</span>}
       </div>
       {!!item.cited_text.length && (
-        <details className="mt-1 text-[10px] text-muted-foreground">
-          <summary className="cursor-pointer select-none">引用原文（服务端按 id 回填，前端改不了）</summary>
-          <ul className="mt-1 space-y-0.5 pl-3">
+        <DeskCollapse
+          className="mt-1"
+          title="引用原文（服务端按 id 回填，前端改不了）"
+          triggerClassName="text-[10px] text-muted-foreground hover:text-foreground"
+          contentClassName="text-[10px] text-muted-foreground"
+        >
+          <ul className="space-y-0.5 pl-3">
             {item.cited_text.map((t) => <li key={t} className="list-disc leading-snug">{t}</li>)}
           </ul>
-        </details>
+        </DeskCollapse>
       )}
       {!!item.unsourced_numbers.length && (
         <div className="mt-1 text-[10px] text-amber-300">台账里找不到出处的数字（原文未删，逐条标注供核对）：{item.unsourced_numbers.join("、")}</div>
@@ -348,10 +353,13 @@ export default function ResearchPage() {
                   </div>
                 </div>
               ))}
-              <details className="rounded-xl border border-border bg-card/40 px-3 py-2 text-[10.5px] text-muted-foreground">
-                <summary className="cursor-pointer select-none">回溯文本（这份报告「每句话从哪来」的完整核对串）</summary>
-                <pre className="mt-1.5 max-h-[420px] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-background/60 p-2 text-[10px] leading-4">{renderResearchTrace(rep, ledger)}</pre>
-              </details>
+              <DeskCollapse
+                title="回溯文本（这份报告「每句话从哪来」的完整核对串）"
+                triggerClassName="text-[10.5px] text-muted-foreground hover:text-foreground"
+                contentClassName="text-[10.5px] text-muted-foreground"
+              >
+                <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-background/60 p-2 text-[10px] leading-4">{renderResearchTrace(rep, ledger)}</pre>
+              </DeskCollapse>
             </div>
           )}
         </div>
@@ -373,10 +381,14 @@ export default function ResearchPage() {
           </div>
 
           {!!ledger.length && (
-            <details className="rounded-xl border border-border bg-card/50 px-3 py-2" open>
-              <summary className="cursor-pointer select-none text-[11px] font-semibold">台账目录（{ledger.length} 行，服务端现取）</summary>
-              <div className="mt-1.5 space-y-1.5">{ledger.map((l) => <LedgerLine key={l.id} l={l} />)}</div>
-            </details>
+            <DeskCollapse
+              defaultOpen
+              title={`台账目录（${ledger.length} 行，服务端现取）`}
+              triggerClassName="text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+              contentClassName="text-[11px] text-muted-foreground"
+            >
+              <div className="space-y-1.5">{ledger.map((l) => <LedgerLine key={l.id} l={l} />)}</div>
+            </DeskCollapse>
           )}
 
           <div className="rounded-xl border border-border bg-card/50 px-3 py-2">

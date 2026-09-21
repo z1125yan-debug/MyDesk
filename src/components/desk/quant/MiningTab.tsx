@@ -2,6 +2,7 @@
 // 量化研究 — 因子挖掘 Tab（Phase 2/3）：配置漏斗 → 启动任务 → 进度 → 结果
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -188,9 +189,12 @@ export function MiningTab() {
               </div>
             )}
             {rejected.length > 0 && (
-              <details className="text-[12px]">
-                <summary className="cursor-pointer text-muted-foreground">淘汰明细（{rejected.length}，含失败原因）</summary>
-                <div className="mt-1 max-h-44 space-y-1 overflow-y-auto">
+              <DeskCollapse
+                title={`淘汰明细（${rejected.length}，含失败原因）`}
+                triggerClassName="text-[12px] text-muted-foreground hover:text-foreground"
+                contentClassName="text-[12px]"
+              >
+                <div className="max-h-44 space-y-1 overflow-y-auto">
                   {rejected.map((r) => (
                     <div key={r.factorKey} className="rounded border border-border/60 px-2 py-1">
                       <span className="font-mono text-[11px]">{r.factorKey}</span>
@@ -199,7 +203,7 @@ export function MiningTab() {
                     </div>
                   ))}
                 </div>
-              </details>
+              </DeskCollapse>
             )}
           </CardContent>
         </Card>

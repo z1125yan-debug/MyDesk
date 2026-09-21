@@ -18,6 +18,7 @@ import { SourceBadge } from "./SourceBadge";
 import { fetchDecisionView } from "@/lib/desk/quant-api";
 import { DIMENSION_LABEL, decisionSections, type Decision, type DimensionResult, type ScoreItem } from "@/lib/quant/screener/decision-core";
 import { DATA_STATUS_TEXT } from "@/lib/quant/screener/datastatus-core";
+import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import type { DecisionView } from "@/lib/quant/screener/decision-wiring-core";
 
 /**
@@ -180,20 +181,24 @@ function CardBody({ view }: { view: DecisionView }) {
       </div>
 
       {w.notes.length > 0 && (
-        <details className="rounded-lg border border-border/70 px-3 py-2">
-          <summary className="cursor-pointer text-[11.5px] text-muted-foreground">
-            接线层登记（{w.notes.length} 条：口径声明、把补出来的 0 还原成缺失、降级与滞后说明）
-          </summary>
-          <ul className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
+        <DeskCollapse
+          className="mt-2"
+          title={`接线层登记（${w.notes.length} 条：口径声明、把补出来的 0 还原成缺失、降级与滞后说明）`}
+          contentClassName="text-[11px] text-muted-foreground"
+        >
+          <ul className="space-y-0.5">
             {w.notes.map((n, i) => <li key={i}>· {n}</li>)}
           </ul>
-        </details>
+        </DeskCollapse>
       )}
 
-      <details className="rounded-lg border border-border/70 px-3 py-2">
-        <summary className="cursor-pointer text-[11.5px] text-muted-foreground">这份结论的完整文字口径（与 AI 上下文共用同一份）</summary>
-        <pre className="mt-1.5 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-muted-foreground">{view.text}</pre>
-      </details>
+      <DeskCollapse
+        className="mt-2"
+        title="这份结论的完整文字口径（与 AI 上下文共用同一份）"
+        contentClassName="text-[11px] text-muted-foreground"
+      >
+        <pre className="whitespace-pre-wrap break-words leading-relaxed">{view.text}</pre>
+      </DeskCollapse>
 
       <div className="text-[10.5px] leading-relaxed text-muted-foreground/80">
         免责声明：综合得分是上面四张打分表在本次生效权重下的加权结果，用于把「哪些读数在支持、哪些在反对」写成同一量纲，
@@ -233,23 +238,30 @@ function DimDetail({ dim }: { dim: DimensionResult }) {
   if (!dim.items.length && !dim.missing.length) return null;
   const open = dim.norm_score !== null;
   return (
-    <details className="rounded-lg border border-border/70 px-3 py-2" open={open}>
-      <summary className="cursor-pointer text-[11.5px]">
-        <span className="font-medium">{DIMENSION_LABEL[dim.key]}分项</span>
-        <span className="ml-2 text-[10.5px] text-muted-foreground">
-          {dim.norm_score === null
-            ? (dim.raw_score === null ? "本次不计分" : `字面 ${fmtSigned(dim.raw_score)}，但${dim.excluded_reason ? "未参与加权" : "无法折算"}`)
-            : `字面 ${dim.raw_score === null ? "—" : fmtSigned(dim.raw_score)} → 折算 ${fmtSigned(dim.norm_score)}（生效权重 ${pct(dim.weight_applied)}）`}
-          ｜本维极值 {dim.bounds ? `${dim.bounds.min}~${dim.bounds.max}` : "未声明"}｜{dim.status}
-        </span>
-      </summary>
-      <ul className="mt-1.5 space-y-1.5">
+    <DeskCollapse
+      defaultOpen={open}
+      className="text-[11.5px]"
+      triggerClassName="text-[11.5px] font-normal"
+      contentClassName="text-[11px] text-muted-foreground"
+      title={
+        <>
+          <span className="font-medium">{DIMENSION_LABEL[dim.key]}分项</span>
+          <span className="ml-2 text-[10.5px] text-muted-foreground">
+            {dim.norm_score === null
+              ? (dim.raw_score === null ? "本次不计分" : `字面 ${fmtSigned(dim.raw_score)}，但${dim.excluded_reason ? "未参与加权" : "无法折算"}`)
+              : `字面 ${dim.raw_score === null ? "—" : fmtSigned(dim.raw_score)} → 折算 ${fmtSigned(dim.norm_score)}（生效权重 ${pct(dim.weight_applied)}）`}
+            ｜本维极值 {dim.bounds ? `${dim.bounds.min}~${dim.bounds.max}` : "未声明"}｜{dim.status}
+          </span>
+        </>
+      }
+    >
+      <ul className="space-y-1.5">
         {dim.items.map((it, i) => <ItemRow key={`${it.rule}-${i}`} it={it} dimVersion={dim.rule_version} />)}
         {dim.missing.map((m, i) => (
           <li key={`m-${i}`} className="text-[11px] text-amber-300/90">⚠ {m}</li>
         ))}
       </ul>
-    </details>
+    </DeskCollapse>
   );
 }
 
