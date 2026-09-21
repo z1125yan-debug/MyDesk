@@ -5,7 +5,8 @@
 // 一旦在这里写 if/else 决定「取什么」，那些判断就脱离测试了（P7-⑤ 之前的老路）。
 //
 // 与工具调用环共用同一份 chat-tools：同一个「今天大盘情绪」在预取和模型自取两条路上只能算出一个数。
-import { findTool, type ToolCtx } from "./chat-tools";
+import { backtestWhitelist, findTool, BACKTEST_READY, type ToolCtx } from "./chat-tools";
+import { whitelistPromptLine, type WhitelistRow } from "./backtest-core";
 import {
   asScene,
   classifyIntent,
@@ -114,7 +115,8 @@ export async function prepareSceneTurn(opts: {
   prevScene?: unknown;
   /** 服务端日期（shanghaiDate()）：纯层不碰时钟 */
   today?: string;
-  /** 回测是否接入对话链路：P7-⑥ 没有，调用方不传就按未接入说 */
+  /** 回测是否接入对话链路：不传按工具层实际注册情况定（见 chat-tools 的 BACKTEST_READY），
+   *  而不是在这里写死 true/false —— 写死过一次，接上回测之后就没人记得回来改它 */
   backtestReady?: boolean;
   emit?: (ev: StreamEvent) => void;
   isCancelled?: () => boolean;
@@ -129,11 +131,30 @@ export async function prepareSceneTurn(opts: {
     sessionSymbol: opts.sessionSymbol ?? null,
     prevScene: asScene(opts.prevScene),
   });
+  const backtestReady = opts.backtestReady ?? BACKTEST_READY;
+  // 白名单只在这句话真的提到「回测」时才查：因子表是「每个 factorKey 一次查询」，
+  // 为一句闲聊跑它不值。没看到名单就自己调工具的模型也不会跑偏——工具那侧还有同一道校验，
+  // 拒绝时会把名单一起带回去，它下一轮就照着改。
+  let whitelist: WhitelistRow[] | null = null;
+  let whitelistError: string | null = null;
+  if (backtestReady && /回测/.test(question)) {
+    try {
+      whitelist = await backtestWhitelist();
+    } catch (e) {
+      whitelistError = (e as Error).message || "因子白名单查询失败";
+    }
+  }
+  const backtestPromptLine = whitelist
+    ? whitelistPromptLine(whitelist)
+    : whitelistError
+      ? `可回测因子白名单本轮没读到（${whitelistError}）：不要凭记忆猜因子，先如实说明名单没读到，再让用户改问法或去量化研究页跑。`
+      : null;
   const prompt = scenePrompt(intent.scene, {
     intent,
     today: opts.today,
     watchlistCount: opts.ctx.watchlist?.length ?? null,
-    backtestReady: opts.backtestReady ?? false,
+    backtestReady,
+    ...(backtestPromptLine ? { backtestPromptLine } : {}),
   });
   const prefetched = await prefetchForScene({
     intent,

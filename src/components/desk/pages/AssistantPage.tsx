@@ -22,6 +22,7 @@ import { pickPanelSymbol } from "@/lib/desk/context-panel-core";
 import Markdown from "../Markdown";
 import SceneBadge from "../SceneBadge";
 import StepTimeline from "../StepTimeline";
+import ChatBacktestCards from "../ChatBacktestCards";
 import ContextPanel from "../ContextPanel";
 
 // 回答风格的清单一处定义在 @/lib/desk/modes（首页的下拉用的就是同一份），
@@ -326,6 +327,8 @@ export default function AssistantPage() {
                   <Markdown content={m.content} sectors={sectors} onLink={openLink} />
                   {m.streaming && <span className="ml-0.5 inline-block h-4 w-[7px] translate-y-0.5 animate-pulse bg-sky-400" />}
                   <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming} />
+                  {/* P7-⑧④：本轮跑过的回测按 jobId 现查、用量化研究页那张卡画（同一份渲染，不是第二套指标） */}
+                  <ChatBacktestCards steps={m.steps} />
                 </div>
               )}
             </div>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
+import { jobLookupVerdict, type JobLookup } from "@/lib/desk/backtest-core";
 
 const inputCls = "h-8 rounded-md border border-border bg-background px-2 text-[13px]";
 
@@ -14,28 +15,57 @@ interface JobView {
   result: Record<string, unknown>;
 }
 
-function useJobPoll(kind: string) {
+export type { JobView };
+
+/**
+ * 任务轮询（2.5 秒一次，跑完就停）。
+ * P7-⑧④ 起对话链路也用这一份：回测结果在对话里画的就是量化页那张卡，
+ * 再写一套轮询就会有两边进度节拍不同、一边显示完成一边还在转的可能。
+ *
+ * `missing` 是这一轮新加的第三种收尾：任务号问不出东西时不能一直问下去。
+ * 判定（404/「不存在」= 没了；其余 = 这次没问出来、继续按节拍问）在 backtest-core.jobLookupVerdict，
+ * 不在组件里写正则 —— 客户端组件里长口径，回头服务端那份就对不上了。
+ */
+export function useJobPoll(kind: string) {
   const [job, setJob] = useState<JobView | null>(null);
+  const [missing, setMissing] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const poll = useCallback(async (jobId: string) => {
-    const r = await fetch(`/api/quant/${kind}?jobId=${jobId}`);
-    const j = await r.json();
-    setJob(j.job ?? null);
-    if (j.job && ["done", "failed", "cancelled"].includes(j.job.status) && pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, [kind]);
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
-  const startPolling = useCallback((jobId: string) => {
+  const stop = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = null;
+  }, []);
+  const poll = useCallback(async (jobId: string) => {
+    let verdict: JobLookup;
+    try {
+      const r = await fetch(`/api/quant/${kind}?jobId=${jobId}`);
+      verdict = jobLookupVerdict(r.status, (await r.json().catch(() => null)) as { job?: unknown; error?: unknown } | null);
+    } catch {
+      verdict = { kind: "unknown" }; // 网络断了不等于任务没了：留着节拍下次再问
+    }
+    if (verdict.kind === "missing") {
+      stop();
+      setMissing(verdict.reason);
+      setJob(null);
+      return;
+    }
+    if (verdict.kind === "job") {
+      setMissing(null);
+      setJob(verdict.job as unknown as JobView);
+      if (["done", "failed", "cancelled"].includes(verdict.job.status as string)) stop();
+    }
+  }, [kind, stop]);
+  useEffect(() => stop, [stop]);
+  const startPolling = useCallback((jobId: string) => {
+    stop();
+    setMissing(null);
     pollRef.current = setInterval(() => void poll(jobId), 2500);
     void poll(jobId);
-  }, [poll]);
-  return { job, setJob, startPolling };
+  }, [poll, stop]);
+  return { job, setJob, startPolling, missing };
 }
 
-function JobPanel({ job, extra }: { job: JobView | null; extra?: React.ReactNode }) {
+/** 任务状态卡（进度条 + 阶段 + 失败原因 + 各 Tab 自己塞进来的结果区） */
+export function JobPanel({ job, extra }: { job: JobView | null; extra?: React.ReactNode }) {
   if (!job) return null;
   return (
     <Card>
@@ -60,6 +90,46 @@ function pct(v: unknown, d = 1): string {
 }
 function num(v: unknown, d = 2): string {
   return typeof v === "number" && isFinite(v) ? v.toFixed(d) : "-";
+}
+
+/**
+ * 回测结果卡 —— 全工程唯一一份回测渲染（任务状态 + 12 项指标网格）。
+ * P7-⑧④：对话链路里 run_backtest 带回的 jobId 也画这一张。
+ * 任务书的原话是「回测结果直接复用现有量化工具页的回测组件渲染，不重新写渲染逻辑」，
+ * 所以这里做的是「把原来内联在回测 Tab 里的那段抽出来」，不是「再抄一份」。
+ * 本层不换算任何指标：网格画的就是引擎 result.metrics 那一份，pct/num 只负责显示格式。
+ */
+export function BacktestJobCard({ job }: { job: JobView | null }) {
+  const result = job?.result as Record<string, unknown> | null;
+  const metrics = (result?.metrics ?? null) as Record<string, number> | null;
+  const validation = (result?.validation ?? null) as {
+    verdict: string; overfitFlags: string[];
+    oos: { decayRatio: number; isMetrics: Record<string, number>; oosMetrics: Record<string, number> };
+  } | null;
+  return (
+    <JobPanel job={job} extra={metrics && (
+      <div className="grid grid-cols-3 gap-2 text-[12px] md:grid-cols-6">
+        <div>年化 <b>{pct(metrics.annualReturn)}</b></div>
+        <div>Sharpe <b>{num(metrics.sharpe)}</b></div>
+        <div>Sortino <b>{num(metrics.sortino)}</b></div>
+        <div>Calmar <b>{num(metrics.calmar)}</b></div>
+        <div>最大回撤 <b className="text-red-300">{pct(metrics.maxDrawdown)}</b></div>
+        <div>胜率 <b>{pct(metrics.winRate, 0)}</b></div>
+        <div>盈亏比 <b>{num(metrics.payoffRatio)}</b></div>
+        <div>交易次数 <b>{metrics.tradeCount}</b></div>
+        <div>换手 <b>{num(metrics.turnover, 1)}x</b></div>
+        <div>成本占比 <b>{pct(metrics.transactionCost, 2)}</b></div>
+        <div>稳定性 <b>{num(metrics.stability)}</b></div>
+        <div>综合分 <b className="text-sky-300">{num(result?.compositeScore, 3)}</b></div>
+        {validation && (
+          <>
+            <div className="md:col-span-3">验证结论 <b>{validation.verdict}</b> · OOS/IS 衰减 {pct(validation.oos.decayRatio, 0)}</div>
+            <div className="md:col-span-3 text-amber-300">{validation.overfitFlags.join("；") || "无过拟合信号"}</div>
+          </>
+        )}
+      </div>
+    )} />
+  );
 }
 
 // ---------- 回测 Tab ----------
@@ -102,9 +172,7 @@ export function BacktestTab() {
     } finally { setBusy(false); }
   };
 
-  const result = job?.result as Record<string, unknown> | null;
-  const metrics = (result?.metrics ?? null) as Record<string, number> | null;
-  const validation = (result?.validation ?? null) as { verdict: string; overfitFlags: string[]; oos: { decayRatio: number; isMetrics: Record<string, number>; oosMetrics: Record<string, number> } } | null;
+  // 结果区已经抽到 BacktestJobCard（对话链路共用同一份渲染），这里不再本地解一遍指标
 
   return (
     <div className="space-y-3 pt-3">
@@ -157,28 +225,7 @@ export function BacktestTab() {
         </CardContent>
       </Card>
 
-      <JobPanel job={job} extra={metrics && (
-        <div className="grid grid-cols-3 gap-2 text-[12px] md:grid-cols-6">
-          <div>年化 <b>{pct(metrics.annualReturn)}</b></div>
-          <div>Sharpe <b>{num(metrics.sharpe)}</b></div>
-          <div>Sortino <b>{num(metrics.sortino)}</b></div>
-          <div>Calmar <b>{num(metrics.calmar)}</b></div>
-          <div>最大回撤 <b className="text-red-300">{pct(metrics.maxDrawdown)}</b></div>
-          <div>胜率 <b>{pct(metrics.winRate, 0)}</b></div>
-          <div>盈亏比 <b>{num(metrics.payoffRatio)}</b></div>
-          <div>交易次数 <b>{metrics.tradeCount}</b></div>
-          <div>换手 <b>{num(metrics.turnover, 1)}x</b></div>
-          <div>成本占比 <b>{pct(metrics.transactionCost, 2)}</b></div>
-          <div>稳定性 <b>{num(metrics.stability)}</b></div>
-          <div>综合分 <b className="text-sky-300">{num(result?.compositeScore, 3)}</b></div>
-          {validation && (
-            <>
-              <div className="md:col-span-3">验证结论 <b>{validation.verdict}</b> · OOS/IS 衰减 {pct(validation.oos.decayRatio, 0)}</div>
-              <div className="md:col-span-3 text-amber-300">{validation.overfitFlags.join("；") || "无过拟合信号"}</div>
-            </>
-          )}
-        </div>
-      )} />
+      <BacktestJobCard job={job} />
     </div>
   );
 }

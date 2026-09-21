@@ -27,6 +27,13 @@ export interface StreamStep {
   source?: "prefetch" | "model";
   /** 为什么要取这一步（自动调度给的理由） */
   reason?: string;
+  /**
+   * P7-⑧④：这一步在任务系统里的 jobId（目前只有 run_backtest 会带）。
+   * 只带 id、不带结果：结果由前端按 id 走现成的 GET /api/quant/backtest?jobId= 取，
+   * 于是不用在 SSE 契约里再抄一份回测结果结构（抄一份就会和量化页那套慢慢对不上），
+   * 而且超过 60 秒没跑完的任务，前端照样能继续看到进度。
+   */
+  jobId?: string;
 }
 
 /**
@@ -86,6 +93,8 @@ export function asStreamEvent(obj: unknown): StreamEvent | null {
       // 预取/模型自取必须穿得过这层解码：丢了前端的步骤时间线就没法说明「这步是系统替你取的」
       if (d.source === "prefetch" || d.source === "model") data.source = d.source;
       if (typeof d.reason === "string") data.reason = d.reason;
+      // jobId 过一遍类型：前端拿到不认识的形状就当没带，不会画出「任务 undefined」这种假卡
+      if (typeof d.jobId === "string" && d.jobId) data.jobId = d.jobId;
       return { type: "step", data };
     }
     case "delta":
@@ -377,6 +386,8 @@ export const TOOL_STEP_LABELS: Record<string, string> = {
   watchlist_overview: "取自选股实时总览（清单来自本机存档）",
   factor_screener: "跑全 A 条件选股",
   historical_probability: "统计历史条件概率",
+  // P7-⑧④：回测要等引擎，耗时和其他工具不是一个量级，界面上必须让人看见这一步在等什么
+  run_backtest: "跑因子回测（白名单校验 → 引擎计算，最多等 60 秒）",
   model_answer: "模型生成回答",
 };
 
@@ -386,7 +397,11 @@ export function stepLabelFor(tool: string, args?: Record<string, unknown> | null
   const symbol = typeof args.symbol === "string" ? args.symbol : "";
   const cond = Array.isArray(args.conditions) ? `（${args.conditions.length} 个条件）` : "";
   const kind = typeof args.kind === "string" ? `（${args.kind === "concept" ? "概念" : "行业"}）` : "";
-  return `${base}${symbol ? ` · ${symbol}` : ""}${cond}${kind}`;
+  // 回测的因子个数单独标一份：白名单校验是按因子做的，界面要说清「跑的是哪几个因子请求」
+  const facs = Array.isArray(args.factors) && args.factors.length
+    ? `（${args.factors.map((f) => String((f as { factorKey?: unknown })?.factorKey ?? "?")).join("、")}）`
+    : "";
+  return `${base}${symbol ? ` · ${symbol}` : ""}${cond}${kind}${facs}`;
 }
 
 /** 工具结果摘要：缺数据必须一眼看出是「缺」，不是 0 */

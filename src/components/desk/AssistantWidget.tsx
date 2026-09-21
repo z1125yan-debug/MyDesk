@@ -16,6 +16,7 @@ import { pickChatEndpoint } from "@/lib/desk/chat-stream-core";
 import Markdown from "./Markdown";
 import SceneBadge from "./SceneBadge";
 import StepTimeline from "./StepTimeline";
+import ChatBacktestCards from "./ChatBacktestCards";
 
 const CHIPS = ["关键位在哪", "多周期趋势总结", "现在适合进场吗", "给我一个风控清单"];
 
@@ -135,6 +136,8 @@ export default function AssistantWidget({
                 <Markdown content={m.content} sectors={sectors} onLink={openLink} />
                 {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-[6px] translate-y-0.5 animate-pulse bg-sky-400" />}
                 <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming} />
+                {/* 与小窗外的助手页同一份回测卡：同一个任务在两个入口看到的数字必须来自同一处渲染 */}
+                <ChatBacktestCards steps={m.steps} />
               </div>
             )}
           </div>

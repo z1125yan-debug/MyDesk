@@ -19,6 +19,16 @@ import { tdxQuotes, tdxDepth, tdxTradesMoney } from "./tdx";
 import { suffixOf } from "./intent-core";
 import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, fetchBoardReal, symbolToSecid } from "./em";
 import { shanghaiDate } from "./session";
+import {
+  BACKTEST_MIN_TRADING_DAYS, BACKTEST_POLL_INTERVAL_MS, TEXT_NOT_IN_WHITELIST, TEXT_POLL_TIMEOUT,
+  TEXT_RANGE_TOO_SHORT, metricObject, pollAction, rangeVerdict, backtestReadout,
+  resolveWhitelistFactors, whitelistOf, type RequestedFactor, type ResolvedFactor, type WhitelistRow,
+} from "./backtest-core";
+import { quantBootstrap } from "@/lib/quant/bootstrap";
+import { listLatestFactors } from "@/lib/quant/store";
+import { registerStrategyRunners, type BacktestPayload } from "@/lib/quant/jobs/runners/strategy-jobs";
+import { getJob, startJob } from "@/lib/quant/jobs/registry";
+import { experimentFingerprint } from "@/lib/quant/research/experiments";
 
 /** 一次工具调用能看到的请求级上下文（只有本机存档才有的东西走这里传，不查库） */
 export interface ToolCtx {
@@ -287,6 +297,196 @@ async function toolWatchlistOverview(args: { symbols?: string[] }, ctx: ToolCtx 
   };
 }
 
+// ---------- 回测工具（P7-⑧④：对话链路 → 现有回测引擎，白名单在前、引擎在中、只读在后） ----------
+
+/**
+ * 可回测因子白名单：库里已入库、且 expression 非空的因子（每个键取最新版本）。
+ * 每次工具调用现查一次，不做进程内缓存——因子表是会被研究流程改写的，
+ * 缓存等于让「刚入库的因子要等一会儿才能回测」「刚下架的因子还能被跑到」这两件事同时成立。
+ */
+export async function backtestWhitelist(): Promise<WhitelistRow[]> {
+  quantBootstrap();
+  const rows = await listLatestFactors();
+  return whitelistOf(rows)
+    .map((r) => ({ factorKey: r.factorKey, version: r.version, expression: r.expression, name: r.name, status: r.status }))
+    .sort((a, b) => a.factorKey.localeCompare(b.factorKey));
+}
+
+/** 引擎侧的区间上限（strategy-jobs：`Math.min(500, periodDays)`）。这里先夹住，免得「要 600 日实跑 500 日」 */
+const BACKTEST_MAX_PERIOD_DAYS = 500;
+/** 对话里的回测样本上限：比量化页的 300 只小得多，一次对话等不起那么久的取数 */
+const BACKTEST_MAX_SYMBOLS = 120;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function clampInt(v: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof v === "number" && isFinite(v) ? Math.trunc(v) : NaN;
+  if (!isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * run_backtest：让模型用**已入库的白名单因子**跑一次真实回测。
+ *
+ * 三条边界（顺序不能调，每条都是「先挡住、再干活」）：
+ *  1. 因子必须先过白名单（backtest-core.resolveWhitelistFactors）——本层不接受模型现写的表达式，
+ *     表达式只从 quant_factors 里带出来，所以跑的一定是入库那份；
+ *  2. 区间先预检：可交易日不足就直接返回「回测区间太短」，不进引擎（引擎自己的下限是 80 日，
+ *     比任务书要求的 240 松得多，靠它兜就是把 100 日的样本发出去）；
+ *  3. 等结果按固定 1 秒节拍、最多 60 秒（任务书口径），到点就把任务留在后台如实说超时。
+ *
+ * 为什么不自己 HTTP 调 /api/quant/backtest：那是自指一次网络往返，还多一套超时口径。
+ * 直接走 registry（同进程 startJob/getJob）＝量化页点「开始回测」走的同一个入口，
+ * 指纹算法也复用 experimentFingerprint，所以对话里跑过的组合，量化页不会重复跑第二遍。
+ */
+async function toolRunBacktest(args: {
+  factors?: RequestedFactor[];
+  asOf?: string;
+  periodDays?: number;
+  topN?: number;
+  rebalanceEvery?: number;
+  maxSymbols?: number;
+  symbols?: string[];
+}): Promise<unknown> {
+  quantBootstrap();
+  registerStrategyRunners();
+
+  const rows = await backtestWhitelist();
+  const requested = Array.isArray(args?.factors) ? args.factors : [];
+  const { resolved, rejected, empty } = resolveWhitelistFactors(requested, rows);
+  if (empty) {
+    return { missing: "未指定因子：factors 至少给一个 {factorKey, version?}，且必须来自可回测因子白名单" };
+  }
+  if (rejected.length) {
+    // 整轮拒绝：把能跑的先跑一半，报出来的收益就不是用户要的那组因子
+    return {
+      missing: TEXT_NOT_IN_WHITELIST,
+      被拒因子: rejected,
+      可回测因子: rows.slice(0, 40).map((r) => `${r.factorKey}@${r.version}`),
+      提示: "请按可回测因子清单重问；不要替换成「差不多」的因子，也不要自己写表达式。",
+    };
+  }
+
+  const asGiven = typeof args.asOf === "string" ? args.asOf.trim() : "";
+  // 日期只认 YYYY-MM-DD，其余（含「昨天」「上周五」这种）一律按今天算：
+  // 服务端今天必须是 shanghaiDate()，跨时区机器上 new Date() 会把今天算错一天
+  const asOf = DATE_RE.test(asGiven) ? asGiven : shanghaiDate();
+  const periodDays = clampInt(args.periodDays, BACKTEST_MIN_TRADING_DAYS, BACKTEST_MIN_TRADING_DAYS, BACKTEST_MAX_PERIOD_DAYS);
+  const topN = clampInt(args.topN, 10, 1, 50);
+  const rebalanceEvery = clampInt(args.rebalanceEvery, 5, 1, 20);
+  const maxSymbols = clampInt(args.maxSymbols, 60, 20, BACKTEST_MAX_SYMBOLS);
+  // 指定标的池：代码走 normalizeSymbol 的唯一号段口径，认不出的一律丢掉并写明丢了几只
+  const wanted = Array.isArray(args.symbols) ? args.symbols.map((s) => normalizeSymbol(String(s))).filter((s): s is string => !!s) : [];
+  const pool = [...new Set(wanted)].slice(0, BACKTEST_MAX_SYMBOLS);
+  const poolDropped = Array.isArray(args.symbols) ? args.symbols.length - pool.length : 0;
+
+  // ---- 区间预检：数指数日K的真实交易日条数（与 /api/quant/screener/trade-dates 同一口径）----
+  const barsRes = await fetchBarsHybridTracked(["000001.SH"], asOf, Math.ceil(periodDays * 1.6));
+  const bars = (barsRes.bars.get("000001.SH") ?? []) as BarsLike[];
+  if (!bars.length) {
+    const oc = barsRes.outcomes[0];
+    // 「取数失败」和「历史不足」是两件事：混说会把网关限流报成「这只票没那么长历史」
+    return { missing: oc?.kind === "request_failed" ? `日K取数失败：${oc.reason}` : "日K无返回（未取到任何交易日）" };
+  }
+  const verdict = rangeVerdict(bars.length, periodDays);
+  if (!verdict.ok) return { missing: `${TEXT_RANGE_TOO_SHORT}：${verdict.text}（区间交易日按 000001.SH 日K计数）` };
+
+  // 切分口径与量化页 BacktestTab 发出的那份默认值一致（那里是写死在请求体里的 {0.6,0.2,0.2}）。
+  // 为什么要在对话里也带上它：runner 的 segments = splitRanges(dates, p.split)，不传就是空数组 ——
+  // 同一次回测在量化页有 train/validation/test 三段、在对话里只剩一段，那就不是「复用同一个组件」，
+  // 而是「同一个引擎两种口径」。指纹里也带这一份，才能和量化页的记录对上。
+  const split = { train: 0.6, validation: 0.2, test: 0.2 };
+  const payload: BacktestPayload = {
+    asOf, periodDays, topN, rebalanceEvery, source: "em", maxSymbols, split, validate: true,
+    factors: resolved.map((f) => ({ factorKey: f.factorKey, version: f.version, weight: f.weight, direction: f.direction })),
+    ...(pool.length ? { kind: "custom", symbols: pool } : {}),
+  };
+  // 指纹与 /api/quant/backtest 那条路上 runner 自己算的那一份逐字段对齐（strategy-jobs.ts 的 parts）：
+  // 于是对话里跑过的组合，量化页看得见、参数一致时也不会重跑第二遍（去重发生在实验表，不在这里）
+  const fp = experimentFingerprint({
+    kind: "backtest",
+    dataRange: `${asOf} 前 ${periodDays} 交易日`,
+    // stockPool 用 payload 里那份 maxSymbols（引擎读的就是这个字段），不是指定标的的只数
+    stockPool: { kind: pool.length ? "custom" : "all", boardCode: "", maxSymbols },
+    factorVersions: resolved.map((f) => `${f.factorKey}@${f.version}`).join(","),
+    strategyVersion: "",
+    parameters: { topN, rebalanceEvery, scoring: "rank" },
+    backtestParameters: { periodDays, split },
+    transactionCost: {},
+  });
+  const { job: started, duplicate } = startJob({ kind: "quant_backtest", fingerprint: fp, payload: payload as Record<string, unknown> });
+
+  // ---- 等结果：固定 1 秒一次，最多 60 秒（任务书口径）。节拍判定在 backtest-core，本层只管睡和读 ----
+  const startedAt = Date.now();
+  let job = started;
+  for (;;) {
+    await sleep(BACKTEST_POLL_INTERVAL_MS);
+    job = getJob(started.id) ?? job;
+    const action = pollAction(Date.now(), startedAt, getJob(started.id)?.status ?? null);
+    if (action === "waiting") continue;
+    if (action === "timed_out") {
+      // 任务没被取消，还在本进程里跑：所以话术是「稍后在策略历史查看」，同时把 jobId 带回去让前端继续看进度
+      return {
+        missing: TEXT_POLL_TIMEOUT,
+        jobId: started.id,
+        状态: job.status,
+        进度: job.progress,
+        阶段: job.stage || job.message,
+        说明: "任务已交给回测引擎且未取消，稍后可在量化研究页的回测任务列表或本条回答下方的结果卡看到结果；本轮不得给出任何回测收益数字。",
+      };
+    }
+    break;
+  }
+
+  if (job.status === "failed") return { missing: `回测失败：${job.error || "引擎未给出原因"}`, jobId: job.id };
+  if (job.status === "cancelled") return { missing: "回测任务已取消", jobId: job.id };
+
+  const r = (job.result ?? {}) as Record<string, unknown>;
+  if (r.skipped) {
+    // 引擎侧的实验去重：同样的组合此前已经跑完，本轮没有重算，自然也没有新数字可报。
+    // 这里故意不带 jobId：下面的结果卡是「按 jobId 现查引擎」画的，而去重任务的 result 只有
+    // {skipped, reason, experiment} 三个键，画出来会是一张标着 done 却什么都没有的空卡，
+    // 比不画更容易让人以为「回测跑完了但系统没给结果」。要回看那次真算的，按指引里的任务号去量化页。
+    const prev = (r.experiment ?? null) as { jobId?: unknown } | null;
+    return {
+      摘要: "相同因子的回测此前已完成过，本轮未重跑",
+      说明: String((r.reason as string) ?? "实验指纹与已完成记录相同"),
+      ...(typeof prev?.jobId === "string" && prev.jobId
+        ? { 指引: `同参数的上一次实验是任务 ${prev.jobId}，可在量化研究页的回测任务列表里查看它当时的结果` }
+        : {}),
+      提示: "需要新结果请改变区间、样本只数或因子版本后重问；本轮没有新的回测数字，不要把历史实验的数字当成本轮算出来的。",
+    };
+  }
+  const metrics = (r.metrics ?? null) as Record<string, unknown> | null;
+  const panel = (r.panel ?? {}) as { symbols?: number; dates?: number; coverageNotes?: string[] };
+  const dataSource = typeof r.dataSource === "string" ? r.dataSource : "em";
+  const readout = backtestReadout({
+    asOf: typeof r.asOf === "string" ? r.asOf : asOf,
+    periodDays,
+    dataSource: `回测引擎 quant_backtest（数据源 ${dataSource}，K线走 eltdx/腾讯日K）`,
+    symbols: typeof panel.symbols === "number" ? panel.symbols : 0,
+    dates: typeof panel.dates === "number" ? panel.dates : 0,
+    factors: resolved as ResolvedFactor[],
+    topN,
+    rebalanceEvery,
+    metrics,
+    jobId: job.id,
+    coverageNotes: Array.isArray(panel.coverageNotes) ? panel.coverageNotes : [],
+  });
+  return {
+    // 摘要放第一个键：步骤时间线里 detail 取的就是这份 JSON 的前 120 字符，
+    // 让它先说清「跑完了 · 样本多少 · 五项读数」，而不是让界面切出一段半截的因子列表
+    摘要: `回测完成 ${panel.dates ?? 0} 交易日 × ${panel.symbols ?? 0} 只 · ${Object.entries(metricObject(metrics)).map(([k, v]) => `${k}${v}`).join(" ")}`,
+    jobId: job.id,
+    ...(duplicate ? { 去重: "相同参数的回测任务此前已在执行或排队，本轮沿用该任务结果" } : {}),
+    ...(pool.length && poolDropped > 0 ? { 样本提示: `${poolDropped} 个代码无法识别或超出上限，未纳入样本` } : {}),
+    指标: metricObject(metrics),
+    读数: readout,
+    口径约束: "以上数字来自本轮引擎计算。引用时必须连同区间、样本只数与数据源一起说；历史回测不代表未来收益，不得据此给出买卖建议。",
+  };
+}
+
 export interface ChatTool {
   name: string;
   desc: string;
@@ -310,9 +510,34 @@ export const TOOLS: ChatTool[] = [
   { name: "factor_screener", desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录", fn: toolFactorScreener, params: { type: "object", properties: { conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string", enum: ["=", ">=", ">", "<=", "<", "!="] }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } }, limit: { type: "number" } }, required: ["conditions"] } },
   { name: "historical_probability", desc: "个股历史条件概率：conditions 中的 field 必须来自因子目录", fn: toolHistoricalProbability, params: { type: "object", properties: { symbol: { type: "string" }, conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string" }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } } }, required: ["symbol", "conditions"] } },
   { name: "watchlist_overview", desc: "自选股实时总览（清单取自用户本机存档，行情现取）", fn: toolWatchlistOverview, params: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } } } },
+  {
+    name: "run_backtest",
+    desc: "因子组合历史回测（真实引擎计算）：factors 只能取提示词里「可回测因子白名单」的 factorKey，禁止自写表达式；区间不足 240 交易日或因子不在白名单会被拒绝",
+    fn: toolRunBacktest,
+    params: {
+      type: "object",
+      properties: {
+        factors: { type: "array", items: { type: "object", properties: { factorKey: { type: "string" }, version: { type: "number" }, weight: { type: "number" }, direction: { type: "number", enum: [1, -1] } }, required: ["factorKey"] } },
+        periodDays: { type: "number", description: "回测交易日数，240~500" },
+        asOf: { type: "string", description: "截至日 YYYY-MM-DD，省略即今天（上海口径）" },
+        topN: { type: "number", description: "每期持仓只数 1~50" },
+        rebalanceEvery: { type: "number", description: "调仓周期（交易日）1~20" },
+        maxSymbols: { type: "number", description: "样本只数 20~120，默认 60" },
+        symbols: { type: "array", items: { type: "string" }, description: "指定标的池（6 位代码），省略则按全市场流动性抽样" },
+      },
+      required: ["factors"],
+    },
+  },
 ];
 
 export const TOOL_NAMES = TOOLS.map((t) => t.name);
+
+/**
+ * 回测是否真的接进了对话链路。
+ * 不写成 true 的字面量：这条开关跟着 TOOLS 走，将来谁把 run_backtest 摘掉，
+ * 提示词那句「不得声称已回测」会自动回到原位，而不是留着一句假话让模型以为自己会回测。
+ */
+export const BACKTEST_READY = TOOL_NAMES.includes("run_backtest");
 
 export function findTool(name: string): ChatTool | undefined {
   return TOOLS.find((t) => t.name === name);

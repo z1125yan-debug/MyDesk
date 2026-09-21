@@ -252,6 +252,12 @@ export interface ScenePromptCtx {
   watchlistCount?: number | null;
   /** 回测是否真的接进了对话链路（P7-⑥ 没有，默认按未接入处理） */
   backtestReady?: boolean;
+  /**
+   * P7-⑧④：可回测因子白名单那一行（由服务层现查数据库后经 backtest-core 渲染成串）。
+   * 为什么这里只收一条已经渲染好的字符串：名单是库里的读数，写法归 backtest-core（测试也在那边钉），
+   * 场景提示词只负责「放不放、放在哪」。反过来在这里拼一遍就会出现两份白名单文案。
+   */
+  backtestPromptLine?: string | null;
 }
 
 /**
@@ -329,7 +335,15 @@ export function scenePrompt(scene: Scene, ctx: ScenePromptCtx): string {
     lines.push(`这轮还问到「${intent.alternates.map((s) => SCENE_LABELS[s]).join("、")}」：需要该场景的数据就自己调用对应工具，不要凭印象答。`);
   }
   if (ctx.backtestReady === false && /回测/.test(intent.question)) {
-    lines.push("回测尚未接入对话链路（P7-⑦ 之后才做）：不得声称已回测，也不得给出回测收益数字。");
+    // P7-⑧④ 之后这句不再写「P7-⑦ 之后才做」：回测工具已经在了，走到这条分支的真实原因是
+    // 「这一路没有工具调用环」（/api/ai/proxy 的 Anthropic/Gemini 原生协议），说成「还没做」是假话。
+    lines.push("本轮没有可用的回测工具：不得声称已回测，也不得给出回测收益数字。");
+  }
+  if (ctx.backtestReady === true && ctx.backtestPromptLine) {
+    lines.push(
+      ctx.backtestPromptLine,
+      "回测结论只能引用 run_backtest 本轮返回的数字：没调用、被白名单挡下、或者超时，就如实说没有结果，绝不给「大概年化多少」这种推测出来的回测数字。",
+    );
   }
   if (symbolNote) lines.push(symbolNote);
   return lines.join("\n");
