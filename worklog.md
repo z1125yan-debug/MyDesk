@@ -1294,3 +1294,50 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 8. **盘面不做吉凶判定**：九宫格只画读数，吉/凶只出现在模型解盘文本里，且尾部免责声明（「不构成投资建议」）常驻不可折叠掉。
 9. **本轮没有真实模型参与**：解盘文本的实机路径验到「未配置就如实提示 + 失败分支可读」为止，带真实 Key 的端到端按指示留到开发完成后统一复测。
 10. **未 commit**，等分项报告确认。3014 按指示继续运行，且已改成正经的隔离形态（仓库外副本库 + 调度器关闭）。
+
+## P7 第十阶段 P7-⑩ 接入豆包大模型大脑：.env 模型配置层双模式 + 网关折叠与 SSE 降级 + 50 框架全局 Prompt（2026-09-21：纯核/服务/路由/客户端分流四层 + 20 条新单测）
+
+任务书第四条按批准口径做完。本仓库 `package.json` / `package-lock.json` diff **为空**（网关在 `D:\doubao2API-main`，它是 Python 侧，装它自己 requirements 里的 `pydantic-settings` 与 playwright chromium，不进本仓库依赖）；`prisma/db/custom.db` 的当日归档差异照旧**不入本轮任何 commit**。切模型只改 `.env`：实测把 `LLM_BASE_URL`/`LLM_MODEL_NAME` 指向本地 mock，对话立刻走新模型，换回即恢复，业务代码一行未动。
+
+### 这一轮定的口径
+
+1. **通道优先级：浏览器凭据 > 服务端 .env**。设置页配过 Key 的用户行为完全不变；没配时 `aiRequestHeaders` 只发 `x-ai-server: 1`（连 base/model 都不发，杜绝半截配置），路由端 `wantsServer = !baseUrl || x-ai-server==="1"` 接住。浏览器侧对服务端通道按**乐观可用**处理：只有 `/api/llm/config` 明确回 `available:false` 才判不可用——拉取竞态不该把界面 gate 成「未配置」。
+2. **配置解析全部下沉纯核**：`model-config-core.ts` 零 import、不碰 `process.env`/fetch/Date；`model-config.ts` 是全仓库唯一读 `LLM_*` 的地方（有一条源码 grep 测试钉住）。判坑实测：`new URL("localhost:7861/v1")` **不抛**（scheme 解析成 `localhost:`），所以 `resolveServerLlm` 必须同时验可解析 + 协议是 http(s)，缺协议的坑写进 `TEXT_BAD_BASE` 文案。
+3. **网关「只取末条 user」用历史折叠补偿，且折叠必须发生在场景注入之后**：`foldHistoryForGateway` 把系统要求、既往对话、本轮问题并成单条（`【本轮问题】` 恒为最后一段），顺序反了注入的数据会被折掉。最后一条 user 之后的 assistant 残留直接丢弃，不假装它是对话历史。
+4. **网关没有 function call 就不硬撑工具环**：`/api/ai/chat` 在网关模式下直接 SSE error 说清「只收最后一条提问、不走 function call」，并给两条出路（.env 切官方模式 / 设置页填浏览器凭据）；普通对话与奇门解盘走 `/api/ai/proxy` 的系统预取，不受影响。对话页风格条同步标「（当前服务商无工具调用环，风格项不生效）」。
+5. **SSE 降级三档，每档说的都是实话**：上游返回 JSON 而非 event-stream→warning「本机按整体结果展示，不是逐字流」+全文照常出；流中途连接类断且**一个字都没出过**→自动重试一次非流式（`shouldRetryNonStream`，出过字就不重试，避免拼接两遍正文）；彻底连不上→报错点名 `python start.py` 与 `LLM_BASE_URL`。
+6. **50 框架按任务书原文进对话层，与模型解耦**：`analysis-frames.ts` 收录 14 类 50 条（文案未改，只统一为全角引号），拼在智能助手 system prompt 与 AI 交易员 systemPrompt 尾部；换任何 OpenAI 兼容模型都自动带上，界面零按钮。
+7. **解盘三段解析加「行首 `#{1,4}` 标题行」变体**：豆包实测回 `# 核心结论`（无冒号），旧口径判「未解析」整段透出。只放宽识别、行首要件防正文误碰；切不齐仍原文照贴，不硬造假标题（P7-⑨ 纪律不变）。
+8. **Key 的边界不动**：`/api/llm/config` 只回 可用/模式/地址/模型名，源码 grep 测试钉住该路由不出现 `apiKey` 值透出；网关模式占位 Key 固定 `admin`（网关不校验），将来它校验了就 `.env` 填 `LLM_API_KEY`。
+
+### 落点（4 个新文件 + 1 个新路由 + 24 处改动，判定全在纯核层）
+
+- `src/lib/llm/model-config-core.ts` **新增 ~150 行**：默认值/ env 键名 / `resolveServerLlm` / `isLanBaseUrl` / `foldHistoryForGateway` / `shouldRetryNonStream` / `gatewayUnreachableText` 与文案常量。
+- `src/lib/llm/analysis-frames.ts` **新增**：`ANALYSIS_FRAME_CATEGORIES`（14 类 50 条原文）+ `allAnalysisFrames` + `renderAnalysisFrames`。
+- `src/lib/llm/model-config.ts` **新增**：唯一 env 读取点。
+- `src/app/api/llm/config/route.ts` **新增**：GET only、force-dynamic、不回显 Key。
+- `src/lib/desk/ai.ts`：服务端通道模块状态（`ensureServerLlm` 单次拉取 + 订阅）+ `aiReady` / `aiRequestHeaders` / `resolveChatEndpoint`；`assistantSystemPrompt` 尾挂 50 框架。
+- `/api/ai/proxy` 与 `/api/ai/chat` 路由、`chat-stream-client`、`quant-api`、`use-chat`、`use-server-llm`（新）：通道分流与降级；`isLanUrl` 改为委托纯核。
+- 12 个页面/组件文件：`aiConfigured→aiReady` 门开关与文案（AssistantPage 三态徽章、SettingsPage 通道卡片、TopBar、QimenPanel 等）。
+- `tests/quant/p7-llm-config.test.ts` **新增 20 用例**；`p7-qimen.test.ts` 加标题行变体断言块；`p6-b-structure` / `p7-dispatch` 两处按意图等价更新（端点判定改认 `resolveChatEndpoint|pickChatEndpoint`）。
+- `.env`（gitignore 内，不入库）：追加 `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL_NAME` 三键与切换注释。
+
+### 验收数字与实测证据
+
+- `tsc --noEmit` 退出码 **0**；全量 **685 tests / 676 pass / 0 fail / 9 skipped**（基线 665/656/9，+20 恰等于新层新增，无新增跳过、无断言删除）；`next build` 通过（含解析器改动后的重编译）。
+- **eslint 无新增**：`git stash` 到 HEAD 对同批 7 个页面文件跑 eslint，得**逐条一致**的 11 项（TopBar:24、AgentPage:213、AiHomePage:56、AnalysisPage:61 warn/73/80/223、EventsPage:133、ProfilePage:46/51、ResearchPage:141，全是 `react-hooks/set-state-in-effect`）⇒ 本轮零新增；改后的 `qimen-core.ts` / `p7-qimen.test.ts` 单独跑 eslint 为 0。
+- **网关真实链路**（3014 隔离实例 + 副本库 `D:/Zai/tmp-p710/accept.db` + `DESK_SCHEDULER=0`，3010/PID 93740 全程未动）：`/api/llm/config` → `{"available":true,"mode":"gateway","baseUrl":"http://localhost:7861/v1","model":"doubao-pro"}`；SSE 逐字 71 帧 + done 带 intent 徽章；非流式路径正常；**折叠实测**多轮暗号「紫隼九号」答对；场景预取「600519 现在行情怎么样」→ step 事件 `stock_snapshot ok`，模型引数 1252.57 / −0.36% / 31.36 亿与直连接口逐位一致；工具环网关模式拒绝文案原样落地。
+- **降级实测**（mock 上游）：stream 请求回 JSON → warning + 全文 + done，不报错；杀掉 mock → error 点名 `python start.py` / `LLM_BASE_URL`；`.env` 指 mock → 对话即回 `MOCK 应答｜模型=mock-model-A`，换回真网关一切如常（验收第 8 条）。
+- **实机**（浏览器，本机 origin 无凭据 → 服务端通道）：顶栏「AI 已就绪」；对话页发问流式作答，徽章行「服务端 .env 通道 · doubao-pro · 纯对话端点（本地网关无工具环）」；设置页卡片「可用 · 本地网关（免 Key） · http://localhost:7861/v1 · doubao-pro（Key 只存在服务端 .env，不进浏览器）」；奇门起局后解盘三段卡（核心结论/操作建议/风险提示）正确切分并引用实盘字段；**重启 3014 进程后历史会话正常加载**。
+- 冒烟目录（仓库外）：`D:/Zai/tmp-p710`（mock-openai.mjs、副本库、env 备份）。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+
+1. **网关模式没有工具环**：AI 交易员那条路要 function call，只能 `.env` 切官方 API 模式或浏览器填凭据；本轮只做了「明确拒绝 + 指路」，没做工具环的降级模拟。
+2. **MAX_INFLIGHT=1 且回包 10–40s 波动**：并发对话会在网关侧排队，慢不是掉的；没做队列可视化。
+3. **豆包偶发回「出了点问题，请稍后重试」**（解盘实测遇到一次）：前端如实透出、不自动重试，重按由用户决定。
+4. **标题行变体只覆盖「冒号」与「行首 #」两式**：换一个写法再不同的模型仍会走「原文整段」兜底，不硬切。
+5. **折叠把历史并成单条文本**，长会话 token 成本转嫁网关侧；截断策略沿用前端窗口，未为网关单独设预算。
+6. **「对话分析」左侧会话清单仍是本机浏览器存档**（界面文案原样说明）；SQLite 承载的历史/策略/选股任务沿用既有数据源，本轮未动表结构。
+7. **`/api/llm/config` 是配置完备性探测，不发试探请求**：「可用」不保证网关此刻在线，真掉线由对话报错文案兜底根因。
+8. **网关侧强校验 Key 属未雨绸缪项**：占位 `admin` 当前可用，将来变了填 `LLM_API_KEY` 即可，未做双向探活。
