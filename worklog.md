@@ -1512,3 +1512,35 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 4. **面板关着的轮次没有富化帧**：历史消息不会被事后回填（当时没发的帧补不出来），重新打开开关只影响之后的轮次。
 5. **transport 的 fallback/settle 两档暂无合成方**：兜底（一次性返回）轮客户端不合成 debug 字段，结论小节如实显示「未留底」；契约形状三档是为续传/降级预留，不是已发生的事实。
 6. **`/api/ai/run` 无鉴权与归属校验**：本机单人桌面场景按细则口径不做（run id 本身不可猜度低），多用户/公网部署时这条必须重审。
+
+## P8 兜底轮：东财 push2 断源 → 腾讯/MCP 兜底数据链路（2026-09-22：行情中心 8 页空数据实机点亮）
+
+### 背景（环境事件，如实记录）
+2026-09-22 当日起东财 push2 API 簇（push2/push2delay/push2his/82.push2）对本机全局拒连（curl schannel reset / Node UND_ERR_SOCKET 双证），连 ModelScope 阿里云函数计算的 MCP 后端也取不到实时价——断源是全局性的，非本机网络问题。腾讯 qt.gtimg.cn、proxy.finance.qq.com/ifzqgtimg、eltdx、searchapi/np-weblist 两个东财子域存活。行情中心 8 个页面（大盘情绪/行业板块/主线热点/全A列表/风险监控/涨停梯队/选股/数据看板）同死在一个咽喉点：`provider.listUniverse({kind:"all"})` 与 `fetchBoardReal` 都走 push2 clist。
+
+### 这一轮定的口径（六条）
+1. **兜底只换数据源、不改判定**：涨停/炸板仍用快照真实 high/prevClose 精确口径（腾讯 f47/f48 直读涨停价），跌停/中位数/成交额的算法一行未动——数据缺就是缺，不缺就不许换口味。
+2. **占位 0 必须能被拆穿**：`fundsMissing:true` 从 BoardRow 一路传到 UI（资金四列显「—」、明细不请求、资金流向图整块换成说明文案）；`main_net_known/amount_known` 家数登记进 missing 文案（「5565 家里 0 家真实带 mainNet 字段，0 亿是 ?? 0 累加的结果，不是今日净额为 0」）。
+3. **兜底有成功率闸**：MCP 代码表 <1000 只、腾讯批量解析 <50% 一律整体抛错，不拿半张残表算情绪；宁可不亮，不许亮错。
+4. **真实服务源必须可考**：`universeSource()` 挂 globalThis（吸取 P8 模块双实例教训），sentiment/limitup/allstocks/themes 四处 `source.provider` 三元分支——兜底时文案直写「腾讯批量快照兜底（东财 clist 断源…）」，不留一份「看起来像东财」的假出身。
+5. **无兜底链路就明说没有**：概念榜（mktHs 只有行业口径）返回空、板块成分展开对非 BK 代码返回 400「板块代码非法（需 BK 开头）」、主线 main 档因缺资金读数如实为 0——四条诚实缺失路径都比「编一个像样的数」难看了才算做对了。
+6. **em.ts 既有函数只加不改**：`fetchBoardReal` 只在 catch 里为 kind==="industry" 挂新出口，主链路/缓存/TTL 语义一字不动；新解析全部进零 IO 的 `tc-snapshot-core.ts`，node --test 可直跑。
+
+### 落点（2 个新 src 文件 + 10 个改动 + 1 个测试新文件）
+- 新 `src/lib/quant/data/tc-snapshot-core.ts`：腾讯报价串纯解析（88 字段实测映射：f3现价/f4昨收/f32涨跌%/f36量×100股/f37额×1e4/f47涨停价/f44-45亿市值→元；price≤0=停牌不冒充涨跌 0）、板块榜行解析（bd_name/bd_code/bd_zdf 必备，fundsMissing:true 出生即带）。
+- 新 `src/lib/quant/data/tc-universe.ts`：MCP 代码表 × 腾讯批量报价编排（60 只/批×6 并发波、GBK 解码、两道成功率闸、`universeSource()` globalThis 旗标）。
+- 改动：`em-provider.ts`（clist→tc 双级 try + 缓存包住整体）、`desk/em.ts`（fetchTcIndustryBoard + industry 专属兜底出口）、`sentiment.ts`/`limitup.ts`/`themes.ts`/`allstocks/route.ts`（source 三元 + missing 登记）、`types.ts`+`SectorsPage.tsx`（fundsMissing 四列「—」）、`BoardPage.tsx`（明细不请求 demo、流向图整块说明、头部兜底提示）。
+- 测试：`p8-tc-fallback.test.ts` 13 条（字段映射对真实 SH688256 样本逐值钉、停牌/坏行/ST、板块排序去重、以及 6 处接线结构 grep 钉）。
+
+### 验收数字与实测证据
+- tsc 0 错；全量 **793 / 784 过 / 0 败 / 9 跳**（基线 780/771/9，+13 恰为新文件、零回归）；next build 通过；eslint stash 对照 BEFORE=5/AFTER=5（全部为既有报点）；`git diff --stat package.json package-lock.json` 为空（未新增依赖）。
+- 3014 新构建实机逐页（当夜东财仍断源，全部走的是真兜底链路）：情绪/风险 200 真实 5565 家（涨 4536/跌 936、涨停 113、炸板率 24.16%、成交 20481.5 亿、main_net_known=0 公示在位）；行业板/sectors 200 真实涨幅榜+全行 fundsMissing；概念板 200→rows:null（无兜底如实空）；主线 200 次主线 3+观察 5、main 0 且四条 missing 逐字登记；全A 200 total 5565 首行中际旭创真实读数；涨停梯队 200 五连板真实名单；选股 POST 200（用户截图「fetch failed」同链路，涨幅≥9.8% 命中万科A 等真实结果）；板块成分展开 400 明确报错。取证文件 `D:/Zai/tmp-p8/s1.out、tcx_*.out`。
+- 环境事件：3014 杀旧 PID 158952 后 nohup 起新构建（`D:\Zai\tmp-p8\3014-tcfallback.log`）；用户 3010 为旧构建，本轮验收后按其指示重启。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+1. **兜底链路整体是「涨幅口径」**：主力资金/北向/概念板块三维度在东财恢复前不可得，主线 hot 判定天然退化（main 档空）——恢复后需回切验证 em 主链路未被本轮改动污染（em 路径代码未动，但连续多日的兜底缓存语义只由 TTL 保证）。
+2. **MCP 代码表依赖 ModelScope 端点存活**：本仓 `data/quant-config.json` 已配该 URL（免鉴权 streamable_http）；若 MCP 也断，兜底只剩「无名单可扫」，全A类页面将整体报错——三层里只有两层可用是既定现实，不硬凑第三层。
+3. **腾讯字段口径未经官方文档背书**：88 字段映射全部来自 2026-09-22 真实样本实测+与东财/通达信读数交叉对比；BJ 行 87 字段的差异按「缺哪字段哪字段 undefined」处理，未穷举所有板块变体。
+4. **`/api/market/board-detail` 与板块成分在兜底期不可用**：个股明细/成分股展开仍需 secid（东财体系），腾讯榜行 secid="" 即无明细——UI 已拦（不请求、不 demo 回填），但功能本身缺位。
+5. **涨停价 f47/f48 是交易所口径直读**，与 evalLimitSnapshot 的「昨收×比例四舍五入」在个别除权日可能差一分钱——本轮未做双口径对账，取快照直读为准，边界记录。
+6. **3010 重启后才吃到本兜底**：构建产物在提交前已刷新，3010 按用户指示以新构建重启；若后续用户改代码走 启动.bat dev 模式，兜底链路同样生效（无构建期依赖）。
