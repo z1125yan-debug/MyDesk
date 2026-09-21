@@ -194,11 +194,14 @@ test("每个场景的提示词都点名场景，且不夹带行情数字", () =>
   }
 });
 
-test("奇门遁甲提示词只做占位：明确未接入，且禁止虚构盘局", () => {
+// P7-⑨③ 之后排盘真的接进来了：这段提示词不能再写「尚未接入」（那会变成对模型撒谎），
+// 但仍然保留两条硬约束：对话链路自己不起了局（别凭记忆编盘）、禁止虚构盘面要素。
+test("奇门遁甲提示词：排盘已接入面板、对话侧不起局，且禁止虚构盘局", () => {
   const text = scenePrompt("qimen", { intent: intent("qimen", { question: "帮我排个奇门盘", symbol: "688256.SH", symbolSource: "question" }) });
-  assert.match(text, /尚未接入/);
-  assert.match(text, /P7-⑨/);
+  assert.match(text, /奇门解盘/);
+  assert.match(text, /本地/);
   assert.match(text, /不得虚构/);
+  assert.doesNotMatch(text, /尚未接入/, "排盘已经接入，提示词不能再宣称没做");
 });
 
 test("自选清单为空时提示词必须禁止拿别的股票冒充", () => {

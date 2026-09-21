@@ -19,7 +19,7 @@ export type Scene =
   | "quote"          // 行情查询（个股实时快照）
   | "watchlist"      // 自选股总览
   | "stock_analysis" // LLM 个股深度分析
-  | "qimen"          // 奇门遁甲（本轮仅入口 + 提示词占位，排盘算法在 P7-⑨）
+  | "qimen"          // 奇门遁甲（排盘在「奇门解盘」面板本地实算；对话场景只引导切换，不起局）
   | "general";       // 通用对话
 
 export const SCENES: Scene[] = ["sentiment", "sector", "screener", "quote", "watchlist", "stock_analysis", "qimen", "general"];
@@ -318,9 +318,9 @@ export function scenePrompt(scene: Scene, ctx: ScenePromptCtx): string {
       break;
     case "qimen":
       lines.push(
-        "奇门遁甲：本轮只提供入口，排盘算法尚未接入（P7-⑨ 单独实现）。",
-        "可以说明它属于传统术数推演、不是市场数据，但不得虚构盘局、宫位、吉凶。",
-        "如果用户其实想要行情或判断，直接改用行情与量化口径回答并说明这一点。",
+        "奇门遁甲：排盘由「奇门解盘」面板用本地开源引擎实算（时家起局），对话链路本轮不直接起局、也不复述盘面。",
+        "请引导用户切换到智能助手页顶部的「奇门解盘」模式去起局与解盘；可以说明它属于传统术数推演、不是市场数据。",
+        "不得虚构盘局、宫位、干支、吉凶；如果用户其实想要行情或判断，直接改用行情与量化口径回答并说明这一点。",
       );
       break;
     case "general":
@@ -464,7 +464,7 @@ export function planDispatch(ctx: DispatchContext): { calls: DispatchCall[]; ski
       skipped.push("选股条件需由模型从提问里抽取，未预取（把猜出来的条件当成用户要求是事故）");
       break;
     case "qimen":
-      skipped.push("奇门遁甲本轮只做入口：排盘算法未接入，不取数");
+      skipped.push("奇门排盘在「奇门解盘」面板本地实算，对话链路本轮不起局、不取行情数（取行情只会让它看起来像在算盘）");
       break;
     case "general":
     default:

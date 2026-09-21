@@ -24,6 +24,7 @@ import SceneBadge from "../SceneBadge";
 import StepTimeline from "../StepTimeline";
 import ChatBacktestCards from "../ChatBacktestCards";
 import ContextPanel from "../ContextPanel";
+import QimenPanel from "../QimenPanel";
 
 // 回答风格的清单一处定义在 @/lib/desk/modes（首页的下拉用的就是同一份），
 // 当前选中的值存在 store.assistantMode：两个画法共享一个设置，不会出现「首页选了研判、这里按决策发」。
@@ -103,6 +104,8 @@ export function questionCandidates(q: string): string[] {
 export default function AssistantPage() {
   const go = useDesk((s) => s.go);
   const ai = useDesk((s) => s.ai);
+  const deskMode = useDesk((s) => s.deskMode);
+  const setDeskMode = useDesk((s) => s.setDeskMode);
   const focusSymbol = useDesk((s) => s.focusSymbol);
   const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
   const switchSession = useDesk((s) => s.switchSession);
@@ -213,7 +216,33 @@ export default function AssistantPage() {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [tail]);
 
   return (
-    <div className="flex h-[calc(100vh-8.5rem)] w-full gap-4 px-5 py-4">
+    <div className="flex h-[calc(100vh-8.5rem)] w-full flex-col gap-3 px-5 py-4">
+      {/* P7-⑨⑤ 模式切换：对话分析 / 奇门解盘。放在页内顶部条，不新增最左侧一级模块（任务书限定四个大模块）。
+          deskMode 存在 store 且持久化，刷新后停在原模式。 */}
+      <div className="flex shrink-0 items-center gap-2">
+        <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
+          <button onClick={() => setDeskMode("chat")}
+            className={"rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors " +
+              (deskMode === "chat" ? "bg-sky-500/15 text-sky-300" : "text-muted-foreground hover:text-foreground")}>
+            对话分析
+          </button>
+          <button onClick={() => setDeskMode("qimen")}
+            className={"rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors " +
+              (deskMode === "qimen" ? "bg-amber-500/15 text-amber-300" : "text-muted-foreground hover:text-foreground")}>
+            奇门解盘
+          </button>
+        </div>
+        <span className="text-[11px] text-muted-foreground">
+          {deskMode === "qimen"
+            ? "本地开源引擎排盘 + 已配置模型通道解盘；术数推演不构成投资建议"
+            : "现取行情快照 + 流式对话 + 场景自动取数"}
+        </span>
+      </div>
+
+      {deskMode === "qimen" ? (
+        <QimenPanel />
+      ) : (
+      <div className="flex min-h-0 flex-1 w-full gap-4">
       {/* 会话列表：新建 / 切换 / 重命名 / 删除（存档在浏览器 localStorage，跨刷新保留） */}
       {/* 窄屏也要能管会话：原来写的是 hidden + md:flex，小于 768px 时整套会话操作直接没有入口，
           而「新建/切换/删除会话」正是这一项要交付的能力，不能只在宽屏存在。窄屏收一点宽度，不换第二套控件。 */}
@@ -396,6 +425,8 @@ export default function AssistantPage() {
           onClose={() => setPanelOpen(false)}
         />
       </aside>
+      </div>
+      )}
     </div>
   );
 }
