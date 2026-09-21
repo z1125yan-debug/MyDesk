@@ -1544,3 +1544,26 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 4. **`/api/market/board-detail` 与板块成分在兜底期不可用**：个股明细/成分股展开仍需 secid（东财体系），腾讯榜行 secid="" 即无明细——UI 已拦（不请求、不 demo 回填），但功能本身缺位。
 5. **涨停价 f47/f48 是交易所口径直读**，与 evalLimitSnapshot 的「昨收×比例四舍五入」在个别除权日可能差一分钱——本轮未做双口径对账，取快照直读为准，边界记录。
 6. **3010 重启后才吃到本兜底**：构建产物在提交前已刷新，3010 按用户指示以新构建重启；若后续用户改代码走 启动.bat dev 模式，兜底链路同样生效（无构建期依赖）。
+
+## P8 风格轮：回答风格（mode）全通道生效（2026-09-22：网关纯对话端点实锤腔调差）
+
+### 背景与口径（四条）
+1. **一份定义两处消费**：风格句从 /api/ai/chat 的局部 map 上移为 modes.ts 的 `MODE_NOTES: Record<ChatMode,string>`（四句原文逐字未动），工具环与纯对话端点查同一张表——chip 同名、两端口径必同源。
+2. **纯对话端的生效条件与工具端同纪律**：`/api/ai/proxy` 只在带 scene 的对话轮注入风格 system 件（研究页/事件理解/自检那类一次一问调用零污染，与场景提示词同一条门）；body.mode 是外部输入，先过 asChatMode 白名单，认不出按默认口径答、不静默丢风格。
+3. **网关折叠层是生效的最后一公里**：doubao2API 只读最后一条 user——实测折叠件（foldHistoryForGateway 的 system 段）确实把风格句带进去了，注入顺序（先场景注入后折叠）原样保住。
+4. **chip 不再看端点脸色**：`disabled={!configured}` 一种禁用；顶栏「纯对话端点（无工具环）」徽章保留——那是「模型能否自己调工具」的事实，与风格无关。
+
+### 落点（6 个 src 改动 + 1 新测试 + 1 测试修订）
+- `modes.ts` +MODE_NOTES；`chat/route.ts` 局部 map 改查表（systemPrompt(mode: ChatMode 签名与 asChatMode 门原样，p7 钉测全绿）；`proxy/route.ts` +body.mode 声明与 modeNote 注入（`injectSceneContext(messages` 形状以「先注入后前置」方式保住，p7 钉测未动）；`ai.ts` aiChatPlain opts.mode + body spread；`use-chat.ts` 兜底传 extras.mode；`AssistantPage.tsx` chip 解禁、删「风格项不生效」提示。
+- 新 `tests/quant/p8-mode-anywhere.test.ts` 7 条：MODE_NOTES 四句原文钉 + 单一定义处结构钉 + scene 门钉 + chatRequestBody plain 顶层 mode 行为钉 + 网关折叠带上风格句行为钉 + 客户端两传输带 mode 结构钉 + chip 解禁结构钉（含「端点事实徽章不许顺手删」反手一条）。
+
+### 验收数字与实测证据
+- tsc 0；全量 **800 / 791 过 / 0 败 / 9 跳**（基线 793/784/9，+7 恰为新文件、零回归）；next build 通过；6 个触碰文件 eslint 0 报；依赖 diff 空。
+- 3014 新构建、.env 网关通道（用户当前同款纯对话端点）实发三轮（`D:/Zai/tmp-p8/m_deep|m_dec|m_judge.out`）：同一句问题 **deep** 回 514 字带编号风险清单、**decision** 回 198 字结论前置一段话——同通道同问题腔调随 mode 变，生效实锤；第三轮 **judge** 且命中个股场景：6 步取数全 ok（腾讯兜底链路）、寒武纪 1112.77 元真实读数、主力净额/行业按缺失明说。
+- 环境事件如实记录：① 昨晚 stash 对照后 git 把 em.ts 行尾改写为 CRLF，p8-tc-fallback 一条跨行正则（`\n` 写死）误报挂——该正则改 `\r?\n`（钉的映射形状一字未动，只去掉对 EOL 的依赖），这是本轮对已提交断言的唯一一次触碰，留痕于此；② 无场景数据的轮次豆包仍把 688256 叫成「卓易信息」（实为寒武纪）——模型没拿到数据时猜名字的老毛病（承 P8-A 已知问题），带取数轮名字正确，本轮未引入也未修复该行为。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+1. **风格句只改腔调、不改数据面**：不带 scene 关键词的问法（如「688256 今天怎么样」判为 general）依旧不预取，模型可能凭记忆猜名字——场景判定口径未动，风格轮不背这个锅也不修这个案。
+2. **search 风格的「market_news」措辞在纯对话端是「预取同源」而非「模型可调」**：快讯由场景预取用同一注册表取好后注入，模型只是读者——文案保持两句链路同源，未为 plain 另写一句。
+3. **Anthropic/Gemini 原生协议路径同样吃到风格件**（splitSystem 会带上），但未实机复测（本机无这两协议的可用 key），机制上与原 system 件同路，边界记录。
+4. **kairo 网关（:7900）的 enable_kairo_engine=true 分支**：走的是工作台 /api/ai/chat 工具环，风格本就生效；false 透传轮不注入风格（那是「零碰工作台」的既定语义），未改。
