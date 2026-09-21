@@ -62,6 +62,11 @@ interface DeskState {
    */
   deskMode: DeskMode;
   /**
+   * P8-⑤：Debug 步骤时间线开关（意图三段视图 + 入参/摘要富化帧）。默认关、本机持久化（细则 §5-2 拍板项）：
+   * 不开时线上帧与字节数和 A/B 轮完全一致，这是「不改动已收口逻辑」的可证形态。
+   */
+  debugPanel: boolean;
+  /**
    * P7-⑥⑥：首页把「这一句」交给唯一的对话页去发。
    * 一次性交接、不进存档（partialize 不收它）：会话本来就共用同一份 store，
    * 缺的只是「在哪一页发」——再给首页写一套 send() 就是本轮要避免的「两边各做一套」。
@@ -81,6 +86,7 @@ interface DeskState {
   takeFocusSector: () => string | null;
   setAssistantMode: (m: ChatMode) => void;
   setDeskMode: (m: DeskMode) => void;
+  setDebugPanel: (v: boolean) => void;
   addWatch: (w: WatchItem) => void;
   removeWatch: (symbol: string) => void;
   addTracker: (t: TrackerPlan) => void;
@@ -168,6 +174,7 @@ export const useDesk = create<DeskState>()(
       frozenPools: [],
       assistantMode: "decision",
       deskMode: "chat",
+      debugPanel: false,
       pendingAsk: null,
       focusSector: null,
 
@@ -182,6 +189,7 @@ export const useDesk = create<DeskState>()(
       },
       setAssistantMode: (m) => set({ assistantMode: m }),
       setDeskMode: (m) => set({ deskMode: m }),
+      setDebugPanel: (v) => set({ debugPanel: v === true }),
       addWatch: (w) => set((s) => (s.watchlist.some((x) => x.symbol === w.symbol) ? s : { watchlist: [w, ...s.watchlist] })),
       removeWatch: (sym) => set((s) => ({ watchlist: s.watchlist.filter((x) => x.symbol !== sym) })),
       addTracker: (t) => set((s) => ({ tracker: [t, ...s.tracker] })),
@@ -291,6 +299,8 @@ export const useDesk = create<DeskState>()(
         assistantMode: s.assistantMode,
         // 只落盘合法的两个值：存档被手改成别的字符串时写回时收敛成 chat，页面也只认 "qimen" 一种特例
         deskMode: s.deskMode === "qimen" ? "qimen" : "chat",
+        // P8-⑤：与 assistantMode 同类的长期偏好——只认真布尔，坏值收敛成关（默认关是细则 §5-2 的拍板项）
+        debugPanel: s.debugPanel === true,
         mcpServers: s.mcpServers,
         refreshInterval: s.refreshInterval,
         extensionKey: s.extensionKey,

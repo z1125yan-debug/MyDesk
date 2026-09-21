@@ -31,6 +31,8 @@ export default function AssistantWidget({
   const go = useDesk((s) => s.go);
   const ai = useDesk((s) => s.ai);
   const focusSymbol = useDesk((s) => s.focusSymbol);
+  // P8-⑤：调试视图与助手页共用同一个开关（只有一个入口：页顶栏那一个）；这里只跟随，不再放第二个开关。
+  const debugPanel = useDesk((s) => s.debugPanel);
 
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
@@ -135,7 +137,8 @@ export default function AssistantWidget({
                 {/* 与小窗外的助手页同一种可点正文：点代码切 K 线品种，点板块跳板块榜 */}
                 <Markdown content={m.content} sectors={sectors} onLink={openLink} />
                 {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-[6px] translate-y-0.5 animate-pulse bg-sky-400" />}
-                <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming} />
+                <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming}
+                  intent={m.intent} debug={m.debug} debugOn={debugPanel} />
                 {/* 与小窗外的助手页同一份回测卡：同一个任务在两个入口看到的数字必须来自同一处渲染 */}
                 <ChatBacktestCards steps={m.steps} />
               </div>

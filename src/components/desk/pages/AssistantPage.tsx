@@ -108,6 +108,9 @@ export default function AssistantPage() {
   const setDeskMode = useDesk((s) => s.setDeskMode);
   const focusSymbol = useDesk((s) => s.focusSymbol);
   const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
+  // P8-⑤：调试视图开关（默认关、只存本机）。开着时下一轮起请求带 debug:true，时间线多出三段调试视图。
+  const debugPanel = useDesk((s) => s.debugPanel);
+  const setDebugPanel = useDesk((s) => s.setDebugPanel);
   const switchSession = useDesk((s) => s.switchSession);
   const newSession = useDesk((s) => s.newSession);
   const dropSession = useDesk((s) => s.dropSession);
@@ -321,6 +324,15 @@ export default function AssistantPage() {
                 <Settings2 size={13} /> 先去配置 AI
               </button>
             )}
+            {/* P8-⑤：调试视图开关。开着只影响「下一轮起」的请求体带不带 debug:true 与时间线画不画三段调试视图；
+                关着时请求字节、渲染结果都和 A/B 轮一致。默认关，状态只存本机、不上传。 */}
+            <button onClick={() => setDebugPanel(!debugPanel)}
+              title="调试视图：在步骤时间线里展开意图判定、每步入参摘要与结论留底（默认关，只存本机）"
+              className={"rounded border px-1.5 py-0.5 text-[10px] transition-colors " + (debugPanel
+                ? "border-sky-500/40 bg-sky-500/10 text-sky-300"
+                : "border-border text-muted-foreground hover:text-foreground")}>
+              调试{debugPanel ? "·开" : ""}
+            </button>
             {/* P7-⑧③：宽屏右栏常驻，这个按钮只在窄屏出现（拉出抽屉）。没有标的时也能开：
                 大盘/板块类问题没有行情快照可看，但本轮的取数记录与分析依据照样要能看到。 */}
             <button onClick={() => setPanelOpen(true)}
@@ -361,7 +373,8 @@ export default function AssistantPage() {
                   {/* 正文里的代码/板块在对话链路里可点（P7-⑧②）：点代码切 K 线品种，点板块跳板块榜并展开 */}
                   <Markdown content={m.content} sectors={sectors} onLink={openLink} />
                   {m.streaming && <span className="ml-0.5 inline-block h-4 w-[7px] translate-y-0.5 animate-pulse bg-sky-400" />}
-                  <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming} />
+                  <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming}
+                    intent={m.intent} debug={m.debug} debugOn={debugPanel} />
                   {/* P7-⑧④：本轮跑过的回测按 jobId 现查、用量化研究页那张卡画（同一份渲染，不是第二套指标） */}
                   <ChatBacktestCards steps={m.steps} />
                 </div>
