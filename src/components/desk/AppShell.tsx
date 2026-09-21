@@ -29,6 +29,7 @@ import ResearchPage from "./pages/ResearchPage";
 import AgentPage from "./pages/AgentPage";
 import { useDesk } from "@/lib/desk/store";
 import { PAGE_TITLES, type PageKey } from "@/lib/desk/types";
+import WorkbenchShell from "./WorkbenchShell";
 
 export default function AppShell() {
   const page = useDesk((s) => s.page);
@@ -63,31 +64,35 @@ export default function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <main className="min-h-0 flex-1 overflow-y-auto desk-scroll">
-          {page === "aihome" && <AiHomePage />}
-          {page === "aiscan" && <AiScanPage />}
-          {page === "pool" && <PoolPage />}
-          {page === "screener" && <ScreenerPage />}
-          {page === "profile" && <ProfilePage />}
-          {page === "market" && <MarketPage />}
-          {page === "sectors" && <SectorsPage />}
-          {page === "allstocks" && <AllStocksPage />}
-          {page === "dashboard" && <OverviewPage />}
-          {page === "board" && <BoardPage />}
-          {page === "analysis" && <AnalysisPage />}
-          {page === "tracker" && <WatchlistPage />}
-          {page === "history" && <HistoryPage />}
-          {page === "copilot" && <CopilotPage />}
-          {page === "quant" && <QuantPage />}
-          {page === "factorlab" && <FactorLabPage />}
-          {page === "risk" && <RiskPage />}
-          {page === "problab" && <ProbabilityPage />}
-          {page === "themes" && <ThemesPage />}
-          {page === "radar" && <RadarPage />}
-          {page === "events" && <EventsPage />}
-          {page === "research" && <ResearchPage />}
-          {page === "agent" && <AgentPage />}
-          {page === "extension" && <ExtensionPage />}
-          {page === "settings" && <SettingsPage />}
+          {/* P7-⑪ 任务1：外面包一层工作台壳（左窄栏列表 + 右详情）。
+              下面 25 个分支一个不删——旧 hash 路由全部保留做兼容跳转，右栏渲染的就是原页面组件本身。 */}
+          <WorkbenchShell>
+            {page === "aihome" && <AiHomePage />}
+            {page === "aiscan" && <AiScanPage />}
+            {page === "pool" && <PoolPage />}
+            {page === "screener" && <ScreenerPage />}
+            {page === "profile" && <ProfilePage />}
+            {page === "market" && <MarketPage />}
+            {page === "sectors" && <SectorsPage />}
+            {page === "allstocks" && <AllStocksPage />}
+            {page === "dashboard" && <OverviewPage />}
+            {page === "board" && <BoardPage />}
+            {page === "analysis" && <AnalysisPage />}
+            {page === "tracker" && <WatchlistPage />}
+            {page === "history" && <HistoryPage />}
+            {page === "copilot" && <CopilotPage />}
+            {page === "quant" && <QuantPage />}
+            {page === "factorlab" && <FactorLabPage />}
+            {page === "risk" && <RiskPage />}
+            {page === "problab" && <ProbabilityPage />}
+            {page === "themes" && <ThemesPage />}
+            {page === "radar" && <RadarPage />}
+            {page === "events" && <EventsPage />}
+            {page === "research" && <ResearchPage />}
+            {page === "agent" && <AgentPage />}
+            {page === "extension" && <ExtensionPage />}
+            {page === "settings" && <SettingsPage />}
+          </WorkbenchShell>
         </main>
       </div>
     </div>
