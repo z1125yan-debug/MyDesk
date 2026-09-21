@@ -1409,3 +1409,36 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 1. **「开流自动展开」未在实机演示成**：走查窗口内行情上游连续 fetch failed，steps 从未到达时间线；语义靠 ⑫-3 结构测试 + 手动展开实机证据兜底，肉眼确认留给上游恢复后复跑（`.env` 指 mock 也可演示）。
 2. **数据条件型折叠未现场点亮**：AgentPage「这一格原文」需真实 run、ResearchPage 三折叠需报告落库，本轮未造数据；同容器同 API 的其余实例已验证。
 3. **东财 502 风暴是本轮走查期间的真实外部状态**：对话预取连带失败，属数据源问题，不掩盖也不误报为代码缺陷。
+
+## P8 子轮 A：P8-① 调用前数据新鲜度检查 + P8-② v3 打分结论契约锁死（2026-09-21：19 条新单测，三条传输路径实机取证）
+
+接 P8 六项拆解（子轮 A）开工。按任务书附录口径做两件事：①每一轮自动取数后、发给模型前，拿 000001.SH 的真实交易日历核对各份日 K 的最后一根 bar，过期/缺口/无法判定都必须显式说话；②个股研判场景下本机 v3 引擎现场算结论卡，把契约 JSON 逐字锁进 system prompt，模型回答里引用这些数字时做一致性校验，不一致只出警告横幅。`package.json` / `package-lock.json` diff 照旧为空；`prisma/db/custom.db` 与 `P1P2_任务书.md` 删除照旧不入任何 commit。
+
+### 这一轮定的口径（对应四个风险点）
+
+1. **时区与 unknown 不误判（风险 1）**：新鲜度纯核 `freshness-core.ts` 零 import、零时钟——`toShanghaiDay` 只对带时区标记的串做 +8h 换算，裸日期原样取日段；判定三态 fresh/stale/**unknown**，unknown（缺 expected、缺 last、last 晚于 expected 的「日历异常」）既不冒充 fresh 也不静默：报告里必出条目，步骤里必标「数据滞后」。时区用例含 UTC 串跨日（16:30Z→次日）与 −05:00 同日/跨日两向。
+2. **stale 口径单一出处（风险 2）**：日期不一致判定收敛为 `dateMismatch(a,b)` 一个函数——`decision-service.ts` 原来的 `tech.bar_date !== tradeDate` 直比改成调它，新鲜度核对同源；测试 grep 钉住「全仓不再残留裸直比」与「判词逻辑不进 scene-dispatch」。
+3. **契约闸只管有决策结果的场景（风险 3）**：`shouldBuildDecisionContract(scene)` 仅 `stock_analysis` 为真；纯行情查询轮实测只有 2 个预取步骤、无结论卡步骤、mock 回执「契约注入=否」，且行情轮里编造数字不会触发校验（没有契约就没有校验对象，负向证据）。
+4. **校验不一致只出警告（风险 4）**：`contractWarningOf` 只做 verify+组文案，warning 帧/JSON warning 字段都走 `contractWarningText` 同一出处，文案自述「模型原文未被改动，也没有自动重答」；三条传输（proxy 流式 / proxy 降级+非流式 JSON / chat 流式）全部结构性 grep 钉住「done 之前只 emit warning，r.content 原样进 done」。
+
+### 落点（11 个 src 文件 + 3 个测试文件，其中 2 个新文件）
+
+- 新 `src/lib/desk/freshness-core.ts`（纯核）+ 新 `tests/quant/p8-freshness-contract.test.ts`（19 用例）。
+- `scene-dispatch.ts`：prefetch 收集 raws → 现场 `buildDecisionWithTimeout`（30s 上限、先于日历拉取并行起跑）算结论；日历取数失败→expected 缺位→全部读数落 unknown；报告有条目才注入【数据新鲜度检查…回答纪律】段；契约 JSON+`CONTRACT_QUOTE_RULE` 贴进 system 块；SceneTurn 增 `freshness`/`contract` 两字段。
+- `decision-core.ts`：契约构建/渲染/引用抽取/校验/警告文案一套（既有 P8-② 段修一处 TS 窄化）。`decision-service.ts`：换用 `dateMismatch`。
+- 两个 AI 路由（proxy/chat）接 `contractWarningOf`。UI 面：`chat-core`/`chat-stream-core` 步骤状态联合加 `"stale"`（词汇「数据滞后」），`StepTimeline` 图例、`ContextPanel` 琥珀色与「n 步数据滞后」计数、`context-panel-core` counts 加 stale 维。
+- 既有测试两处随口径更新：`p7-panel` 的 counts 形状加 stale 键（加性变化）；`p7-dispatch` 分层断言把「scene-dispatch 禁引 @/lib/quant」改为精确三文件白名单（hybrid/decision-core/decision-service，P8 设计的既定依赖）并补「判词不得下沉到调度层」grep。
+
+### 验收数字与实测证据
+
+- `tsc --noEmit` **0**；全量 **718 tests / 709 pass / 0 fail / 9 skipped**（基线 699/690/9，+19 恰为新文件）；`next build` 通过；11 个触碰 src 文件 eslint **0 problems**（干净基线，无需 stash 对照）。
+- **3014 实机 + mock 上游**（`D:/Zai/tmp-p8/mock-p8.mjs` 占 :7861，回答里故意引用「综合得分 999.9 / 强势看多」）：`600519.SH 能不能买` 一轮内——引擎现场算出「综合得分 -10.2（中性震荡），参考日 2026-09-21」进契约 JSON；流式帧里 warning 完整公示「『综合得分 999.9』→ 本地引擎是 -10.2；『强势看多』→ 本地引擎是 中性震荡」。浏览器走查（DOM click 展开「工作过程 · 4 步」）确认警告横幅与步骤行可见。
+- 新鲜度实链路：真实拉取 000001.SH 日历，本轮 2 份读数与基准交易日一致（fresh 分支实机点亮）；非研判场景（「现在多少钱」）步骤里无结论卡、无契约、无校验——负向对照组。取证件在 `D:/Zai/tmp-p8/p8-analysis2.out` / `p8-quote.out` / `p8-nonstream.out`。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+
+1. **实机只点亮了 fresh 分支**：当日数据本就新鲜，stale/unknown 分支靠 19 条单测 + 结构 grep 钉住；要实机演示需选一根滞后标的或断日历，留给下子轮补。
+2. **:7861 当前是 mock-p8 顶替**：真实豆包网关未重启（原 502 风暴语境），契约校验的「模型真会引用错数字」概率在真网关下待复测；三传输路径的机制本身已取证。
+3. **本轮 node 工具链为 playwright 自带 v24 shim**（`D:/Zai/tmp-p8/bin/node`）：PATH 里原 node 消失后重建的等价物，测试/构建均经它跑通；环境恢复后可无痛切回。
+4. **结论卡 30s 超时是软闸**：超时只降级为「未构建契约」并写进 skipped，不阻塞回答——慢标的（日 K 拉取卡壳）场景下契约缺席是预期行为。
+5. **行情类场景（market_overview/sector_*）不注入契约也没有新鲜度纪律段之外的动作**：任务书口径如此；若后续要求行情轮也带日历缺口提示的独立呈现，属新增口径非本轮范围。
