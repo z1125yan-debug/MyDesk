@@ -11,6 +11,13 @@
 //  3) 取不到的东西不能靠场景词编出来：自选清单为空、没识别到代码、回测尚未接入，都写进提示词让它如实说。
 // 带 .ts 后缀是 node --test 直跑纯内核的前提（与 quant/screener 下的 *-core.ts 同一套写法）。
 import { isFollowUp } from "./chat-core.ts";
+// P8-③：自动调度的「谁进哪个场景、怎么给参、必读与否」搬进 skills-core 的可注册表；
+// 本层保留计划解释与全部文案（reason/skipped 的措辞单一出处），两边都还是纯函数。
+import {
+  SKILLS, DISPATCH_MAX_SYMBOLS, DISPATCH_ANALYSIS_MAX,
+  type SkillArgs, type SkillPlanEntry, type SkillReason, type SkillRegistry,
+} from "./skills-core.ts";
+export { DISPATCH_MAX_SYMBOLS, DISPATCH_ANALYSIS_MAX };
 
 export type Scene =
   | "sentiment"      // 大盘情绪
@@ -352,22 +359,12 @@ export function scenePrompt(scene: Scene, ctx: ScenePromptCtx): string {
 // ---------- 该场景下建议模型优先使用的工具 ----------
 
 /**
- * 场景到优先工具（不排他：模型仍可调 TOOLS 里的任何一个）。
- * 自动调度也按这份顺序预取，两边共用一张表，否则会出现「界面说在取、模型却没拿到」。
+ * 场景到优先工具（不排他：模型仍可调注册表里的任何一个）。
+ * P8-③ 起这份表住在 skills-core（SCENE_PREFERS）：预取计划与优先清单同源于注册表，
+ * 不会再出现「改了一边忘另一边」的两张表。
  */
-export function toolsForScene(scene: Scene): string[] {
-  switch (scene) {
-    case "sentiment": return ["market_sentiment", "market_news"];
-    case "sector": return ["sector_rank", "market_sentiment"];
-    case "screener": return ["factor_screener", "historical_probability"];
-    case "quote": return ["stock_snapshot"];
-    case "watchlist": return ["watchlist_overview", "market_sentiment"];
-    case "stock_analysis": return ["stock_snapshot", "stock_kline_summary", "stock_fund_flow", "market_news"];
-    // 奇门本轮不取数：没有真实盘局可取，取行情只会让它看起来像算了盘
-    case "qimen": return [];
-    case "general":
-    default: return [];
-  }
+export function toolsForScene(scene: Scene, registry: SkillRegistry = SKILLS): string[] {
+  return registry.prefersForScene(scene);
 }
 
 // ---------- 自动调度计划（取什么数、用什么参数、为什么） ----------
@@ -400,19 +397,18 @@ export function wantsNews(question: string): boolean {
   return NEWS_WORDS.some((w) => q.includes(w));
 }
 
-/** 一次对话最多预取几只票：再多会把一轮问答拖成长查询，而用户多半只是列举 */
-export const DISPATCH_MAX_SYMBOLS = 5;
-/** 个股分析最多预取几只（每只 3 个工具，再深就慢得没法用） */
-export const DISPATCH_ANALYSIS_MAX = 3;
+/** 两个标的上限常量住在 skills-core（注册表与上限同源），文件头已按原名 re-export，旧 import 路径不变。 */
 
 /**
- * 取数计划：场景 + 标的 -> 一串要提前执行的工具调用，以及「为什么没取」的清单。
+ * 取数计划（P8-③ 起表驱动）：读 skills-core 注册表里该场景的参与项，
+ * per_symbol 项逐标的成组展开、once 项殿后，并处理 gate / 快照抵扣 / 场景静态留痕。
  *  - 快照里已经带了同一只票就不重复取，并把原因写进 skipped（界面要能说清）；
  *  - 选股场景不预取：条件得由模型从自然语言抽成结构化 conditions，替它猜条件等于替用户做决定；
  *  - 奇门 / 通用不取数；
  *  - 自选清单为空就不取，免得画出一个注定失败的步骤。
+ * 行为与搬表前的 switch 逐字一致（p7-intent 的 25 条调度断言就是这条「一致」的验收闸）。
  */
-export function planDispatch(ctx: DispatchContext): { calls: DispatchCall[]; skipped: string[] } {
+export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKILLS): { calls: DispatchCall[]; skipped: string[] } {
   const { intent } = ctx;
   const calls: DispatchCall[] = [];
   const skipped: string[] = [];
@@ -422,55 +418,73 @@ export function planDispatch(ctx: DispatchContext): { calls: DispatchCall[]; ski
   const capped = symbols.slice(0, DISPATCH_MAX_SYMBOLS);
   if (symbols.length > capped.length) skipped.push(`提问涉及 ${symbols.length} 个代码，本轮只取前 ${DISPATCH_MAX_SYMBOLS} 个`);
 
-  const push = (tool: string, args: Record<string, unknown>, reason: string, dedupeKey?: string) => {
-    if (dedupeKey && covered.has(dedupeKey.toUpperCase())) {
-      skipped.push(`${tool} · ${dedupeKey}：客户端快照已带该品种实时数据，未重复取数`);
-      return;
+  const cfg = registry.configForScene(intent.scene);
+  const sceneMax = Math.min(cfg.symbol_max ?? DISPATCH_MAX_SYMBOLS, DISPATCH_MAX_SYMBOLS);
+  const cappedScene = capped.slice(0, sceneMax);
+  if (cfg.cap === "analysis" && capped.length > cappedScene.length) {
+    skipped.push(`个股分析一次最多看 ${DISPATCH_ANALYSIS_MAX} 只，其余请分开问`);
+  }
+
+  // 文案的单一出处：注册表只声明「谁在哪个场景、怎么展开、给什么参」，说辞仍旧归判定层。
+  // news 的两个变体（消息面/原因、消息面/为什么）是旧 switch 里就有的逐字差异，原样保住不擅自统一。
+  const reasonOf = (r: SkillReason): string => {
+    switch (r) {
+      case "scene": return `问题按「${SCENE_LABELS[intent.scene]}」处理`;
+      case "scene_snapshot": return `按「${SCENE_LABELS[intent.scene]}」取实时快照`;
+      case "kline": return "取日 K 并算技术状态（均线/MACD/KDJ/RSI）";
+      case "fund_flow": return "取近 14 日主力资金";
+      case "news": return "同时问了消息面/原因";
+      case "news_why": return "同时问了消息面/为什么";
+      case "watchlist": return `按「${SCENE_LABELS.watchlist}」取全部自选的实时行情`;
     }
-    calls.push({ tool, args, reason });
+  };
+  const argsOf = (a: SkillArgs, symbol: string): Record<string, unknown> => {
+    switch (a) {
+      case "symbol": return { symbol };
+      case "news8": return { limit: 8 };
+      case "sector_kind": return { kind: intent.question.includes("概念") ? "concept" : "industry", size: 15 };
+      case "empty":
+      default: return {};
+    }
+  };
+  // gate 不满足：news 静默不出 call（旧 switch 就没有这条留痕）；watchlist 空清单必须留话
+  const gateOk = (e: SkillPlanEntry): boolean => {
+    if (e.gate === "news") return wantNews;
+    if (e.gate === "watchlist_nonempty") {
+      if ((ctx.watchlistCount ?? 0) === 0) {
+        skipped.push("本机自选清单为空，未调自选总览（空清单不是取数失败）");
+        return false;
+      }
+      return true;
+    }
+    return true;
   };
 
-  switch (intent.scene) {
-    case "sentiment":
-      calls.push({ tool: "market_sentiment", args: {}, reason: `问题按「${SCENE_LABELS.sentiment}」处理` });
-      if (wantNews) calls.push({ tool: "market_news", args: { limit: 8 }, reason: "同时问了消息面/原因" });
-      break;
-    case "sector":
-      calls.push({
-        tool: "sector_rank",
-        args: { kind: intent.question.includes("概念") ? "concept" : "industry", size: 15 },
-        reason: `问题按「${SCENE_LABELS.sector}」处理`,
-      });
-      break;
-    case "quote":
-      for (const s of capped) push("stock_snapshot", { symbol: s }, `按「${SCENE_LABELS.quote}」取实时快照`, s);
-      break;
-    case "stock_analysis":
-      for (const s of capped.slice(0, DISPATCH_ANALYSIS_MAX)) {
-        // 去重只对快照有效：客户端带回来的是「当前图表的实时行情」，K 线技术状态与资金流它并没有算过，
-        // 拿快照去抵掉后两个工具，等于让模型在少了两组数据的情况下继续下结论。
-        push("stock_snapshot", { symbol: s }, `按「${SCENE_LABELS.stock_analysis}」取实时快照`, s);
-        push("stock_kline_summary", { symbol: s }, "取日 K 并算技术状态（均线/MACD/KDJ/RSI）");
-        push("stock_fund_flow", { symbol: s }, "取近 14 日主力资金");
+  const entries = registry.entriesForScene(intent.scene);
+  // per_symbol 按「标的外层、技能内层」展开：个股分析三件套逐只成组，技能在外层会把两只票的
+  // 读数在时间线上交错开，用户看不出哪三条属于哪只。
+  // 去重只对快照有效（dedupe_snapshot 只挂在快照项上）：客户端带回来的是「当前图表的实时行情」，
+  // K 线技术状态与资金流它并没有算过，拿快照去抵掉后两个工具，等于让模型少两组数据继续下结论。
+  for (const s of cappedScene) {
+    for (const { tool, entry } of entries) {
+      if (entry.spread !== "per_symbol") continue;
+      if (!gateOk(entry)) continue;
+      if (entry.dedupe_snapshot && covered.has(s.toUpperCase())) {
+        skipped.push(`${tool} · ${s}：客户端快照已带该品种实时数据，未重复取数`);
+        continue;
       }
-      if (capped.length > DISPATCH_ANALYSIS_MAX) skipped.push(`个股分析一次最多看 ${DISPATCH_ANALYSIS_MAX} 只，其余请分开问`);
-      if (wantNews) calls.push({ tool: "market_news", args: { limit: 8 }, reason: "同时问了消息面/为什么" });
-      break;
-    case "watchlist":
-      if ((ctx.watchlistCount ?? 0) === 0) skipped.push("本机自选清单为空，未调自选总览（空清单不是取数失败）");
-      else calls.push({ tool: "watchlist_overview", args: {}, reason: `按「${SCENE_LABELS.watchlist}」取全部自选的实时行情` });
-      break;
-    case "screener":
-      skipped.push("选股条件需由模型从提问里抽取，未预取（把猜出来的条件当成用户要求是事故）");
-      break;
-    case "qimen":
-      skipped.push("奇门排盘在「奇门解盘」面板本地实算，对话链路本轮不起局、不取行情数（取行情只会让它看起来像在算盘）");
-      break;
-    case "general":
-    default:
-      skipped.push("按通用问答处理，未取数");
-      break;
+      calls.push({ tool, args: argsOf(entry.args, s), reason: reasonOf(entry.reason) });
+    }
   }
+  for (const { tool, entry } of entries) {
+    if (entry.spread !== "once") continue;
+    if (!gateOk(entry)) continue;
+    calls.push({ tool, args: argsOf(entry.args, ""), reason: reasonOf(entry.reason) });
+  }
+
+  if (cfg.skip === "screener") skipped.push("选股条件需由模型从提问里抽取，未预取（把猜出来的条件当成用户要求是事故）");
+  if (cfg.skip === "qimen") skipped.push("奇门排盘在「奇门解盘」面板本地实算，对话链路本轮不起局、不取行情数（取行情只会让它看起来像在算盘）");
+  if (cfg.skip === "general") skipped.push("按通用问答处理，未取数");
   return { calls, skipped };
 }
 

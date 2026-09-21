@@ -11,6 +11,11 @@
 //    滞后/无法判定既进提示词纪律段、也在步骤时间线留一条 stale 步骤（缺数据直接告知用户）；
 //  - 结论契约：仅个股研判场景现场算一张 v3 结论卡（与结论卡页同一入口 buildDecisionForSymbol），
 //    算出来才把「引擎全文 + 锁死数字的契约 JSON」注入本轮；纯行情查询走不到这条路（风险点 3 的闸）。
+//
+// P8-③/④ 的接线同样只做「跑计划 + 执行」，判定都在纯核：
+//  - 计划来自 skills-core 注册表（intent-core.planDispatch 表驱动解释），不再在本层写场景 if/else；
+//  - 完整性校验与补充轮计划来自 agent-loop-core：首轮取完，若「必读项」有洞，就原参数补一轮，
+//    补完仍缺的如实留在未取到清单——这就是「不是单轮直调大模型」的那一环。
 import { backtestWhitelist, findTool, BACKTEST_READY, type ToolCtx } from "./chat-tools";
 import { whitelistPromptLine, type WhitelistRow } from "./backtest-core";
 import {
@@ -20,9 +25,12 @@ import {
   planDispatch,
   renderDispatchBlock,
   scenePrompt,
+  type DispatchCall,
   type Intent,
 } from "./intent-core";
 import { runDispatchPlan, type DispatchTrace } from "./dispatch-core";
+import { SKILLS } from "./skills-core";
+import { completenessVerdict, findRequiredGaps, mergeSupplement, planSupplementRound, stillMissingNote } from "./agent-loop-core";
 import { intentBadgeOf, splitSnapshotMessage, type IntentBadge, type StepInfo } from "./chat-core";
 import type { StreamEvent } from "./chat-stream-core";
 import { shanghaiDate } from "./session";
@@ -84,28 +92,71 @@ export async function prefetchForScene(opts: {
   // P8-①：新鲜度判的是结构里的日期（「最近5日」最后一根的日期），注入块截断过、不能当判据，
   // 所以在 execute 这一层顺手留一份序列化前的原始结果。未注册的工具不算「取到了」，不入列。
   const raws: PrefetchResult["raws"] = [];
+  const execute = async (call: DispatchCall) => {
+    const tool = findTool(call.tool);
+    // 计划里的工具名不在注册表＝代码对不上，不是「数据缺失」：写得直白一点，方便定位
+    if (!tool) return { missing: `调度计划里的工具「${call.tool}」未注册（代码与工具表不一致，本轮该块无数据）` };
+    // args 由 planDispatch 按各工具的入参形状写死（不是模型给的），所以这里不需要再容错解析
+    const out = await tool.fn(call.args, opts.ctx);
+    raws.push({ tool: call.tool, args: call.args, out });
+    return out;
+  };
   const result = await runDispatchPlan({
     calls,
     stepStart,
     isCancelled: opts.isCancelled,
     onStep: (s) => opts.emit?.({ type: "step", data: s }),
-    execute: async (call) => {
-      const tool = findTool(call.tool);
-      // 计划里的工具名不在注册表＝代码对不上，不是「数据缺失」：写得直白一点，方便定位
-      if (!tool) return { missing: `调度计划里的工具「${call.tool}」未注册（代码与工具表不一致，本轮该块无数据）` };
-      // args 由 planDispatch 按各工具的入参形状写死（不是模型给的），所以这里不需要再容错解析
-      const out = await tool.fn(call.args, opts.ctx);
-      raws.push({ tool: call.tool, args: call.args, out });
-      return out;
-    },
+    execute,
   });
+
+  // ---------- P8-④：校验数据完整性 -> 不足则补一轮（判定全在 agent-loop-core，这里只接线） ----------
+  let rows = result.rows;
+  let missing = result.missing;
+  const steps = [...result.steps];
+  const trace = [...result.trace];
+  let stepNo = stepStart + steps.length;
+  const required = SKILLS.requiredToolsForScene(opts.intent.scene);
+  if (required.size && calls.length) {
+    const gaps = findRequiredGaps({ calls, rows, missing, required });
+    const verdict = completenessVerdict(gaps, required.size);
+    // 校验本身要在时间线上看得见：⑤ 的 Debug 面板要靠步骤重放整条链路，看不见校验=看不见闭环
+    const checkStep: StepInfo = {
+      step: ++stepNo,
+      label: "校验本轮取数完整性（必读读数逐项对账）",
+      status: verdict.status,
+      source: "prefetch",
+      reason: "P8-④：不足先补一轮再进综合分析，不拿缺口当齐备下结论",
+      detail: verdict.detail,
+    };
+    steps.push(checkStep);
+    opts.emit?.({ type: "step", data: checkStep });
+    if (gaps.length && !opts.isCancelled?.()) {
+      const supplement = planSupplementRound(gaps, calls);
+      const r2 = await runDispatchPlan({
+        calls: supplement,
+        stepStart: stepNo,
+        isCancelled: opts.isCancelled,
+        onStep: (s) => opts.emit?.({ type: "step", data: s }),
+        execute,
+      });
+      stepNo += r2.steps.length;
+      steps.push(...r2.steps);
+      trace.push(...r2.trace);
+      const merged = mergeSupplement({ rows, missing }, gaps, r2);
+      rows = merged.rows;
+      missing = merged.missing;
+      const still = stillMissingNote(gaps, r2);
+      if (still) skipped.push(still);
+    }
+  }
+
   return {
-    block: renderDispatchBlock(result.rows, result.missing),
-    steps: result.steps,
-    trace: result.trace,
+    block: renderDispatchBlock(rows, missing),
+    steps,
+    trace,
     // 没执行的调用（客户端断开）也要留痕：静默消失会被当成「取过了但没内容」
     skipped: [...skipped, ...result.notRun.map((t) => `${t}：客户端已断开，本轮未执行`)],
-    nextStep: stepStart + result.steps.length,
+    nextStep: stepNo,
     raws,
   };
 }

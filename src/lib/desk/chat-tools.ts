@@ -533,6 +533,24 @@ export const TOOLS: ChatTool[] = [
 export const TOOL_NAMES = TOOLS.map((t) => t.name);
 
 /**
+ * P8-③ 可注册体系的实现层入口：把新工具（含技能插件的执行本体）追加进注册表。
+ *  - 只登记执行本体；它要不要进自动调度、在哪个场景进，由 skills-core 的 plan 声明，两边不互相抄；
+ *  - 重名/缺字段如实拒绝，不静默覆盖内置实现——覆盖内置工具是最不容易被发现的那类事故；
+ *  - TOOL_NAMES / BACKTEST_READY 是模块加载时对内置项的一次性快照，注册项不进这两份：
+ *    它们只服务「内置清单漂移」的判定，把动态项混进来反而会让人误以为内置表被改过。
+ * 运行时消费者（findTool、chat 路由的 tools 清单）每次都重读 TOOLS，所以注册即刻生效。
+ */
+export function registerChatTool(tool: ChatTool): { ok: boolean; error?: string } {
+  if (!tool?.name || typeof tool.name !== "string") return { ok: false, error: "工具名必须是非空字符串" };
+  if (!tool.desc) return { ok: false, error: `工具 ${tool.name} 缺 desc：模型看的就是这份说明` };
+  if (typeof tool.fn !== "function") return { ok: false, error: `工具 ${tool.name} 缺执行本体 fn` };
+  if (!tool.params?.type) return { ok: false, error: `工具 ${tool.name} 缺 params（JSON schema）：没有入参形状就没人能调对` };
+  if (findTool(tool.name)) return { ok: false, error: `工具 ${tool.name} 已注册，不静默覆盖（要换实现请先摘旧的）` };
+  TOOLS.push(tool);
+  return { ok: true };
+}
+
+/**
  * 回测是否真的接进了对话链路。
  * 不写成 true 的字面量：这条开关跟着 TOOLS 走，将来谁把 run_backtest 摘掉，
  * 提示词那句「不得声称已回测」会自动回到原位，而不是留着一句假话让模型以为自己会回测。
