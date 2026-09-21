@@ -14,6 +14,15 @@ import type { ChatMode } from "./modes";
 // 回答风格的清单只有一份（modes.ts），这里原样转出键类型，页面不再各自声明一遍联合类型
 export type { ChatMode };
 
+/**
+ * 智能助手页的两种工作模式（P7-⑨⑤）：
+ *  - chat  = 对话分析（原有：会话列表 + 流式对话 + 右栏上下文面板）
+ *  - qimen = 奇门解盘（本地排盘 + 走既有模型通道生成解盘文本）
+ * 放在 store 并持久化：它是页面级选择，刷新后该停在哪一模式就停在哪一模式，
+ * 与「回答风格 assistantMode」是两件事，不复用同一个字段。
+ */
+export type DeskMode = "chat" | "qimen";
+
 // 冻结候选池（需求文档 二十三：冻结后原始候选结果不得被覆盖）
 export interface FrozenPool {
   id: string;            // 2026-09-19-AI-001
@@ -48,6 +57,11 @@ interface DeskState {
    */
   assistantMode: ChatMode;
   /**
+   * P7-⑨⑤：智能助手页当前是「对话分析」还是「奇门解盘」。持久化，刷新后停在原模式。
+   * 与 assistantMode（回答风格）互不相干：前者决定右栏画哪一套，后者只影响对话端点的口径。
+   */
+  deskMode: DeskMode;
+  /**
    * P7-⑥⑥：首页把「这一句」交给唯一的对话页去发。
    * 一次性交接、不进存档（partialize 不收它）：会话本来就共用同一份 store，
    * 缺的只是「在哪一页发」——再给首页写一套 send() 就是本轮要避免的「两边各做一套」。
@@ -66,6 +80,7 @@ interface DeskState {
   setFocusSector: (code: string | null) => void;
   takeFocusSector: () => string | null;
   setAssistantMode: (m: ChatMode) => void;
+  setDeskMode: (m: DeskMode) => void;
   addWatch: (w: WatchItem) => void;
   removeWatch: (symbol: string) => void;
   addTracker: (t: TrackerPlan) => void;
@@ -151,6 +166,7 @@ export const useDesk = create<DeskState>()(
       extensionKey: randKey(),
       frozenPools: [],
       assistantMode: "decision",
+      deskMode: "chat",
       pendingAsk: null,
       focusSector: null,
 
@@ -164,6 +180,7 @@ export const useDesk = create<DeskState>()(
         return code;
       },
       setAssistantMode: (m) => set({ assistantMode: m }),
+      setDeskMode: (m) => set({ deskMode: m }),
       addWatch: (w) => set((s) => (s.watchlist.some((x) => x.symbol === w.symbol) ? s : { watchlist: [w, ...s.watchlist] })),
       removeWatch: (sym) => set((s) => ({ watchlist: s.watchlist.filter((x) => x.symbol !== sym) })),
       addTracker: (t) => set((s) => ({ tracker: [t, ...s.tracker] })),
@@ -271,6 +288,8 @@ export const useDesk = create<DeskState>()(
         activeSessionId: s.activeSessionId,
         ai: s.ai,
         assistantMode: s.assistantMode,
+        // 只落盘合法的两个值：存档被手改成别的字符串时写回时收敛成 chat，页面也只认 "qimen" 一种特例
+        deskMode: s.deskMode === "qimen" ? "qimen" : "chat",
         mcpServers: s.mcpServers,
         refreshInterval: s.refreshInterval,
         extensionKey: s.extensionKey,
