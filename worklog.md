@@ -1567,3 +1567,30 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 2. **search 风格的「market_news」措辞在纯对话端是「预取同源」而非「模型可调」**：快讯由场景预取用同一注册表取好后注入，模型只是读者——文案保持两句链路同源，未为 plain 另写一句。
 3. **Anthropic/Gemini 原生协议路径同样吃到风格件**（splitSystem 会带上），但未实机复测（本机无这两协议的可用 key），机制上与原 system 件同路，边界记录。
 4. **kairo 网关（:7900）的 enable_kairo_engine=true 分支**：走的是工作台 /api/ai/chat 工具环，风格本就生效；false 透传轮不注入风格（那是「零碰工作台」的既定语义），未改。
+
+## P9 观感+缺口+备胎轮：选股缺口显式化 / 对话去人机腔续建 / 新浪资金流备胎（2026-09-22：816 条基线，注入断源实锤兜底链）
+
+### 背景与口径（四条）
+1. **缺口 ≠ 无命中（一条预检、三处同源、一处收口）**：东财资金数据断源期，「主力净流入>0」这类快照条件进粗筛会把整池判不符合，页面只剩「没有符合条件的股票」——把数据缺口伪装成筛不出来。本轮：快照条件先过字段可得性预检（新纯核 `snapshot-avail-core`，零 IO），整池无读数的条件剔除并登记进机器可读的 `unavailable_fields`（含池大小）；剔除后无一可评 → 结果为空且标「未评」，绝不把未筛整池当命中返回。警示条（ScreenerPage/AiScanPage）、空态分文案、工具环转述要求三处都吃同一份 `unavailable_fields`，模型不许把缺口转述成「没有股票符合该条件」。
+2. **备胎按「移植不装包」接入，出身三元是硬口径**：a-stock-data（Apache-2.0 的 Python skill 文档，非 npm 包）实测评估后，只把验证过的 `fund_flow_backup` 端点移植成我们自己的 TS 兜底——`fetchDetailReal` 东财 push2his 失败自动切新浪 `MoneyFlow.ssl_qsfx_zjlrqs`。`DetailReal` 带 `source: "em"|"sina"` 出身标记，档案/对话工具/工具环观测/能力探测四处按出身如实标「与东财 f62 不完全等价」：同一天茅台实测新浪 -33.7 亿 vs 东财 -3.2 亿，差一个量级，不标源就是把新浪冒充东财。认代码沿用仓库实测坑「92 先判北交所」（误判 sh/sz 时新浪返回空数组，比报错更难发现）；板块 BK 码在新浪无对应物 → `sinaFundFlowUrl` 返回 null 整条不兜底，不硬凑。
+3. **代理救不了东财（实测双证，纠正用户假设）**：push2 clist 直连 000（连接重置）、走本机 10808 代理 503——东财对 push2 是域名级风控，换出口 IP 同样被拒；datacenter 直连/代理都回 `code 9701`。代理只对 GitHub 有效（clone 本仓库靠它）。真正有用的是「东财挂时新浪/腾讯官方源直连就通、不封 IP」，所以答案不是开代理，是接备用源。
+4. **去人机腔是续建收口不是另起**：承接上一会话未提交的观感改版（纯黑苹果风/Kairo/奇门升一级/Hello 空状态），把改版弄丢的功能补回、口径重新锚定，不推倒：风格菜单收进共享 `ChatModeMenu`（modes.ts 一份定义、首页与 composer 两画法同源）；场景徽章从气泡上方撤进 StepTimeline 折叠意图小节（小窗无折叠区、保留徽章——信息一处不丢，只是不再常驻视觉）；调试开关、有内容的「最近对话」续接补回；改版死码清除、Sidebar WB_ICONS 补 `system` 修复 tsc。
+
+### 落点（3 新核/组件 + 8 处 src 改动 + 2 新测试 + 4 测试修订）
+- 新纯核：`screener/snapshot-avail-core.ts`（字段可得性分区）、`data/sina-flow-core.ts`（认代码/拼 URL/拆数据，字符串净额→亿、脏行整条跳、日期升序对齐 klines）、`ui/ChatModeMenu.tsx`（唯一下拉画法，读写 store.assistantMode）。
+- 改动：`screener/run.ts`（预检+unavailable_fields+nothingEvaluated 收口+provider 三元）、`chat-tools.ts`（factor_screener 转述要求 + stock_fundflow 分标新浪口径）、`ScreenerPage/AiScanPage`（缺口警示条+空态分文案，per-field 告警去双打）、`desk/em.ts`（fetchDetailReal 双源兜底带 source）、`agent-tools/capability-service/profile route`（三处按 source 如实标源）、`intent-core.ts`（场景词补「对比/交易计划」）、`nav-core/AppShell/Sidebar/WorkbenchShell/AssistantPage/AiHomePage`（奇门升一级、菜单收共享件、徽章进折叠、死码清除）。
+- 新测试：`p9-screener-gap.test.ts`（8 条：分区纯核行为 + run/前端/工具接线结构钉）、`p9-sina-flow.test.ts`（8 条：认代码 92 先判/URL 夹逼/拆数据脏行跳过/非数组不抛 + 服务层与消费处接线钉）。
+- 修订既有钉测 5 处（均为口径迁移、原意图零删除，各留 comment）：`p7-ui-nav`（工作台 3→4、AppShell 分支正则收 `*Page|*Panel` 形 26 条一个不删、WorkbenchShell 横幅新对话腔文案）、`p7-dispatch`（模式读写 pin 从首页搬到 ChatModeMenu 源码、场景徽章 pin 改为「对话页交 StepTimeline intent、小窗留 SceneBadge」）、`p7-intent`（快捷问抽取扩到对象 `q:` 形状以覆盖改版建议卡）、`p8-mode-anywhere`（chip → ChatModeMenu 形状）。
+
+### 验收数字与实测证据
+- tsc 0；全量 **816 / 807 过 / 0 败 / 9 跳**（基线 800/791/9，+16 恰为两个新测试文件、零回归）；`next build` 通过；本轮触碰文件 eslint 逐文件 0 报；`git diff --stat package.json package-lock.json` 空（未新增依赖）。
+- 3014 新构建实机（东财真断源期）：① 选股 POST `main_net_yi>0` → `unavailable_fields:[{field:main_net_yi,zh:主力净额(东财),total:5565}]` + 「未评」告警双钉，provider 显示腾讯兜底三元（`tmp-p8/p9-screener-main.out`）；② 600519 档案 fundflow 走 em delay 镜像恢复时 source=em、14 日真数（push2his 当日部分恢复，14 日 -3227 万吻合）。
+- 注入断 EM 的活链路实锤（`tmp-p8/p9-sina-live.cjs`，jiti 直载 em.ts，fetch 拦 eastmoney.com 抛错）：600519 → `source:sina` 14 日、最新 09-21 -3.37 亿（与裸 curl 新浪原值逐位吻合）；BK1033 板块码 → `null`（不硬凑）；920002 → `source:sina` 且判为 `bj` 前缀（92 先判生效，误判 sh/sz 会返回空）。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+1. **新浪口径 ≠ 东财 f62 主力净额**：本轮只在个股近 14 日主力净额这一处接了新浪备胎，且量级与东财有系统性差（净额定义不同）。跨源数值不可直接比较，页面/转述都靠 `source` 标源兜住诚实，但没做「同源内换算对齐」——恢复东财后应回切、并把新浪备胎读数以「备胎」身份保留可见。
+2. **兜底只覆盖 fetchDetailReal 个股日K**：板块资金流（clist f62）、全市场主力净额（screener 粗筛）在断源期仍是硬缺，`unavailable_fields` 只是如实露缺、不是补上了值。备用源速查里的新浪全市场资金流（`ssl_qsfx` 榜）本轮未接（它是个股明细非全市场榜，接全市场需另端点，未验证）。
+3. **代理只解决了 GitHub**：东财断源不是网络出口问题而是域名级风控，用户「开代理或许能救」的假设经实测证伪；后续遇到东财整体不可用，正确动作是查备用源速查、而非折腾代理。
+4. **universeSource() 仍是全局最后快照旗标**（承 P8 边界）：自选/成分等自定义池跑 em 成功、但紧随一次全A兜底后，provider 文案仍可能显示腾讯兜底——本轮未改旗标语义，只保证 `unavailable_fields`（字段级真实缺口）不受此旗标影响。
+5. **场景词补「对比」可能与追问前缀重叠**：`对比` 既在 stock_analysis 词表、也在 codeSwapFollowUp 正则的追问前缀里；本轮靠优先级（watchlist/screener/sector 排在 stock_analysis 前）不吃亏，但「对比」单独出现的边缘问法未穷举实测，边界记录。
+6. **3010 需重启才吃到本轮**：用户生产实例仍是旧构建；按其日常方式（启动.bat / next start -p 3010）重启后方可见缺口警示条、ChatModeMenu、新浪备胎。DB（prisma/db/custom.db）与 P1P2_任务书.md 删除照例未入库。
