@@ -225,7 +225,9 @@ test("发送入口只剩两处，且都走同一份 useChatSend + auto 端点", 
   assert.match(useChatSrc, /cur = \{ \.\.\.cur, intent: ev\.data\.intent \}/, "全文回放被丢掉时，徽章要单独并回消息");
   // 兜底参数集中在一处，且两条端点各自的字段形状由纯层/服务层函数负责
   assert.match(useChatSrc, /function defaultFallback/, "降级路径的唯一实现");
-  assert.match(useChatSrc, /pickChatEndpoint\(/, "端点选择走纯层，不在页面里判服务商");
+  // P7-⑩：入口从 pickChatEndpoint 换成 resolveChatEndpoint（多了「服务端通道按模式定」这一层判），
+  // 钉的仍是原口径 —— 端点选择在纯层一处，页面里不判服务商。
+  assert.match(useChatSrc, /resolveChatEndpoint\(|pickChatEndpoint\(/, "端点选择走纯层，不在页面里判服务商");
 });
 
 test("首页收敛为纯入口：交接那一句话，自己不发请求、不画会话", () => {

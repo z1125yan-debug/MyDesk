@@ -6,14 +6,14 @@
 // 页面只留下自己真正不同的部分（提示词、快照来源、兜底调用）。
 import { useCallback, useRef, useState } from "react";
 import { useDesk, watchlistPayload } from "./store";
-import { aiChatPlain, aiConfigured, priceBandOk } from "./ai";
+import { aiChatPlain, aiReady, priceBandOk, resolveChatEndpoint } from "./ai";
 import { aiChatTools } from "./quant-api";
 import { streamChat, playTypewriter } from "./chat-stream-client";
 import {
   applyEvent, buildPromptMessages, clampTurns, DEFAULT_MAX_TURNS, DEFAULT_PROMPT_BUDGET_CHARS, newId,
   settleRunningSteps, titleFromMessages, type ChatMessage, type ChatRequestMessage, type ChatSession,
 } from "./chat-core";
-import { pickChatEndpoint, stepsFromTrace, type StreamEvent } from "./chat-stream-core";
+import { stepsFromTrace, type StreamEvent } from "./chat-stream-core";
 import type { AiSettings } from "./types";
 import type { ChatMode } from "./modes";
 
@@ -127,7 +127,7 @@ export function useChatSend(cfg: ChatEndpointCfg) {
   const send = useCallback(async (raw: string) => {
     const content = (raw ?? "").trim();
     if (!content || busyRef.current) return;
-    if (!aiConfigured(ai)) {
+    if (!aiReady(ai)) {
       cfg.onNotConfigured?.();
       return;
     }
@@ -161,8 +161,10 @@ export function useChatSend(cfg: ChatEndpointCfg) {
     let sawDelta = false;
     let usedFallback = false;
     let streamError: string | null = null;
-    // 本轮走哪个端点按服务商定一次（同一轮里流式、兜底、价位重生成都用同一个，见下面的 endpoint 用法）
-    const endpoint = pickChatEndpoint(ai.provider, cfg.endpoint);
+    // 本轮走哪个端点定一次（同一轮里流式、兜底、价位重生成用的是同一个，见下面的 endpoint 用法）。
+    // P7-⑩：判定并进 resolveChatEndpoint —— 走服务端 .env 通道时它按模式定 tools/plain，
+    // 浏览器凭据齐的旧行为（按服务商能力选）一字不变。
+    const endpoint = resolveChatEndpoint(ai, cfg.endpoint);
     const runNonStream = (messages: ChatRequestMessage[], e: RequestExtras) =>
       cfg.fallback ? cfg.fallback(ai, messages, e) : defaultFallback(endpoint, ai, messages, e);
     // 工具端点的系统提示词在服务端（那份带因子目录），所以落到 tools 时不发客户端这份；

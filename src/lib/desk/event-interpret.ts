@@ -8,7 +8,7 @@
 //
 // REAL_DATA_ONLY：AI 未配置时这里返回 AI_NOT_CONFIGURED 并带上原因，页面显示 DEGRADED；
 // 绝不因为「想让用户看到东西」而本地编一段解释出来。
-import { aiChat, aiConfigured } from "./ai";
+import { aiChat, aiReady } from "./ai";
 import type { AiSettings } from "./types";
 import { fetchInterpretPrompt, storeInterpretationsApi, type InterpretStoreClient } from "./quant-api";
 import { NOT_RUN_STATUSES } from "@/lib/quant/screener/event-interpret-core";
@@ -51,7 +51,7 @@ export async function runEventInterpretation(
     ok: false, status: NOT_RUN_STATUSES.ai_unconfigured, message: "", model: ai.model || "未配置",
     prompt_version: "", facts_count: 0, raw_chars: 0, store: null, missing: [],
   };
-  if (!aiConfigured(ai)) {
+  if (!aiReady(ai)) {
     return {
       ...base,
       message: "尚未配置 AI 服务商（Base URL / 模型 / Key）：这一步只能由本机浏览器带着凭据去调模型，服务端没有 Key 也不会替你编解释。",

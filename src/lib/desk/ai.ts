@@ -1,7 +1,13 @@
 // 客户端 AI 调用辅助：所有请求走本地 /api/ai/proxy，
 // Key 只放在请求头里转发给所选服务商，不写入数据库、不打印日志。
+// P7-⑩ 任务4：浏览器没填凭据时自动落「服务端 .env 模型通道」（默认＝本地豆包网关），
+// 本文件里那套 serverLlm* 状态就是该通道的浏览器侧镜像 —— 只缓存 GET /api/llm/config 的
+// 公开形状（模式/地址/模型名），Key 永不进这里；判定与默认值的正身在 model-config-core.ts。
 import type { AiProvider, AiSettings } from "./types";
 import type { IntentBadge, StepInfo } from "./chat-core";
+import { pickChatEndpoint } from "./chat-stream-core.ts";
+import { renderAnalysisFrames } from "../llm/analysis-frames.ts";
+import type { ServerLlmPublic } from "../llm/model-config-core.ts";
 
 export interface ProviderPreset {
   label: string;
@@ -25,6 +31,98 @@ export function aiConfigured(ai: AiSettings): boolean {
   if (!ai.baseUrl || !ai.model) return false;
   if (ai.provider === "ollama") return true;
   return !!ai.apiKey;
+}
+
+// ---------- P7-⑩ 服务端 .env 模型通道的浏览器侧状态 ----------
+//
+// 乐观可用的口径：resolveServerLlm 对默认配置（本地网关）恒判可用，所以「配置状态还没取回来」
+// 不该把对话挡在门外；真正关门只有一种情况 —— 服务端明确回了 available:false
+// （官方模式没填 Key / 地址非法），或这次 GET 就没通（.next 没起、路由 404，按可用试一把，
+// 请求真发不出去时 400/网络错误会如实出现在气泡里，比提前灰掉整页更接近真相）。
+
+let serverLlmInfo: ServerLlmPublic | null = null;
+let serverLlmLoaded = false;
+let serverLlmFetching = false;
+const serverLlmSubs = new Set<() => void>();
+
+function notifyServerLlm() {
+  for (const cb of [...serverLlmSubs]) {
+    try { cb(); } catch { /* 订阅方自己坏不掉这里 */ }
+  }
+}
+
+/** 每次页面加载只探一次；重复调用是 no-op（组件挂载、aiReady 判定都可能是第一个触发者）。 */
+export function ensureServerLlm(): void {
+  if (serverLlmFetching || serverLlmLoaded || typeof fetch !== "function") return;
+  serverLlmFetching = true;
+  fetch("/api/llm/config")
+    .then(async (res) => {
+      const j = (await res.json().catch(() => null)) as Partial<ServerLlmPublic> | null;
+      serverLlmInfo = j && typeof j.available === "boolean"
+        ? { available: j.available, ...(j.mode ? { mode: j.mode } : {}), ...(j.baseUrl ? { baseUrl: j.baseUrl } : {}), ...(j.model ? { model: j.model } : {}), ...(j.reason ? { reason: j.reason } : {}) }
+        : null;
+      serverLlmLoaded = true;
+    })
+    .catch(() => { /* 探不到就维持「乐观可用」，不锁界面 */ })
+    .finally(() => { serverLlmFetching = false; notifyServerLlm(); });
+}
+
+export function getServerLlmInfo(): ServerLlmPublic | null {
+  return serverLlmLoaded ? serverLlmInfo : null;
+}
+
+export function subscribeServerLlm(cb: () => void): () => void {
+  serverLlmSubs.add(cb);
+  ensureServerLlm();
+  return () => { serverLlmSubs.delete(cb); };
+}
+
+/** 服务端通道当前是否「不该被判定为不可用」—— 见上方乐观可用口径 */
+export function serverChannelUsable(): boolean {
+  return !(serverLlmLoaded && serverLlmInfo && serverLlmInfo.available === false);
+}
+
+/** 对话可用性的新口径：浏览器凭据齐 或 服务端通道没被明确判死。所有「AI 未配置」的门都换用它。 */
+export function aiReady(ai: AiSettings): boolean {
+  return aiConfigured(ai) || serverChannelUsable();
+}
+
+/** 这一轮是否走服务端通道（浏览器没填全凭据且通道可用）；请求头带不带 x-ai-server 由它定 */
+export function usingServerChannel(ai: AiSettings): boolean {
+  return !aiConfigured(ai) && serverChannelUsable();
+}
+
+/** 两条传输（非流式 aiChatPlain / 流式 streamChat）共用同一份请求头口径：谁该带 x-ai-server 只判一次 */
+export function aiRequestHeaders(ai: AiSettings, extra: Record<string, string> = {}): Record<string, string> {
+  if (usingServerChannel(ai)) {
+    // 服务端通道：地址/模型/Key 全在 .env，浏览器一个都不带（也一个都不知道）。
+    return { "Content-Type": "application/json", "x-ai-server": "1", ...extra };
+  }
+  return {
+    "Content-Type": "application/json",
+    "x-ai-provider": ai.provider,
+    "x-ai-base-url": ai.baseUrl,
+    "x-ai-api-key": ai.apiKey,
+    "x-ai-model": ai.model,
+    ...(ai.proxy?.trim() ? { "x-ai-proxy": ai.proxy.trim() } : {}),
+    ...extra,
+  };
+}
+
+/**
+ * 端点选择的唯一入口（use-chat 与 AssistantPage 共用，同一轮流式/兜底/重生成都拿它定一次）。
+ * 走服务端通道时 tools 端点只在官方 API 模式下可用：本地网关没有 function call 环，
+ * 发过去只会被 /api/ai/chat 按口径拒（文案与服务端一致）；模式还没探明时按网关处理，
+ * 宁可走 plain（场景预取照样在）也不让工具环吞一条红字。
+ */
+export function resolveChatEndpoint(ai: AiSettings, want: "auto" | "plain" | "tools" = "auto"): "plain" | "tools" {
+  if (usingServerChannel(ai)) {
+    ensureServerLlm(); // 顺带把模式探明一次：下一轮就能区分官方（可 tools）/网关（恒 plain）
+    const info = getServerLlmInfo();
+    if (info?.mode === "official") return want === "plain" ? "plain" : "tools";
+    return "plain";
+  }
+  return pickChatEndpoint(ai.provider, want);
 }
 
 export async function aiChat(
@@ -58,16 +156,10 @@ export async function aiChatPlain(
     scene?: { focusSymbol?: string | null; sessionSymbol?: string | null; prevScene?: string | null };
   }
 ): Promise<PlainChatResult> {
+  ensureServerLlm();
   const res = await fetch("/api/ai/proxy", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-ai-provider": ai.provider,
-      "x-ai-base-url": ai.baseUrl,
-      "x-ai-api-key": ai.apiKey,
-      "x-ai-model": ai.model,
-      ...(ai.proxy?.trim() ? { "x-ai-proxy": ai.proxy.trim() } : {}),
-    },
+    headers: aiRequestHeaders(ai),
     body: JSON.stringify({
       messages,
       // P7-⑥④：与流式请求体同一份口径 —— 自选清单由浏览器带，服务端不读 localStorage
@@ -122,6 +214,10 @@ export function assistantSystemPrompt(context: string): string {
     "3. 宏观、政策类问题：知识有截止时间，先声明「基于历史公开信息，非实时数据」，再作答。",
     "4. 生活、学习、写作等一般问题：像正常 AI 一样自然、友好、详细地回答，不套用行情模板，不加投资风险提示。",
     "5. 简体中文，简洁 markdown；输出克制：最多一个表格，要点不超过 4 条。",
+    // P7-⑩ 任务4：50 个深度研究框架作为全局系统 Prompt 随每个对话入口下发（与 /api/ai/chat
+    // 服务端那份同源），换模型不改这里 —— 它属于对话层，不属于模型接入层。
+    "",
+    renderAnalysisFrames(),
   ].join("\n");
 }
 

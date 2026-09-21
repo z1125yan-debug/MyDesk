@@ -16,7 +16,7 @@ import { AutoTaskLine } from "../AutoTaskLine";
 import { HistoryBar } from "../HistoryBar";
 import { InterpretationCard, interpretKey } from "../EventInterpretation";
 import { useDesk } from "@/lib/desk/store";
-import { aiConfigured } from "@/lib/desk/ai";
+import { aiReady } from "@/lib/desk/ai";
 import { RUN_STATUS_TEXT, runEventInterpretation, type RunStatus } from "@/lib/desk/event-interpret";
 import {
   fetchEvents, scanEvents, scanResultNote, fetchEventsHistory, fetchInterpretations,
@@ -192,9 +192,9 @@ export default function EventsPage() {
       <div className="rounded-xl border border-fuchsia-500/25 bg-card/40 px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
           <SourceBadge
-            status={!aiConfigured(ai) ? "AI_NOT_CONFIGURED 缺失" : "AI_INTERPRETATION"}
+            status={!aiReady(ai) ? "AI_NOT_CONFIGURED 缺失" : "AI_INTERPRETATION"}
             source={
-              !aiConfigured(ai)
+              !aiReady(ai)
                 ? "本机未配置模型凭据：解释层未运行（事件事实不受影响）"
                 : `event_interpretation${interpDate ? ` · ${interpDate}` : " · 当日"}（解释不是事实）`
             }

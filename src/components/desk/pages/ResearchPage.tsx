@@ -20,7 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, Microscope, RefreshCw, Sparkles } from "lucide-react";
 import { SourceBadge } from "../SourceBadge";
 import { useDesk } from "@/lib/desk/store";
-import { aiConfigured } from "@/lib/desk/ai";
+import { aiReady } from "@/lib/desk/ai";
 import { RESEARCH_RUN_STATUS_TEXT, runMarketResearch, type ResearchRunResult } from "@/lib/desk/research-run";
 import {
   fetchEvents, fetchRadar, fetchResearchReport, fetchRisk, fetchThemes,
@@ -175,8 +175,8 @@ export default function ResearchPage() {
         <div className="flex items-center gap-2">
           {view && (
             <SourceBadge
-              status={!aiConfigured(ai) ? "AI_NOT_CONFIGURED 缺失" : "AI_INTERPRETATION"}
-              source={!aiConfigured(ai) ? "本机未配置模型凭据：解释层未运行（读数与台账不受影响）" : `research_report · ${view.as_of}`}
+              status={!aiReady(ai) ? "AI_NOT_CONFIGURED 缺失" : "AI_INTERPRETATION"}
+              source={!aiReady(ai) ? "无可用模型通道（浏览器未配置且服务端 .env 通道不可用）：解释层未运行（读数与台账不受影响）" : `research_report · ${view.as_of}`}
               time={view.report?.generated_at?.slice(5, 16) || view.probed_at?.slice(5, 16)}
             />
           )}
@@ -267,9 +267,9 @@ export default function ResearchPage() {
             </div>
           ) : null}
         </div>
-        {!aiConfigured(ai) && (
+        {!aiReady(ai) && (
           <div className="mt-1.5 text-[10.5px] text-amber-300">
-            本机未配置 AI 服务商：解释层跑不了（AI_NOT_CONFIGURED）。上方四块读数与台账都是真实的，缺的只是解释这一步；请到设置页配置后再生成。
+            无可用模型通道（浏览器未配置，且服务端 .env 通道不可用）：解释层跑不了（AI_NOT_CONFIGURED）。上方四块读数与台账都是真实的，缺的只是解释这一步；配好任一条路再生成。
           </div>
         )}
       </div>

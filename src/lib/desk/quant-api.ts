@@ -5,6 +5,8 @@ import type { EventFact, EventInterpretation, summarizeInterpretations } from "@
 import type { EvidenceLine, ResearchReport, SourceProbe } from "@/lib/quant/screener/research-core";
 import type { DecisionView } from "@/lib/quant/screener/decision-wiring-core";
 import type { IntentBadge, StepInfo } from "@/lib/desk/chat-core";
+import { aiRequestHeaders } from "./ai";
+import type { AiSettings } from "./types";
 import { MODE_TEXT, modeFromBasis } from "@/lib/quant/screener/incremental-core";
 
 export type { ScreenerCond, WinProbStats };
@@ -194,14 +196,10 @@ export async function aiChatTools(
 ): Promise<{ content: string; trace: AiChatTrace[]; steps?: StepInfo[]; intent?: IntentBadge; warning?: string }> {
   const res = await fetch("/api/ai/chat", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-ai-provider": ai.provider,
-      "x-ai-base-url": ai.baseUrl,
-      "x-ai-api-key": ai.apiKey,
-      "x-ai-model": ai.model,
-      ...(ai.proxy?.trim() ? { "x-ai-proxy": ai.proxy.trim() } : {}),
-    },
+    // P7-⑩：请求头口径并进 ai.ts 的 aiRequestHeaders 一处 —— 流式走 chat-stream-client、
+    // 非流式兜底走这里，两份若各判各的「要不要 x-ai-server」，同一次提问的两种传输就会走两个模型。
+    // 这里的 ai 形参是历史上的窄结构（provider 是 string），结构上就是 AiSettings，转一次即可。
+    headers: aiRequestHeaders(ai as unknown as AiSettings),
     // 非流式兜底用的老契约：一次拿回 {content, trace}，trace 由前端归一成步骤时间线
     body: JSON.stringify({
       messages,

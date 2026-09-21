@@ -8,7 +8,7 @@ import { SourceBadge, PctText, NumText } from "../SourceBadge";
 import { useDesk } from "@/lib/desk/store";
 import { searchSymbols, normalizeTradingViewSymbol } from "@/lib/desk/market";
 import { fetchStockProfile, aiChatTools, type ProfileResp } from "@/lib/desk/quant-api";
-import { aiConfigured } from "@/lib/desk/ai";
+import { aiReady } from "@/lib/desk/ai";
 
 const TECH_LABELS: Record<string, string> = {
   above_ma_5: "站上MA5", above_ma_10: "站上MA10", above_ma_20: "站上MA20", above_ma_60: "站上MA60", above_ma_144: "站上MA144",
@@ -312,13 +312,13 @@ export default function ProfilePage() {
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center justify-between">
               <div className="text-[12px] font-semibold text-foreground/80">AI 条件式解读（事实/推断/风险分层，非预测）</div>
-              <button onClick={aiExplain} disabled={aiBusy || !aiConfigured(ai)}
+              <button onClick={aiExplain} disabled={aiBusy || !aiReady(ai)}
                 className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-40">
                 {aiBusy ? "解读中…" : "生成 AI 解读"}
               </button>
             </div>
             {aiText && <div className="mt-2 text-sm"><Markdown content={aiText} /></div>}
-            {!aiConfigured(ai) && <div className="mt-1 text-[10.5px] text-muted-foreground">未配置 AI 接口（设置 → AI 接口）</div>}
+            {!aiReady(ai) && <div className="mt-1 text-[10.5px] text-muted-foreground">无可用模型通道（浏览器未配置，且服务端 .env 通道不可用）</div>}
           </div>
         </>
       )}

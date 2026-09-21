@@ -7,16 +7,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Info, Loader2, PenLine, Plus, Settings2, Send, Square, Trash2 } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
-import { aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
+import { aiConfigured, assistantSystemPrompt, resolveChatEndpoint } from "@/lib/desk/ai";
 import { fetchQuoteCards, fetchTechSnapshot, fetchNewsBlock, isDemoSymbol, searchSymbols } from "@/lib/desk/market";
 import { shanghaiStamp } from "@/lib/desk/session";
 import {
   guardPriceOf, provenanceOfQuote, provenanceOfTechSnapshot, renderMarketContext, type CtxRow,
 } from "@/lib/desk/ai-context-core";
 import { isFollowUp, type ChatMessage, type ChatSession } from "@/lib/desk/chat-core";
-import { pickChatEndpoint } from "@/lib/desk/chat-stream-core";
 import { CHAT_MODES } from "@/lib/desk/modes";
 import { useChatSend, type SnapshotResult } from "@/lib/desk/use-chat";
+import { useServerLlm } from "@/lib/desk/use-server-llm";
 import { useDeskLinks } from "@/lib/desk/use-desk-links";
 import { pickPanelSymbol } from "@/lib/desk/context-panel-core";
 import Markdown from "../Markdown";
@@ -173,7 +173,7 @@ export default function AssistantPage() {
     onNotConfigured: () => go("settings"),
   });
 
-  const endpoint = pickChatEndpoint(ai.provider, "auto");
+  const endpoint = resolveChatEndpoint(ai, "auto");
   const toolsOn = endpoint === "tools";
 
   // 首页交过来的那一句：进页面取一次就清掉，刷新不会重发。
@@ -186,7 +186,11 @@ export default function AssistantPage() {
 
   const session = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
   const messages: ChatMessage[] = session?.messages ?? [];
-  const configured = aiConfigured(ai);
+  // P7-⑩：徽章说的是「这一轮会走哪条模型路」。浏览器凭据与服务端 .env 通道是两条路，
+  // 各写各的名字；两条都没有才说「未配置」。订阅 useServerLlm 让 available:false 落回时徽章翻面。
+  const serverLlm = useServerLlm();
+  const browserCfg = aiConfigured(ai);
+  const configured = browserCfg || !(serverLlm && serverLlm.available === false);
 
   // P7-⑧③ 右栏读的是「最近一条助手回答」那一份判定与取数记录：服务端回了什么就是什么，
   // 本地不再认一遍代码（否则同一轮会出现两套标的）。流式期间 steps 会一直长，面板跟着长。
@@ -306,8 +310,10 @@ export default function AssistantPage() {
             {/* 这里说的是「模型接口通不通」，不是行情数据来源，所以不用 SourceBadge（避免把配置状态画成数据状态） */}
             <span className={"rounded border px-1.5 py-0.5 text-[10px] " + (configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300")}>
               {configured
-                ? `接口已配置 · ${ai.model} · ${toolsOn ? "工具调用端点" : "纯对话端点（该服务商无工具环）"}`
-                : "接口未配置"}
+                ? browserCfg
+                  ? `接口已配置 · ${ai.model} · ${toolsOn ? "工具调用端点" : "纯对话端点（该服务商无工具环）"}`
+                  : `服务端 .env 通道 · ${serverLlm?.model ?? "模式待探明"} · ${toolsOn ? "工具调用端点" : "纯对话端点（本地网关无工具环）"}`
+                : "无可用模型接口（浏览器未配置，服务端通道也不可用）"}
             </span>
             {!configured && (
               <button onClick={() => go("settings")}

@@ -69,7 +69,10 @@ test("P6-B 路由不用相对路径引内核（Node type-stripping 限制），�
 
 test("P6-B 客户端只负责调模型：不产概率、不编事件、AI 未配置时如实报告", () => {
   const src = read(CLIENT);
-  assert.ok(src.includes("aiConfigured"), "必须先判断本机是否配置了模型凭据");
+  // P7-⑩ 任务4改了可用性的定义：浏览器凭据齐 或 服务端 .env 通道可用都算「可用」，
+  // 判定函数从 aiConfigured 换成 aiReady。这一条钉的仍是原意图 —— 发请求前必须先判通道可用，
+  // 判的对象从「本机填没填」变成「有没有任何一条能用的路」。
+  assert.ok(src.includes("aiReady"), "必须先判断模型通道是否可用（浏览器凭据或服务端 .env 通道）");
   assert.ok(src.includes(NOT_RUN_STATUSES.ai_unconfigured), "未配置时要返回 AI_NOT_CONFIGURED 而不是空列表");
   assert.ok(src.includes("NOT_RUN_STATUSES.no_events"), "没有真实事件时要区分 NO_EVENTS");
   assert.ok(!/random\(\)|Math\.random|生成一条|示例解释/.test(src), "客户端不得生成任何假解释内容");

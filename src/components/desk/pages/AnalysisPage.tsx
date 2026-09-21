@@ -4,7 +4,7 @@ import { Play, Loader2, Crosshair, TrendingUp, Plus, Settings2, Bot } from "luci
 import { useDesk } from "@/lib/desk/store";
 import { autoLevels, TIMEFRAMES, CATALOG, HOT_SYMBOLS } from "@/lib/desk/data";
 import { fetchCandlesFor, fetchQuoteCards, searchSymbols, fetchTechSnapshot, fetchNewsBlock, normalizeTradingViewSymbol, trendLabel, isDemoSymbol, type SuggestItem, type TechSnapshot } from "@/lib/desk/market";
-import { aiChat, aiConfigured, assistantSystemPrompt, parseLooseJson } from "@/lib/desk/ai";
+import { aiChat, aiReady, assistantSystemPrompt, parseLooseJson } from "@/lib/desk/ai";
 import { marketSession, shanghaiStamp } from "@/lib/desk/session";
 import {
   provenanceOfQuote, provenanceOfTechSnapshot, renderMarketContext, type CtxRow,
@@ -109,7 +109,7 @@ export default function AnalysisPage() {
     : null;
   const name = quote?.name || CATALOG.find((c) => c.symbol === symbol)?.name || symbol;
 
-  const configured = aiConfigured(ai);
+  const configured = aiReady(ai);
 
   // 图表上下文：每条都带来源分层（P6-A）。原来整段被提示词称为「真实行情数据」，
   // 但 K 线可能是演示回退、报价可能是缺失行、分时可能是合成序列——分层写进文本里，模型无从混用。
