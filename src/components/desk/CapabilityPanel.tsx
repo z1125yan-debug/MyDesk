@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Boxes, Globe2, Loader2, RefreshCw, Search, TriangleAlert } from "lucide-react";
 import { SourceBadge } from "./SourceBadge";
+import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import { freshnessChip } from "@/lib/quant/screener/datastatus-core";
 import {
   fetchCapabilitiesRegistry, fetchCapabilitiesForNeed, fetchCapabilityProbe,
@@ -73,12 +74,16 @@ function Row({ p, def }: { p: CapabilityProbeClient; def?: CapabilityDef }) {
         <Evidence p={p} />
       </div>
       {!!p.limitations.length && (
-        <details className="mt-1 text-[11px] text-muted-foreground">
-          <summary className="cursor-pointer">已知局限 {p.limitations.length} 条</summary>
-          <ul className="mt-1 space-y-0.5">
+        <DeskCollapse
+          className="mt-1"
+          title={`已知局限 ${p.limitations.length} 条`}
+          triggerClassName="text-[11px] text-muted-foreground hover:text-foreground"
+          contentClassName="text-[11px] text-muted-foreground"
+        >
+          <ul className="space-y-0.5">
             {p.limitations.map((l) => <li key={l}>· {l}</li>)}
           </ul>
-        </details>
+        </DeskCollapse>
       )}
     </div>
   );
@@ -195,12 +200,18 @@ export function CapabilityPanel() {
             </div>
 
             {!!missing.length && (
-              <details open className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-2.5 py-2 text-[11.5px]">
-                <summary className="cursor-pointer font-medium text-amber-200">还缺什么 {missing.length} 项（这些结论不能用真实数据支撑）</summary>
-                <ul className="mt-1.5 space-y-1 text-amber-100/80">
+              <DeskCollapse
+                tone="amber"
+                defaultOpen
+                className="mt-2"
+                triggerClassName="text-[11.5px] font-medium text-amber-200 hover:text-amber-100"
+                contentClassName="text-[11.5px] text-amber-100/80"
+                title={`还缺什么 ${missing.length} 项（这些结论不能用真实数据支撑）`}
+              >
+                <ul className="space-y-1">
                   {missing.map((m) => <li key={m}>· {m}</li>)}
                 </ul>
-              </details>
+              </DeskCollapse>
             )}
 
             <div className="flex flex-wrap items-center gap-2">

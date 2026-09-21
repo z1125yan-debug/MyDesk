@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Eraser, FileOutput, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import { SourceBadge } from "./SourceBadge";
+import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import { PURGE_CONFIRM_TEXT } from "@/lib/quant/screener/lifecycle-core";
 import {
   fetchLifecyclePreview, purgeLifecycleApi,
@@ -131,14 +132,18 @@ export function LifecyclePanel() {
             )}
 
             {!!data.protected_days.length && (
-              <details className="rounded-lg border border-border/70 px-2.5 py-2 text-[11px] text-muted-foreground">
-                <summary className="cursor-pointer">受保护未进的归档日 {data.protected_days.length} 项（为什么一行都不动，逐条写着）</summary>
-                <ul className="mt-1.5 space-y-0.5">
+              <DeskCollapse
+                className="mt-2"
+                title={`受保护未进的归档日 ${data.protected_days.length} 项（为什么一行都不动，逐条写着）`}
+                triggerClassName="text-[11px] text-muted-foreground hover:text-foreground"
+                contentClassName="text-[11px] text-muted-foreground"
+              >
+                <ul className="space-y-0.5">
                   {data.protected_days.map((p) => (
                     <li key={`${p.table}@${p.date}`}>· {TABLE_TEXT[p.table] ?? p.table} {p.date}（{p.rows} 行）：{p.reason}</li>
                   ))}
                 </ul>
-              </details>
+              </DeskCollapse>
             )}
 
             <div className="rounded-lg border border-border/70 bg-background/40 px-2.5 py-2 text-[11px] leading-4 text-muted-foreground">

@@ -11,6 +11,7 @@
 import { useCallback, useState } from "react";
 import { Loader2, Sparkles, Compass } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
+import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import { aiChat, aiReady } from "@/lib/desk/ai";
 import { MISSING_TEXT } from "@/lib/desk/context-panel-core";
 import {
@@ -392,12 +393,16 @@ function Provenance({ chart }: { chart: QimenChart }) {
       <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
         {chart.provenance.rules.map((r, i) => <li key={i}>{r}</li>)}
       </ul>
-      <details className="mt-2.5">
-        <summary className="cursor-pointer select-none text-[11.5px] text-sky-300 hover:underline">查看开源库原始输出（raw）</summary>
-        <pre className="desk-scroll mt-2 max-h-80 overflow-auto rounded-md border border-border/70 bg-background/70 p-2 text-[10.5px] leading-4 text-muted-foreground">
+      <DeskCollapse
+        className="mt-2.5"
+        title="查看开源库原始输出（raw）"
+        triggerClassName="text-[11.5px] text-sky-300 hover:text-sky-200"
+        contentClassName="text-[10.5px] text-muted-foreground"
+      >
+        <pre className="desk-scroll max-h-80 overflow-auto rounded-md border border-border/70 bg-background/70 p-2 text-[10.5px] leading-4">
 {JSON.stringify(chart.raw, null, 2)}
         </pre>
-      </details>
+      </DeskCollapse>
     </section>
   );
 }

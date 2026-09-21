@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Loader2, RefreshCw, Square } from "lucide-react";
 import { SourceBadge } from "../SourceBadge";
+import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import { useDesk } from "@/lib/desk/store";
 import { aiReady as aiChannelReady } from "@/lib/desk/ai";
 import {
@@ -124,10 +125,14 @@ function StepRow({ t }: { t: AgentLoopTurn }) {
       <div className="mt-1 text-[9.5px] text-muted-foreground/80">{t.basis || t.error || "（回看行：这一步的服务端事实就是上面这些字段；运行依据只在当场驱动那一轮返回）"}</div>
       <div className="mt-1 text-[9.5px] text-sky-300/80">本页：{t.local_note}{t.prompt_from === "final_turn" ? " ｜ 本轮提示词=§十七 受控停止后的「只给结论」轮" : ""}</div>
       {(t.prompt || t.raw) ? (
-        <details className="mt-1 text-[9.5px] text-muted-foreground">
-          <summary className="cursor-pointer select-none">这一格喂给模型的原文 + 模型回复原文（一字未改）</summary>
-          <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-background/60 p-1.5 text-[9.5px] leading-4">{`【发给模型】\n${t.prompt}\n\n【模型原文】\n${t.raw}`}</pre>
-        </details>
+        <DeskCollapse
+          className="mt-1"
+          title="这一格喂给模型的原文 + 模型回复原文（一字未改）"
+          triggerClassName="text-[9.5px] text-muted-foreground hover:text-foreground"
+          contentClassName="text-[9.5px] text-muted-foreground"
+        >
+          <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-background/60 p-1.5 text-[9.5px] leading-4">{`【发给模型】\n${t.prompt}\n\n【模型原文】\n${t.raw}`}</pre>
+        </DeskCollapse>
       ) : null}
       {t.budget_left ? (
         <div className="mt-1 text-[9.5px] text-muted-foreground/80">
@@ -500,9 +505,12 @@ export default function AgentPage() {
             </div>
           </div>
 
-          <details className="rounded-xl border border-border bg-card/50 px-3 py-2 text-[10px] text-muted-foreground">
-            <summary className="cursor-pointer select-none text-[11px] font-semibold text-foreground">状态与停止原因的口径（本页所有文案都来自内核同一份）</summary>
-            <div className="mt-1.5 space-y-1">
+          <DeskCollapse
+            title="状态与停止原因的口径（本页所有文案都来自内核同一份）"
+            triggerClassName="text-[11px] font-semibold text-foreground hover:text-foreground"
+            contentClassName="text-[10px] text-muted-foreground"
+          >
+            <div className="space-y-1">
               <div><b className="text-foreground">观测口径（为什么不是「0 就是没有风险」）</b></div>
               {Object.entries(OBS_KIND_TEXT).map(([k, v]) => <div key={k}><span className="font-mono">{k}</span>：{v}</div>)}
               <div className="mt-1"><b className="text-foreground">调用行状态（§十八）</b></div>
@@ -510,16 +518,19 @@ export default function AgentPage() {
               <div className="mt-1"><b className="text-foreground">内核停止原因（8 项，与本页那 9 项循环状态是两套）</b></div>
               {Object.entries(AGENT_STOP_REASON_TEXT).map(([k, v]) => <div key={k}><span className="font-mono">{k}</span>：{v}</div>)}
             </div>
-          </details>
+          </DeskCollapse>
 
-          <details className="rounded-xl border border-border bg-card/50 px-3 py-2 text-[9.5px] leading-snug text-muted-foreground">
-            <summary className="cursor-pointer select-none text-[11px] font-semibold text-foreground">本轮系统提示词原文（服务端给模型的，前端不另写一份）</summary>
-            <div className="mt-1">{run?.start?.prompt.system
+          <DeskCollapse
+            title="本轮系统提示词原文（服务端给模型的，前端不另写一份）"
+            triggerClassName="text-[11px] font-semibold text-foreground hover:text-foreground"
+            contentClassName="text-[9.5px] leading-snug text-muted-foreground"
+          >
+            <div>{run?.start?.prompt.system
               ? "下面这份就是本次运行真正发给模型的 system（含工具目录全文），取自 /api/agent/run 的返回值原文："
               : view ? `这次回看的运行（${view.run_id}）当时确实发过一份 system，但提示词原文不入库（库里只存调用行）：下面是内核同一份协议骨架，不含工具目录，所以它不等于当时那一份。`
                 : `还没跑过本轮：下面是系统提示词的协议骨架（不含工具目录）。真正的 system 由服务端在 /api/agent/run 里现拼，本页不另写一份。`}</div>
             <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-background/60 p-1.5 text-[9.5px]">{run?.start?.prompt.system ?? AGENT_SYSTEM_PROMPT}</pre>
-          </details>
+          </DeskCollapse>
         </div>
       </div>
     </div>

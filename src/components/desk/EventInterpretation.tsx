@@ -9,6 +9,7 @@ import {
   renderInterpretationTrace, type EventInterpretation,
 } from "@/lib/quant/screener/event-interpret-core";
 import type { InterpretationViewClient } from "@/lib/desk/quant-api";
+import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 
 const TONE: Record<string, string> = {
   利好: "border-red-500/40 text-red-300",
@@ -70,18 +71,20 @@ export function InterpretationCard({ itp }: { itp: EventInterpretation & Partial
         </div>
       )}
 
-      <details className="mt-1.5">
-        <summary className="cursor-pointer text-[10.5px] text-muted-foreground hover:text-foreground">
-          展开完整回溯链（原始事件 → AI 提取 → AI 解释 → 状态分层）
-        </summary>
-        <pre className="mt-1 whitespace-pre-wrap break-words rounded border border-border/60 bg-background/60 p-2 text-[10.5px] leading-relaxed text-muted-foreground">{trace}</pre>
+      <DeskCollapse
+        className="mt-1.5"
+        title="展开完整回溯链（原始事件 → AI 提取 → AI 解释 → 状态分层）"
+        triggerClassName="text-[10.5px] text-muted-foreground hover:text-foreground"
+        contentClassName="text-[10.5px] text-muted-foreground"
+      >
+        <pre className="whitespace-pre-wrap break-words rounded border border-border/60 bg-background/60 p-2 text-[10.5px] leading-relaxed">{trace}</pre>
         <div className="mt-1 text-[10px] text-muted-foreground/80">
           字段归属（内核唯一出处，页面不自己判）：事实 {FACT_FIELDS.join("/")} ｜
           AI 解释 {AI_FIELDS.join("/")}
           {AI_EXTRA_FIELDS.length ? ` + ${AI_EXTRA_FIELDS.join("/")}` : ""} ｜
           服务端派生 {DERIVED_FIELDS.join("/")}
         </div>
-      </details>
+      </DeskCollapse>
     </div>
   );
 }
