@@ -1224,3 +1224,73 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 6. **升级前存档的旧会话**里，skipped 那一步仍带着 jobId ⇒ 打开这种历史会话会看到上面那句「本进程已无该回测任务」。这是本机 localStorage 的历史数据，不回填、不改写。
 7. **本轮没有真实模型参与**：正文是假上游的脚本常量（自标「不构成任何行情事实」），只有 `run_backtest` 返回的数字是引擎按真实行情算的。带真实 Key 的端到端复测按指示留到开发完成后统一做。
 8. **未 commit**，等分项报告确认。3014 隔离实例按指示仍在运行（副本库、调度器关闭），假上游已停。
+
+## P7 第九阶段 P7-⑨ 奇门解盘：本地开源引擎算出完整九宫盘，解盘复用既有模型通道，全程不调外部接口（2026-09-21：内核/服务/路由/面板四层 + 48 条单测）
+
+任务书第三条按批准口径做完。唯一新增依赖是任务书预先点名许可的 `qimendunjia-lite@0.1.0`（MIT、零依赖、ESM）；排盘全在本地算，`prisma/schema.prisma` 一行未改（`git diff` 为空），服务端不发起任何模型请求，Key 仍然只存在于浏览器 localStorage。奇门入口放在「AI 决策工作台」页内顶部条，最左侧仍是四个大模块。
+
+### 这一轮定的口径
+
+1. **开源库只出现在服务层，纯内核按「结构镜像」对接**。`qimen-core.ts` 不 import 库、不碰 db、不 fetch、不取时钟；它自己把库的字段形状镜像一遍（`LibQimenResult` / `LibCalendarSnapshot` / `LibJuShu` / `LibSiZhu`），由 `qimen-service.ts` 把真实对象传进来。这样做的收益是两条：单测不必为了跑内核而装包，且 `QimenPanel.tsx` 可以直接 import 内核的 `buildInterpretPrompt` / `parseInterpretation` / `provenanceLine` 而不会把三方库拖进浏览器包。代价是字段漂了要能发现——所以 `shapeOk()` + `adaptChart()` 对不上的字段一律如实报 `TEXT_LIB_SHAPE`，**不填默认值**（严格禁止虚构盘局），另有一条单测把 `LIB_VERSION` 与 `package.json` 里装的版本对齐防漂版。
+2. **库只用本地时区 getter ⇒ 一切与墙钟的比较都走 `wallClockMs`**。实测出来的坑，记死：`qimendunjia-lite` 解析节气时刻时用的是 `getHours()` 这类本地读数，所以它给的 `Date` 里装的是「北京墙上时间被当成 UTC 存进去」的那个瞬间。任何地方直接 `getTime()` 比，整体差 8 小时，交节判定与「临近交节」提示会集体错。内核因此定了三个一组的小工具：`parseWallClock` / `formatWallClock` / `wallClockMs` / `dateToWallClock`，跨边界的比较全部先 `dateToWallClock` 再比。
+3. **真太阳时是默认口径，且开关只认「明确的关」**。校正公式：北京真太阳时 = 北京时间 + (经度 − 120) × 4 分 + 均时差；均时差用 `B = 2π(N−81)/364`、`EoT = 9.87·sin2B − 7.53·cosB − 1.5·sinB`，实测极值 doy 303 = +16.45 分、doy 44 = −14.60 分（探针 `D:/Zai/p7-check/eot.mjs`）。路由的 `trueSolarWanted()` 只把 `0/false/off/no` 当关闭，其余（包括没传、传了乱码）都按开启：随手打错一个字就把盘起成北京时间，而两种口径在跨时辰临界点上会得到**不同的时柱**，静默降级比报错难查。响应里把这笔账摊开成五格（`longitudeMinutes` / `equationOfTimeMinutes` / `offsetMinutes` / `corrected` / `hourPillarChanged`），页面上原样写出来。
+4. **会改变时柱就必须说出来**：`hourPillarChanged` 为真时面板加一句「时柱随真太阳时而变」并给北京时间那一版是哪个时柱；交节临界 `NEAR_TERM_MINUTES = 15` 分钟内起局的，服务层附「临近交节、拆补法可能已换局」告警（比较的是墙钟标量，不受宿主时区影响——这条早轮踩过，改成宿主无关）。
+5. **中宫寄宫从盘里推出来，不写死「寄坤二宫」**。`hostsCenterPalace(diPan)` 找哪一宫的地盘干里含有中宫那一干，文案由 `centerRuleText(host)` 生成；推不出来就写 `TEXT_CENTER_HOST_MISSING`。扫盘实测「中宫地盘干恒寄坤二宫」是 1460/1460，但恒成立不等于我推它成立的方式恒成立，所以只把结论当观察、不当输入。
+6. **算不出来就 400，指到真正的问题**。四类缺输入各有独立文案：时间格式（`TEXT_MISSING_INPUT`，detail 里带上收到的值和当前北京时间）、城市不在 36 城表且没手填经纬度（`TEXT_MISSING_CITY`，**绝不拿北京兜底**）、年份超界（`TEXT_OUT_OF_RANGE`）、`lon`/`lat` 只给一半（成对校验在路由，因为服务层会退化成「城市不在表里」那句话指不到病根）。整个接口没有上游，所以不甩 502、也**刻意不设 `maxDuration`**（放宽超时只会掩盖真卡死）。
+7. **问题类型走 7 档白名单，用户自由文本不进 prompt**：`normalizeQuestionType` 认不出来退回「其他」；不合法不报 400（内核兜底了），但响应里带 `note` 说明实际按哪一档解盘，免得用户以为自己的分类被采纳了。
+8. **解盘只走既有那一条模型通道**：面板调 `ai.ts` 的 `aiChat`（→ `/api/ai/proxy`），system prompt 是内核里的 `QIMEN_SYSTEM_PROMPT`，里面写死三条分层纪律（**排盘事实 ≠ 市场事实 ≠ 投资建议**）；服务端不存在第二条模型路径，也读不到用户的 Key。`parseInterpretation` 按「核心结论 / 操作建议 / 风险提示」三段切，模型没按格式返回时**原文照贴并说明没切成三段**，不硬造假标题。
+9. **换盘必须清旧解盘**：`cast()` 成功或失败都先 `setInterp(null) / setInterpError(null)`，防止「新盘配旧话」这种看着最像真的错。
+10. **对话链路不起局**：`intent-core.ts` 里 `qimen` 场景的三处过期文案改口——排盘已经由面板用本地引擎实算，对话侧只做「引导切到奇门解盘」，`skipped` 那句现在写的是「对话链路本轮不起局、不取行情数（取行情只会让它看起来像在算盘）」。
+
+### 落点（5 个新文件 + 4 处改动，判定全在内核层）
+
+- `src/lib/qimen/qimen-core.ts` **新增 797 行**：库名/版本、`DEFAULT_TIMEZONE`、`STANDARD_MERIDIAN`、洛书顺序 `LUOSHU_ORDER = [4,9,2,3,5,7,8,1,6]` 与 `luoshuGrid()`、`CITIES` 36 城、`QUESTION_TYPES` 7 档、真太阳时四函数、墙钟四函数、库结构镜像五张 interface、目标结构 `QimenPalace` / `QimenChart` / `QimenOutcome`、`splitCell` / `hostsCenterPalace` / `qinPalace` / `markerIndexOf` / `libFailureVerdict` / `shapeOk` / `adaptChart`、`chartFactsText` / `QIMEN_SYSTEM_PROMPT` / `buildInterpretPrompt` / `parseInterpretation` / `provenanceLine`，外加八条缺数/降级文案常量。
+- `src/lib/qimen/qimen-service.ts` **新增 158 行**：本轮唯一碰开源库和时钟的一层。`castChart(input)`、`resolveWallClock`（缺哪半就说什么，不猜）、`resolvePlace`、`nearTermWarning`；`METHOD = "时家"`、`LATE_ZI_HOUR_MODE = "same-day"`（晚子时按当日口径，注释里写清这是选定的口径而非普适结论）。
+- `src/app/api/qimen/chart/route.ts` **新增 80 行**：GET only、`dynamic = "force-dynamic"`、`optNum` / `trueSolarWanted` 两条入参口径，头部写清「为什么是 GET、为什么不设 maxDuration、为什么 400 而不是 502」。
+- `src/components/desk/QimenPanel.tsx` **新增 403 行**：表单（日期/时间/城市/问题类型/真太阳时开关）+ `FactsCard`（局数、节气、值符值使、旬空旬首、四柱、日时旬、农历、真太阳时分解与告警）+ `PalaceGrid`（`grid.flat()` 九格，中宫描边，天/地/星·门·神/暗干与日时标记，附中宫寄宫与禽芮同宫两行注）+ `InterpretCard`（三段或原文 + 常挂的免责声明）+ `Provenance`（一行出处 + 三条规则 + 可折叠的 raw JSON）。四条渲染纪律写在文件头：不重算盘面、解盘只走 `aiChat`、分层标注、白名单。
+- `tests/quant/p7-qimen.test.ts` **新增 1047 行 / 48 个用例**（九个分区，未删改任何既有测试）。
+- `src/lib/desk/store.ts` **+19**：`DeskMode = "chat" | "qimen"` 进 zustand persist，**加进 `partialize` 白名单**，写回时消毒（非 `qimen` 一律落 `chat`）。
+- `src/components/desk/pages/AssistantPage.tsx` **+32 / −1**：外层改纵向容器，插入页内模式切换条；原来那三栏（会话列表 + 对话 + 上下文面板）整体包进 `deskMode === "chat"` 分支，一行渲染逻辑没动。
+- `src/lib/desk/intent-core.ts` **5 / 5**、`tests/quant/p7-intent.test.ts` **6 / 3**：见口径第 10 条。测试那条不是放宽——新断言额外要求 `/本地/` 和 `doesNotMatch(/尚未接入/)`，即「已经接入的东西不许再宣称没做」。
+- `package.json` **+1 / −0**（只有 `qimendunjia-lite`）、`package-lock.json` **+7 / −0**（一条 root 引用 + 一个 node_modules 条目，含 integrity）、`prisma/schema.prisma` diff **为空**。
+
+### 开源库实测口径（2026 全年 1460 个时刻逐一扫盘，探针在 `D:/Zai/p7-check/probe-qimen*.mjs`）
+
+- 中宫地盘干恒寄坤二宫：1460/1460；三奇六仪完整——地盘 10 干（9 干 + 中宫寄干）、天盘 11 干（禽芮宫重复显示中宫天盘干）、暗干 9 干；八门/八神各 8 个互不相同且中宫为空；九星 8 格（天禽与天芮合称「禽芮」占一格）。
+- (节气, 元) → 局数 共 72 组零冲突，与传统十八局口诀逐条吻合。
+- `info.kong` 是**时柱**旬空（1460/1460），不是日柱旬空——这条最容易读错，所以目标结构里单独标了 `kong_kind`。
+- `dayMarkerArr` / `timeMarkerArr` 按 `baseOrder` 索引，取值只有 `""`、`"空"`、`"马"`、`"马 空"`（同宫合并，按空格拆）。
+- 库自称支持 1900–2100，**实测两端整年都算不出来**（它要取前后一年的冬至）⇒ 可用区间钉成 `LIB_YEAR_MIN = 1901` / `LIB_YEAR_MAX = 2099`，页面与接口都用这个口径，`TEXT_OUT_OF_RANGE` 的文案里把「自称 1900–2100 但两端整年不行」这个差也写出来了。
+
+### 验收数字与实测证据
+
+- `npx tsc --noEmit` 退出码 **0**；`node --experimental-strip-types --test tests/quant/*.test.ts` = **665 tests / 656 pass / 0 fail / 9 skipped**（开工前基线 617/608/9，差 48 恰等于本层新增）⇒ 无回归、未降断言，9 条 skipped 仍是需要 `MYDESK_INTEGRATION=1` 的集成用例（本轮没有打开它）。奇门单跑 **48/48**。
+- `npx eslint` 对 9 个涉及文件 = 退出码 **0**（0 error、0 warning）。
+- `npx next build` 成功，`.next/BUILD_ID = eFccoJljGrvALA2sO4L-n`（16:48:28，晚于全部源码改动，最晚的一处是 16:47:31）⇒ 被实测的那份就是当前代码。构建期唯一告警 `"next start" does not work with "output: standalone"` 是仓库既有提示，未处理。
+- 隔离生产实例：`npx next start -p 3014` + 仓库外副本库 `D:/Zai/p7-check/p7qimen-3014.db` + `DESK_SCHEDULER=0`（日志头实测打印「[scheduler] 已禁用：DESK_SCHEDULER=0」）；用户的 3010（PID 93740，4:40:43 起）全程未动。共九条 curl，摘三条原文：
+  - `?date=2026-09-21&time=14:30&city=成都` → 200，`阴遁九局 (上元)` / 节气 `白露` / 四柱 `丙午 丁酉 戊戌 己未` / 真太阳时 `longitude=104.07, longitudeMinutes=-63.72, equationOfTimeMinutes=+7.895, offsetMinutes=-55.82, corrected=2026-09-21 13:34:10, hourPillarChanged=false, beijingHourPillar=己未`，农历 `农历丙午年八月十一`。
+  - `?date=2026-09-21&city=成都`（少给时间）→ 400，`起局时间没填对：需要 YYYY-MM-DD 与 HH:mm（或 HH:mm:ss）`，detail 里带 `收到 date=2026-09-21 time=，当前北京时间 2026-09-21 17:28:14`。
+  - `?date=1900-01-01&time=08:00&city=北京` → 400，`起局年份超出开源库实测可用区间 1901–2099（库自称支持 1900–2100，但两端的整年因为它要取前后一年的冬至而算不出来）`。
+- 浏览器实机（同一 3014，隐藏视口下走 DOM 事件）：`2026-12-22 12:00 北京` → `阳遁七局`，真太阳时分解显示「经度差 −14.4 分 + 均时差 +0.6 分 = 偏移 −13.8 分」；九宫格 9 格逐格满足上面那组扫盘不变量（中宫双干寄坤二、禽芮重复中宫天盘干、地盘 10 / 天盘 11 且 9 个不同值、行序即洛书 `[4,9,2,3,5,7,8,1,6]`）；把日期改成 `1900-01-01` 点起局 → 出现琥珀色错误卡且 `gridGone = true`，**盘子被整体撤掉而不是画半张**；`deskMode` 落在 `localStorage['mydesk-state']`，`location.reload()` 后仍停在奇门解盘模式。
+- 本轮解盘链路的实机验证在「AI 未配置」分支下完成（未配置提示、请求失败分支、超时口径都走通），三段解析与「不按格式返回就原文照贴」两分支由单测覆盖；带真实 Key 的端到端复测按用户指示留到开发完成后统一做。
+
+### 隔离性复核（本轮自查抓出的一处启动口径漏项）
+
+- **漏了什么**：16:48 那轮 build 之后我重启的 3014（PID 60068，17:05:40 起）漏带 `DATABASE_URL` 与 `DESK_SCHEDULER=0` 两个环境变量，日志里明确写着「[scheduler] 已启动：每 60s 检查；执行窗口=交易日北京 15:20；下次 2026-09-22 15:20」——它连的是仓库内真实库。它当时没有写库（日志里只有每 60s 的 `SELECT task_run … kind/tradeDate` 探测，**0 条 INSERT/UPDATE/DELETE**；因为它启动时已过今天的执行窗口，直接排到了明天），但**明天 15:20 它会和用户的 3010 抢同一次扫描**，两个调度器对同一份库同时跑「先删后插」是已知会改真实归档的路径。
+- **怎么处置**：`taskkill //PID 60068 //F`（只杀我自己启的那个，未碰 93740），改成 `cp prisma/db/custom.db D:/Zai/p7-check/p7qimen-3014.db` 后以 `DATABASE_URL="file:D:/Zai/p7-check/p7qimen-3014.db" DESK_SCHEDULER=0 npx next start -p 3014` 重启（新 PID 117164），端口保持 3014、功能按上面三条 curl 复验通过。按「3014 保持继续运行」的指示，实例没有停过可用的窗口。
+- **真实库差异核对（只读，仓库外，脚本 `D:/Zai/p7-check/qimen-audit/diff-db.mjs`）**：`git cat-file blob HEAD:prisma/db/custom.db` → md5 `9b98e11cedff742e1a077af3b767c0e2`（与前六轮记录的工作前基线一致）；工作树 → `796ed3eb0a6140504f27b54e9b19c550`。表集合 20 → 20，`only in work: []` / `only in head: []`；计数有差异的只有四张，且全部落在 2026-09-21 当天：`radar_finding 21→29`（+8，新增行的 `createdAt = 1789975263483` = 北京 15:21:03）、`task_run 115→117`（+2，`tradeDate=2026-09-21`）、`scan_cursor 4→6`（+2，`2026-09-21`），其余 16 张逐表相等。
+- **归因**：写入时刻 15:21:03 早于我这台 3014 的启动时刻 17:05:40，也早于本轮最后一次 build（16:48）⇒ 这次写入来自**用户自己的 3010 生产实例**（真实库 + 调度器开着），是交易日 15:20 窗口的正常归档，不是测试数据、也不是本轮代码写的。
+- **处置口径**：这份差异**不进本轮任何 commit**（逐路径 `git add`，不含 `prisma/db/custom.db`），本轮也没有对它做任何删除、回填或改写；是随下一次真实归档一起入库还是单独补一笔，留给用户决定。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+
+1. **拆补法只验到「交节分钟级翻转」，没逐日对照权威排盘日历**。1460 时刻扫盘证明的是自洽（局数随节气/元变化、72 组零冲突），不是「和某家万年历同一天同局」。
+2. **库的节气是解析式近似**，与紫金山天文台公布值约差 2–6 分钟；跨节气临界那一刻可能与传统历书差一个盘。`NEAR_TERM_MINUTES = 15` 的告警是**缓解**，不是消除。
+3. **`solarTermMode: "shouxing"`（置闰法）传进去静默无效果**：本轮既没实现也没报错，只是没有暴露这个开关。将来要支持得先在库侧确认它真支持，不能假设。
+4. **`type: "四柱"` 与 `"三元"` 实测输出完全相同**，没查明是库分支未实现还是本就等价；内核固定按默认口径，页面不提供这个选项。
+5. **驿马/空亡标记按库原样透传**（取值 `""`/`空`/`马`/`马 空`），只作为「排盘事实」上屏；其起法是否符合某一家的口诀未校，其断辞含义一律交给模型文本。
+6. **`addMinutes` 是毫秒精度**（`Math.round(minutes * 60000)`、保留秒），所以真太阳时校正后的时间会显示成 `13:34:10` 这种带秒的样子。这是刻意的：把秒抹掉会让「偏移 −55.82 分」这笔账在页面上对不平。
+7. **城市表 36 个**，只覆盖常用城市；表外城市必须手填经纬度，否则如实报「无法定位」，不兜底、不就近。
+8. **盘面不做吉凶判定**：九宫格只画读数，吉/凶只出现在模型解盘文本里，且尾部免责声明（「不构成投资建议」）常驻不可折叠掉。
+9. **本轮没有真实模型参与**：解盘文本的实机路径验到「未配置就如实提示 + 失败分支可读」为止，带真实 Key 的端到端按指示留到开发完成后统一复测。
+10. **未 commit**，等分项报告确认。3014 按指示继续运行，且已改成正经的隔离形态（仓库外副本库 + 调度器关闭）。
