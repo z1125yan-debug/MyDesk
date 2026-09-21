@@ -165,10 +165,10 @@ test("来源行：顺序原样、状态词与发给模型那份同源、未标�
   assert.deepEqual(sourceRowsOf(undefined), []);
 });
 
-test("来源计数：ok/missing/error/running 与 prefetch/model/未标注分开算", () => {
+test("来源计数：ok/missing/stale/error/running 与 prefetch/model/未标注分开算（stale 是 P8-① 新增第五态）", () => {
   const c = sourceCountsOf(STEPS);
-  assert.deepEqual(c, { total: 4, ok: 1, missing: 1, error: 1, running: 1, prefetch: 2, model: 1, unmarked: 1 });
-  assert.equal(c.ok + c.missing + c.error + c.running, c.total, "四态必须互斥且穷尽，否则面板上的分数会自相矛盾");
+  assert.deepEqual(c, { total: 4, ok: 1, missing: 1, stale: 0, error: 1, running: 1, prefetch: 2, model: 1, unmarked: 1 });
+  assert.equal(c.ok + c.missing + c.stale + c.error + c.running, c.total, "五态必须互斥且穷尽，否则面板上的分数会自相矛盾");
 });
 
 // ---------- 分析依据 ----------

@@ -17,7 +17,7 @@ import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { shanghaiDate } from "@/lib/desk/session";
 import { TOOLS, FACTOR_KEYS, findTool, type ToolCtx } from "@/lib/desk/chat-tools";
 import { backtestClaimWarning } from "@/lib/desk/backtest-core";
-import { prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
+import { contractWarningOf, prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
 import {
   createSseScanner, createToolCallAssembler, encodeStreamEvent, isEventStream, notStreamedWarning,
   parseUpstreamFrame, stepDetailOf, stepLabelFor, supportsToolCalling, type StreamEvent,
@@ -404,7 +404,12 @@ export async function POST(req: NextRequest) {
       const steps = [...(turn?.steps ?? []), ...r.steps];
       // 「正文给了回测数字、这一轮却没真跑成」的护栏：数字对不对看步骤，不看正文（口径在 backtest-core）
       const btWarn = backtestClaimWarning(steps, r.content);
-      const warn = [sceneFailure ? `本轮未做场景自动取数：${sceneFailure}` : "", btWarn ?? ""].filter(Boolean).join("；");
+      // P8-②：结论契约校验同样只出警告，不改正文、不重答（风险点 4）；且只有本轮真注入了契约才核（风险点 3）
+      const cw = turn ? contractWarningOf(turn, r.content) : null;
+      const warn = [
+        sceneFailure ? `本轮未做场景自动取数：${sceneFailure}` : "",
+        btWarn ?? "", cw ?? "",
+      ].filter(Boolean).join("；");
       return NextResponse.json({
         content: r.content,
         trace: [...(turn?.trace ?? []), ...r.trace],
@@ -448,6 +453,9 @@ export async function POST(req: NextRequest) {
       // 同一条护栏在两条传输上都要成立：降级路径与非降级路径不能一个查一个不查
       const btWarn = backtestClaimWarning([...(turn?.steps ?? []), ...r.steps], r.content);
       if (btWarn) emit({ type: "warning", data: { text: btWarn } });
+      // P8-②：流式路径同口径核契约——只补 warning 帧，r.content 原样进 done，不做任何改写/重试
+      const cw = turn ? contractWarningOf(turn, r.content) : null;
+      if (cw) emit({ type: "warning", data: { text: cw } });
       emit({ type: "done", data: { fullText: r.content, ...(turn ? { intent: turn.badge } : {}) } });
     } catch (e) {
       emit({ type: "error", data: { message: `AI 调用失败：${(e as Error).message}` } });

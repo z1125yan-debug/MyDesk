@@ -153,8 +153,20 @@ test("分层不破：编排内核不碰 IO，服务层不写判定", () => {
   // 服务层只做接线：计划与说法必须来自纯层，出现第二套判定就会和测试里的口径分叉
   assert.ok(/planDispatch\(/.test(sceneSrc) && /renderDispatchBlock\(/.test(sceneSrc), "服务层必须复用纯层的计划与注入块");
   assert.ok(/findTool\(/.test(sceneSrc), "取数动作必须走 chat-tools 的注册表（与工具调用环同一份实现）");
-  assert.ok(!/\bfetch\(/.test(sceneSrc) && !/@\/lib\/quant/.test(sceneSrc), "服务层不自己发请求、不自己算指标");
+  assert.ok(!/\bfetch\(/.test(sceneSrc), "服务层不自己发请求");
+  // P8-①/② 口径更新：服务层允许且只允许走两个既有真实入口——
+  //   fetchBarsHybridTracked（交易日历，与 /api/quant/screener/trade-dates 同源）与
+  //   buildDecisionForSymbol（结论卡，与结论卡页同一入口）。
+  // 仍不许出现别的 @/lib/quant 依赖（多了就是又开始自己算指标），也不许直接 fetch。
+  const quantImports = [...sceneSrc.matchAll(/from "@\/lib\/quant\/[^"]+"/g)].map((m) => m[0]);
+  assert.deepEqual(
+    [...new Set(quantImports)].sort(),
+    ['from "@/lib/quant/data/hybrid"', 'from "@/lib/quant/screener/decision-core"', 'from "@/lib/quant/screener/decision-service"'].sort(),
+    "@\/lib\/quant 依赖只能是新鲜度日历与结论卡两个既有入口（decision-core 只取契约纯函数）",
+  );
   assert.ok(!/case "sentiment"|SCENE_LABELS|toolsForScene\(/.test(sceneSrc), "场景判定不许在服务层重抄一遍");
+  // 新鲜度/契约的「判定」也必须在纯核：服务层只许调用，不许自己写比对规则
+  assert.ok(!/=== "stale"[\s\S]{0,80}lag_days|function judge|Date\.parse/.test(sceneSrc), "新鲜度判定必须留在 freshness-core");
 });
 
 // ---------- 一轮对话的接线（scene-dispatch + 两个聊天端点 + 三个入口） ----------

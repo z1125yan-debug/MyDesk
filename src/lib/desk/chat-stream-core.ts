@@ -14,7 +14,7 @@
 // 但字段口径只有一份（改 chat-core 的徽章字段，这里编译期就跟着变，不会出现「服务端发了、前端解不出」）。
 import type { IntentBadge } from "./chat-core.ts";
 
-export type StepStatus = "running" | "ok" | "error" | "missing";
+export type StepStatus = "running" | "ok" | "error" | "missing" | "stale";
 
 export interface StreamStep {
   step: number;
@@ -85,7 +85,7 @@ export function asStreamEvent(obj: unknown): StreamEvent | null {
     case "step": {
       const d = o.data;
       if (typeof d.step !== "number" || typeof d.label !== "string") return null;
-      const status: StepStatus = (["running", "ok", "error", "missing"] as const).includes(d.status) ? d.status : "ok";
+      const status: StepStatus = (["running", "ok", "error", "missing", "stale"] as const).includes(d.status) ? d.status : "ok";
       const data: StreamStep = { step: d.step, label: d.label, status, ms: d.ms ?? null };
       // 只带真的存在的字段：留下 detail: undefined 会让「原样往返」多出无意义的键
       if (typeof d.tool === "string") data.tool = d.tool;

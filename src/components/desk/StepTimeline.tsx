@@ -3,9 +3,10 @@
 //
 // 为什么单独成组件：AI 首页（工具调用）、智能助手页、右下角随问小窗三处都要展示同一种东西，
 // 各自画一套就会各自漂移（P6 时已经吃过「同一个来源两种说法」的亏）。
-// 口径：running=正在等这一步；ok=真的取到了；missing=没取到（不是 0，也不是失败）；error=调用抛错。
+// 口径：running=正在等这一步；ok=真的取到了；missing=没取到（不是 0，也不是失败）；error=调用抛错；
+// stale=取到了但比对真实交易日历后滞后/新鲜度无法判定（P8-①，detail 带核对结果原文）。
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, CircleDashed, AlertTriangle, XCircle, Loader2 } from "lucide-react";
+import { CheckCircle2, CircleDashed, AlertTriangle, XCircle, Loader2, CalendarClock } from "lucide-react";
 import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import type { StepInfo } from "@/lib/desk/chat-core";
 
@@ -14,6 +15,8 @@ const STATUS_META: Record<StepInfo["status"], { icon: typeof Loader2; text: stri
   ok: { icon: CheckCircle2, text: "已取到", tone: "text-emerald-300" },
   missing: { icon: AlertTriangle, text: "缺数据", tone: "text-amber-300" },
   error: { icon: XCircle, text: "调用失败", tone: "text-red-300" },
+  // 与 missing 分开画：一个是「没取到」，一个是「取到了但不是新的」，对用户来说是两句不同的话
+  stale: { icon: CalendarClock, text: "数据滞后", tone: "text-amber-300" },
 };
 
 export default function StepTimeline({
@@ -96,7 +99,7 @@ export default function StepTimeline({
         })}
         {!!steps?.length && (
           <div className="pt-0.5 text-[10px] text-muted-foreground/80">
-            以上是本次真实调用过的步骤；标「缺数据」表示接口这次没给值，不是数值为 0；「系统预取」是这轮提问前按场景替你取的，「模型自取」才是模型自己要调的。
+            以上是本次真实调用过的步骤；标「缺数据」表示接口这次没给值，不是数值为 0；标「数据滞后」表示取到了、但与真实交易日历核对后不新鲜（或无法判定新鲜度），回答里以哪份为准看该步说明；「系统预取」是这轮提问前按场景替你取的，「模型自取」才是模型自己要调的。
           </div>
         )}
         {warning && (
