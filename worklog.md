@@ -1594,3 +1594,30 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 4. **universeSource() 仍是全局最后快照旗标**（承 P8 边界）：自选/成分等自定义池跑 em 成功、但紧随一次全A兜底后，provider 文案仍可能显示腾讯兜底——本轮未改旗标语义，只保证 `unavailable_fields`（字段级真实缺口）不受此旗标影响。
 5. **场景词补「对比」可能与追问前缀重叠**：`对比` 既在 stock_analysis 词表、也在 codeSwapFollowUp 正则的追问前缀里；本轮靠优先级（watchlist/screener/sector 排在 stock_analysis 前）不吃亏，但「对比」单独出现的边缘问法未穷举实测，边界记录。
 6. **3010 需重启才吃到本轮**：用户生产实例仍是旧构建；按其日常方式（启动.bat / next start -p 3010）重启后方可见缺口警示条、ChatModeMenu、新浪备胎。DB（prisma/db/custom.db）与 P1P2_任务书.md 删除照例未入库。
+
+## P10 择优+留存轮：aiwuchuan 候选池→择优移植 / 对话切页刷新保留（2026-09-22：827 条基线，3014 实机双链路取证）
+
+### 背景与口径（四条）
+1. **「帮我选股选不出来」是双断点，不是模型笨**：① 选股场景在自动调度表里是 skip（从不预取候选池，旧口径「条件需由模型抽取，不许替用户猜」）；② 用户浏览器里凭据为空 → 对话走纯对话网关通道（无工具调用能力），既没池也调不了工具，只能拿快讯编答案。修法是两条通道共用的准备层预取候选池 + 默认活跃池回落——纯对话通道不吃工具也吃到池。参考 aiwuchuan.com（登录墙后无接口，经浏览器同源 fetch 抓线上 StockScreener-DUZZ18EG.js 逆向；curl 直连 000/代理 35 双证不可达）。
+2. **默认池必须自报家门（诚实口径不是免责声明）**：抽不出条件时按「系统默认活跃池：成交额≥2亿 · 当日收涨 · 换手率≥1%」跑，返回与注入文本强制标注「不是你给的条件，是默认口径」；pool_origin 三元 extracted/model/default，条件原话 matched 留痕可核对。默认池刻意全用快照字段、不含 main_net_yi（断源期它整池无读数，P9 缺口链路会把它剔掉造成池面误导）。
+3. **择优五段式是纪律不是排版偏好**：可少选可以不选（「本轮未选出合格标的」合法）、池序不是推荐、论据只准用池内真实数据、五段=入选理由/入场条件/仓位节奏/失效条件/主要风险、先报条件与命中家数。PICK_DISCIPLINE 一份定义，工具返回/场景提示词/两侧系统提示词同源消费。参考站的「次日验证」闭环本轮未做（下轮候选）。
+4. **对话丢失是两处主动 newSession，不是没持久化**：AssistantPage 挂载即清 + Sidebar「AI 决策」按钮点击即清——会话本就 zustand persist 存本机，是被这两下抹掉的。删掉后切页面/刷新全保留，只有「新对话」/删除才清；Sidebar 钉测只钉 `!/s\.newSession/`（订阅形状），自己注释里出现 newSession 字样不算违规。
+
+### 落点（1 新核 + 7 处 src 改动 + 1 新测试 + 2 测试修订）
+- 新纯核 `screener/pick-pool-core.ts`：extractPickConds（MA5/10/20/60/20日成本线/均线多头/MACD/KDJ/涨停/量比/换手/成交额亿/市值亿/涨幅%/RPS50/主力净流入>0，`[^0-9]{0,6}` 桥接、同字段去重、push 序固定）、DEFAULT_PICK_CONDS/LABEL、PICK_DISCIPLINE、poolOriginText、pickCondText。
+- 改动：`skills-core.ts`（factor_screener 进 screener plan、args/reason 新增 screener_pool、skip 收窄为 qimen/general）、`intent-core.ts`（screener 场景提示词注入纪律、classifyIntent ≥2 条件且无主场景争抢时 screener 覆盖：noClaim/overwritable 双闸 + 「股票|个股|票」字样闸、grabbed 时 alternates 降级）、`chat-tools.ts`（conditions 可选→默认池、条件口径/择优纪律随返回出、schema 去 required）、`scene-dispatch.ts`（注释同新口径）、`api/ai/chat/route.ts` + `desk/ai.ts`（两侧提示词五段式同源）、`AssistantPage.tsx`/`Sidebar.tsx`（两处 newSession 清除）。
+- 新测试 `p10-pick-pool.test.ts` 11 条：抽取正反例（缩量回调/放量大票不硬猜、MA30 白名单外拒收）、默认池字段集不含 main_net_yi、纪律五条关键词、poolOrigin 三元、接线文本钉（plan/提示词/工具回落/旧 missing 文案已删/schema）、留存双钉（挂载无 newSession、Sidebar 无订阅）。
+- 修订既有钉测 2 处（口径迁移、原话留 comment）：`p8-skills-loop`（plan 覆盖 5→6 场景、factor_screener 出冷列、不标 required）、`p7-intent`（选股场景现跑池：默认池形状 + 条件顺序以实现 push 序钉死）。
+
+### 验收数字与实测证据
+- tsc 0；全量 **827 / 818 过 / 0 败 / 9 跳**（基线 816/807/9 + 11 全为新文件，零回归）；`next build` 过（Sidebar 修复后重跑）；本轮触碰文件 eslint 0 报；依赖 diff 空。
+- 3014 新构建 jiti 活链路（`tmp-p8/p10-pool-live.cjs`）：「帮我选股」→ screener 场景 + factor_screener 默认池步骤，注入块含条件口径/择优纪律/默认标签三钉（冷跑 ~19s、热缓存 ~2s）；curl 走代理通道实答五段式（中际旭创）。
+- 浏览器实机（?v=p10b）：发「帮我选股」→ 回答先报默认池条件+命中 15 只+主力净额缺失提示，每只五段齐全、价位全来自池内读数 → 切「行情中心」再切回，对话完整（旧构建这一步变 Hello，抓到 Sidebar 第二元凶补修）→ location.reload() 后仍完整 → 点「新对话」清出 Hello、旧会话入「最近对话」（6 条/2 条可续接）。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+1. **冷启动跑池 ~19 秒**：首问「帮我选股」等待明显（K 线类条件需逐票取数，maxKlineSymbols 120 封顶）；缓存后 ~2s。未做预热。
+2. **流式中断**：回答生成中切页面，本次流断掉（已生成部分保留）；「切换也留着」覆盖的是已完成内容，不是后台续流。
+3. **条件抽取是规则判定**：「缩量回调」这类模糊说法不硬猜、回落默认池并如实标注；screener 覆盖要求 ≥2 个明确条件 + 「股票|个股|票」字样 + 无主场景争抢，单条件问法仍可能落 stock_analysis/general——阈值是「多条件才是选股意图」的赌注，边界记录。
+4. **次日验证闭环未做**：参考站选出后跟下一日收盘对账（signal→next_close），我们只有择优五段式、没有回测台账；是下轮候选。
+5. **默认池三点条件的合理性未做量化校准**：成交额≥2亿/收涨/换手≥1% 是「活跃」的常识口径，与参考站默认参数无对照实验。
+6. **3010 吃到本轮需重启**：提交后按既定方式重启用户实例（本轮验收后即重启）。
