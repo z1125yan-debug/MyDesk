@@ -6,6 +6,7 @@
 // 注意：公开接口无历史时点成分股/停牌数据 → universeMembership=current_only，
 // 历史回放存在幸存者偏差风险，由调用方在结果中标注。
 import { fetchQuotesReal } from "@/lib/desk/em";
+import { fetchTcUniverseAllA, setUniverseSource } from "./tc-universe";
 import type { AssetMeta, Bar, BarsRequest, DataCoverage, DataProvider, Timeframe, UniverseSpec } from "../types.ts";
 
 const UA =
@@ -158,22 +159,46 @@ function rowToMeta(d: Record<string, unknown>): AssetMeta | null {
   };
 }
 
-async function fetchUniverseAllA(): Promise<AssetMeta[]> {
-  return cached("universe", `all`, async () => {
-    const out: AssetMeta[] = [];
-    let pn = 1;
-    for (;;) {
-      const { total, rows } = await clistPage(FS_ALL_A, pn);
-      for (const r of rows) {
-        const m = rowToMeta(r);
-        if (m) out.push(m);
-      }
-      if (!rows.length || out.length >= total || pn > 60) break;
-      pn++;
-      await sleep(120); // 节流防限流
+async function clistUniverseAllA(): Promise<AssetMeta[]> {
+  const out: AssetMeta[] = [];
+  let pn = 1;
+  for (;;) {
+    const { total, rows } = await clistPage(FS_ALL_A, pn);
+    for (const r of rows) {
+      const m = rowToMeta(r);
+      if (m) out.push(m);
     }
-    return out;
-  });
+    if (!rows.length || out.length >= total || pn > 60) break;
+    pn++;
+    await sleep(120); // 节流防限流
+  }
+  return out;
+}
+
+// 东财 clist 断源（push2 集群对部分出口 IP 拒连，2026-09-22 实测）时改走腾讯批量快照兜底；
+// 两路都挂才把合并后的错误抛给页面。universeSource() 记录实际服务方，上层据此如实改写 source 文案。
+async function fetchUniverseAllARaw(): Promise<AssetMeta[]> {
+  try {
+    const rows = await clistUniverseAllA();
+    if (rows.length) {
+      setUniverseSource("em");
+      return rows;
+    }
+    throw new Error("东财 clist 全A快照无返回");
+  } catch (e) {
+    const emErr = (e as Error).message;
+    try {
+      const tc = await fetchTcUniverseAllA();
+      setUniverseSource("tc");
+      return tc;
+    } catch (e2) {
+      throw new Error(`东财 clist 与腾讯兜底均失败：${emErr}；${(e2 as Error).message}`);
+    }
+  }
+}
+
+async function fetchUniverseAllA(): Promise<AssetMeta[]> {
+  return cached("universe", `all`, fetchUniverseAllARaw);
 }
 
 async function fetchBoardMembers(boardCode: string): Promise<AssetMeta[]> {

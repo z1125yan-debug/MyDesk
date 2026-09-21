@@ -64,6 +64,8 @@ export default function BoardPage() {
 
   useEffect(() => {
     if (!selected) { setDetail(null); return; }
+    // 腾讯兜底榜行：没有东财 secid，也就没有资金明细可读——直接空着，绝不落回演示数据
+    if (selected.fundsMissing) { setDetail(null); return; }
     let dead = false;
     fetchDetailFor(selected.secid || "", selected.name, selected.code)
       .then((r) => { if (!dead) { setDetail(r.detail); setDetailSource(r.source); } })
@@ -80,6 +82,7 @@ export default function BoardPage() {
           <h1 className="text-xl font-bold">数据看板</h1>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
             板块/个股资金流向榜与流向图 —— {sourceLabel}
+            {rows.length > 0 && rows.every((r) => r.fundsMissing) && "（当前为腾讯板块兜底榜：涨幅口径，无主力资金读数）"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -147,9 +150,9 @@ export default function BoardPage() {
                       {r.changePct >= 0 ? "+" : ""}{r.changePct.toFixed(2)}
                     </td>
                     <td className={"px-2 py-2.5 text-right font-mono tabular-nums " + (r.main >= 0 ? "text-rose-400" : "text-emerald-400")}>
-                      {r.main >= 0 ? "+" : ""}{r.main.toFixed(2)}
+                      {r.fundsMissing ? <span className="text-muted-foreground">—</span> : `${r.main >= 0 ? "+" : ""}${r.main.toFixed(2)}`}
                     </td>
-                    <td className="px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r.ratio.toFixed(1)}</td>
+                    <td className="px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r.fundsMissing ? "—" : r.ratio.toFixed(1)}</td>
                     <td className="hidden px-4 py-2.5 text-right text-muted-foreground md:table-cell">{r.leader}</td>
                   </tr>
                 ))}
@@ -173,7 +176,7 @@ export default function BoardPage() {
                   </span>
                 </div>
                 <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                  {selected.code} · {detailSource === "real" ? "真实资金数据" : "演示数据"}
+                  {selected.code} · {selected.fundsMissing ? "腾讯兜底榜（涨幅口径，无资金明细读数）" : detailSource === "real" ? "真实资金数据" : "演示数据"}
                 </div>
 
                 {detail && detail.spark.length > 1 && (
@@ -224,7 +227,11 @@ export default function BoardPage() {
         </div>
       </div>
 
-      {showBubble && (
+      {showBubble && (flowIn.length > 0 && flowIn.every((r) => r.fundsMissing) && flowOut.every((r) => r.fundsMissing) ? (
+        <div className="rounded-xl border border-border bg-card p-4 text-[12px] text-muted-foreground">
+          资金流向图暂不可用：当前榜单来自腾讯板块兜底榜（涨幅口径），不含主力净额读数——不拿占位 0 画流向、不编造线宽。
+        </div>
+      ) : (
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="mb-1 text-[13.5px] font-semibold">资金流向图 · 主力净额 TOP8</div>
           <div className="mb-2 text-[12px] text-muted-foreground">
@@ -232,7 +239,7 @@ export default function BoardPage() {
           </div>
           <BubbleFlow inRows={flowIn} outRows={flowOut} onSelect={setSelected} />
         </div>
-      )}
+      ))}
     </div>
   );
 }
