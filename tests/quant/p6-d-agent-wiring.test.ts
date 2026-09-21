@@ -223,11 +223,13 @@ test("④ 运行页文案单一来源：状态口径引用内核常量，页面�
 test("§三十一/§三十四 页面注册可见，且把「无原生 function-calling、客户端逐格驱动、只有库里的行算数」写在页面上", () => {
   const types = read("src/lib/desk/types.ts");
   const shell = read("src/components/desk/AppShell.tsx");
-  const sidebar = read("src/components/desk/Sidebar.tsx");
+  // P7-⑪ 任务1（UI 重构，用户已批准）：agent 的入口从侧栏散点菜单迁到 nav-core 登记表
+  // （NAV.ai.legacyPages），侧栏源码不再逐页写 key；hash 兼容与 AppShell 分支由下面两条继续守住。
+  const nav = read("src/lib/desk/nav-core.ts");
   assert.match(types, /\| "agent"/, "PageKey 没有 agent：hash 路由与 PAGE_TITLES 会对不上");
   assert.match(types, /agent: "[^"]+"/, "PAGE_TITLES 缺 agent：顶栏标题会是空");
   assert.match(shell, /page === "agent" && <AgentPage \/>/, "AppShell 没有分支：页面进不去");
-  assert.match(sidebar, /key: "agent"/, "侧栏没有入口：读者找不到这个页面");
+  assert.match(nav, /"agent"/, "导航登记表没有 agent：读者找不到这个页面");
   const page = read(PAGE);
   assert.match(page, /function-calling/, "必须写明没有原生 function-calling（否则读者以为服务商帮忙调工具）");
   assert.match(page, /本机浏览器|客户端/, "必须写明这一格由本机浏览器逐格驱动（凭据只在浏览器）");

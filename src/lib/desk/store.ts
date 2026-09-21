@@ -140,7 +140,8 @@ function byUpdatedDesc(a: ChatSession, b: ChatSession): number {
 export const useDesk = create<DeskState>()(
   persist(
     (set, get) => ({
-      page: "aihome",
+      // P7-⑪ 任务1：默认落 AI 决策对话（旧默认 aihome 页已并入对话，hash `#/aihome` 仍兼容直达）
+      page: "copilot",
       sidebarCollapsed: false,
       focusSymbol: "000001.SH",
       watchlist: [

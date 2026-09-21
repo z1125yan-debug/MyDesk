@@ -1,69 +1,25 @@
 "use client";
-import {
-  Sparkles, Radar, Filter, UserSearch, Gauge, ListOrdered, Target,
-  LayoutDashboard, BarChart3, LineChart, History, Bot,
-  FlaskConical, Puzzle, Settings, Snowflake, LayoutGrid, Microscope,
-  ShieldAlert, Compass, Globe2, Percent, ScanSearch, Telescope,
-} from "lucide-react";
+// P7-⑪ 任务1：最左侧固定窄边栏只放大模块按钮（AI 决策 / 量化工具 / 行情中心），
+// 设置与扩展收进底部状态条的下拉菜单，不再占主边栏位置。
+// 导航数据全部来自 nav-core（纯核），这里只画；旧菜单项的去留口径写在 nav-core 注释里。
+import { useState } from "react";
+import { Bot, FlaskConical, Gauge, Settings, Puzzle, ChevronUp } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
+import { NAV, WORKBENCH_ORDER, workbenchOf, type Workbench } from "@/lib/desk/nav-core";
 import type { PageKey } from "@/lib/desk/types";
 
-const GROUPS: { title: string; items: { key: PageKey; label: string; icon: React.ComponentType<{ size?: number | string; className?: string }> }[] }[] = [
-  {
-    title: "实时选股",
-    items: [
-      { key: "aihome", label: "AI 首页", icon: Sparkles },
-      { key: "aiscan", label: "AI 实时选股", icon: Radar },
-      { key: "pool", label: "候选池", icon: Snowflake },
-      { key: "screener", label: "因子选股器", icon: Filter },
-    ],
-  },
-  {
-    title: "市场",
-    items: [
-      { key: "market", label: "大盘情绪", icon: Gauge },
-      { key: "sectors", label: "行业板块", icon: LayoutGrid },
-      { key: "themes", label: "主线发现", icon: Compass },
-      { key: "risk", label: "风险监控", icon: ShieldAlert },
-      { key: "allstocks", label: "全A列表", icon: ListOrdered },
-      { key: "profile", label: "个股画像", icon: UserSearch },
-      { key: "tracker", label: "自选股", icon: Target },
-    ],
-  },
-  {
-    title: "行情工具",
-    items: [
-      { key: "board", label: "数据看板", icon: BarChart3 },
-      { key: "analysis", label: "AI 分析", icon: LineChart },
-      { key: "copilot", label: "智能助手", icon: Bot },
-      { key: "history", label: "历史", icon: History },
-      { key: "dashboard", label: "总览", icon: LayoutDashboard },
-    ],
-  },
-  {
-    title: "研究后台",
-    items: [
-      { key: "quant", label: "量化研究", icon: FlaskConical },
-      { key: "factorlab", label: "因子测试台", icon: Microscope },
-      { key: "problab", label: "历史概率", icon: Percent },
-      { key: "radar", label: "主动发现", icon: ScanSearch },
-      { key: "events", label: "事件雷达", icon: Globe2 },
-      { key: "research", label: "AI 市场研究", icon: Telescope },
-      { key: "agent", label: "Agent 自主研究", icon: Bot },
-    ],
-  },
-  {
-    title: "系统",
-    items: [
-      { key: "extension", label: "扩展", icon: Puzzle },
-      { key: "settings", label: "设置", icon: Settings },
-    ],
-  },
-];
+const WB_ICONS: Record<Workbench, React.ComponentType<{ size?: number | string; className?: string }>> = {
+  ai: Bot,
+  quant: FlaskConical,
+  market: Gauge,
+  system: Settings,
+};
 
 export default function Sidebar() {
   const page = useDesk((s) => s.page);
   const go = useDesk((s) => s.go);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const activeWb = workbenchOf(page);
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-card">
@@ -82,42 +38,60 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-3 overflow-y-auto desk-scroll px-2.5 pb-2">
-        {GROUPS.map((g) => (
-          <div key={g.title}>
-            <div className="px-3 pb-1 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground/70">{g.title}</div>
-            <div className="space-y-0.5">
-              {g.items.map((item) => {
-                const Icon = item.icon;
-                const active = page === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    onClick={() => go(item.key)}
-                    className={
-                      "group flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13.5px] transition-colors " +
-                      (active
-                        ? "bg-sky-500/10 text-sky-300 font-medium"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground")
-                    }
-                  >
-                    <Icon size={16} className={active ? "text-sky-400" : "opacity-70"} />
-                    {item.label}
-                    {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sky-400" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      <nav className="flex-1 space-y-1.5 overflow-y-auto desk-scroll px-2.5 pb-2 pt-2">
+        {WORKBENCH_ORDER.map((wb) => {
+          const Icon = WB_ICONS[wb.key];
+          const active = activeWb === wb.key;
+          return (
+            <button
+              key={wb.key}
+              onClick={() => go(wb.key === "ai" ? "copilot" : NAV[wb.key].items[0].key)}
+              className={
+                "flex w-full items-center gap-3 rounded-lg px-3.5 py-2.5 text-[14px] transition-colors " +
+                (active
+                  ? "bg-sky-500/10 text-sky-300 font-medium"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground")
+              }
+            >
+              <Icon size={17} className={active ? "text-sky-400" : "opacity-70"} />
+              {wb.label}
+              {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sky-400" />}
+            </button>
+          );
+        })}
       </nav>
 
-      <div className="border-t border-border px-4 py-3.5 text-[11px] leading-5 text-muted-foreground">
+      {/* 底部状态条：点齿轮弹出 设置/扩展 —— 系统页不再占主导航位 */}
+      <div className="relative border-t border-border px-4 py-3 text-[11px] leading-5 text-muted-foreground">
+        {menuOpen && (
+          <div className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+            {NAV.system.items.map((it: { key: PageKey; label: string }) => (
+              <button
+                key={it.key}
+                onClick={() => { go(it.key); setMenuOpen(false); }}
+                className={
+                  "flex w-full items-center gap-2 px-3 py-2 text-[12.5px] transition-colors " +
+                  (page === it.key ? "bg-sky-500/10 text-sky-300" : "hover:bg-accent")
+                }
+              >
+                {it.key === "settings" ? <Settings size={14} /> : <Puzzle size={14} />}
+                {it.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
           本地运行 · REAL_DATA_ONLY
         </div>
         <div className="mt-0.5">eltdx / 腾讯 / 东财 · 本机直连</div>
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label="打开设置与扩展菜单"
+          className="absolute right-3 top-2.5 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          {menuOpen ? <ChevronUp size={15} /> : <Settings size={15} />}
+        </button>
       </div>
     </aside>
   );
