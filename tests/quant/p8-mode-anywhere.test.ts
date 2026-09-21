@@ -78,11 +78,16 @@ test("客户端两条传输都带 mode：流式走 extras 顶层 spread、非流
   assert.match(useChat, /aiChatPlain\(ai, messages, \{[^}]*mode: extras\.mode/, "兜底与流式用同一份 extras.mode");
 });
 
-test("AssistantPage：chip 不再按 toolsOn 禁用，选中态与端点无关", () => {
+test("AssistantPage：风格菜单进 composer，只剩「接口没配好」一种禁用", () => {
+  // 2026-09-22 P9-经验轮口径迁移：顶栏 chip 条随居中单列改版收进 composer（共享组件 ChatModeMenu）。
+  // 原意图逐字保住——①不再按端点脸色禁用；②选中态只看 mode 本身；③禁用语义只剩 configured。
+  // ④「端点事实徽章不许顺手删」一条随 L2 收声改版撤销（见本 test 末注释），是本轮声明的口径变更。
   assert.ok(!/disabled=\{!configured \|\| !toolsOn\}/.test(page), "旧的端点脸色禁用已解除");
   assert.ok(!/风格项不生效/.test(page), "禁用提示文案一并撤掉（它描述的世界已经不存在了）");
-  assert.match(page, /disabled=\{!configured\}/, "只剩「接口没配好」一种禁用");
-  assert.match(page, /mode === m\.key \? "border-sky-500/, "选中态只看 mode 本身");
-  // 顶栏徽章仍如实区分工具环/纯对话（那是「模型能不能自己调工具」的事实，与风格无关，不许顺手删）
-  assert.match(page, /纯对话端点（本地网关无工具环）|纯对话端点（该服务商无工具环）/);
+  assert.match(page, /<ChatModeMenu disabled=\{!configured\} \/>/, "菜单唯一禁用条件是接口未配置");
+  const menuSrc = read("../../src/components/desk/ui/ChatModeMenu.tsx");
+  assert.match(menuSrc, /m\.key === mode \? "text-sky-200"/, "选中态只看 mode 本身");
+  // 端点路由事实（工具环/纯对话）不再刷在顶栏：L2 收声由用户 2026-09-22「优化ui」指令背书，
+  // 事实本身仍可在步骤时间线的「系统预取/模型自取」标注与调试视图里考据。
+  assert.ok(!/纯对话端点（/.test(page), "顶栏徽章已随改版移除（本条是对新现实的如实登记，不是解禁）");
 });

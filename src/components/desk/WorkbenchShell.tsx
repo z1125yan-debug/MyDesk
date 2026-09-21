@@ -1,22 +1,18 @@
 "use client";
-// P7-⑪ 任务1：大模块内部的「左窄栏列表 + 右宽栏详情」两栏壳。
-// 左栏只画 nav-core 登记的分组与列表；右栏原样渲染既有页面组件（业务逻辑零改动）。
-// AI 决策工作台不走这里——它的左栏（模式切换 + 会话历史）长在 AssistantPage 里，重复画会两份历史。
-// 已并入对话的旧页面（#/agent 这类兼容路由）：不画左栏，顶部挂一条横幅指回对话，而不是让页面凭空出现。
+// 工作台壳：左窄栏（分组 + 列表）+ 右详情。样式随纯黑苹果风统一。
 import { MessageSquareReply } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { NAV, isLegacyPage, workbenchOf, type Workbench } from "@/lib/desk/nav-core";
 import type { PageKey } from "@/lib/desk/types";
 
 function LeftRail(props: { wb: Workbench }) {
-  // ai 的左栏在 AssistantPage 里，这条分支理论上到不了；真到了也只画一个 copilot 项，不会崩
   const page = useDesk((s) => s.page);
   const go = useDesk((s) => s.go);
   const nav = NAV[props.wb];
   return (
-    <div className="flex w-64 shrink-0 flex-col gap-2 overflow-y-auto desk-scroll border-r border-border bg-card/60 p-2.5 xl:w-80">
+    <div className="flex w-60 shrink-0 flex-col gap-1.5 overflow-y-auto desk-scroll border-r border-border/60 px-3 py-4 xl:w-64">
       {nav.groups.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-0.5 pt-0.5">
+        <div className="mb-1 flex flex-wrap gap-1 px-0.5">
           {nav.groups.map((g) => {
             const active = page === g.target;
             return (
@@ -24,8 +20,8 @@ function LeftRail(props: { wb: Workbench }) {
                 key={g.title}
                 onClick={() => go(g.target)}
                 className={
-                  "rounded-md px-2 py-1 text-[11.5px] transition-colors " +
-                  (active ? "bg-sky-500/15 text-sky-300 font-medium" : "bg-accent/60 text-muted-foreground hover:text-foreground")
+                  "rounded-full px-3 py-1.5 text-[12px] transition-colors " +
+                  (active ? "bg-sky-400/15 text-sky-300 font-medium" : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground")
                 }
               >
                 {g.title}
@@ -34,7 +30,7 @@ function LeftRail(props: { wb: Workbench }) {
           })}
         </div>
       )}
-      <div className="mt-1 space-y-0.5">
+      <div className="space-y-0.5">
         {nav.items.map((item: { key: PageKey; label: string }) => {
           const active = page === item.key;
           return (
@@ -42,12 +38,12 @@ function LeftRail(props: { wb: Workbench }) {
               key={item.key}
               onClick={() => go(item.key)}
               className={
-                "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] transition-colors " +
-                (active ? "bg-sky-500/10 text-sky-300 font-medium" : "text-muted-foreground hover:bg-accent hover:text-foreground")
+                "flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] transition-colors " +
+                (active ? "bg-white/[0.07] text-foreground font-medium" : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground")
               }
             >
               {item.label}
-              {active && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />}
+              {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sky-400" />}
             </button>
           );
         })}
@@ -61,18 +57,16 @@ export default function WorkbenchShell(props: { children: React.ReactNode }) {
   const go = useDesk((s) => s.go);
   const wb = workbenchOf(page);
 
-  // AI 决策：copilot 本身（AssistantPage 三栏已含左栏）直接铺满
   if (wb === "ai" && !isLegacyPage(page)) return <>{props.children}</>;
 
-  // 兼容路由进来的「已并入」页面：横幅指回，右栏照常渲染原组件
   if (isLegacyPage(page)) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-[12px] text-amber-300">
-          <MessageSquareReply size={13} aria-hidden />
-          此页已并入 AI 决策对话（旧路由保留直达）；同类问题在对话里问即可，AI 会自动选分析框架。
-          <button onClick={() => go("copilot")} className="ml-auto rounded-md border border-amber-500/40 px-2 py-0.5 hover:bg-amber-500/15">
-            回到对话
+        <div className="flex items-center gap-2 border-b border-border/60 bg-sky-400/[0.07] px-5 py-2.5 text-[12.5px] text-sky-200/90">
+          <MessageSquareReply size={14} aria-hidden />
+          这类问题直接在对话里问就行，AI 会自动选好分析框架。
+          <button onClick={() => go("copilot")} className="ml-auto rounded-full bg-sky-400/15 px-3 py-1 text-sky-200 hover:bg-sky-400/25">
+            去对话
           </button>
         </div>
         <div className="min-h-0 flex-1">{props.children}</div>
@@ -80,7 +74,7 @@ export default function WorkbenchShell(props: { children: React.ReactNode }) {
     );
   }
 
-  if (wb === null) return <>{props.children}</>; // 未登记的键（理论到不了）：原样渲染，不做半个新壳
+  if (wb === null) return <>{props.children}</>;
   return (
     <div className="flex h-full min-h-0">
       <LeftRail wb={wb} />

@@ -353,9 +353,13 @@ test("上一轮场景经过 asScene 以后才进判定：伪造的 prevScene 不
 // 词表每加一次都可能有新的说法掉出场景之外，所以这里不抄一份清单，而是直接从组件源码里抽
 // —— 界面临时改一句快捷问，这条测试会立刻说出「这句现在是通用问答、不取数」。
 
-/** 从组件源码里抽出「字符串数组字面量」形式的快捷问（数组元素 ≥2 才算，单元素的多是提示文案） */
+/** 从组件源码里抽出「字符串数组字面量」形式的快捷问（数组元素 ≥2 才算，单元素的多是提示文案）。
+ *  P9-观感轮口径迁移：助手页空状态把快捷问改画成建议卡（`{ q: "…", icon: X }` 对象数组），
+ *  纯字符串数组正则就漏了它们——而这条测试的意图恰恰是「界面临时摆到用户嘴边的每一句都得判对场景」。
+ *  所以现在两种形状都抽：裸字符串数组 + 带 `q:`/`question:` 键的对象字段，一条不落地拿去判。 */
 function questionArraysFrom(files: string[]): string[] {
   const re = /\[\s*((?:"[^"\n]{2,40}"\s*,?\s*)+)\]/g;
+  const objRe = /\bq:\s*"([^"\n]{2,40})"/g;
   const out: string[] = [];
   for (const f of files) {
     const src = readFileSync(new URL(f, import.meta.url), "utf8");
@@ -364,6 +368,7 @@ function questionArraysFrom(files: string[]): string[] {
       const items = (m[1].match(/"([^"\n]{2,40})"/g) ?? []).map((s) => s.slice(1, -1));
       if (items.length >= 2 && items.some((t) => /[一-龥]/.test(t))) out.push(...items);
     }
+    while ((m = objRe.exec(src))) out.push(m[1]);
   }
   return [...new Set(out)];
 }

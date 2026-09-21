@@ -5,37 +5,41 @@
 // 发送、流式回填、降级、价格校验、端点选择都在 useChatSend 里，和首页 / 小窗共用同一份实现。
 // 会话是同一份 store：从小窗「在助手页继续」＝切到同一条会话，不复制消息。
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Info, Loader2, PenLine, Plus, Settings2, Send, Square, Trash2 } from "lucide-react";
+import {
+  Bot, History, Loader2, Plus, Send, Square, Trash2,
+  TrendingUp, BarChart3, Filter, Target, Scale, PieChart, LineChart,
+} from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
-import { aiConfigured, assistantSystemPrompt, resolveChatEndpoint } from "@/lib/desk/ai";
+import { aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
 import { fetchQuoteCards, fetchTechSnapshot, fetchNewsBlock, isDemoSymbol, searchSymbols } from "@/lib/desk/market";
 import { shanghaiStamp } from "@/lib/desk/session";
 import {
   guardPriceOf, provenanceOfQuote, provenanceOfTechSnapshot, renderMarketContext, type CtxRow,
 } from "@/lib/desk/ai-context-core";
 import { isFollowUp, type ChatMessage, type ChatSession } from "@/lib/desk/chat-core";
-import { CHAT_MODES } from "@/lib/desk/modes";
 import { useChatSend, type SnapshotResult } from "@/lib/desk/use-chat";
 import { useServerLlm } from "@/lib/desk/use-server-llm";
 import { useDeskLinks } from "@/lib/desk/use-desk-links";
-import { pickPanelSymbol } from "@/lib/desk/context-panel-core";
 import Markdown from "../Markdown";
-import SceneBadge from "../SceneBadge";
 import StepTimeline from "../StepTimeline";
 import ChatBacktestCards from "../ChatBacktestCards";
-import ContextPanel from "../ContextPanel";
-import QimenPanel from "../QimenPanel";
+import ChatModeMenu from "../ui/ChatModeMenu";
 
-// 回答风格的清单一处定义在 @/lib/desk/modes（首页的下拉用的就是同一份），
-// 当前选中的值存在 store.assistantMode：两个画法共享一个设置，不会出现「首页选了研判、这里按决策发」。
-// 只有落到工具调用端点（服务端按 mode 改口径）时它才生效，纯对话端点上这一项会显式禁用。
+// 回答风格：清单与文案唯一出处是 @/lib/desk/modes（CHAT_MODES 画界面、MODE_NOTES 进提示词），
+// 首页下拉与本页 composer 都经共享组件 ChatModeMenu 出，选中值存 store.assistantMode，
+// 发送那一刻现读——不会出现「首页选了研判、这里按决策发」。
 
-const QUICK_ASKS = [
-  "分析一下当前品种的结构",
-  "寒武纪关键支撑和阻力在哪？",
-  "帮我把这笔持仓列一个风控清单",
-  "均线多头排列该怎么理解？",
+const SUGGESTION_CARDS = [
+  { q: "现在能不能买入？帮我看看", icon: TrendingUp },
+  { q: "分析一下板块现在处于什么阶段", icon: BarChart3 },
+  { q: "筛选资金持续流入的板块", icon: Filter },
+  { q: "按我的成本制定一个持仓计划", icon: Target },
+  { q: "帮我对比几只股票谁更强", icon: Scale },
+  { q: "今天仓位策略应该怎么定", icon: PieChart },
+  { q: "帮我做一个股票交易计划", icon: LineChart },
 ];
+
+
 
 // 为指定品种生成行情快照文本块。
 // P6-A：每条都带来源分层（真实/派生/演示/缺失），只有标 REAL 的价格才允许当数量级校验的锚点——
@@ -104,33 +108,24 @@ export function questionCandidates(q: string): string[] {
 export default function AssistantPage() {
   const go = useDesk((s) => s.go);
   const ai = useDesk((s) => s.ai);
-  const deskMode = useDesk((s) => s.deskMode);
-  const setDeskMode = useDesk((s) => s.setDeskMode);
   const focusSymbol = useDesk((s) => s.focusSymbol);
   const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
-  // P8-⑤：调试视图开关（默认关、只存本机）。开着时下一轮起请求带 debug:true，时间线多出三段调试视图。
+  // P8-⑤：调试视图开关（默认关、只存本机）。改版把顶栏收成「新对话+状态」两件套，
+  // 调试入口移到对话态顶栏右侧的小按钮——功能不丢，但不再占日常视觉。
   const debugPanel = useDesk((s) => s.debugPanel);
   const setDebugPanel = useDesk((s) => s.setDebugPanel);
   const switchSession = useDesk((s) => s.switchSession);
   const newSession = useDesk((s) => s.newSession);
   const dropSession = useDesk((s) => s.dropSession);
-  const renameSession = useDesk((s) => s.renameSession);
 
   const [input, setInput] = useState("");
   // 模式来自 store（与首页下拉同一份设置）；发送时按 use-chat 的口径在「真要发的那一刻」读当前值，
   // 所以这里不需要再养一份 ref 来绕开 setState 的异步性。
-  const mode = useDesk((s) => s.assistantMode);
-  const setMode = useDesk((s) => s.setAssistantMode);
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [renameText, setRenameText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const takePendingAsk = useDesk((s) => s.takePendingAsk);
   // P7-⑧②：正文里的 6 位代码 / 清单内板块名渲染成可点片段。板块白名单与跳转动作出自共用 hook
   // （右下角小窗用的是同一份），这里只负责把它递给 Markdown。
   const { sectors, openLink } = useDeskLinks();
-  // P7-⑧③：右栏在宽屏（xl）常驻，窄屏默认收起，靠标题栏那个「上下文」按钮拉成抽屉。
-  // 三栏在手机宽度里挤一起会把对话正文压得没法读，所以窄屏必须能收。
-  const [panelOpen, setPanelOpen] = useState(false);
 
   // 本轮快照：识别问题里的品种（关注品种兜底），带来源分层；追问则沿用会话已关联的标的
   const snapshot = useCallback(async (session: ChatSession, question: string): Promise<SnapshotResult | null> => {
@@ -176,9 +171,6 @@ export default function AssistantPage() {
     onNotConfigured: () => go("settings"),
   });
 
-  const endpoint = resolveChatEndpoint(ai, "auto");
-  const toolsOn = endpoint === "tools";
-
   // 首页交过来的那一句：进页面取一次就清掉，刷新不会重发。
   // 这里刻意不做任何 setState：模式已经在 store 里由首页那次点击写好了，本轮发送时现读即可。
   useEffect(() => {
@@ -187,6 +179,10 @@ export default function AssistantPage() {
     void send(pending);
   }, [send, takePendingAsk]);
 
+  // 刷新/进入对话页回到 Hello 首页，不自动续上旧会话。
+  // 旧会话不会被删：空状态下的「最近对话」列表就是续上它们的入口（小窗「在助手页继续」同理，点一下即回）。
+  useEffect(() => { newSession(); }, [newSession]);
+
   const session = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
   const messages: ChatMessage[] = session?.messages ?? [];
   // P7-⑩：徽章说的是「这一轮会走哪条模型路」。浏览器凭据与服务端 .env 通道是两条路，
@@ -194,22 +190,11 @@ export default function AssistantPage() {
   const serverLlm = useServerLlm();
   const browserCfg = aiConfigured(ai);
   const configured = browserCfg || !(serverLlm && serverLlm.available === false);
-
-  // P7-⑧③ 右栏读的是「最近一条助手回答」那一份判定与取数记录：服务端回了什么就是什么，
-  // 本地不再认一遍代码（否则同一轮会出现两套标的）。流式期间 steps 会一直长，面板跟着长。
-  const lastAnswer = [...messages].reverse().find((m) => m.role === "assistant");
-  const panel = pickPanelSymbol({
-    intent: lastAnswer?.intent ?? null,
-    sessionStock: session?.stock ?? null,
-    focusSymbol,
-  });
-  // 面板里的跳转：先把标的写进界面焦点再切页（与分析页/画像页共用同一个 store 字段，
-  // 目标页是条件挂载的，切过去自然按新焦点取数，不需要额外通知）。
-  const openPanelSymbol = useCallback((symbol: string, page: "analysis" | "profile") => {
-    setFocusSymbol(symbol);
-    go(page);
-    setPanelOpen(false); // 窄屏抽屉不自动关的话，跳过去也只看到半屏面板
-  }, [go, setFocusSymbol]);
+  // 最近对话（有内容的历史会话，按更新时间倒序）：新会话顶掉了视图，但话还在原会话里
+  const recents = sessions
+    .filter((s) => s.id !== activeSessionId && s.messages.length > 0)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 5);
 
   const submit = (preset?: string) => {
     const content = (preset ?? input).trim();
@@ -224,227 +209,153 @@ export default function AssistantPage() {
 
   return (
     <div className="flex h-[calc(100vh-8.5rem)] w-full flex-col gap-3 px-5 py-4">
-      {/* P7-⑨⑤ 模式切换：对话分析 / 奇门解盘。放在页内顶部条，不新增最左侧一级模块（任务书限定四个大模块）。
-          deskMode 存在 store 且持久化，刷新后停在原模式。 */}
-      <div className="flex shrink-0 items-center gap-2">
-        <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
-          <button onClick={() => setDeskMode("chat")}
-            className={"rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors " +
-              (deskMode === "chat" ? "bg-sky-500/15 text-sky-300" : "text-muted-foreground hover:text-foreground")}>
-            对话分析
-          </button>
-          <button onClick={() => setDeskMode("qimen")}
-            className={"rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors " +
-              (deskMode === "qimen" ? "bg-amber-500/15 text-amber-300" : "text-muted-foreground hover:text-foreground")}>
-            奇门解盘
-          </button>
-        </div>
-        <span className="text-[11px] text-muted-foreground">
-          {deskMode === "qimen"
-            ? "本地开源引擎排盘 + 已配置模型通道解盘；术数推演不构成投资建议"
-            : "现取行情快照 + 流式对话 + 场景自动取数"}
-        </span>
-      </div>
+      {messages.length === 0 && !busy ? (
+      /* ===== 空状态：居中 Hello + 宽输入 + 两列建议卡片（对齐参考站） ===== */
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto desk-scroll px-6">
+        <div className="w-full max-w-3xl py-8">
+          <h1 className="apple-slide-up text-center text-[44px] font-semibold tracking-tight">Hello</h1>
+          <p className="apple-slide-up mt-3 text-center text-[15px] text-muted-foreground">
+            问行情、问个股，或描述你想要的条件，剩下的交给我。
+          </p>
 
-      {deskMode === "qimen" ? (
-        <QimenPanel />
-      ) : (
-      <div className="flex min-h-0 flex-1 w-full gap-4">
-      {/* 会话列表：新建 / 切换 / 重命名 / 删除（存档在浏览器 localStorage，跨刷新保留） */}
-      {/* 窄屏也要能管会话：原来写的是 hidden + md:flex，小于 768px 时整套会话操作直接没有入口，
-          而「新建/切换/删除会话」正是这一项要交付的能力，不能只在宽屏存在。窄屏收一点宽度，不换第二套控件。 */}
-      <div className="flex w-40 shrink-0 flex-col rounded-xl border border-border bg-card md:w-56">
-        <button onClick={() => { newSession(); }}
-          className="m-2.5 inline-flex items-center justify-center gap-1.5 rounded-md bg-sky-500/90 py-2 text-[12.5px] font-medium text-white hover:bg-sky-500">
-          <Plus size={14} /> 新会话
-        </button>
-        <div className="desk-scroll flex-1 space-y-1 overflow-y-auto px-2 pb-2">
-          {sessions.map((c) => (
-            <div key={c.id}
-              onClick={() => switchSession(c.id)}
-              className={"group flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-2 text-[12.5px] " +
-                (c.id === activeSessionId ? "bg-sky-500/12 text-sky-300" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
-              {renaming === c.id ? (
-                <input autoFocus value={renameText}
-                  onChange={(e) => setRenameText(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { renameSession(c.id, renameText); setRenaming(null); }
-                    if (e.key === "Escape") setRenaming(null);
-                  }}
-                  onBlur={() => { renameSession(c.id, renameText); setRenaming(null); }}
-                  className="min-w-0 flex-1 rounded border border-sky-500/50 bg-background px-1 text-[12.5px] outline-none" />
-              ) : (
-                <span className="truncate" title={c.title}>{c.title}</span>
-              )}
-              <button onClick={(e) => { e.stopPropagation(); setRenaming(c.id); setRenameText(c.title); }}
-                title="重命名"
-                className="shrink-0 opacity-0 transition-opacity hover:text-sky-300 group-hover:opacity-100">
-                <PenLine size={12} />
+          {/* 宽输入框 */}
+          <div className="apple-slide-up mt-8 rounded-[20px] border border-white/10 bg-[#17191f] p-2 shadow-2xl">
+            <div className="flex items-center gap-2 px-1.5 py-1.5">
+              <ChatModeMenu disabled={!configured} />
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
+                placeholder={configured ? "输入股票、板块，或说说你的疑问…" : "配置 AI 后即可对话"}
+                disabled={!configured}
+                className="min-w-0 flex-1 bg-transparent px-3 py-2 text-[15px] outline-none placeholder:text-muted-foreground/50 disabled:opacity-60"
+              />
+              <button onClick={() => submit()} disabled={!configured || !input.trim()}
+                className="apple-primary-btn flex h-10 w-10 shrink-0 items-center justify-center">
+                <Send size={16} />
               </button>
-              <button onClick={(e) => { e.stopPropagation(); dropSession(c.id); }}
-                title="删除会话"
-                className="shrink-0 opacity-0 transition-opacity hover:text-rose-400 group-hover:opacity-100">
-                <Trash2 size={12.5} />
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="border-t border-border/70 px-3 py-2 text-[10px] leading-4 text-muted-foreground/80">
-          会话存在本机浏览器里，最多保留最近 30 个；删除只清本机记录，不动任何行情数据。
-        </div>
-      </div>
-
-      {/* 对话区 */}
-      <div className="flex min-w-0 flex-1 flex-col rounded-xl border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600">
-              <Bot size={16} className="text-white" />
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-[14px] font-semibold">{session?.title ?? "智能助手"}</div>
-              <div className="text-[11.5px] text-muted-foreground">
-                {session?.stock ? <>关联标的 <span className="font-mono text-sky-300">{session.stock}</span> · 追问沿用</> : "结构 · 关键位 · 思路 · 风险"}
-              </div>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {/* 这里说的是「模型接口通不通」，不是行情数据来源，所以不用 SourceBadge（避免把配置状态画成数据状态） */}
-            <span className={"rounded border px-1.5 py-0.5 text-[10px] " + (configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300")}>
-              {configured
-                ? browserCfg
-                  ? `接口已配置 · ${ai.model} · ${toolsOn ? "工具调用端点" : "纯对话端点（该服务商无工具环）"}`
-                  : `服务端 .env 通道 · ${serverLlm?.model ?? "模式待探明"} · ${toolsOn ? "工具调用端点" : "纯对话端点（本地网关无工具环）"}`
-                : "无可用模型接口（浏览器未配置，服务端通道也不可用）"}
-            </span>
-            {!configured && (
-              <button onClick={() => go("settings")}
-                className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[12px] text-amber-300 hover:bg-amber-500/20">
-                <Settings2 size={13} /> 先去配置 AI
-              </button>
-            )}
-            {/* P8-⑤：调试视图开关。开着只影响「下一轮起」的请求体带不带 debug:true 与时间线画不画三段调试视图；
-                关着时请求字节、渲染结果都和 A/B 轮一致。默认关，状态只存本机、不上传。 */}
-            <button onClick={() => setDebugPanel(!debugPanel)}
-              title="调试视图：在步骤时间线里展开意图判定、每步入参摘要与结论留底（默认关，只存本机）"
-              className={"rounded border px-1.5 py-0.5 text-[10px] transition-colors " + (debugPanel
-                ? "border-sky-500/40 bg-sky-500/10 text-sky-300"
-                : "border-border text-muted-foreground hover:text-foreground")}>
-              调试{debugPanel ? "·开" : ""}
-            </button>
-            {/* P7-⑧③：宽屏右栏常驻，这个按钮只在窄屏出现（拉出抽屉）。没有标的时也能开：
-                大盘/板块类问题没有行情快照可看，但本轮的取数记录与分析依据照样要能看到。 */}
-            <button onClick={() => setPanelOpen(true)}
-              title="本轮行情快照、取数记录与分析依据"
-              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:border-sky-500/40 hover:text-sky-300 xl:hidden">
-              <Info size={12} /> 上下文{panel.symbol ? <span className="font-mono text-sky-300">{panel.symbol}</span> : ""}
-            </button>
-          </div>
-        </div>
 
-        <div className="desk-scroll flex-1 space-y-3 overflow-y-auto px-4 py-4">
-          {messages.length === 0 && (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <div className="text-[13.5px] font-medium">问点什么吧</div>
-              <div className="flex max-w-md flex-wrap justify-center gap-1.5">
-                {QUICK_ASKS.map((q) => (
-                  <button key={q} onClick={() => submit(q)}
-                    className="rounded-full border border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300">
-                    {q}
-                  </button>
+          {/* 两列建议卡片 */}
+          <div className="apple-stagger mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {SUGGESTION_CARDS.map((c) => (
+              <button key={c.q} onClick={() => submit(c.q)} disabled={!configured}
+                className="group flex items-center gap-3.5 rounded-2xl border border-border/60 bg-white/[0.02] px-4 py-4 text-left transition-all duration-200 hover:border-sky-400/30 hover:bg-white/[0.04] disabled:opacity-50">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-sky-300 transition-colors group-hover:bg-sky-400/15">
+                  <c.icon size={18} />
+                </span>
+                <span className="text-[14px] text-foreground/90">{c.q}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* 最近对话：改版删掉了常驻会话列表栏，但「续上之前的话」这条能力不删——
+              收进空状态底部，一眼扫过不占视觉主线；没有历史时整块不出现（对齐参考站「暂无历史」的克制）。 */}
+          {recents.length > 0 && (
+            <div className="apple-fade-in mt-8">
+              <div className="mb-2 text-[12px] text-muted-foreground/70">最近对话</div>
+              <div className="space-y-1">
+                {recents.map((s) => (
+                  <div key={s.id} className="group flex items-center gap-2 rounded-xl px-3 py-2 transition-colors hover:bg-white/[0.04]">
+                    <button onClick={() => switchSession(s.id)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+                      <History size={13} className="shrink-0 text-muted-foreground/60" />
+                      <span className="truncate text-[13px] text-foreground/80">{s.title || "未命名对话"}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground/50">{s.messages.length} 条</span>
+                    </button>
+                    <button onClick={() => dropSession(s.id)} title="删除这段对话"
+                      className="opacity-0 transition-opacity hover:text-red-300 group-hover:opacity-60">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 ))}
-              </div>
-              <div className="max-w-sm text-[11px] leading-5 text-muted-foreground/80">
-                每轮都会现取一次行情快照（真实/派生/演示/缺失逐条标注），旧对话按窗口压缩后带入，不替模型宣称事实。
               </div>
             </div>
           )}
+        </div>
+      </div>
+      ) : (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* 顶栏：新对话 + 状态（对话态走居中单列阅读，不再常驻会话列表 / 右栏） */}
+        <div className="flex items-center justify-between px-2 py-1.5">
+          <button onClick={() => { newSession(); }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/70 px-3.5 py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:border-sky-400/40 hover:text-sky-200">
+            <Plus size={13} /> 新对话
+          </button>
+          <div className="flex items-center gap-2">
+            {/* P8-⑤ 调试开关：默认关；开着时步骤时间线展开三段调试视图。小按钮收在右侧，不进日常视觉主线 */}
+            <button onClick={() => setDebugPanel(!debugPanel)} title="调试：展示本轮真实取数步骤与留底（只存本机）"
+              className={"rounded-full border px-2.5 py-1 text-[11px] transition-colors " + (debugPanel ? "border-sky-400/40 bg-sky-400/10 text-sky-200" : "border-border/60 text-muted-foreground hover:text-foreground")}>
+              调试
+            </button>
+            <span className={"inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] " + (configured ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-amber-400/25 bg-amber-400/10 text-amber-300")}>
+              <span className={"h-1.5 w-1.5 rounded-full " + (configured ? "bg-emerald-400" : "bg-amber-400")} />
+              {configured ? "AI 已就绪" : "AI 待配置"}
+            </span>
+          </div>
+        </div>
+
+        {/* 居中消息流 */}
+        <div className="desk-scroll flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-6xl space-y-6 px-6 py-6">
           {messages.map((m) => (
             <div key={m.id} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
               {m.role === "user" ? (
-                <div className="max-w-[70%] whitespace-pre-wrap rounded-lg bg-sky-500/90 px-4 py-2.5 text-[14.5px] leading-7 text-white">
+                <div className="max-w-[80%] whitespace-pre-wrap rounded-3xl rounded-br-md bg-white/[0.08] px-5 py-3 text-[15px] leading-7 text-foreground">
                   {m.content}
                 </div>
               ) : (
-                <div className="w-full rounded-lg border border-border bg-background/70 px-4 py-3 text-[14.5px] leading-7">
-                  {/* 场景徽章：这一轮按哪个场景答、依据哪个词、取了哪些数、什么没取，都在这条里 */}
-                  <SceneBadge intent={m.intent} />
-                  {/* 正文里的代码/板块在对话链路里可点（P7-⑧②）：点代码切 K 线品种，点板块跳板块榜并展开 */}
-                  <Markdown content={m.content} sectors={sectors} onLink={openLink} />
-                  {m.streaming && <span className="ml-0.5 inline-block h-4 w-[7px] translate-y-0.5 animate-pulse bg-sky-400" />}
-                  <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming}
-                    intent={m.intent} debug={m.debug} debugOn={debugPanel} />
-                  {/* P7-⑧④：本轮跑过的回测按 jobId 现查、用量化研究页那张卡画（同一份渲染，不是第二套指标） */}
-                  <ChatBacktestCards steps={m.steps} />
+                <div className="flex w-full gap-3.5">
+                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-blue-600 shadow-lg shadow-sky-500/20">
+                    <Bot size={15} className="text-white" />
+                  </div>
+                  <div className="min-w-0 flex-1 pt-1 text-[15px] leading-8 text-foreground/95">
+                    <Markdown content={m.content} sectors={sectors} onLink={openLink} />
+                    {m.streaming && <span className="ml-0.5 inline-block h-4 w-[7px] translate-y-1 animate-pulse bg-sky-400" />}
+                    <div className="mt-1.5">
+                      <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming}
+                        intent={m.intent} debug={m.debug} debugOn={debugPanel} />
+                    </div>
+                    <ChatBacktestCards steps={m.steps} />
+                  </div>
                 </div>
               )}
             </div>
           ))}
-          {busy && messages.at(-1)?.role !== "assistant" && <Loader2 size={15} className="ml-1 animate-spin text-sky-400" />}
-          <div ref={endRef} />
-        </div>
-
-        {/* 回答风格：两条端点都消费这份 mode —— 工具环在 /api/ai/chat 的 systemPrompt 里内嵌，
-            纯对话/网关在 /api/ai/proxy 里随请求体带 mode 注入 system 件（同一份 MODE_NOTES）。
-            所以 chip 不再按 toolsOn 禁用：换大脑、换本地 key、走 .env 网关都照常生效。
-            场景本身不用选：服务端每轮按这句话自动判（见场景徽章）。 */}
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-3.5 pt-2.5">
-          <span className="text-[10.5px] text-muted-foreground">回答风格</span>
-          {CHAT_MODES.map((m) => (
-            <button key={m.key} onClick={() => setMode(m.key)} disabled={!configured} title={m.desc}
-              className={"rounded-full border px-2.5 py-1 text-[11.5px] transition-colors disabled:opacity-40 " +
-                (mode === m.key ? "border-sky-500/50 bg-sky-500/12 text-sky-300" : "border-border text-muted-foreground hover:text-foreground")}>
-              {m.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-1.5 border-t border-border px-3.5 pt-2.5">
-          {["关键位在哪", "多周期趋势总结", "现在适合进场吗", "给我一个风控清单"].map((q) => (
-            <button key={q} onClick={() => submit(q)} disabled={busy || !configured}
-              className="rounded-full border border-border px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
-              {q}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 border-t border-border p-3.5">
-          <input value={input} onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
-            placeholder={configured ? "输入问题，回车发送…（流式输出，可随时停止）" : "配置 AI 接口后即可对话"}
-            disabled={!configured}
-            className="h-11 flex-1 rounded-md border border-border bg-background px-4 text-[14px] outline-none focus:border-sky-500/60 disabled:opacity-60" />
-          {busy ? (
-            <button onClick={stop} title="停止本次回答（保留已生成的部分）"
-              className="flex h-11 w-11 items-center justify-center rounded-md border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20">
-              <Square size={15} />
-            </button>
-          ) : (
-            <button onClick={() => submit()} disabled={!configured}
-              className="flex h-11 w-11 items-center justify-center rounded-md bg-sky-500 text-white hover:bg-sky-400 disabled:opacity-50">
-              <Send size={16} />
-            </button>
+          {busy && messages.at(-1)?.role !== "assistant" && (
+            <div className="flex items-center gap-2 text-[14px] text-muted-foreground">
+              <Loader2 size={15} className="animate-spin text-sky-400" /> 正在思考…
+            </div>
           )}
+          <div ref={endRef} />
+          </div>
         </div>
-      </div>
 
-      {/* P7-⑧③ 右栏：宽屏（xl 起）是常驻的第三栏，窄屏是点开的抽屉 + 遮罩。
-          两种画法用的是同一个组件、同一份 props，所以「收起与否」不会让读数口径变掉。
-          窄屏抽屉高度吃满视口（inset-y-0），面板内部自己滚动，不会把输入框顶出屏。 */}
-      {panelOpen && (
-        <button aria-label="关闭上下文面板" onClick={() => setPanelOpen(false)}
-          className="fixed inset-0 z-30 bg-black/55 xl:hidden" />
-      )}
-      <aside className={"xl:static xl:z-auto xl:flex xl:w-64 xl:shrink-0 " + (panelOpen ? "fixed inset-y-0 right-0 z-40 w-[17.5rem] p-1 shadow-2xl " : "hidden")}>
-        <ContextPanel
-          symbol={panel.symbol}
-          basis={panel.basis}
-          intent={lastAnswer?.intent ?? null}
-          steps={lastAnswer?.steps}
-          warning={lastAnswer?.warning}
-          onOpenSymbol={openPanelSymbol}
-          onClose={() => setPanelOpen(false)}
-        />
-      </aside>
+        {/* 底部简洁输入条 */}
+        <div className="px-6 pb-4 pt-1">
+          <div className="mx-auto w-full max-w-6xl">
+            <div className="flex items-center gap-2 rounded-[20px] border border-white/10 bg-[#17191f] p-2">
+              <ChatModeMenu disabled={!configured} />
+              <input value={input} onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
+                placeholder={configured ? "输入股票代码、板块或您的投资疑问…" : "配置 AI 后即可对话"}
+                disabled={!configured}
+                className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-[14.5px] outline-none placeholder:text-muted-foreground/50 disabled:opacity-60" />
+              {busy ? (
+                <button onClick={stop} title="停止本次回答"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20">
+                  <Square size={14} />
+                </button>
+              ) : (
+                <button onClick={() => submit()} disabled={!configured || !input.trim()}
+                  className="apple-primary-btn flex h-10 w-10 shrink-0 items-center justify-center">
+                  <Send size={15} />
+                </button>
+              )}
+            </div>
+            <div className="mt-1.5 text-center text-[10.5px] text-muted-foreground/50">对话只保存在本机，不会上传</div>
+          </div>
+        </div>
       </div>
       )}
     </div>

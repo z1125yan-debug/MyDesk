@@ -8,6 +8,7 @@ import AnalysisPage from "./pages/AnalysisPage";
 import WatchlistPage from "./pages/WatchlistPage";
 import HistoryPage from "./pages/HistoryPage";
 import CopilotPage from "./pages/AssistantPage";
+import QimenPanel from "./QimenPanel";
 import QuantPage from "./QuantPage";
 import ExtensionPage from "./pages/ExtensionPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -81,6 +82,7 @@ export default function AppShell() {
             {page === "tracker" && <WatchlistPage />}
             {page === "history" && <HistoryPage />}
             {page === "copilot" && <CopilotPage />}
+            {page === "qimen" && <QimenPanel />}
             {page === "quant" && <QuantPage />}
             {page === "factorlab" && <FactorLabPage />}
             {page === "risk" && <RiskPage />}

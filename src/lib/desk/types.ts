@@ -15,6 +15,7 @@ export type PageKey =
   | "tracker"      // 追踪/自选
   | "history"      // 历史
   | "copilot"      // 智能助手
+  | "qimen"        // 奇门遁甲解盘（独立一级模块）
   | "quant"        // 量化研究实验室（Quant Research Lab，后台研究）
   | "factorlab"    // 因子有效性测试台（P1-4）
   | "risk"         // P2-1 风险监控
@@ -169,6 +170,7 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   tracker: "自选股",
   history: "历史",
   copilot: "智能助手",
+  qimen: "奇门解盘",
   quant: "量化研究",
   factorlab: "因子测试台",
   risk: "风险监控",

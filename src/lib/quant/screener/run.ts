@@ -8,12 +8,14 @@
 //  - 未验证因子在响应中显式标注。
 
 import { getProvider } from "@/lib/quant/data/index";
+import { universeSource } from "@/lib/quant/data/tc-universe";
 import { fetchBarsHybrid, fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
 import { outcomeWarning, summarizeOutcomes } from "@/lib/quant/data/hybrid-core";
 import { shanghaiDate } from "@/lib/desk/session";
 import { evalLimitSnapshot } from "./sentiment";
 import { buildFieldPanel, lastValues, factorCatalog, FACTOR_FIELD_MAP, type BarsLike } from "../factors/fields.ts";
 import { cmpWithOp, historicalWinProbability, type ScreenerCond, type WinProbStats } from "../factors/probability.ts";
+import { partitionUnavailableSnapConds } from "./snapshot-avail-core.ts";
 import type { AssetMeta } from "../types.ts";
 
 export type UniverseSpec = "all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] } | { kind: "industry"; boardCode: string };
@@ -55,6 +57,11 @@ export interface ScreenerResponse {
   factors_verified: boolean;
   factor_verify: { total: number; enabled: number; verified: number; unverified: number };
   warnings: string[];
+  /**
+   * P9-经验轮：本次被忽略的「整池无真实读数」快照条件（字段全缺登记，非空即代表
+   * 结果没有按这些条件筛过——「无命中」与「字段缺失」必须能分开，不许静默清零）。
+   */
+  unavailable_fields: { field: string; zh: string; total: number }[];
 }
 
 function shanghaiToday(): string {
@@ -155,11 +162,32 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
   const universeCount = metas.length;
   if (!metas.length) throw new Error("股票池为空（数据源无返回）");
 
+  // P9-经验轮：快照条件字段可得性预检——断源兜底期某些字段全池无一条真实读数
+  // （如东财资金数据断源时的主力净额：5565 家 mainNet 全 null）。这类条件放进粗筛
+  // 会把所有股票判不符合，页面只剩「无命中结果」——那是字段缺失，不是筛不出。
+  // 处置与「已登记未实现因子」同一纪律：忽略该条件 + 显式告警，并把缺口以
+  // unavailable_fields 机器可读地随响应返回（前端/工具环据此强提示），绝不静默清零。
+  const avail = partitionUnavailableSnapConds(snapConds, metas, snapshotValue);
+  const snapCondsUsable = avail.usable;
+  const unavailableFields = avail.unavailable.map((g) => ({ field: g.field, zh: FACTOR_FIELD_MAP.get(g.field)!.zh, total: g.total }));
+  for (const g of unavailableFields) {
+    warnings.push(
+      `「${g.zh}」(${g.field}) 在当前数据源的 ${g.total} 只里没有一条真实读数（断源/字段缺失，不是「值为 0」）：` +
+      `本次已忽略该条件——结果未据此筛过，属数据缺口，不是无标的符合此条件`,
+    );
+  }
+  // 条件被忽略光了就不出整池：「没有任何有效条件」的选股不构成答案——
+  // 返回空表并说明原因，也不把 5565 只未经筛池的全A名单冒充「命中结果」。
+  const nothingEvaluated = conditions.length > 0 && snapCondsUsable.length === 0 && klineConds.length === 0;
+  if (nothingEvaluated) {
+    warnings.push("本次全部条件均因数据缺口被忽略：没有执行任何筛选，结果为空是「未评」，不是「无标的符合」");
+  }
+
   // 2) 快照口径粗筛（含 ST/停牌默认剔除）
-  const snapshotPass = metas.filter((m) => {
+  const snapshotPass = nothingEvaluated ? [] : metas.filter((m) => {
     if (m.st) return false;
     if (m.suspended) return false;
-    for (const c of snapConds) {
+    for (const c of snapCondsUsable) {
       const v = snapshotValue(m, c.field);
       if (!cmpNum(v, c.op, c.value)) return false; // 原值传入：in/not in 需要列表，数值操作符内部再转数值
     }
@@ -389,7 +417,7 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
   } else {
     warnings.push(`本次涉及 ${involvedFactors.length} 个因子均已通过 IC/稳定性验证；结果仍仅为条件筛选，不构成投资建议`);
   }
-  if (snapConds.length) warnings.push("快照口径条件（估值/市值/换手/量比/主力净额等）为当日口径，历史胜率不含这些条件的时点匹配");
+  if (snapCondsUsable.length) warnings.push("快照口径条件（估值/市值/换手/量比/主力净额等）为当日口径，历史胜率不含这些条件的时点匹配");
 
   return {
     list: pageRows,
@@ -400,7 +428,10 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     trade_date_is_historical: isHistorical,
     funnel: { universe: universeCount, snapshot_pass: snapshotPass.length, kline_subset: subset.length, kline_pass: klinePass },
     source: {
-      provider: "em（腾讯/东财公开接口，本机直连）",
+      // P9-经验轮：与 sentiment/limitup 同纪律——兜底期不冒充东财出身（universeSource 三元）
+      provider: universeSource() === "tc"
+        ? "腾讯批量快照兜底（东财 clist 断源；K线走 eltdx/腾讯日K）"
+        : "em（腾讯/东财公开接口，本机直连）",
       note: "REAL_DATA_ONLY：数据失败时明确报错，不回退演示数据",
       // §四：价格口径显式标注（真实价 vs 前复权，禁止为对齐数字修改数据）
       price_basis: "close/涨跌幅/快照字段=真实未复权实时价；K线因子字段=日线序列（eltdx 实测为原始价、腾讯兜底为前复权qfq，同一序列内口径一致）；胜率/收益均在同一K线序列内计算，除权除息日附近真实价与复权价不相等属正常，不是数据错误",
@@ -408,5 +439,6 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     factors_verified: involvedFactors.length > 0 && unverifiedN === 0,
     factor_verify: { total: catalogFields.length, enabled: involvedFactors.length, verified: verifiedN, unverified: unverifiedN },
     warnings,
+    unavailable_fields: unavailableFields,
   };
 }

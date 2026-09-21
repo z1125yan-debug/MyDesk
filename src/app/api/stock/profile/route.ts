@@ -97,10 +97,10 @@ export async function GET(request: Request) {
     });
   }
 
-  // 5) 资金流：东财 14 日主力净额
+  // 5) 资金流：东财 14 日主力净额（断源时新浪日度净额备胎，source 三元如实分标）
   const secid = symbolToSecid(symbol);
   const detail = secid ? await fetchDetailReal(secid).catch(() => null) : null;
-  if (!detail) missing.push("主力资金流（东财接口被限流或不可用）");
+  if (!detail) missing.push("主力资金流（东财 fflow 与新浪备胎两条源都没通）");
 
   // 6) 板块：行业 + 板块涨幅榜排名
   let sector: { name: string; changePct: number; rank: number; mainYi: number; count: number } | null = null;
@@ -159,7 +159,7 @@ export async function GET(request: Request) {
           todayYi: detail.days.at(-1)?.value ?? null,
           spark: detail.spark, days: detail.days,
         },
-        source: "东财 · push2his 主力净额", status: "LIVE",
+        source: detail.source === "sina" ? "新浪 MoneyFlow 日度净额（东财断源备胎·口径≈主力净流入）" : "东财 · push2his 主力净额", status: "LIVE",
       } : null,
       tech: bars.length >= 60 ? { data: tech, source: "腾讯日K · 本机指标计算（未验证因子）", status: "HISTORICAL" } : null,
       probability: winProb ? { data: winProb, source: "腾讯日K · 历史条件概率引擎", note: "条件：站上MA20 且 站上20日成本线（K线口径）", status: "HISTORICAL" } : null,

@@ -191,11 +191,12 @@ async function upstreamSignals(live: boolean): Promise<Upstream> {
     return failSig("channel", nullMeansFailure("东财板块榜", "push2 clist"), {});
   })();
   const fflow: Sig = (() => {
-    const days = f.value?.days ?? null;
-    if (days && days.length) {
-      return okSig("direct", { symbol: "688256.SH", days: days.length, last_date: days[days.length - 1].date }, stamp);
+    const detail = f.value;
+    const days = detail?.days ?? null;
+    if (days && days.length && detail) {
+      return okSig("direct", { symbol: "688256.SH", days: days.length, source: detail.source, last_date: days[days.length - 1].date }, stamp);
     }
-    return failSig("direct", nullMeansFailure("个股主力资金日K", "push2his fflow/daykline"), { symbol: "688256.SH" });
+    return failSig("direct", nullMeansFailure("个股主力资金日K", "东财 push2his fflow/daykline（新浪 MoneyFlow 备胎同窗未返回）"), { symbol: "688256.SH" });
   })();
   const news: Sig = (() => {
     const items = n.value;

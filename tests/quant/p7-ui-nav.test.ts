@@ -48,16 +48,23 @@ test("nav-core：分组小标签点的目标必须在同工作台列表里（点
   }
 });
 
-test("nav-core：主边栏只有 3 个大模块按钮，设置/扩展归 system 且不在三大工作台列表里", () => {
-  assert.deepEqual(WORKBENCH_ORDER.map((w) => w.key), ["ai", "quant", "market"],
-    "主边栏按钮必须是 AI 决策/量化工具/行情中心 三个，顺序即视觉顺序");
+test("nav-core：主边栏工作台按钮清单唯一，设置/扩展归 system 且不在工作台列表里", () => {
+  // 2026-09-22 P9-经验轮口径迁移：对齐参考站（其顶导航把「奇门遁甲」列为一级入口），
+  // 奇门从对话页内 tab 升为独立一级模块——按钮数从 3 变 4 是产品决定，
+  // 但「清单唯一出处 + 顺序即视觉顺序 + 设置/扩展不散回主导航」的原意图逐字保住。
+  assert.deepEqual(WORKBENCH_ORDER.map((w) => w.key), ["ai", "quant", "market", "qimen"],
+    "主边栏按钮必须是 AI 决策/量化工具/行情中心/奇门遁甲 四个，顺序即视觉顺序");
   assert.deepEqual(NAV.system.items.map((i) => i.key), ["settings", "extension"]);
-  for (const wb of ["ai", "quant", "market"] as const) {
+  for (const wb of ["ai", "quant", "market", "qimen"] as const) {
     for (const k of ["settings", "extension"]) {
       assert.ok(!NAV[wb].items.some((i) => i.key === k) && !NAV[wb].legacyPages.includes(k as never),
         `${k} 只能从底部系统下拉进，不许散回主导航`);
     }
   }
+  // 奇门升一级后，对话页内不得再留「对话分析/奇门解盘」切换 tab（一处入口，不做两套）
+  const assistantSrc = read("src/components/desk/pages/AssistantPage.tsx");
+  assert.ok(!assistantSrc.includes("奇门解盘"), "对话页不再挂奇门 tab");
+  assert.ok(!/deskMode/.test(assistantSrc), "deskMode 死连线已摘除");
 });
 
 test("nav-core：并入对话的旧页可 hash 直达但不上列表；copilot 自己不算 legacy", () => {
@@ -79,10 +86,13 @@ test("nav-core 是纯核：不 import React/window/存储，保证单测可直�
   }
 });
 
-test("AppShell：25 个渲染分支一个不删（任务书约束：不删页面、老路由照常出内容）", () => {
+test("AppShell：每个 PageKey 的渲染分支一个不删（任务书约束：不删页面、老路由照常出内容）", () => {
+  // 2026-09-22 P9-观感轮口径迁移：奇门升一级后其分支组件叫 QimenPanel（不叫 *Page），
+  // 分支数随 PageKey 全集走（现 26 个）。原意图一字未动：hash 到任何老页面都必须有渲染分支，
+  // 且整块包在 WorkbenchShell 里——只放宽组件名的匹配形状，不放宽「一个不删」。
   const src = read("src/components/desk/AppShell.tsx");
   for (const key of PAGE_KEYS) {
-    assert.match(src, new RegExp(`page === "${key}" && <\\w+Page \\/>`), `旧路由 #/${key} 的渲染分支被删了`);
+    assert.match(src, new RegExp(`page === "${key}" && <\\w+(?:Page|Panel) \\/>`), `旧路由 #/${key} 的渲染分支被删了`);
   }
   assert.match(src, /<WorkbenchShell>[\s\S]*<\/WorkbenchShell>/, "分支没有包进 WorkbenchShell：两栏壳与横幅不会生效");
 });
@@ -100,8 +110,11 @@ test("Sidebar：只画 WORKBENCH_ORDER 三个按钮 + 底部系统下拉，源�
 test("WorkbenchShell：legacy 兼容路由挂横幅指回对话，而不是白屏或静默替换", () => {
   const src = read("src/components/desk/WorkbenchShell.tsx");
   assert.match(src, /import \{[^}]*isLegacyPage[^}]*\} from "@\/lib\/desk\/nav-core"/, "壳层应从纯核查归属");
-  assert.match(src, /此页已并入 AI 决策对话/, "旧路由进来要说明去向（否则读者以为页面坏了）");
-  assert.match(src, /回到对话/, "横幅要给一键回对话的出口");
+  // 2026-09-22 P9-观感轮口径迁移：横幅文案从工程口径（「此页已并入 AI 决策对话」）改成
+  // 对话口径（「这类问题直接在对话里问就行」），这是用户本轮「收声」指示的一部分。
+  // 原意图三条一条没丢：说明去向 + 给一键回对话的出口 + 原页面照常渲染。
+  assert.match(src, /这类问题直接在对话里问就行/, "旧路由进来要说明去向（否则读者以为页面坏了）");
+  assert.match(src, /去对话/, "横幅要给一键回对话的出口");
   assert.match(src, /\{props\.children\}/, "横幅下方仍渲染原页面组件：兼容=照常能看，不是跳转拦截");
 });
 

@@ -70,68 +70,30 @@ export function HistoryBar({
       </div>
 
       {view === "history" && resp && (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <SourceBadge status="ARCHIVED 历史归档" source={`只读 ${kind === "radar" ? "radar_finding" : "global_event"} 中 asOf=${resp.date ?? "无"} 的行`} time={resp.date ?? ""} />
-            <span className="text-[10.5px] text-muted-foreground">{resp.view_basis}</span>
-          </div>
-          <div className="text-[10.5px] text-muted-foreground">
-            当前查看日期：<b className="text-foreground">{resp.date ?? "（库里没有可查询的归档日）"}</b>
-            {resp.is_today && <span className="ml-1 text-sky-300">（恰好是今天：这一天的行仍会随扫描被重写，历史归档视图不锁定内容）</span>}
+            <span className="text-[12px] text-muted-foreground">历史归档 · {resp.date}</span>
             {kind === "radar" && (
-              <>
-                {" · "}当前成立 {resp.counts.live} 条 · 已标记消失 {resp.counts.superseded ?? 0} 条 · 本视图 {resp.items.length} 条
-              </>
+              <span className="text-[12px] text-muted-foreground">成立 {resp.counts.live} 条 · 已消失 {resp.counts.superseded ?? 0} 条</span>
             )}
-            {kind === "events" && <> · 共 {resp.counts.rows} 条（事件表没有 state 列，历史行全部原样保留）</>}
+            {kind === "events" && <span className="text-[12px] text-muted-foreground">共 {resp.counts.rows} 条</span>}
           </div>
-          <div className="text-[10px] text-muted-foreground/80">
-            归档说明：{resp.date_basis}。{resp.state_filter_basis}
-            {onState && (
-              <span className="ml-1">
-                切换：
-                {(["all", "live", "superseded"] as const).map((s) => (
-                  <button key={s} onClick={() => onState(s)} disabled={busy}
-                    className={`mr-1 rounded border px-1.5 py-0.5 ${resp.state_filter === s ? "border-sky-500/50 text-sky-200" : "border-border text-muted-foreground hover:border-sky-500/40"}`}>
-                    {s === "all" ? "全部" : s === "live" ? "只看成立" : "只看已消失"}
-                  </button>
-                ))}
-              </span>
-            )}
-          </div>
-          {!!resp.runs.length && (
-            <div className="space-y-0.5 text-[10px] text-muted-foreground/80">
-              <div>
-                这一天的扫描记录（task_run，真实落库，当日共 {resp.runs_total} 条，接口按倒序返回最近 {resp.runs.length} 条，这里展示前 5 条）：
-              </div>
-              {resp.runs.slice(0, 5).map((r) => (
-                <div key={r.id} className="truncate" title={`${r.basis}；${r.note}${r.error ? `；错误：${r.error}` : ""}`}>
-                  {bjTime(r.finished_at ?? r.started_at)} · {r.trigger_label} · {RUN_STATUS[r.status] ?? r.status}
-                  {r.status === "success" ? ` · 落库 ${r.results} 条 · 口径 ${r.mode_label}` : r.error ? ` · ${r.error.slice(0, 40)}` : ""}
-                </div>
+          {onState && (
+            <div className="flex gap-1.5">
+              {(["all", "live", "superseded"] as const).map((s) => (
+                <button key={s} onClick={() => onState(s)} disabled={busy}
+                  className={`rounded border px-2.5 py-1 text-[11.5px] ${resp.state_filter === s ? "border-sky-500/50 text-sky-200" : "border-border text-muted-foreground hover:border-sky-500/40"}`}>
+                  {s === "all" ? "全部" : s === "live" ? "只看成立" : "只看已消失"}
+                </button>
               ))}
-              {resp.runs.length > 5 && <div>（另有 {resp.runs.length - 5} 条更早的记录未列出，接口已返回）</div>}
-              {resp.runs_total > resp.runs.length && (
-                <div>（更早的 {resp.runs_total - resp.runs.length} 条不在接口返回的最近 {resp.runs.length} 条里：真正落过库的那次可能在更早的记录里，本页面只保证「如实少列」，不保证列全）</div>
-              )}
-            </div>
-          )}
-          {!!resp.missing.length && (
-            <div className="rounded-md border border-amber-500/25 bg-amber-500/5 px-2 py-1 text-[10px] text-amber-300/90">
-              缺失口径：{resp.missing.join("；")}
             </div>
           )}
         </div>
       )}
 
       {view === "today" && (
-        <div className="text-[10px] text-muted-foreground/80">
-          当前查看日期：<b className="text-foreground">今天{today ? `（${today}）` : "（服务端日期未读到）"}</b> ·
-          {" "}{label}当日库行视图：读的是 {kind === "radar" ? "radar_finding" : "global_event"} 里 asOf=今天的库行，
-          会被「立即扫描」按全量口径重写、被收盘后的自动扫描按增量口径更新；这是当天的入库结果，不是行情实时推送。
-          {latest && <> 需要回看过去的某一天，用上面的日期入口（库内已有 {dates.filter((d) => d.rows > 0).length} 个可查询归档日，最近 {latest.date}）。</>}
-          {!latest && resp && <> 库内当前没有可查询的归档日（扫描跑过但当日落库 0 行、或当日行被全量重刷后为 0，都会是这种状态）：历史查询只读库行，不会重算、也不会补造数据。</>}
-          {!resp && <> 库内可查询归档日：正在读取…</>}
+        <div className="text-[11px] text-muted-foreground/70">
+          {latest ? `想看历史？点上面的日期，最近有数据的是 ${latest.date}。` : "收盘后会自动扫描，历史记录会保留下来。"}
         </div>
       )}
     </div>
