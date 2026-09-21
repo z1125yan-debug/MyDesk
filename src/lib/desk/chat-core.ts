@@ -27,6 +27,12 @@ export interface StepInfo {
   source?: "prefetch" | "model";
   /** 为什么要取这一步（自动调度带的理由原文，界面上要能看出「因为判成个股分析所以取快照」） */
   reason?: string;
+  /**
+   * P7-⑧④：这一步对应的回测任务 id（只有 run_backtest 会带）。
+   * 存的是 id 而不是结果：结果由前端按 id 走现成的回测查询接口取，界面复用量化页那张卡，
+   * 会话存档也因此不会把整条净值曲线塞进 localStorage。
+   */
+  jobId?: string;
 }
 
 export interface ChatMessage {

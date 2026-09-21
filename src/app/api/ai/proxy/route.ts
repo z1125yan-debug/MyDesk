@@ -357,6 +357,9 @@ export async function POST(req: NextRequest) {
         sessionSymbol: body.scene.sessionSymbol ?? null,
         prevScene: body.scene.prevScene ?? null,
         today: shanghaiDate(),
+        // 回测工具在这条路上真的没有：这一路连工具调用环都不走（数据全靠系统预取），
+        // 所以必须显式按「未接入」说，否则提示词会让模型去调一个它根本调不动的工具。
+        backtestReady: false,
         emit,
         isCancelled: () => req.signal.aborted,
       });

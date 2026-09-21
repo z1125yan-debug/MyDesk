@@ -16,6 +16,7 @@ import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { shanghaiDate } from "@/lib/desk/session";
 import { TOOLS, FACTOR_KEYS, findTool, type ToolCtx } from "@/lib/desk/chat-tools";
+import { backtestClaimWarning } from "@/lib/desk/backtest-core";
 import { prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
 import {
   createSseScanner, createToolCallAssembler, encodeStreamEvent, isEventStream, notStreamedWarning,
@@ -90,6 +91,10 @@ function systemPrompt(mode: ChatMode, focusSymbol?: string): string {
     "2. 工具返回 missing 或数据为 null 时，必须写「XX：暂无数据」，禁止根据涨跌幅推测「主力流入」等无数据结论。",
     "3. 相关个股问题并行调用：stock_snapshot + stock_depth + stock_trades + stock_kline_summary + stock_fund_flow。",
     "4. 选股类问题用 factor_screener（field 只能取：" + FACTOR_KEYS + "）。",
+    // P7-⑧④：回测接进来了，但它的口径和选股不一样——因子必须来自场景提示词里那份白名单，
+    // 表达式由引擎从库里带，模型不许现写一个；没跑成都算「没有结果」，不算「结果不好」。
+    "5. 回测类问题用 run_backtest：factors 只能取「可回测因子白名单」里的 factorKey（不得自写表达式、不得凭印象编因子名）；" +
+      "该工具返回 missing 时，说明这一轮没有回测结果，直接转述它给的原因，不得给出任何收益数字。",
     "",
     "【输出格式（固定）】",
     "1. **结论**（1-2 句，仅陈述结构状态）",
@@ -272,9 +277,14 @@ async function runToolLoop(opts: {
       trace.push({ name: c.name, args: parsedArgs, ms, status, summary: text.length > 120 ? text.slice(0, 120) + "…" : text });
       const judged = stepDetailOf(out);
       const finalStatus: StepInfo["status"] = status === "error" ? "error" : judged.status;
+      // P7-⑧④：回测工具会把任务 id 带回来。步骤里只存 id，结果由前端按现成的回测查询接口去取，
+      // 于是对话里画的就是量化页那张卡（同一套渲染、同一份数据），而不是在这儿再抄一份回测读数。
+      const outJobId = (out as { jobId?: unknown } | null)?.jobId;
+      const jobId = typeof outJobId === "string" && outJobId ? outJobId : undefined;
       steps.push({
         step, label, tool: c.name, ms, status: finalStatus, detail: judged.detail,
         source: "model", reason: "模型判断需要该数据，自行调用",
+        ...(jobId ? { jobId } : {}),
       });
       emit({
         type: "step",
@@ -283,6 +293,7 @@ async function runToolLoop(opts: {
           // 工具本身抛错＝error；返回 missing 字段＝missing（缺数据不是失败，两者在界面上必须分开）
           status: finalStatus,
           detail: judged.detail,
+          ...(jobId ? { jobId } : {}),
         },
       });
       return { role: "tool", tool_call_id: c.id, content: text.slice(0, 6000) };
@@ -363,6 +374,9 @@ export async function POST(req: NextRequest) {
         stepStart: turn?.nextStep ?? 0,
       });
       const steps = [...(turn?.steps ?? []), ...r.steps];
+      // 「正文给了回测数字、这一轮却没真跑成」的护栏：数字对不对看步骤，不看正文（口径在 backtest-core）
+      const btWarn = backtestClaimWarning(steps, r.content);
+      const warn = [sceneFailure ? `本轮未做场景自动取数：${sceneFailure}` : "", btWarn ?? ""].filter(Boolean).join("；");
       return NextResponse.json({
         content: r.content,
         trace: [...(turn?.trace ?? []), ...r.trace],
@@ -370,7 +384,7 @@ export async function POST(req: NextRequest) {
         ...(turn ? { intent: turn.badge } : {}),
         // 非流式没有 step 事件可走，步骤与「本轮没做成什么」只能随 JSON 一起回
         ...(steps.length ? { steps } : {}),
-        ...(sceneFailure ? { warning: `本轮未做场景自动取数：${sceneFailure}` } : {}),
+        ...(warn ? { warning: warn } : {}),
       });
     } catch (e) {
       return NextResponse.json({ error: `AI 调用失败：${(e as Error).message}`, trace: [] }, { status: 502 });
@@ -403,6 +417,9 @@ export async function POST(req: NextRequest) {
         emit({ type: "error", data: { message: "客户端已断开，本次回答提前结束（结束后不会再取数）" } });
         return;
       }
+      // 同一条护栏在两条传输上都要成立：降级路径与非降级路径不能一个查一个不查
+      const btWarn = backtestClaimWarning([...(turn?.steps ?? []), ...r.steps], r.content);
+      if (btWarn) emit({ type: "warning", data: { text: btWarn } });
       emit({ type: "done", data: { fullText: r.content, ...(turn ? { intent: turn.badge } : {}) } });
     } catch (e) {
       emit({ type: "error", data: { message: `AI 调用失败：${(e as Error).message}` } });
