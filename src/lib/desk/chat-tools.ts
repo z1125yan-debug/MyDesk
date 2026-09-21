@@ -173,9 +173,12 @@ async function toolStockFundFlow(args: { symbol: string }): Promise<unknown> {
   if (!symbol) return { missing: `无法识别代码：${args.symbol}` };
   const secid = symbolToSecid(symbol);
   const detail = secid ? await fetchDetailReal(secid).catch(() => null) : null;
-  if (!detail) return { missing: "主力资金流暂无数据（东财接口失败/被限流）" };
+  if (!detail) return { missing: "主力资金流暂无数据（东财 fflow 与新浪备胎两条源都没通）" };
   return {
-    symbol, 数据源: "东财 · push2his 主力净额",
+    symbol,
+    数据源: detail.source === "sina"
+      ? "新浪 MoneyFlow 日度净额（东财 fflow 断源时的备胎；口径≈主力净流入，与东财 f62 主力净额不完全等价，转述时须注明是新浪口径）"
+      : "东财 · push2his 主力净额",
     今日主力净额亿: detail.days.at(-1)?.value ?? null,
     近14日: detail.days.map((d) => ({ 日期: d.date, 主力净额亿: d.value })),
   };
@@ -201,6 +204,15 @@ async function toolFactorScreener(args: { conditions: ScreenerCond[]; limit?: nu
   return {
     funnel: result.funnel, trade_date: result.as_of_trade_date,
     数据源: result.source.provider, 口径提示: result.warnings,
+    // P9-经验轮：字段全缺被忽略的条件单独摆到模型眼前——「筛不出」与「数据缺口」
+    // 是两个事实，模型只看到空 funnel 时会把缺口转述成「没有符合的股票」。
+    ...(result.unavailable_fields.length
+      ? {
+          本轮被忽略的条件字段: result.unavailable_fields.map((g) => `${g.zh}(${g.field})`),
+          忽略原因: `当前数据源里这些字段没有一条真实读数（断源/缺失，不是值为 0），本轮结果未按它们筛选`,
+          转述要求: "必须如实告诉用户哪些条件因数据缺口被忽略，并建议改用可得的口径（如涨跌幅/成交额/换手率）重试；禁止把这说成「没有股票符合该条件」。",
+        }
+      : {}),
     结果: result.list.map((r) => ({
       代码: r.symbol, 名称: r.name, 现价: r.close, 涨跌幅: r.change_pct, ...r.values,
     })),

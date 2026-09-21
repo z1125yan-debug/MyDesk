@@ -526,13 +526,14 @@ async function dispatch(executor: string | null, toolName: string, p: Params, ms
       if (!secid) return failedObs(`代码 ${symbol} 无法转成东财 secid（市场段/后缀不认识）：这是入参问题，不是该股票没有资金流数据`, "东财 push2his fflow/daykline");
       const r = await timed(ms, "个股主力资金日K", () => fetchDetailReal(secid));
       const days = r.value?.days ?? [];
-      if (r.timed_out) return failedObs(r.error ?? "主力资金日K 超时", "东财 push2his fflow/daykline", { timed_out: true });
-      if (!days.length) return emptyObs(`${symbol} 的主力资金日K本次没有返回任何一天（该接口对部分新股/停牌股无数据）：不补 0，也不拿别的股票顶上`, "东财 push2his fflow/daykline");
+      if (r.timed_out) return failedObs(r.error ?? "主力资金日K 超时", "东财 push2his fflow/daykline（新浪备胎同窗未返回）", { timed_out: true });
+      if (!days.length) return emptyObs(`${symbol} 的主力资金日K本次没有返回任何一天（东财 fflow 与新浪备胎都没给数；部分新股/停牌股本来无数据）：不补 0，也不拿别的股票顶上`, "东财 fflow/daykline + 新浪 MoneyFlow");
       const last = days[days.length - 1];
       return okObs({
-        summary: clipText(`${symbol} 近 ${days.length} 日主力净额：${days.slice(-5).map((d) => `${d.date} ${signed(d.value)}亿`).join("；")}（最新 ${last.date} ${signed(last.value)}亿）`),
+        summary: clipText(`${symbol} 近 ${days.length} 日主力净额：${days.slice(-5).map((d) => `${d.date} ${signed(d.value)}亿`).join("；")}（最新 ${last.date} ${signed(last.value)}亿）${r.value?.source === "sina" ? "［新浪日度净额口径：东财 fflow 断源时的备胎，与东财 f62 不完全等价］" : ""}`),
         payload: { symbol, days_count: days.length, last_date: last.date, todayYi: last.value, days: days.slice(-10) },
-        source: "东财 fflow/daykline（本机直连）", as_of: `${last.date} 收盘后`, data_status: "REAL",
+        source: r.value?.source === "sina" ? "新浪 MoneyFlow 日度净额（东财 push2his 断源备胎）" : "东财 fflow/daykline（本机直连）",
+        as_of: `${last.date} 收盘后`, data_status: "REAL",
       });
     }
     case "em.news": {

@@ -37,80 +37,98 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* MyDesk：亮暗双主题；dark 为纯黑终端风（默认 dark，html 上挂 class 切换） */
+/* ============================================================
+   设计基调：纯黑高级苹果风（Premium Dark / Apple Minimal）
+   - 背景纯黑，面板以「白度」分层（0.03 / 0.06 / 0.10）而非彩色灰
+   - 细描边用白色低透明，毛玻璃 + 大圆角 + 大留白
+   - 主色用克制的苹果蓝；涨红跌绿压低饱和，不刺眼
+   ============================================================ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.985 0.002 247.9);
-  --foreground: oklch(0.24 0.02 247.9);
+  --radius: 0.875rem;
+
+  --background: oklch(0.99 0.001 250);
+  --foreground: oklch(0.21 0.015 250);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.24 0.02 247.9);
+  --card-foreground: oklch(0.21 0.015 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.24 0.02 247.9);
-  --primary: oklch(0.62 0.16 232.661);
-  --primary-foreground: oklch(0.985 0.002 247.9);
-  --secondary: oklch(0.95 0.004 247.9);
-  --secondary-foreground: oklch(0.32 0.02 247.9);
-  --muted: oklch(0.95 0.004 247.9);
-  --muted-foreground: oklch(0.5 0.015 247.9);
-  --accent: oklch(0.94 0.006 247.9);
-  --accent-foreground: oklch(0.32 0.02 247.9);
-  --destructive: oklch(0.63 0.19 22);
-  --border: oklch(0.88 0.008 247.9);
-  --input: oklch(0.88 0.008 247.9);
-  --ring: oklch(0.62 0.16 232.661 / 45%);
-  --chart-1: oklch(0.55 0.16 232.661);
-  --chart-2: oklch(0.6 0.17 162.48);
-  --chart-3: oklch(0.6 0.19 20);
-  --chart-4: oklch(0.7 0.16 84.429);
-  --chart-5: oklch(0.55 0.22 303.9);
-  --sidebar: oklch(0.97 0.003 247.9);
-  --sidebar-foreground: oklch(0.24 0.02 247.9);
-  --sidebar-primary: oklch(0.62 0.16 232.661);
-  --sidebar-primary-foreground: oklch(0.985 0.002 247.9);
-  --sidebar-accent: oklch(0.94 0.006 247.9);
-  --sidebar-accent-foreground: oklch(0.32 0.02 247.9);
-  --sidebar-border: oklch(0.88 0.008 247.9);
-  --sidebar-ring: oklch(0.62 0.16 232.661 / 45%);
+  --popover-foreground: oklch(0.21 0.015 250);
+  --primary: oklch(0.58 0.18 256);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.96 0.004 250);
+  --secondary-foreground: oklch(0.32 0.015 250);
+  --muted: oklch(0.96 0.004 250);
+  --muted-foreground: oklch(0.52 0.012 250);
+  --accent: oklch(0.94 0.006 250);
+  --accent-foreground: oklch(0.32 0.015 250);
+  --destructive: oklch(0.58 0.22 25);
+  --border: oklch(0 0 0 / 0.1);
+  --input: oklch(0 0 0 / 0.14);
+  --ring: oklch(0.58 0.18 256 / 45%);
+  --chart-1: oklch(0.58 0.18 256);
+  --chart-2: oklch(0.66 0.15 162);
+  --chart-3: oklch(0.68 0.17 25);
+  --chart-4: oklch(0.74 0.15 84);
+  --chart-5: oklch(0.58 0.22 303);
+  --sidebar: oklch(0.98 0.002 250);
+  --sidebar-foreground: oklch(0.32 0.015 250);
+  --sidebar-primary: oklch(0.58 0.18 256);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.94 0.006 250);
+  --sidebar-accent-foreground: oklch(0.32 0.015 250);
+  --sidebar-border: oklch(0 0 0 / 0.1);
+  --sidebar-ring: oklch(0.58 0.18 256 / 45%);
 }
 
 .dark {
+  /* 纯黑底 */
   --background: oklch(0 0 0);
-  --foreground: oklch(0.93 0.006 247.9);
-  --card: oklch(0.14 0.012 247.9);
-  --card-foreground: oklch(0.93 0.006 247.9);
-  --popover: oklch(0.17 0.012 247.9);
-  --popover-foreground: oklch(0.93 0.006 247.9);
-  --primary: oklch(0.746 0.16 232.661);
-  --primary-foreground: oklch(0.18 0.02 240);
-  --secondary: oklch(0.22 0.014 247.9);
-  --secondary-foreground: oklch(0.93 0.006 247.9);
-  --muted: oklch(0.22 0.014 247.9);
-  --muted-foreground: oklch(0.68 0.014 247.9);
-  --accent: oklch(0.24 0.016 247.9);
-  --accent-foreground: oklch(0.93 0.006 247.9);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.3 0.018 247.9 / 60%);
-  --input: oklch(0.3 0.018 247.9 / 50%);
-  --ring: oklch(0.746 0.16 232.661 / 55%);
-  --chart-1: oklch(0.746 0.16 232.661);
-  --chart-2: oklch(0.72 0.17 162.48);
-  --chart-3: oklch(0.71 0.19 20);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.627 0.265 303.9);
-  --sidebar: oklch(0.09 0.01 247.9);
-  --sidebar-foreground: oklch(0.93 0.006 247.9);
-  --sidebar-primary: oklch(0.746 0.16 232.661);
-  --sidebar-primary-foreground: oklch(0.18 0.02 240);
-  --sidebar-accent: oklch(0.24 0.016 247.9);
-  --sidebar-accent-foreground: oklch(0.93 0.006 247.9);
-  --sidebar-border: oklch(0.3 0.018 247.9 / 60%);
-  --sidebar-ring: oklch(0.746 0.16 232.661 / 55%);
+  --foreground: oklch(0.97 0.004 250);
+
+  /* 面板：用「白度」分层，避免发灰发蓝的终端感 */
+  --card: oklch(1 0 0 / 0.035);
+  --card-foreground: oklch(0.97 0.004 250);
+  --popover: oklch(0.13 0.006 250);
+  --popover-foreground: oklch(0.97 0.004 250);
+
+  /* 主色：克制苹果蓝（暗色 #0A84FF 一档） */
+  --primary: oklch(0.64 0.17 256);
+  --primary-foreground: oklch(0.99 0 0);
+
+  --secondary: oklch(1 0 0 / 0.06);
+  --secondary-foreground: oklch(0.97 0.004 250);
+  --muted: oklch(1 0 0 / 0.06);
+  --muted-foreground: oklch(0.62 0.012 250);
+  --accent: oklch(1 0 0 / 0.08);
+  --accent-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.62 0.21 25);
+
+  /* 细描边：白 8%，呼吸感 */
+  --border: oklch(1 0 0 / 0.08);
+  --input: oklch(1 0 0 / 0.12);
+  --ring: oklch(0.64 0.17 256 / 55%);
+
+  /* 涨跌色：压低饱和，红涨绿跌但不刺眼 */
+  --chart-1: oklch(0.66 0.17 256);
+  --chart-2: oklch(0.74 0.15 168);
+  --chart-3: oklch(0.68 0.19 25);
+  --chart-4: oklch(0.82 0.15 84);
+  --chart-5: oklch(0.66 0.24 303);
+
+  /* 侧栏比内容更深，形成层级 */
+  --sidebar: oklch(0.05 0.003 250);
+  --sidebar-foreground: oklch(0.78 0.008 250);
+  --sidebar-primary: oklch(0.64 0.17 256);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(1 0 0 / 0.06);
+  --sidebar-accent-foreground: oklch(0.99 0 0);
+  --sidebar-border: oklch(1 0 0 / 0.07);
+  --sidebar-ring: oklch(0.64 0.17 256 / 55%);
 }
 
 @layer base {
@@ -119,21 +137,28 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+  }
+  ::selection {
+    background: oklch(0.64 0.17 256 / 35%);
   }
 }
 
-/* ===== MyDesk 全局 ===== */
+/* ===== 全局 ===== */
 html, body {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* 深色细滚动条 */
+/* 深色细滚动条（更细更隐） */
 .desk-scroll::-webkit-scrollbar, main::-webkit-scrollbar, aside::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 main::-webkit-scrollbar-track, aside::-webkit-scrollbar-track,
 .desk-scroll::-webkit-scrollbar-track {
@@ -141,13 +166,70 @@ main::-webkit-scrollbar-track, aside::-webkit-scrollbar-track,
 }
 main::-webkit-scrollbar-thumb, aside::-webkit-scrollbar-thumb,
 .desk-scroll::-webkit-scrollbar-thumb {
-  background: oklch(0.35 0.02 247.9);
-  border-radius: 6px;
+  background: oklch(1 0 0 / 0.12);
+  border-radius: 8px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 main::-webkit-scrollbar-thumb:hover, aside::-webkit-scrollbar-thumb:hover,
 .desk-scroll::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.45 0.02 247.9);
+  background: oklch(1 0 0 / 0.22);
   background-clip: content-box;
 }
+
+/* ===== 苹果风业务组件（统一视觉词汇） ===== */
+/* 玻璃卡片：细描边 + 半透底 + 大圆角 */
+.apple-card {
+  border-radius: 20px;
+  border: 1px solid oklch(1 0 0 / 0.08);
+  background: linear-gradient(180deg, oklch(1 0 0 / 0.045), oklch(1 0 0 / 0.02));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+/* 次级内层面板（玻璃卡片里再分块用） */
+.apple-inset {
+  border-radius: 14px;
+  border: 1px solid oklch(1 0 0 / 0.06);
+  background: oklch(1 0 0 / 0.03);
+}
+/* 主操作按钮：苹果蓝渐变 + 柔和投影 */
+.apple-primary-btn {
+  border-radius: 12px;
+  background: linear-gradient(180deg, oklch(0.66 0.17 256), oklch(0.60 0.17 256));
+  color: white;
+  box-shadow: 0 1px 2px oklch(0.64 0.17 256 / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.18);
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+.apple-primary-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 16px oklch(0.64 0.17 256 / 0.45), inset 0 1px 0 oklch(1 0 0 / 0.18);
+}
+.apple-primary-btn:active:not(:disabled) { transform: scale(0.98); }
+.apple-primary-btn:disabled { opacity: 0.45; }
+
+/* 浮层下拉：实心近黑，盖住内容不透字，保证文字可读 */
+.apple-menu-pop {
+  border-radius: 16px;
+  border: 1px solid oklch(1 0 0 / 0.10);
+  background: oklch(0.17 0.008 260);
+  box-shadow: 0 12px 40px oklch(0 0 0 / 0.6), 0 2px 8px oklch(0 0 0 / 0.4);
+}
+
+/* 入场动效：淡入 + 上滑（学 .apple-fade-in / .apple-slide-in） */
+@keyframes appleFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes appleSlideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.apple-fade-in { animation: appleFadeIn 0.45s ease both; }
+.apple-slide-up { animation: appleSlideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.apple-stagger > * { animation: appleSlideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.apple-stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.apple-stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.apple-stagger > *:nth-child(3) { animation-delay: 0.10s; }
+.apple-stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.apple-stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.apple-stagger > *:nth-child(6) { animation-delay: 0.22s; }

@@ -91,12 +91,9 @@ export default function RadarPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Radar size={18} className="text-sky-400" /> AI 主动发现</div>
-          <div className="text-[11px] text-muted-foreground">规则扫描市场状态 / 主线 / 资金 / 映射事件 · 服务进程内的调度器在交易日收盘后自动扫描，也可点「立即扫描」手动执行一次 · 历史信号按 asOf 只读回看</div>
+          <div className="text-[11px] text-muted-foreground">自动扫描市场，发现资金、主线和异动信号。</div>
         </div>
         <div className="flex items-center gap-2">
-          {view === "today" && asOf && (
-            <SourceBadge status="HISTORICAL" source="radar_finding 当日库行（自动/手动来源见下方任务状态）" time={asOf.slice(0, 16)} />
-          )}
           <button onClick={scan} disabled={busy || view === "history"}
             title={view === "history" ? "当前在历史归档视图：扫描只会写今天，请先切回「今天」" : "按全量口径重刷今天的雷达信号"}
             className="flex items-center gap-1 rounded-md bg-sky-500 px-2.5 py-1.5 text-xs text-white hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40">
@@ -112,15 +109,12 @@ export default function RadarPage() {
       />
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
       {view === "today" && <AutoTaskLine kind="radar" refreshKey={taskTick} />}
-      {view === "today" && scanNote && (
-        <div className="text-[10.5px] text-muted-foreground">{scanNote}；手动「立即扫描」按全量重刷当日结果，收盘后的自动扫描在当日已有成功游标时按增量写入。</div>
-      )}
       {view === "today" && !items.length && (
-        <div className="text-xs text-muted-foreground">今日尚未扫描。交易日收盘后调度器会自动执行一次；也可点击「立即扫描」马上生成（需真实行情源）。</div>
+        <div className="text-xs text-muted-foreground">今天还没有扫描。收盘后会自动跑一次，也可以点右上角「立即扫描」。</div>
       )}
       {view === "today" && superseded > 0 && (
         <div className="text-[10.5px] text-muted-foreground/80">
-          另有 {superseded} 条今日曾成立、最近一次扫描未再算出的信号：已标记为消失、不再列示，但仍在 radar_finding 里保留（点上方日期入口切到「全部」即可看到它们）。
+另有 {superseded} 条信号在最近一次扫描中已消失，不再显示。
         </div>
       )}
 
@@ -167,7 +161,6 @@ export default function RadarPage() {
           ))}
         </div>
       )}
-      {view === "today" && !!missing.length && <div className="text-[10.5px] text-muted-foreground/80">口径：{missing.join("；")}</div>}
     </div>
   );
 }

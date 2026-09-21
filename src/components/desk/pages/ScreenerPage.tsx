@@ -1,7 +1,10 @@
 "use client";
-// 因子选股器（需求文档 P0：因子pill + 条件筛选 + 结果表格直接显示历史胜率）
+// AI 选股：用户友好版。
+// - 隐藏开发者信息（因子验证统计、漏斗、字段 key、数据源标注）
+// - 结果用「一眼抓重点」的卡片行：名称/现价/涨跌为大，其余为小字号次要态
+// - AI 解读独立成块，人话呈现；数据逻辑与旧版一致，只改呈现
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, Plus, X, Loader2, Sparkles, AlertTriangle } from "lucide-react";
+import { Search, Plus, X, Loader2, Sparkles, ArrowRight } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
 import { useDesk } from "@/lib/desk/store";
 import {
@@ -9,14 +12,13 @@ import {
   type FactorFieldDef, type ScreenerCond, type ScreenerRespClient,
 } from "@/lib/desk/quant-api";
 
-// §四 操作符全集（in / not in = 多值，值用逗号或空格分隔）
+// 操作符
 const OPS = ["=", ">=", ">", "<=", "<", "!=", "in", "not in"] as const;
 const isMultiOp = (op: string): boolean => op === "in" || op === "not in";
-/** 值输入：多值操作符保留原始字符串（列表），其余转数值 */
 const parseCondValue = (op: string, raw: string): number | string =>
   isMultiOp(op) ? raw.trim() : Number(raw);
 
-// 常用预设 pill（默认操作符/值，可编辑）
+// 常用预设
 const PRESET_DEFAULT: Record<string, { op: string; value: number | string }> = {
   pe_ttm: { op: "<=", value: 30 },
   pb: { op: "<=", value: 3 },
@@ -45,10 +47,9 @@ export default function ScreenerPage() {
   const ai = useDesk((s) => s.ai);
   const [catalog, setCatalog] = useState<{ fields: FactorFieldDef[]; category: Record<string, string[]> } | null>(null);
   const [chips, setChips] = useState<ChipCond[]>([]);
-  const [editing, setEditing] = useState<string | null>(null); // 正在编辑默认值的 pill key
+  const [editing, setEditing] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState("amount_yi");
   const [limit, setLimit] = useState(50);
-  // §二 历史交易日选择器：日期列表来自真实交易日（上证指数日线），默认「当日」
   const [tradeDate, setTradeDate] = useState("");
   const [tradeDates, setTradeDates] = useState<string[]>([]);
   const [todayDate, setTodayDate] = useState("");
@@ -56,6 +57,7 @@ export default function ScreenerPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [aiNote, setAiNote] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
   // 自定义条件
   const [cField, setCField] = useState("turnover_rate");
   const [cOp, setCOp] = useState<string>(">=");
@@ -66,7 +68,6 @@ export default function ScreenerPage() {
 
   useEffect(() => { fetchFactorCatalog().then(setCatalog).catch((e) => setError(String(e.message || e))); }, []);
   useEffect(() => {
-    // 交易日列表来自真实日线（失败只提示，不伪造日期）
     fetchTradeDates(120).then((d) => { setTradeDates(d.dates); setTodayDate(d.as_of_trade_date); })
       .catch(() => setTradeDates([]));
   }, []);
@@ -76,7 +77,7 @@ export default function ScreenerPage() {
   const addCond = useCallback((key: string) => {
     const def = fieldMap.get(key);
     if (!def) return;
-    if (chips.some((c) => c.field === key && (c.type ?? "single") === "single")) return; // 单条件去重
+    if (chips.some((c) => c.field === key && (c.type ?? "single") === "single")) return;
     const preset = PRESET_DEFAULT[key] ?? { op: def.source === "kline" && key.match(/^(above_ma|is_limit_up|ma_struct|macd_cross|kdj_cross|ema14|double_volume|volume_signal|vwap20_filter|vwap20_up3|above_cost_20|break_cost_20|breakout)/) ? "=" : ">=", value: 1 };
     setChips((cs) => [...cs, { field: key, op: preset.op as ScreenerCond["op"], value: preset.value, zh: def.zh }]);
   }, [chips, fieldMap]);
@@ -84,7 +85,7 @@ export default function ScreenerPage() {
   const addCustom = () => {
     const def = fieldMap.get(cField);
     if (!def || cVal === "") return;
-    const parsed = parseCondValue(cOp, cVal); // §四 in/not in 保留列表字符串
+    const parsed = parseCondValue(cOp, cVal);
     const base: ScreenerCond = cType === "single"
       ? { field: cField, op: cOp as ScreenerCond["op"], value: parsed }
       : { type: cType, field: cField, op: cOp as ScreenerCond["op"], value: parsed, window: Number(cWindow) || 10, ...(cType === "rolling_any" ? { min_match_days: Number(cMinDays) || 3 } : {}) };
@@ -102,7 +103,7 @@ export default function ScreenerPage() {
         sort: { order_by: sortKey, order_dir: "desc" },
         pagination: { limit },
         include_stats: true,
-        trade_date: tradeDate || undefined, // §二 历史交易日（空=当日实时口径）
+        trade_date: tradeDate || undefined,
       });
       setResult(resp);
     } catch (e) {
@@ -115,78 +116,44 @@ export default function ScreenerPage() {
 
   const aiRefine = async () => {
     if (!result?.list.length) return;
+    setAiBusy(true);
     setAiNote("");
     try {
       const list = result.list.slice(0, 15).map((r) => ({
         代码: r.symbol, 名称: r.name, 现价: r.close, 涨跌幅: r.change_pct,
-        胜率: { "1d": r.win_prob?.horizons.find((h) => h.h === 1)?.win_rate ?? null, "5d": r.win_prob?.horizons.find((h) => h.h === 5)?.win_rate ?? null, 样本: r.win_prob?.horizons[0]?.sample_size ?? 0 },
-        条件值: r.values,
+        胜率: { "1日": r.win_prob?.horizons.find((h) => h.h === 1)?.win_rate ?? null, "5日": r.win_prob?.horizons.find((h) => h.h === 5)?.win_rate ?? null, 样本: r.win_prob?.horizons[0]?.sample_size ?? 0 },
       }));
       const { content } = await aiChatTools(
         { provider: ai.provider, baseUrl: ai.baseUrl, apiKey: ai.apiKey, model: ai.model, proxy: ai.proxy },
-        [{ role: "user", content: `以下是因子选股的结果（已带历史胜率与条件值）。请优中选优：给出你保留的 5-10 只及保留理由（引用数据），并明确排除哪些、为什么。数据如下：\n${JSON.stringify(list)}` }],
+        [{ role: "user", content: `以下是刚刚从全市场筛出的股票（已带历史胜率）。请用大白话帮我看一遍：保留你最看好的 5-10 只，每只一两句话说清楚「为什么值得看、什么价位要小心」；再点出明显要回避的。不要堆砌指标名词，像朋友荐股那样说。数据：\n${JSON.stringify(list)}` }],
         { mode: "deep" },
       );
       setAiNote(content);
     } catch (e) {
-      setAiNote(`AI 优中选优失败：${(e as Error).message}`);
+      setAiNote(`解读失败：${(e as Error).message}`);
+    } finally {
+      setAiBusy(false);
     }
   };
 
   const openProfile = (symbol: string) => { setFocusSymbol(symbol); go("profile"); };
-  const condLabel = (c: ChipCond) => `${c.zh} ${c.op} ${c.value}${c.window ? `窗口${c.window}` : ""}`;
-
-  // §五：因子验证状态统计——全部由 catalog/结果真实数据推导，禁止硬编码「全部未验证/全部已验证」
-  const verifyStats = (() => {
-    const total = catalog?.fields.length ?? null;
-    if (total === null) return null;
-    const verified = (catalog?.fields ?? []).filter((f) => f.verified).length;
-    const enabled = new Set(chips.map((c) => c.field)).size;
-    const excluded = chips.filter((c) => catalog && !catalog.fields.some((f) => f.key === c.field)).length;
-    let conclusion: string;
-    let tone = "text-amber-400";
-    if (result?.factor_verify) {
-      const rv = result.factor_verify;
-      conclusion = rv.enabled === 0 ? "验证状态未知（本次未涉及登记因子）"
-        : rv.unverified === 0 ? `本次涉及 ${rv.enabled} 个因子均已验证`
-        : rv.verified === 0 ? `本次涉及 ${rv.enabled} 个因子均未验证`
-        : `本次涉及 ${rv.enabled} 个因子：${rv.verified} 已验证 / ${rv.unverified} 未验证`;
-      tone = rv.unverified === 0 && rv.enabled > 0 ? "text-emerald-400" : "text-amber-400";
-    } else if (verified === total) { conclusion = "全库因子均已验证"; tone = "text-emerald-400"; }
-    else if (verified === 0) { conclusion = "全库因子均未验证"; }
-    else { conclusion = `存在未验证因子（已验证 ${verified}/${total}）`; }
-    return { total, verified, enabled, excluded, conclusion, tone };
-  })();
+  const condLabel = (c: ChipCond) => `${c.zh} ${c.op} ${c.value}${c.window ? `·近${c.window}日` : ""}`;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 px-6 py-4">
-      <div className="flex items-end justify-between">
-        <div>
-          <div className="text-lg font-bold">多因子量化选股</div>
-          <div className="text-[11px] text-muted-foreground">
-            所示结果仅为模型筛选结果，不构成投资建议 · 因子验证：
-            {verifyStats ? (
-              <>
-                <span className={verifyStats.tone}>{verifyStats.conclusion}</span>
-                （库 {verifyStats.total} · 选用 {verifyStats.enabled} · 已验证 {verifyStats.verified} · 排除/忽略 {verifyStats.excluded}，验证入口：因子实验室）
-              </>
-            ) : <span>验证状态未知（因子目录加载中）</span>}
-          </div>
-        </div>
-        <div className="text-right text-[11px] text-muted-foreground">
-          交易日：{result?.as_of_trade_date ?? tradeDate ?? "当日"}
-          {result?.trade_date_is_historical && <span className="ml-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">历史回放</span>}
-          · 数据源：em（腾讯/东财）
-        </div>
+    <div className="mx-auto max-w-5xl space-y-5 px-6 py-6">
+      {/* 标题区 */}
+      <div className="apple-slide-up">
+        <h1 className="text-[22px] font-semibold tracking-tight">AI 选股</h1>
+        <p className="mt-1 text-[13px] text-muted-foreground">
+          选几个你在意的条件，从全市场里筛出候选，再让 AI 用大白话帮你过一遍。
+        </p>
       </div>
 
-      {/* 因子分组 */}
-      <div className="rounded-xl border border-border bg-card p-4">
+      {/* 条件区 */}
+      <div className="apple-card apple-fade-in p-5">
         {catalog ? Object.entries(catalog.category).map(([cat, keys]) => (
-          <div key={cat} className="mb-3 last:mb-0">
-            <div className="mb-1.5 flex items-center gap-2 text-[12px] font-semibold text-foreground/80">
-              <span className="h-3 w-0.5 rounded bg-sky-400" />{cat}
-            </div>
+          <div key={cat} className="mb-4 last:mb-0">
+            <div className="mb-2 text-[12px] font-medium text-muted-foreground/80">{cat}</div>
             <div className="flex flex-wrap gap-1.5">
               {keys.map((k) => {
                 const def = fieldMap.get(k)!;
@@ -196,14 +163,13 @@ export default function ScreenerPage() {
                     <button
                       onClick={() => (active ? setChips((cs) => cs.filter((c) => c.field !== k)) : (addCond(k), setEditing(k)))}
                       className={
-                        "rounded-full border px-2.5 py-1 text-[11.5px] transition-colors " +
+                        "rounded-full border px-3.5 py-1.5 text-[12.5px] transition-all duration-200 " +
                         (active
-                          ? "border-sky-500/60 bg-sky-500/15 text-sky-300"
-                          : "border-border bg-accent/40 text-muted-foreground hover:border-sky-500/40 hover:text-foreground")
+                          ? "border-sky-400/50 bg-sky-400/15 text-sky-200"
+                          : "border-border/70 bg-white/[0.02] text-muted-foreground hover:border-sky-400/30 hover:text-foreground")
                       }
                     >
                       {def.zh}
-                      {def.source === "snapshot" && <span className="ml-1 text-[9px] text-muted-foreground/60">快照</span>}
                     </button>
                     {editing === k && !active && (
                       <DefaultEditor
@@ -221,208 +187,189 @@ export default function ScreenerPage() {
               })}
             </div>
           </div>
-        )) : <div className="py-6 text-center text-xs text-muted-foreground">因子目录加载中…</div>}
+        )) : <div className="py-6 text-center text-[13px] text-muted-foreground">正在准备选股条件…</div>}
       </div>
 
-      {/* 自定义条件 */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-2 text-[12px] font-semibold text-foreground/80">自定义条件</div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <select value={cType} onChange={(e) => setCType(e.target.value as typeof cType)} className="rounded border border-border bg-background px-2 py-1">
-            <option value="single">单条件</option>
-            <option value="rolling_any">近N日出现</option>
-            <option value="rolling_sum">近N日累计</option>
-            <option value="rolling_return">近N日涨跌幅</option>
-          </select>
-          {cType !== "rolling_return" && (
-            <select value={cField} onChange={(e) => setCField(e.target.value)} className="max-w-44 rounded border border-border bg-background px-2 py-1">
-              {(catalog?.fields ?? []).map((f) => (
-                <option key={f.key} value={f.key} disabled={f.implemented === false}>
-                  {f.zh}（{f.key}）{f.implemented === false ? " · 未实现" : ""}
-                </option>
-              ))}
-            </select>
-          )}
-          {cType !== "single" && <input value={cWindow} onChange={(e) => setCWindow(e.target.value)} className="w-14 rounded border border-border bg-background px-2 py-1" title="窗口天数" />}
-          <select value={cOp} onChange={(e) => setCOp(e.target.value)} className="rounded border border-border bg-background px-2 py-1">
-            {OPS.map((o) => <option key={o}>{o}</option>)}
-          </select>
-          <input value={cVal} onChange={(e) => setCVal(e.target.value)} placeholder="值" className="w-20 rounded border border-border bg-background px-2 py-1" />
-          {cType === "rolling_any" && (<> <span className="text-muted-foreground">至少</span> <input value={cMinDays} onChange={(e) => setCMinDays(e.target.value)} className="w-12 rounded border border-border bg-background px-2 py-1" /> <span className="text-muted-foreground">天</span> </>)}
-          <button onClick={addCustom} className="flex items-center gap-1 rounded bg-sky-500/15 px-2.5 py-1 text-sky-300 hover:bg-sky-500/25">
-            <Plus size={12} /> 添加
-          </button>
-        </div>
-      </div>
-
-      {/* 已选条件 + 执行 */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-2 text-[12px] font-semibold text-foreground/80">已选条件</div>
-        <div className="flex min-h-8 flex-wrap items-center gap-1.5">
-          {chips.length === 0 && <span className="text-xs text-muted-foreground">尚未选择条件：点上方 pill 添加，或用自定义条件</span>}
+      {/* 已选条件 + 操作 */}
+      <div className="apple-card apple-fade-in p-5">
+        <div className="mb-2.5 text-[12px] font-medium text-muted-foreground/80">当前条件</div>
+        <div className="flex min-h-9 flex-wrap items-center gap-2">
+          {chips.length === 0 && <span className="text-[13px] text-muted-foreground/70">还没有条件——点上面的标签添加，例如「放量上涨」「主力流入」</span>}
           {chips.map((c, i) => (
-            <span key={i} className="flex items-center gap-1 rounded-full border border-sky-500/50 bg-sky-500/10 px-2.5 py-1 text-[11.5px] text-sky-300">
+            <span key={i} className="flex items-center gap-1.5 rounded-full border border-sky-400/40 bg-sky-400/10 py-1.5 pl-3.5 pr-2 text-[12.5px] text-sky-100">
               {condLabel(c)}
               <select
                 value={c.op}
                 onChange={(e) => setChips((cs) => cs.map((x, k) => (k === i ? { ...x, op: e.target.value as ScreenerCond["op"] } : x)))}
-                className="bg-transparent text-[10px] outline-none"
+                className="bg-transparent text-[11px] outline-none"
               >
                 {OPS.map((o) => <option key={o} className="text-foreground">{o}</option>)}
               </select>
               <input
                 value={String(c.value)}
                 onChange={(e) => setChips((cs) => cs.map((x, k) => (k === i ? { ...x, value: parseCondValue(x.op, e.target.value) } : x)))}
-                title={isMultiOp(c.op) ? "多值用逗号或空格分隔" : undefined}
-                className={`${isMultiOp(c.op) ? "w-28" : "w-14"} bg-transparent text-[10px] outline-none`}
+                title={isMultiOp(c.op) ? "多个值用逗号分隔" : undefined}
+                className={`${isMultiOp(c.op) ? "w-24" : "w-14"} bg-transparent text-[11px] outline-none`}
               />
-              <button onClick={() => setChips((cs) => cs.filter((_, k) => k !== i))}><X size={11} /></button>
+              <button onClick={() => setChips((cs) => cs.filter((_, k) => k !== i))} className="rounded-full p-0.5 opacity-60 hover:opacity-100"><X size={12} /></button>
             </span>
           ))}
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button onClick={runScan} disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-sky-400 disabled:opacity-50">
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} 筛选全A
+
+        {/* 自定义一行 */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
+          <select value={cType} onChange={(e) => setCType(e.target.value as typeof cType)} className="rounded-lg border border-border/70 bg-white/[0.03] px-2.5 py-1.5 text-[12px]">
+            <option value="single">单次</option>
+            <option value="rolling_any">近N日出现</option>
+            <option value="rolling_sum">近N日累计</option>
+            <option value="rolling_return">近N日涨跌幅</option>
+          </select>
+          {cType !== "rolling_return" && (
+            <select value={cField} onChange={(e) => setCField(e.target.value)} className="max-w-44 rounded-lg border border-border/70 bg-white/[0.03] px-2.5 py-1.5 text-[12px]">
+              {(catalog?.fields ?? []).map((f) => (
+                <option key={f.key} value={f.key} disabled={f.implemented === false}>{f.zh}</option>
+              ))}
+            </select>
+          )}
+          {cType !== "single" && <input value={cWindow} onChange={(e) => setCWindow(e.target.value)} className="w-14 rounded-lg border border-border/70 bg-white/[0.03] px-2 py-1.5 text-[12px]" />}
+          <select value={cOp} onChange={(e) => setCOp(e.target.value)} className="rounded-lg border border-border/70 bg-white/[0.03] px-2.5 py-1.5 text-[12px]">
+            {OPS.map((o) => <option key={o}>{o}</option>)}
+          </select>
+          <input value={cVal} onChange={(e) => setCVal(e.target.value)} placeholder="数值" className="w-20 rounded-lg border border-border/70 bg-white/[0.03] px-2.5 py-1.5 text-[12px]" />
+          {cType === "rolling_any" && (<> <span className="text-muted-foreground">至少</span> <input value={cMinDays} onChange={(e) => setCMinDays(e.target.value)} className="w-12 rounded-lg border border-border/70 bg-white/[0.03] px-2 py-1.5 text-[12px]" /> <span className="text-muted-foreground">天</span> </>)}
+          <button onClick={addCustom} className="flex items-center gap-1 rounded-full bg-white/[0.06] px-3 py-1.5 text-[12px] text-foreground hover:bg-white/[0.1]">
+            <Plus size={13} /> 加入
           </button>
-          <button onClick={aiRefine} disabled={!result?.list.length}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-40">
-            <Sparkles size={14} /> AI优中选优
+        </div>
+
+        {/* 操作行 */}
+        <div className="mt-4 flex flex-wrap items-center gap-2.5">
+          <button onClick={runScan} disabled={busy} className="apple-primary-btn flex items-center gap-2 px-5 py-2.5 text-[14px] font-medium">
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />} 开始筛选
           </button>
-          <select value={sortKey} onChange={(e) => setSortKey(e.target.value)} className="rounded border border-border bg-background px-2 py-1.5 text-xs">
+          <button onClick={aiRefine} disabled={!result?.list.length || aiBusy} className="flex items-center gap-2 rounded-full border border-border/70 px-4 py-2.5 text-[13.5px] text-muted-foreground transition-colors hover:border-sky-400/40 hover:text-sky-200 disabled:opacity-40">
+            {aiBusy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} {aiBusy ? "AI 解读中…" : "让 AI 帮我挑"}
+          </button>
+          <select value={sortKey} onChange={(e) => setSortKey(e.target.value)} className="rounded-full border border-border/70 bg-white/[0.03] px-3 py-2 text-[12.5px] text-muted-foreground">
             <option value="amount_yi">按成交额</option>
             <option value="change_pct">按涨跌幅</option>
             <option value="turnover_rate">按换手率</option>
             <option value="volume_ratio">按量比</option>
             <option value="main_net_yi">按主力净额</option>
-            <option value="rps_50">按RPS50</option>
+            <option value="rps_50">按强度</option>
             <option value="win_rate_1">按1日胜率</option>
             <option value="win_rate_5">按5日胜率</option>
             <option value="win_rate_20">按20日胜率</option>
           </select>
-          {/* §二 历史交易日选择器：仅真实交易日，默认当日（实时口径） */}
-          <select value={tradeDate} onChange={(e) => setTradeDate(e.target.value)}
-            title="选择历史交易日 = 历史回放口径（K线重放，快照条件不生效）"
-            className="rounded border border-border bg-background px-2 py-1.5 text-xs">
-            <option value="">当日（{todayDate || "实时"}）</option>
+          <select value={tradeDate} onChange={(e) => setTradeDate(e.target.value)} className="rounded-full border border-border/70 bg-white/[0.03] px-3 py-2 text-[12.5px] text-muted-foreground">
+            <option value="">今日（{todayDate || "实时"}）</option>
             {tradeDates.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
-          {tradeDate && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">历史回放</span>}
-          <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="rounded border border-border bg-background px-2 py-1.5 text-xs">
+          <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="rounded-full border border-border/70 bg-white/[0.03] px-3 py-2 text-[12.5px] text-muted-foreground">
             {[30, 50, 100].map((n) => <option key={n} value={n}>{n} 条</option>)}
           </select>
-          {result && <span className="text-xs text-muted-foreground">共 {result.total} 条</span>}
+          {result && <span className="text-[12.5px] text-muted-foreground">共 {result.total} 只</span>}
         </div>
 
-        {/* 漏斗 + 警示 */}
-        {result && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px] text-muted-foreground">
-            漏斗：全A {result.funnel.universe} → 快照粗筛 {result.funnel.snapshot_pass} → K线子集 {result.funnel.kline_subset} → 命中 <span className="text-sky-400">{result.funnel.kline_pass}</span>
-          </div>
-        )}
-        {result?.warnings.map((w, i) => (
-          <div key={i} className="mt-1.5 flex items-start gap-1 rounded bg-amber-500/5 px-2 py-1 text-[10.5px] text-amber-300/90">
-            <AlertTriangle size={11} className="mt-0.5 shrink-0" /> {w}
-          </div>
-        ))}
-        {error && <div className="mt-2 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+        {error && <div className="mt-3 rounded-xl border border-red-400/25 bg-red-400/10 px-3.5 py-2.5 text-[13px] text-red-300">{error}</div>}
       </div>
 
-      {/* AI 优中选优 */}
+      {/* AI 解读 */}
       {aiNote && (
-        <div className="rounded-xl border border-border bg-card p-4 text-sm">
-          <div className="mb-1 text-[12px] font-semibold text-sky-300">AI 优中选优（模型推断，非事实）</div>
-          <div className="prose-sm">{aiNote}</div>
+        <div className="apple-card apple-slide-up border-sky-400/20 p-5">
+          <div className="mb-2 flex items-center gap-2 text-[14px] font-semibold text-sky-200">
+            <Sparkles size={16} /> AI 怎么看
+          </div>
+          <div className="prose-invert text-[13.5px] leading-relaxed text-foreground/90">{aiNote}</div>
+          <div className="mt-3 text-[11.5px] text-muted-foreground/70">AI 解读仅供参考，不构成投资建议。</div>
         </div>
       )}
 
-      {/* 结果表格 */}
+      {/* 结果：卡片行 */}
       {result && (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground">
-                <th className="px-3 py-2">代码</th>
-                <th className="px-3 py-2">名称</th>
-                <th className="px-3 py-2 text-right">最新价</th>
-                <th className="px-3 py-2 text-right">涨跌幅</th>
-                <th className="px-3 py-2 text-right">成交额(亿)</th>
-                <th className="px-3 py-2 text-right">换手%</th>
-                <th className="px-3 py-2 text-right">量比</th>
-                <th className="px-3 py-2 text-right">主力净额(亿)</th>
-                <th className="px-3 py-2 text-right">RPS50</th>
-                <th className="px-3 py-2 text-right">1日胜率</th>
-                <th className="px-3 py-2 text-right">5日胜率</th>
-                <th className="px-3 py-2 text-right">20日胜率</th>
-                <th className="px-3 py-2 text-right" title="命中样本按时间复利净值的最大回撤（5日持有，≤0）">5日回撤</th>
-                <th className="px-3 py-2 text-right" title="5日持有：同期沪深300平均收益 / 本股超额（基准缺失显示—）">基准·超额</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.list.map((r) => {
-                const wp = r.win_prob;
-                const h1 = wp?.horizons.find((h) => h.h === 1);
-                const h5 = wp?.horizons.find((h) => h.h === 5);
-                const h20 = wp?.horizons.find((h) => h.h === 20);
-                const hover = wp ? [
-                  `样本数：${h1?.sample_size ?? 0}${wp.sample_ok ? "" : "（样本不足，仅供参考）"}`,
-                  `统计区间：${wp.period ? `${wp.period.start} ~ ${wp.period.end}` : "—"}`,
-                  `1日：均 ${h1?.avg_return?.toFixed(2)}% 最差 ${h1?.worst_return?.toFixed(2)}% 回撤 ${h1?.max_drawdown?.toFixed(2) ?? "—"}%`,
-                  `5日：均 ${h5?.avg_return?.toFixed(2)}% 最差 ${h5?.worst_return?.toFixed(2)}% 回撤 ${h5?.max_drawdown?.toFixed(2) ?? "—"}%`,
-                  `20日：均 ${h20?.avg_return?.toFixed(2)}% 最差 ${h20?.worst_return?.toFixed(2)}% 回撤 ${h20?.max_drawdown?.toFixed(2) ?? "—"}%`,
-                  `基准(沪深300)：5日 ${h5?.benchmark_return?.toFixed(2) ?? "—"}% · 超额 ${h5?.excess_return?.toFixed(2) ?? "—"}%`,
-                  ...wp.warnings,
-                ].join("\n") : "无历史统计";
-                return (
-                  <tr key={r.symbol} onClick={() => openProfile(r.symbol)}
-                    title={hover}
-                    className="cursor-pointer border-b border-border/40 hover:bg-sky-500/5">
-                    <td className="px-3 py-1.5 font-mono">{r.symbol}</td>
-                    <td className="px-3 py-1.5">{r.name}</td>
-                    <td className="px-3 py-1.5 text-right"><NumText value={r.close} /></td>
-                    <td className="px-3 py-1.5 text-right"><PctText value={r.change_pct} /></td>
-                    <td className="px-3 py-1.5 text-right"><NumText value={r.values.amount_yi} digits={1} /></td>
-                    <td className="px-3 py-1.5 text-right"><NumText value={r.values.turnover_rate} /></td>
-                    <td className="px-3 py-1.5 text-right"><NumText value={r.values.volume_ratio} /></td>
-                    <td className="px-3 py-1.5 text-right"><NumText value={r.values.main_net_yi} digits={1} /></td>
-                    <td className="px-3 py-1.5 text-right"><NumText value={r.values.rps_50} digits={0} /></td>
-                    <WinCell h={h1} ok={wp?.sample_ok} />
-                    <WinCell h={h5} ok={wp?.sample_ok} />
-                    <WinCell h={h20} ok={wp?.sample_ok} />
-                    <td className="px-3 py-1.5 text-right"><PctText value={h5?.max_drawdown ?? null} digits={1} /></td>
-                    <td className="px-3 py-1.5 text-right text-[10.5px]">
-                      {h5?.benchmark_return == null ? <span className="text-muted-foreground" title="基准K线缺失，不以0代替">—</span>
-                        : <span><NumText value={h5.benchmark_return} digits={1} /> / <PctText value={h5.excess_return ?? null} digits={1} /></span>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {result.list.length === 0 && (
-                <tr><td colSpan={14} className="px-3 py-8 text-center text-muted-foreground">无命中结果（试试放宽条件）</td></tr>
-              )}
-            </tbody>
-          </table>
+        <div className="apple-stagger space-y-2.5">
+          {/* P9-经验轮：被数据缺口忽略的条件必须当面说清——「选不出来」有两种，
+              没有股票符合 vs 这个字段现在根本查不到，用户必须分得清。 */}
+          {(result.unavailable_fields?.length ?? 0) > 0 && (
+            <div className="apple-card border-amber-500/30 bg-amber-500/[0.06] px-5 py-3.5 text-[13px] leading-relaxed">
+              <span className="font-medium text-amber-200">以下条件因数据缺口被忽略，本次结果没有按它们筛选：</span>
+              <span className="text-amber-200/90"> {result.unavailable_fields!.map((g) => g.zh).join("、")}</span>
+              <div className="mt-1 text-[12.5px] text-muted-foreground">
+                当前数据源里这些字段没有任何真实读数（资金类数据断源兜底期），换用涨跌幅/成交额/换手率/强度等条件即可正常筛选。
+              </div>
+            </div>
+          )}
+          {result.list.map((r, idx) => {
+            const wp = r.win_prob;
+            const h1 = wp?.horizons.find((h) => h.h === 1);
+            const h5 = wp?.horizons.find((h) => h.h === 5);
+            const h20 = wp?.horizons.find((h) => h.h === 20);
+            return (
+              <button
+                key={r.symbol}
+                onClick={() => openProfile(r.symbol)}
+                className="apple-card group flex w-full items-center gap-4 px-5 py-4 text-left transition-all duration-200 hover:border-sky-400/30 hover:bg-white/[0.05]"
+              >
+                <span className="w-6 shrink-0 text-right text-[12px] text-muted-foreground/60">{idx + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="truncate text-[15px] font-medium">{r.name}</span>
+                    <span className="font-mono text-[11.5px] text-muted-foreground/60">{r.symbol}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[12px] text-muted-foreground/80">
+                    <span>成交 <NumText value={r.values.amount_yi} digits={1} /> 亿</span>
+                    <span>换手 <NumText value={r.values.turnover_rate} />%</span>
+                    <span>主力 <NumText value={r.values.main_net_yi} digits={1} /> 亿</span>
+                    <span>强度 <NumText value={r.values.rps_50} digits={0} /></span>
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-[18px] font-semibold"><NumText value={r.close} digits={2} /></div>
+                  <div className="mt-0.5"><PctText value={r.change_pct} className="text-[13px] font-medium" /></div>
+                </div>
+                <div className="hidden w-24 shrink-0 text-right sm:block">
+                  <div className="text-[11px] text-muted-foreground/70">历史胜率</div>
+                  <div className="mt-0.5 flex items-center justify-end gap-2 text-[12px]">
+                    <WinRate h={h1} label="1日" />
+                    <WinRate h={h5} label="5日" />
+                    <WinRate h={h20} label="20日" />
+                  </div>
+                </div>
+                <ArrowRight size={16} className="shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-sky-300" />
+              </button>
+            );
+          })}
+          {result.list.length === 0 && ((result.unavailable_fields?.length ?? 0) > 0 ? (
+            <div className="apple-card px-6 py-10 text-center text-[13.5px] text-muted-foreground">
+              本次没能真正执行筛选——你的条件里的字段（见上方黄色提示）当前数据源取不到，不显示任何「命中」也不假装筛过了。
+              <div className="mt-1.5 text-[12.5px] text-muted-foreground/70">这不是「没有股票符合条件」，去掉这些字段或改用 K线/行情类条件再试即可。</div>
+            </div>
+          ) : (
+            <div className="apple-card px-4 py-10 text-center text-[13px] text-muted-foreground">没有符合条件的股票，试试放宽条件。</div>
+          ))}
         </div>
       )}
+
       {!result && !busy && (
-        <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-xs text-muted-foreground">
-          选择条件后点「筛选全A」：结果将直接带 1/5/20 日历史胜率（悬停看样本数/区间/收益分布）
+        <div className="apple-card apple-fade-in px-4 py-12 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.04]">
+            <Search size={20} className="text-muted-foreground" />
+          </div>
+          <div className="text-[14px] text-foreground/80">选好条件，点「开始筛选」</div>
+          <div className="mt-1 text-[12.5px] text-muted-foreground">筛完可以让 AI 再帮你用大白话挑一遍。</div>
         </div>
       )}
     </div>
   );
 }
 
-function WinCell({ h, ok }: { h?: { win_rate: number | null; sample_size: number }; ok?: boolean }) {
+function WinRate({ h, label }: { h?: { win_rate: number | null; sample_size: number }; label: string }) {
   const v = h?.win_rate;
+  const cls = v == null ? "text-muted-foreground/50" : v >= 55 ? "text-red-400" : v >= 50 ? "text-foreground/80" : "text-emerald-400";
   return (
-    <td className={`px-3 py-1.5 text-right ${ok === false ? "opacity-60" : ""}`}>
-      {v === null || v === undefined ? <span className="text-muted-foreground">—</span> : (
-        <span className={v >= 55 ? "text-red-500 font-medium" : v >= 50 ? "text-foreground" : "text-emerald-500"}>
-          {v.toFixed(0)}%<span className="ml-0.5 text-[9px] text-muted-foreground">({h?.sample_size})</span>
-        </span>
-      )}
-    </td>
+    <span className={cls} title={`${label}：${v == null ? "暂无样本" : v.toFixed(0) + "%（样本 " + h!.sample_size + "）"}`}>
+      {v == null ? "—" : v.toFixed(0) + "%"}
+    </span>
   );
 }
 
@@ -435,17 +382,17 @@ function DefaultEditor({ def, init, onOk, onCancel }: {
   const [op, setOp] = useState(init.op);
   const [val, setVal] = useState(String(init.value));
   return (
-    <div className="absolute left-0 top-7 z-30 flex items-center gap-1 rounded-lg border border-border bg-popover p-1.5 shadow-lg">
-      <span className="pl-1 text-[10px] text-muted-foreground">{def.zh}</span>
-      <select value={op} onChange={(e) => setOp(e.target.value)} className="rounded bg-background px-1 py-0.5 text-[10px]">
+    <div className="apple-card absolute left-0 top-9 z-30 flex items-center gap-1.5 p-2 shadow-2xl">
+      <span className="pl-1 text-[11px] text-muted-foreground">{def.zh}</span>
+      <select value={op} onChange={(e) => setOp(e.target.value)} className="rounded-lg bg-white/[0.05] px-1.5 py-1 text-[11px]">
         {OPS.map((o) => <option key={o}>{o}</option>)}
       </select>
       <input value={val} onChange={(e) => setVal(e.target.value)} autoFocus
-        placeholder={isMultiOp(op) ? "多值：逗号分隔" : "值"}
+        placeholder={isMultiOp(op) ? "用逗号分隔" : "数值"}
         onKeyDown={(e) => { if (e.key === "Enter") onOk(op, parseCondValue(op, val)); if (e.key === "Escape") onCancel(); }}
-        className={`${isMultiOp(op) ? "w-28" : "w-16"} rounded bg-background px-1 py-0.5 text-[10px]`} />
-      <button onClick={() => onOk(op, parseCondValue(op, val))} className="rounded bg-sky-500 px-1.5 py-0.5 text-[10px] text-white">确定</button>
-      <button onClick={onCancel} className="rounded px-1 py-0.5 text-[10px] text-muted-foreground">取消</button>
+        className={`${isMultiOp(op) ? "w-24" : "w-16"} rounded-lg bg-white/[0.05] px-1.5 py-1 text-[11px] outline-none`} />
+      <button onClick={() => onOk(op, parseCondValue(op, val))} className="rounded-lg bg-sky-400/20 px-2 py-1 text-[11px] text-sky-200">确定</button>
+      <button onClick={onCancel} className="rounded-lg px-1.5 py-1 text-[11px] text-muted-foreground">取消</button>
     </div>
   );
 }

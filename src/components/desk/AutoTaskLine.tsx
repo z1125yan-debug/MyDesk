@@ -73,16 +73,14 @@ export function AutoTaskLine({ kind, refreshKey = 0 }: { kind: "radar" | "events
       : `已确认 ${cur.done_keys} 条键${cur.unmatched_keys ? `、未命中记录 ${cur.unmatched_keys} 条` : ""}（${bjTime(cur.updated_at)}）→ 下一次自动执行按增量口径，只写新增与内容变化的行（手动点「立即扫描」仍按全量重刷）`;
 
   return (
-    <div className="text-[10.5px] text-muted-foreground" title={st.boundary}>
-      后台任务（{kind}）：{state}
-      {origin && <>；当日最近一次为 <span className="text-sky-400">{origin}</span> 触发{counts ? ` · ${counts}` : ""}{modeText ? ` · 写库口径 ${modeText}` : ""}</>}
-      {sum?.last_status === "failure" && sum.last_error && <>；最近错误：{sum.last_error.slice(0, 60)}</>}
-      {skippedBasis && !autoDone && <>；{skippedBasis}</>}
-      {last && <>；最近记录 {STATUS_TEXT[last.status] ?? last.status}/{last.trigger === "schedule" ? "自动" : "手动"} {bjTime(last.finished_at ?? last.started_at)}</>}
-      {cursorText && <div className="text-[10px] text-muted-foreground/70">增量游标（{st.today}）：{cursorText}</div>}
-      <div className="text-[10px] text-muted-foreground/70">
-        口径：{st.boundary}；窗口=交易日 {hhmm(st.config.closeMinute)} 收盘后 {st.config.delayMinutes} 分钟，每 {st.tick_seconds}s 检查，每日每任务最多 {st.config.maxAttempts} 次尝试。
-      </div>
+    <div className="text-[12px] text-muted-foreground">
+      {!st.enabled || !st.running
+        ? "收盘后会自动扫描一次。"
+        : autoDone
+          ? `今日已自动扫描（${bjTime(lastAuto.finished_at)}）。`
+          : sum?.last_status === "failure"
+            ? "今日自动扫描暂时失败，稍后会自动重试。"
+            : "收盘后会自动扫描一次。"}
     </div>
   );
 }

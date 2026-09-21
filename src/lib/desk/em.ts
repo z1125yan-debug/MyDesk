@@ -5,6 +5,7 @@
 import { marketSession } from "./session";
 import { tdxQuotes, tdxKlines, tdxNameOf, type TdxQuote } from "./tdx";
 import { parseTcBoardRankList } from "@/lib/quant/data/tc-snapshot-core";
+import { parseSinaFundFlow, sinaFundFlowUrl } from "@/lib/quant/data/sina-flow-core";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -368,30 +369,44 @@ export async function fetchBoardReal(
   }
 }
 
-// ---------- 明细：近 14 日主力净额（东财 fflow） ----------
+// ---------- 明细：近 14 日主力净额（东财 fflow，断源时新浪 MoneyFlow 备胎） ----------
 
 export interface DetailReal {
   spark: number[];
   days: { date: string; value: number }[];
+  /** 读数出身（三元之一必给）：sina 那条是新浪日度净额口径（≈主力净流入），与东财 f62 不完全等价，
+   *  消费处（个股档案/对话工具/能力探测）必须按它如实标源，不许拿「东财主力净额」的名头转述。 */
+  source: "em" | "sina";
 }
 
 export async function fetchDetailReal(secid: string): Promise<DetailReal | null> {
-  const fPath = `/api/qt/stock/fflow/daykline/get?lmt=14&klt=101&secid=${secid}&fields1=f1,f2,f3,f7&fields2=f51,f52`;
-  try {
-    const fj = await cached<{ data?: { klines?: string[] } }>("detail", `f:${secid}`, () =>
-      emGet(fPath, 5000, EM_HIS_HOSTS),
-    );
-    const days = (fj?.data?.klines ?? [])
-      .map((s) => {
-        const p = s.split(",");
-        return { date: p[0], value: parseFloat(p[1]) / 1e8 };
-      })
-      .filter((d) => isFinite(d.value));
-    if (!days.length) return null;
-    return { spark: [], days };
-  } catch {
-    return null;
-  }
+  // 整条兜底链一起进 TTL 缓存：断源期间两边都打不通时，缓存 null 就是限流保护（失败也短存，
+  // 恢复后最多 30s 就回到实时）。
+  return cached<DetailReal | null>("detail", `f:${secid}`, async () => {
+    const fPath = `/api/qt/stock/fflow/daykline/get?lmt=14&klt=101&secid=${secid}&fields1=f1,f2,f3,f7&fields2=f51,f52`;
+    try {
+      const fj = await emGet<{ data?: { klines?: string[] } }>(fPath, 5000, EM_HIS_HOSTS);
+      const days = (fj?.data?.klines ?? [])
+        .map((s) => {
+          const p = s.split(",");
+          return { date: p[0], value: parseFloat(p[1]) / 1e8 };
+        })
+        .filter((d) => isFinite(d.value));
+      if (days.length) return { spark: [], days, source: "em" };
+    } catch {
+      // 东财 push2his 断连/超时：往下走新浪备胎，不在这里吞掉也不谎称失败
+    }
+    // P9 备胎轮：新浪日度净额（a-stock-data 验证过的端点，直连不封 IP）。
+    // 板块码（90.BKxxxx）与认不出的 secid 在 sinaFundFlowUrl 处返回 null——新浪没有板块资金流对应物，不硬凑。
+    const url = sinaFundFlowUrl(secid.split(".").pop() ?? "", 14);
+    if (!url) return null;
+    try {
+      const days = parseSinaFundFlow(await fetchJson<unknown>(url));
+      return days.length ? { spark: [], days: days.map((d) => ({ date: d.date, value: d.netYi })), source: "sina" as const } : null;
+    } catch {
+      return null;
+    }
+  });
 }
 
 // 自选卡片用的日内分时缩略序列（腾讯分时）

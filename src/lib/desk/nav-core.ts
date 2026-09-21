@@ -10,7 +10,7 @@
 //   「已并入对话」横幅指回，而不是让读者对着一个消失的页面猜。
 import type { PageKey } from "./types";
 
-export type Workbench = "ai" | "quant" | "market" | "system";
+export type Workbench = "ai" | "quant" | "market" | "qimen" | "system";
 
 export interface NavItem {
   key: PageKey;
@@ -37,6 +37,7 @@ export const WORKBENCH_ORDER: { key: Workbench; label: string }[] = [
   { key: "ai", label: "AI 决策" },
   { key: "quant", label: "量化工具" },
   { key: "market", label: "行情中心" },
+  { key: "qimen", label: "奇门遁甲" },
 ];
 
 export const NAV: Record<Workbench, WorkbenchNav> = {
@@ -89,6 +90,12 @@ export const NAV: Record<Workbench, WorkbenchNav> = {
     ],
     legacyPages: [],
   },
+  qimen: {
+    title: "奇门遁甲工作台",
+    groups: [],
+    items: [{ key: "qimen", label: "奇门解盘" }],
+    legacyPages: [],
+  },
   system: {
     title: "系统",
     groups: [],
@@ -129,5 +136,5 @@ export function isLegacyPage(page: PageKey): boolean {
 /** 左窄栏是否由工作台壳层渲染（AI 决策的左栏长在 AssistantPage 里，壳层不重复画） */
 export function hasShellLeftRail(page: PageKey): boolean {
   const wb = workbenchOf(page);
-  return wb !== null && wb !== "ai" && !isLegacyPage(page);
+  return wb !== null && wb !== "ai" && wb !== "qimen" && !isLegacyPage(page);
 }

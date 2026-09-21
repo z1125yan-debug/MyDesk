@@ -220,8 +220,15 @@ test("发送入口只剩两处，且都走同一份 useChatSend + auto 端点", 
     // 兜底（非流式那一路）的参数集中在 use-chat 的 defaultFallback：页面各写一套就会漏带 scene
     assert.ok(!/fallback:/.test(src), `${p} 不该自带兜底：降级参数只允许有一处定义`);
     assert.ok(!/\baiChatPlain\(|\baiChatTools\(/.test(src), `${p} 不再直接调服务层聊天函数`);
-    assert.match(src, /SceneBadge/, `${p} 要显示场景徽章：徽章只在一处画会出现「这页有、那页没有」`);
   }
+  // 2026-09-22 P9-观感轮口径迁移：主对话页不再在气泡上方画独立的场景徽章——那是 L2「工程话术收声」
+  // 点名要撤的装饰（用户本轮「优化 UI」指示）。原意图一字没改：每个对话入口都必须把「这一轮判成了
+  // 哪个场景」对用户摊开，只是画法各归各的版面——主页面把同一份 intent 交给 StepTimeline 折叠区
+  // 的意图小节（P8-⑤），没有折叠区的小窗继续挂 SceneBadge。信息一处不丢，视觉不再常驻。
+  const pageSrc = readFileSync(new URL("../../src/components/desk/pages/AssistantPage.tsx", import.meta.url), "utf8");
+  assert.match(pageSrc, /intent=\{m\.intent\}/, "对话页的每轮判定要交给 StepTimeline 意图小节（不画徽章≠不透明）");
+  const widgetSrc = readFileSync(new URL("../../src/components/desk/AssistantWidget.tsx", import.meta.url), "utf8");
+  assert.match(widgetSrc, /SceneBadge/, "小窗没有折叠区，徽章是它唯一的场景交代，不许跟着一起撤");
   // 追问要能沿用上一轮的标的与场景：这两份输入由上一条助手消息的徽章给出
   assert.match(useChatSrc, /sessionSymbol/, "会话标的得随请求带上");
   assert.match(useChatSrc, /prevScene/, "上一轮场景得随请求带上");
@@ -245,9 +252,15 @@ test("发送入口只剩两处，且都走同一份 useChatSend + auto 端点", 
 test("首页收敛为纯入口：交接那一句话，自己不发请求、不画会话", () => {
   const src = readFileSync(new URL("../../src/components/desk/pages/AiHomePage.tsx", import.meta.url), "utf8");
   assert.match(src, /askInAssistant\(/, "首页提问只能交给唯一的对话页去发");
-  // 回答风格是「同一个设置的两种画法」：读 store，不在首页另存一份
-  assert.match(src, /s\.assistantMode/, "首页的模式读自 store");
-  assert.match(src, /s\.setAssistantMode/, "首页改模式写回 store");
+  // 回答风格是「同一个设置的两种画法」：读 store，不在首页另存一份。
+  // 2026-09-22 P9-观感轮口径迁移：这层读写从首页内联下拉搬进了共享组件 ChatModeMenu
+  // （对话页 composer 挂的是同一个），首页不再亲手碰 store 的模式键——「单一出处」的原意图
+  // 反过来更硬了：画法也只有一份。读写落点改钉在组件源码上，首页钉「只许挂载、不许另起炉灶」。
+  assert.match(src, /<ChatModeMenu/, "首页的风格下拉必须是共享的 ChatModeMenu，不再自绘一套");
+  assert.ok(!/assistantMode|setAssistantMode/.test(src), "模式读写不许回流首页本地：唯一落点是 ChatModeMenu（store 接线在组件里）");
+  const menuSrc = readFileSync(new URL("../../src/components/desk/ui/ChatModeMenu.tsx", import.meta.url), "utf8");
+  assert.match(menuSrc, /s\.assistantMode/, "菜单的选中值读自 store");
+  assert.match(menuSrc, /s\.setAssistantMode/, "菜单改的值写回 store");
   for (const [needle, why] of [
     [/useChatSend\(/, "首页再挂一套发送逻辑就是本轮要拆掉的东西"],
     [/\bstreamChat\(|\baiChatPlain\(|\baiChatTools\(/, "首页不直接发请求"],
@@ -278,12 +291,21 @@ test("交接是一次性的：只写 pendingAsk + 跳对话页，且不落盘、
 test("回答风格只有 modes.ts 一份定义，两个画法都从它出", () => {
   const modesSrc = readFileSync(new URL("../../src/lib/desk/modes.ts", import.meta.url), "utf8");
   assert.ok(!/use client/.test(modesSrc) && !/@\//.test(modesSrc), "modes.ts 保持纯层，测试可直跑");
+  // 2026-09-22 P9-经验轮口径迁移：composer 改版后，首页与对话页不再各画一份下拉，
+  // 而是共用 ui/ChatModeMenu——「一份定义两处消费」的意图不变，消费点从「页面直接 import modes」
+  // 收敛为「共享组件唯一 import」，因此把钉点改为：共享组件 import modes，且两个页面都吃共享组件。
+  const menuSrc = readFileSync(new URL("../../src/components/desk/ui/ChatModeMenu.tsx", import.meta.url), "utf8");
+  assert.match(menuSrc, /from "@\/lib\/desk\/modes"/, "共享风格菜单从 modes.ts 出");
+  assert.match(menuSrc, /CHAT_MODES\.map/, "菜单画法吃同一份模式清单");
   for (const p of [
     ["../../src/components/desk/pages/AiHomePage.tsx", homeSrc],
     ["对话页", assistantSrc],
   ] as const) {
-    assert.match(p[1], /from "@\/lib\/desk\/modes"|import \{ CHAT_MODES/, `${p[0]} 要用同一份模式清单`);
+    assert.match(p[1], /ui\/ChatModeMenu/, `${p[0]} 要用同一份风格菜单（不再各画各的）`);
   }
+  // 页面不许绕过共享组件自己抄清单（抄两份必漂，这是 modes.ts 立文件的初衷）
+  assert.ok(!/CHAT_MODES\.map/.test(homeSrc), "首页不得回退到本地画一份模式清单");
+  assert.ok(!/CHAT_MODES\.map/.test(assistantSrc), "对话页同上");
 });
 
 test("mode 是浏览器带来的外部输入：进提示词之前先过白名单", () => {

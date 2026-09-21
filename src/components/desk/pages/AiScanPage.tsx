@@ -282,7 +282,21 @@ export default function AiScanPage() {
           <span className="ml-auto">交易日 {result.as_of_trade_date}</span>
         </div>
       )}
-      {result?.warnings.map((w, i) => (
+      {/* P9-经验轮：字段缺口要醒目——「没选出来」与「数据缺失选不了」是两个事实，
+          以前只有一行小字「无命中结果」，用户永远猜不到是资金数据断源。 */}
+      {result && (result.unavailable_fields?.length ?? 0) > 0 && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
+          <span className="font-semibold">以下条件在当前数据源没有任何真实读数，本次没有按它们筛选：</span>
+          {result.unavailable_fields!.map((g) => g.zh).join("、")}
+          <div className="mt-0.5 text-amber-200/70">
+            这是数据缺口（东财资金数据断源兜底期该字段全市场缺失），不是「没有股票符合条件」。
+            可改用涨跌幅/成交额/换手/RPS 等当前可得的口径重新筛选。
+          </div>
+        </div>
+      )}
+      {result?.warnings
+        .filter((w) => !(result.unavailable_fields ?? []).some((g) => w.includes(`「${g.zh}」`)))
+        .map((w, i) => (
         <div key={i} className="rounded bg-amber-500/5 px-2.5 py-1.5 text-[10.5px] text-amber-300/90">⚠ {w}</div>
       ))}
 

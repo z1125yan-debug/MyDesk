@@ -58,6 +58,8 @@ export interface ScreenerRespClient {
   factors_verified?: boolean;
   factor_verify?: { total: number; enabled: number; verified: number; unverified: number };
   warnings: string[];
+  /** P9-经验轮：因数据缺口被忽略的条件字段（非空=结果没按这些条件筛过，「无命中」要读作「字段缺失」） */
+  unavailable_fields?: { field: string; zh: string; total: number }[];
 }
 
 export async function runScreenerApi(body: {
