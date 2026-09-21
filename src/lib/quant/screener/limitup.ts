@@ -9,6 +9,7 @@
 //      · 腾讯兜底为 qfq 前复权价，窗口内除权会扰动单日涨幅（连板股近期除权罕见，接受并披露）。
 //  - 连板数上限=窗口 20 根；跨窗口更长的连板标 boards=20+（capped 标记）。
 import { getProvider } from "@/lib/quant/data/index";
+import { universeSource } from "@/lib/quant/data/tc-universe";
 import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import type { AssetMeta } from "../types.ts";
@@ -123,6 +124,9 @@ export async function computeLimitUp(): Promise<LimitUpResult> {
     max_boards: maxBoards,
     tiers,
     note: "当日涨停=快照精确口径（昨收×比例四舍五入到分）；历史连板回溯用涨幅阈值(比例−0.5pct)近似，腾讯兜底为前复权价；窗口20根，超出标 20+",
-    source: { provider: "em（东财 clist 全A快照）", kline: "fetchBarsHybrid（eltdx 优先/腾讯兜底，仅涨停名单）" },
+    source: {
+      provider: universeSource() === "tc" ? "腾讯批量快照兜底（东财 clist 断源；昨收/最高仍为真实读数）" : "em（东财 clist 全A快照）",
+      kline: "fetchBarsHybrid（eltdx 优先/腾讯兜底，仅涨停名单）",
+    },
   };
 }

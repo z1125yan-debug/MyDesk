@@ -17,6 +17,8 @@ interface SectorRow {
   big: number;
   leader: string;
   rps: number;
+  /** 腾讯板块兜底榜：资金四列是占位 0，必须显示「—」而不是 0.00 */
+  fundsMissing?: boolean;
 }
 
 interface MemberRow {
@@ -136,7 +138,10 @@ export default function SectorsPage() {
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><LayoutGrid size={18} className="text-sky-400" /> 行业板块排行</div>
           <div className="text-[11px] text-muted-foreground">
-            东财板块榜（主力资金口径合并流入/流出两侧）· 点板块行展开成分股 · 点个股跳画像 · {asOf ? `更新 ${asOf}` : ""}
+            {list?.length && list.every((r) => r.fundsMissing)
+              ? "腾讯板块兜底榜（东财板块榜断源：涨幅口径，无主力资金读数）"
+              : "东财板块榜（主力资金口径合并流入/流出两侧）"}
+            {" · 点板块行展开成分股 · 点个股跳画像 · "}{asOf ? `更新 ${asOf}` : ""}
           </div>
         </div>
         <button onClick={load} disabled={busy}
@@ -200,10 +205,10 @@ function SectorBlock({ rank, board, expanded, busy, error, members, onToggle, on
         <td className="px-3 py-1.5 font-mono text-muted-foreground">{rank}</td>
         <td className="px-3 py-1.5 font-medium">{board.name}<span className="ml-1 text-[10px] text-muted-foreground">{board.code}</span></td>
         <td className="px-3 py-1.5 text-right"><PctText value={board.changePct} /></td>
-        <td className="px-3 py-1.5 text-right"><PctText value={board.main} suffix="" /></td>
-        <td className="px-3 py-1.5 text-right"><NumText value={board.ratio} /></td>
-        <td className="px-3 py-1.5 text-right"><NumText value={board.superBig} digits={2} /></td>
-        <td className="px-3 py-1.5 text-right"><NumText value={board.big} digits={2} /></td>
+        <td className="px-3 py-1.5 text-right">{board.fundsMissing ? <span className="text-muted-foreground">—</span> : <PctText value={board.main} suffix="" />}</td>
+        <td className="px-3 py-1.5 text-right">{board.fundsMissing ? <span className="text-muted-foreground">—</span> : <NumText value={board.ratio} />}</td>
+        <td className="px-3 py-1.5 text-right">{board.fundsMissing ? <span className="text-muted-foreground">—</span> : <NumText value={board.superBig} digits={2} />}</td>
+        <td className="px-3 py-1.5 text-right">{board.fundsMissing ? <span className="text-muted-foreground">—</span> : <NumText value={board.big} digits={2} />}</td>
         <td className="px-3 py-1.5 text-right"><NumText value={board.rps} digits={0} /></td>
         <td className="px-3 py-1.5 text-[11px]">{board.leader || "—"}</td>
         <td className="px-3 py-1.5 text-center text-[10px] text-muted-foreground">暂无数据</td>

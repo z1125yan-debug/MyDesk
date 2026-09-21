@@ -4,6 +4,7 @@
 
 import { marketSession } from "./session";
 import { tdxQuotes, tdxKlines, tdxNameOf, type TdxQuote } from "./tdx";
+import { parseTcBoardRankList } from "@/lib/quant/data/tc-snapshot-core";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -293,11 +294,39 @@ export interface BoardRow {
   superBig: number; // 超大单（亿）
   big: number; // 大单（亿）
   leader: string; // 板块=领涨股；个股=所属行业
+  /** 腾讯板块兜底榜只有涨幅口径，main/ratio/superBig/big 均为占位 0 —— 页面必须据此显示「—」而不是 0.00 */
+  fundsMissing?: boolean;
 }
 
 function num(v: unknown): number | null {
   const n = typeof v === "number" ? v : parseFloat(String(v));
   return isFinite(n) ? n : null;
+}
+
+// ---------- 行业板块兜底（东财 push2 断源时；腾讯板块榜只有涨幅口径，无主力资金读数） ----------
+
+export async function fetchTcIndustryBoard(dir: "in" | "out", size = 30): Promise<BoardRow[] | null> {
+  try {
+    const path = `https://proxy.finance.qq.com/ifzqgtimg/appstock/app/mktHs/rank?l=${Math.min(Math.max(size, 10), 200)}&p=1&t=01/averatio`;
+    const j = await cached<{ data?: Record<string, unknown>[] }>("board", `tc:${dir}:${size}`, () => fetchJson(path));
+    const rows = parseTcBoardRankList((j?.data ?? []) as Record<string, unknown>[], dir);
+    return rows.length
+      ? rows.map((b) => ({
+          code: b.code,
+          secid: "", // 腾讯板块代码（pt…）没有东财 secid 口径，留空：日K/资金明细自然走「无数据」分支而不是错源
+          name: b.name,
+          changePct: b.changePct,
+          main: 0,
+          ratio: 0,
+          superBig: 0,
+          big: 0,
+          leader: b.leader,
+          fundsMissing: true,
+        }))
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchBoardReal(
@@ -333,6 +362,8 @@ export async function fetchBoardReal(
     }
     return out;
   } catch {
+    // 东财 clist 断源（拒连/超时）：行业板块换腾讯涨幅榜兜底（概念/个股板块暂无对等兜底）
+    if (kind === "industry") return fetchTcIndustryBoard(dir, size);
     return null;
   }
 }

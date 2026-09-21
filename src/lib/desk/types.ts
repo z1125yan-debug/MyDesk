@@ -38,6 +38,7 @@ export interface SectorRow {
   superBig: number;   // 超大单(亿)
   big: number;        // 大单(亿)
   leader: string;     // 板块=领涨股；个股=所属行业
+  fundsMissing?: boolean; // 腾讯板块兜底榜：main/ratio/superBig/big 是占位 0，页面须显示「—」
 }
 
 export interface DetailDay {

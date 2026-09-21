@@ -8,6 +8,7 @@
 //   触板 = high ≥ 涨停价；收盘涨停 = price ≥ 涨停价；炸板 = 触板 且 未封板。
 
 import { getProvider } from "@/lib/quant/data/index";
+import { universeSource } from "@/lib/quant/data/tc-universe";
 import { fetchQuotesReal, type RealQuote } from "@/lib/desk/em";
 import { marketSession, shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import type { AssetMeta } from "../types.ts";
@@ -157,8 +158,12 @@ export async function computeSentiment(): Promise<SentimentResult> {
       ...(limitUnknown > 0 ? [`触板判定跳过 ${limitUnknown} 只（N/C开头新股或快照缺 high/prevClose，仅按涨跌幅判封板）`] : []),
     ],
     source: {
-      provider: "em（东财 clist 全A快照 + 腾讯指数）",
-      universe_endpoint: "push2.eastmoney.com/api/qt/clist",
+      provider:
+        universeSource() === "tc"
+          ? "腾讯批量快照兜底（东财 clist 断源；主力净额/行业/上市日不可得）+ 腾讯指数"
+          : "em（东财 clist 全A快照 + 腾讯指数）",
+      universe_endpoint:
+        universeSource() === "tc" ? "qt.gtimg.cn/q=（批量60只）× MCP 代码表" : "push2.eastmoney.com/api/qt/clist",
       indices_endpoint: "qt.gtimg.cn",
     },
   };

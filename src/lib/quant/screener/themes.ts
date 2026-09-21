@@ -89,8 +89,11 @@ export async function discoverThemes(opts?: { force?: boolean }): Promise<ThemeD
   const industry = mergeBoards(indIn, indOut);
   const concept = mergeBoards(cptIn, cptOut);
   if (!industry.length && !concept.length) {
-    throw new Error("板块数据源暂不可用（东财 clist 无返回）");
+    throw new Error("板块数据源暂不可用（东财 clist 与腾讯板块兜底均无返回）");
   }
+  // 腾讯板块兜底榜只有涨幅口径（fundsMissing）：资金类读数如实登记缺失，评分自动退到涨幅/扩散度可得的维度
+  const boardFundsMissing = [...industry, ...concept].some((r) => r.fundsMissing) && ![...industry, ...concept].some((r) => !r.fundsMissing);
+  if (boardFundsMissing) missing.push("板块主力净额/净占比/超大单：东财板块榜断源，腾讯兜底榜不含资金读数（本榜按涨幅排序）");
 
   const tagged = [
     ...industry.map((r) => ({ ...r, _kind: "industry" as const })),
@@ -144,7 +147,9 @@ export async function discoverThemes(opts?: { force?: boolean }): Promise<ThemeD
     watch: scored.filter((s) => s.role === "watch").slice(0, 8),
     missing,
     source: {
-      provider: "em（东财板块榜 + 成分 clist + 板块资金日K/指数K）",
+      provider: boardFundsMissing
+        ? "腾讯板块兜底榜（涨幅口径；东财板块榜/clist 成分/资金日K断源，各维度按缺失登记）"
+        : "em（东财板块榜 + 成分 clist + 板块资金日K/指数K）",
       note: "规则版主线/次主线/轮动，不接 LLM；无数据字段显式缺失",
     },
   };

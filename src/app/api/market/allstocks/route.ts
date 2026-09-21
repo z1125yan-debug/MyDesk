@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { getProvider } from "@/lib/quant/data/index";
+import { universeSource } from "@/lib/quant/data/tc-universe";
 import { shanghaiDate } from "@/lib/desk/session";
 import type { AssetMeta } from "@/lib/quant/types";
 
@@ -66,7 +67,12 @@ export async function GET(request: Request) {
       page,
       page_size: pageSize,
       trade_date: tradeDate,
-      source: { provider: "em（东财 clist 全A快照）" },
+      source: {
+        provider:
+          universeSource() === "tc"
+            ? "腾讯批量快照兜底（东财 clist 断源；行业/上市日/主力净额列暂空）"
+            : "em（东财 clist 全A快照）",
+      },
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: `全A列表获取失败：${(e as Error).message}` }, { status: 502 });
