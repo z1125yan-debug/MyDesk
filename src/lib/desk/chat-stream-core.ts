@@ -34,6 +34,13 @@ export interface StreamStep {
    * 而且超过 60 秒没跑完的任务，前端照样能继续看到进度。
    */
   jobId?: string;
+  /**
+   * P8-⑤（debug=true 才发）：这一步的入参（值超 80 字已截断）。
+   * 流式帧原本不带 args——它只在非流式 trace 里有；debug 开关按需补上，默认帧与 A/B 轮字节级一致。
+   */
+  args?: Record<string, unknown>;
+  /** P8-⑤（debug=true 才发）：返回数据摘要（dispatch-core 的 ≤120 字口径）。detail 装的是判词，两者不能混用一个字段 */
+  summary?: string;
 }
 
 /**
@@ -44,17 +51,34 @@ export interface StreamStep {
  */
 export type StreamIntent = IntentBadge;
 
-export type StreamEvent =
+/**
+ * P8-⑤（debug=true 才发）：done 帧的结论留底——模型调用耗时 + 本轮传输档位。
+ * transport 只有三个如实的值：stream=走的流式；fallback=非流式兜底合成；settle=断点收口（⑥ 续传失败时）。
+ */
+export interface DoneDebug {
+  modelMs?: number;
+  transport?: "stream" | "fallback" | "settle";
+}
+
+type StreamEventBody =
   | { type: "step"; data: StreamStep }
   | { type: "delta"; data: { content: string } }
   | { type: "warning"; data: { text: string } }
-  | { type: "done"; data: { fullText: string; steps?: StreamStep[]; intent?: StreamIntent } }
+  | { type: "done"; data: { fullText: string; steps?: StreamStep[]; intent?: StreamIntent; debug?: DoneDebug } }
   | { type: "error"; data: { message: string } };
+
+/**
+ * P8-⑥：seq 放帧**顶层**（{type, data, seq}），五类 type 白名单与各 data 形状零改动——
+ * 旧客户端与网关解码器按 type 分发、只读 data，多出的顶层键是纯透传增量。
+ */
+export type StreamEvent = StreamEventBody & { seq?: number };
 
 export const STREAM_EVENT_TYPES = ["step", "delta", "warning", "done", "error"] as const;
 
-export function encodeStreamEvent(ev: StreamEvent): string {
-  return `data: ${JSON.stringify(ev)}\n\n`;
+/** seq 有则写进帧顶层（run-bus 留底与实发帧共用同一个序号，重放/实发对客户端可一一对账） */
+export function encodeStreamEvent(ev: StreamEvent, seq?: number): string {
+  const o = typeof seq === "number" ? { ...ev, seq } : ev;
+  return `data: ${JSON.stringify(o)}\n\n`;
 }
 
 /** 帧注释：用于服务端定期保活，前端解析器会原样忽略 */
@@ -78,6 +102,15 @@ export function decodeStreamEvent(raw: string): StreamEvent | null {
 }
 
 export function asStreamEvent(obj: unknown): StreamEvent | null {
+  const ev = decodeEventBody(obj);
+  if (!ev) return null;
+  // P8-⑥：顶层 seq 是 number 才收；坏值只当「这帧没序号」，照旧能展示，不连坐整帧
+  const seq = (obj as { seq?: unknown }).seq;
+  if (typeof seq === "number" && Number.isFinite(seq)) return { ...ev, seq: Math.trunc(seq) };
+  return ev;
+}
+
+function decodeEventBody(obj: unknown): StreamEvent | null {
   if (!obj || typeof obj !== "object") return null;
   const o = obj as { type?: unknown; data?: any };
   if (typeof o.type !== "string" || !EVENT_TYPES.has(o.type) || !o.data || typeof o.data !== "object") return null;
@@ -95,6 +128,10 @@ export function asStreamEvent(obj: unknown): StreamEvent | null {
       if (typeof d.reason === "string") data.reason = d.reason;
       // jobId 过一遍类型：前端拿到不认识的形状就当没带，不会画出「任务 undefined」这种假卡
       if (typeof d.jobId === "string" && d.jobId) data.jobId = d.jobId;
+      // P8-⑤：debug 富化两字段按「形状对不对」宽松收（args 须是对象、summary 须是字符串）；
+      // 坏值只是这两个键不进，整帧照旧——帧形状白名单（五类 type）没有扩，既有钉帧断言不破。
+      if (d.args && typeof d.args === "object" && !Array.isArray(d.args)) data.args = d.args as Record<string, unknown>;
+      if (typeof d.summary === "string") data.summary = d.summary;
       return { type: "step", data };
     }
     case "delta":
@@ -105,6 +142,14 @@ export function asStreamEvent(obj: unknown): StreamEvent | null {
       const ev: StreamEvent = { type: "done", data: { fullText: typeof o.data.fullText === "string" ? o.data.fullText : "" } };
       const intent = asStreamIntent(o.data.intent);
       if (intent) ev.data.intent = intent;
+      // P8-⑤：done.debug 只收认识的键值（transport 三档之外不收，不猜第四种）
+      if (o.data.debug && typeof o.data.debug === "object" && !Array.isArray(o.data.debug)) {
+        const raw = o.data.debug as Record<string, unknown>;
+        const dbg: DoneDebug = {};
+        if (typeof raw.modelMs === "number" && isFinite(raw.modelMs)) dbg.modelMs = raw.modelMs;
+        if (raw.transport === "stream" || raw.transport === "fallback" || raw.transport === "settle") dbg.transport = raw.transport;
+        if (dbg.modelMs != null || dbg.transport) ev.data.debug = dbg;
+      }
       return ev;
     }
     case "error":

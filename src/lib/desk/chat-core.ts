@@ -37,6 +37,13 @@ export interface StepInfo {
    * 会话存档也因此不会把整条净值曲线塞进 localStorage。
    */
   jobId?: string;
+  /**
+   * P8-⑤（debug=true 才发）：这一步的入参（值超 80 字已截断）。
+   * 由路由在轮末重发同序号终帧富化进来（applyEvent 按步骤号合并），预取/调度层零改动。
+   */
+  args?: Record<string, unknown>;
+  /** P8-⑤（debug=true 才发）：返回数据摘要（≤120 字口径）。detail 是判词、summary 是摘要，两个字段不混用 */
+  summary?: string;
 }
 
 export interface ChatMessage {
@@ -54,6 +61,17 @@ export interface ChatMessage {
   streaming?: boolean;
   /** 流式/降级过程中如实登记的提示（例如「上游未流式，本机节奏展示」） */
   warning?: string;
+  /**
+   * P8-⑥：本轮「运行留底」的断点锚——客户端生成的 run id + 已收到的最大帧序号。
+   * 刷新后靠它认出未收口的轮次并从 lastSeq 精确续接；只随消息进存档，不参与发给模型的任何口径。
+   */
+  runRef?: { id: string; lastSeq: number };
+  /**
+   * P8-⑤：done 帧带回来的结论留底（模型耗时 + 传输档位），供 debug 面板的结论小节。
+   * 细则 §1.6 原话是「ChatMessage 不加新字段」，但 done.debug 若不落进消息就永远只在流里一闪，
+   * 结论小节会全程「未留底」、§1.3 的字段成了摆设——两个小键随消息持久化，偏差在变更报告里如实记。
+   */
+  debug?: { modelMs?: number; transport?: string };
 }
 
 /**
@@ -488,7 +506,7 @@ export type AppliedEvent =
   | { type: "step"; data: StepInfo }
   | { type: "delta"; data: { content: string } }
   | { type: "warning"; data: { text: string } }
-  | { type: "done"; data?: { fullText?: string; intent?: IntentBadge } }
+  | { type: "done"; data?: { fullText?: string; intent?: IntentBadge; debug?: { modelMs?: number; transport?: string } } }
   | { type: "error"; data: { message: string } };
 
 /** 把一条流事件并入助手消息草稿；同一 step 序号的重复事件按「后到的覆盖状态」处理 */
@@ -512,6 +530,8 @@ export function applyEvent(msg: ChatMessage, ev: AppliedEvent): ChatMessage {
         ...(ev.data?.fullText ? { content: ev.data.fullText } : {}),
         // 场景徽章只在服务端真的回了的时候记；没有就不留空壳，否则界面会画一个「按通用问答处理」的假徽章
         ...(ev.data?.intent ? { intent: ev.data.intent } : {}),
+        // P8-⑤：结论留底同理——done 没带 debug 就不留空壳（旧服务端/无 debug 轮次画「未留底」）
+        ...(ev.data?.debug ? { debug: ev.data.debug } : {}),
       };
     case "error":
       return {

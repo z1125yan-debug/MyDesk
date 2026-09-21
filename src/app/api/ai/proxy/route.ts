@@ -9,8 +9,10 @@ import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { shanghaiDate } from "@/lib/desk/session";
 import {
   createSseScanner, encodeStreamEvent, isEventStream, notStreamedWarning, parseUpstreamFrame,
-  type StreamEvent,
+  type StreamEvent, type StreamStep,
 } from "@/lib/desk/chat-stream-core";
+import { RUNS } from "@/lib/desk/run-bus";
+import { debugFramesFromSteps } from "@/lib/desk/debug-core";
 import {
   foldHistoryForGateway, gatewayUnreachableText, isLanBaseUrl, shouldRetryNonStream,
   type ServerLlmChannel,
@@ -49,6 +51,13 @@ interface ProxyBody {
   watchlist?: { symbol: string; name?: string | null }[];
   /** P7-⑥⑤：带上＝这一轮是对话，要做意图识别 + 场景自动调度；不带＝原样转发 */
   scene?: SceneReq;
+  /**
+   * P8-⑥：客户端生成的本轮留底号（外部输入，非空字符串才认）。带上＝这轮进 RunBus，
+   * 断线/刷新后可按序号续传；且断连不再取消上游（grace=跑完或显式停止）——细则 §5-3 拍板项。
+   */
+  run?: string;
+  /** P8-⑤：调试开关（只认布尔 true，"true"/1 一概忽略——与网关 enable_kairo_engine 同一严格度） */
+  debug?: boolean;
 }
 
 // ---------- 代理解析 ----------
@@ -287,18 +296,33 @@ async function callGemini(base: string, key: string, model: string, messages: Ms
 }
 
 /** 与 /api/ai/chat 同一种 SSE 骨架：ReadableStream 逐帧 flush，客户端按五类事件解析 */
-function sseResponse(run: (emit: (ev: StreamEvent) => void) => Promise<void>): Response {
+function sseResponse(run: (emit: (ev: StreamEvent) => void) => Promise<void>, runId?: string | null): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const emit = (ev: StreamEvent) => {
+        // P8-⑥：带 run 的轮次先进 RunBus（拿序号、同时推给重挂上来的订阅者），再写本连接；
+        // 无 run 时走的就是原来那条 encode——帧与字节数和 A/B 轮完全一致。
+        let line: string;
         try {
-          controller.enqueue(encoder.encode(encodeStreamEvent(ev)));
+          const pub = runId ? RUNS.publish(runId, ev) : null;
+          line = pub ? pub.line : encodeStreamEvent(ev);
+        } catch {
+          line = encodeStreamEvent(ev); // 留底层挂了就裸发，不谎称留了底
+        }
+        try {
+          controller.enqueue(encoder.encode(line));
         } catch { /* 客户端已断开 */ }
       };
       try {
         await run(emit);
       } finally {
+        // 封卷放在 close 之前：订阅者（续传连接）收到收尾信号才会结束，不会挂死
+        if (runId) {
+          try {
+            RUNS.seal(runId);
+          } catch { /* 留底挂了不拖累关流 */ }
+        }
         try { controller.close(); } catch { /* 已关闭 */ }
       }
     },
@@ -360,6 +384,12 @@ export async function POST(req: NextRequest) {
     const wantStream = body?.stream === true || /text\/event-stream/i.test(req.headers.get("accept") ?? "");
     const openaiCompat = !["anthropic", "gemini"].includes(provider);
 
+    // P8-⑤⑥ 的两个外部输入：run 只认非空字符串、debug 只认布尔 true（都不猜）。
+    // 续传是流式独有能力，非流式 JSON 路径不碰 RunBus（细则 §2.6）；撞号/满员如实退回无 run 的普通轮。
+    let runId: string | null = wantStream && typeof body?.run === "string" && body.run ? body.run : null;
+    if (runId && !RUNS.start(runId).ok) runId = null;
+    const debugOn = body?.debug === true;
+
     /**
      * 判场景 + 按场景预取真实数据（emit 只在流式下给，非流式靠返回值带出去）。
      * 没带 scene 就是「一次一问的转发请求」（研究页、事件理解、Agent 循环、连通性自检都算），
@@ -381,7 +411,9 @@ export async function POST(req: NextRequest) {
         // 所以必须显式按「未接入」说，否则提示词会让模型去调一个它根本调不动的工具。
         backtestReady: false,
         emit,
-        isCancelled: () => req.signal.aborted,
+        // P8-⑥：仅带 run 的轮次换 cancel 源（grace=跑到自然结束或显式停止，细则 §5-3 拍板项）；
+        // 不带 run 的请求保持 req.signal.aborted 逐字不变——断连即 notRun 的旧语义原样。
+        isCancelled: () => (runId ? RUNS.cancelled(runId) : req.signal.aborted),
       });
     };
     // 这一路没有工具调用环（Anthropic/Gemini 原生协议更是连 tools 字段都不认），
@@ -405,14 +437,27 @@ export async function POST(req: NextRequest) {
           turn = null;
           emit({ type: "warning", data: { text: `场景自动调度未完成，本轮按「无自动取数」继续回答：${(e as Error).message}` } });
         }
+        // P8-⑤：轮末把带上了 args/summary 的终态帧按同序号重发一遍。
+        // applyEvent 按步骤号字段合并（B 轮前就有的语义），所以富化不会产生第二条步骤、不撞步骤号断言——
+        // 这是「scene-dispatch / dispatch-core 零改动」的落点：它们一个字都不用认识 debug。
+        const emitDebugSteps = () => {
+          if (!debugOn || !turn || !turn.steps.length) return;
+          for (const f of debugFramesFromSteps(turn.steps, turn.trace)) {
+            if (f.args || f.summary) emit({ type: "step", data: { ...f, status: f.status as StreamStep["status"], ms: f.ms ?? null } });
+          }
+        };
         const sentMessages = withScene(turn);
         let emittedDelta = false;
         const emitCounted = (ev: StreamEvent) => {
           if (ev.type === "delta") emittedDelta = true;
           emit(ev);
         };
+        const modelStart = Date.now();
+        // done 的结论留底只给 debug=true 的请求发（细则 §1.3）；transport 如实记本轮走的传输
+        const doneDebug = () => (debugOn ? { debug: { modelMs: Date.now() - modelStart, transport: "stream" as const } } : {});
         try {
-          const content = await callOpenAIStream(baseUrl, apiKey, model, sentMessages, agent, emitCounted, req.signal);
+          // P8-⑥：带 run 的轮次不再把客户端断连接进上游 fetch（grace=跑完或停止键）；无 run 逐字不变
+          const content = await callOpenAIStream(baseUrl, apiKey, model, sentMessages, agent, emitCounted, runId ? undefined : req.signal);
           if (!content) {
             emit({ type: "error", data: { message: `上游未返回内容${via}` } });
             return;
@@ -421,7 +466,8 @@ export async function POST(req: NextRequest) {
           // 不改模型原文、不自动重答（风险点 4）——而且只有本轮真有契约才核（风险点 3）。
           const cw = turn ? contractWarningOf(turn, content) : null;
           if (cw) emit({ type: "warning", data: { text: cw } });
-          emit({ type: "done", data: { fullText: content, ...(turn ? { intent: turn.badge } : {}) } });
+          emitDebugSteps();
+          emit({ type: "done", data: { fullText: content, ...(turn ? { intent: turn.badge } : {}), ...doneDebug() } });
         } catch (e) {
           const raw = (e as Error).message || "";
           // 任务书「网关不支持 SSE 自动切轮询，不直接报错」的落地形态：对同一上游补发一次
@@ -436,7 +482,8 @@ export async function POST(req: NextRequest) {
                 const cw2 = turn ? contractWarningOf(turn, c2) : null;
                 if (cw2) emit({ type: "warning", data: { text: cw2 } });
                 emit({ type: "delta", data: { content: c2 } });
-                emit({ type: "done", data: { fullText: c2, ...(turn ? { intent: turn.badge } : {}) } });
+                emitDebugSteps();
+                emit({ type: "done", data: { fullText: c2, ...(turn ? { intent: turn.badge } : {}), ...doneDebug() } });
                 return;
               }
             } catch { /* 保持下面按原始流式错误说话 */ }
@@ -450,7 +497,7 @@ export async function POST(req: NextRequest) {
             },
           });
         }
-      });
+      }, runId);
     }
 
     let turn: SceneTurn | null = null;

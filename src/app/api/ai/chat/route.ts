@@ -20,8 +20,10 @@ import { backtestClaimWarning } from "@/lib/desk/backtest-core";
 import { contractWarningOf, prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
 import {
   createSseScanner, createToolCallAssembler, encodeStreamEvent, isEventStream, notStreamedWarning,
-  parseUpstreamFrame, stepDetailOf, stepLabelFor, supportsToolCalling, type StreamEvent,
+  parseUpstreamFrame, stepDetailOf, stepLabelFor, supportsToolCalling, type StreamEvent, type StreamStep,
 } from "@/lib/desk/chat-stream-core";
+import { RUNS } from "@/lib/desk/run-bus";
+import { debugFramesFromSteps } from "@/lib/desk/debug-core";
 import { injectSceneContext, trimDialog, clampTurns, type ChatRequestMessage, type ContextMsg, type StepInfo } from "@/lib/desk/chat-core";
 import { asChatMode, type ChatMode } from "@/lib/desk/modes";
 import { getServerLlm } from "@/lib/llm/model-config";
@@ -133,6 +135,10 @@ interface ChatBody {
    * 清单只当「要取哪些代码」的用，行情一律本层现取。
    */
   watchlist?: { symbol: string; name?: string | null }[];
+  /** P8-⑥：客户端生成的本轮留底号（只认非空字符串）。带上＝这轮进 RunBus、断连不再即刻取消（grace），可续传 */
+  run?: string;
+  /** P8-⑤：调试开关（只认布尔 true）：step 帧轮末富化 args/summary、done 帧带结论留底 */
+  debug?: boolean;
 }
 
 /**
@@ -325,6 +331,13 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as ChatBody | null;
   const wantStream = body?.stream === true || /text\/event-stream/i.test(req.headers.get("accept") ?? "");
 
+  // P8-⑤⑥ 的两个外部输入：run 只认非空字符串、debug 只认布尔 true（都不猜）。
+  // 续传是流式独有能力：非流式 JSON 路径不认 run、不碰 RunBus（细则 §2.6，口径一字不动）。
+  // 撞号/满员如实退回无 run 的普通轮——轮次照旧跑完，只是不谎称可续传。
+  let runId: string | null = wantStream && typeof body?.run === "string" && body.run ? body.run : null;
+  if (runId && !RUNS.start(runId).ok) runId = null;
+  const debugOn = body?.debug === true;
+
   // P7-⑩ 任务4：浏览器未配置凭据时落服务端 .env 通道 —— 但工具环只放官方 API 模式过去。
   // 本地网关（doubao2API）实测只取最后一条 user 消息、不执行 function call，把 tools 发过去
   // 等于让模型在没有工具的世界里硬编「我调过了」—— 这条路上宁可少一条工具链，不能多一批假数据。
@@ -364,7 +377,9 @@ export async function POST(req: NextRequest) {
   // mode 是浏览器带来的外部输入：过一遍 modes.ts 的白名单，认不出的按默认口径答，
   // 而不是带着一个不存在的模式名去查表（查不到就静默少一段风格说明，用户看不出来）
   const mode = asChatMode(body?.mode);
-  const isCancelled = () => req.signal.aborted;
+  // P8-⑥：仅带 run 的轮次换 cancel 源（grace=跑到自然结束或显式停止，细则 §5-3 拍板项）；
+  // 不带 run 的请求保持「断连即停」旧语义逐字不变（P7 口径）。
+  const isCancelled = () => (runId ? RUNS.cancelled(runId) : req.signal.aborted);
   // 自选清单：服务端不读浏览器存档，只认请求体里带来的这份。
   // 非数组一律当没带（工具层会如实回「自选清单为空」，不会拿别的来源冒充）；
   // 代码识别、去重与条数上限在工具层的 watchlist_overview 内做，本层不替它猜。
@@ -441,13 +456,23 @@ export async function POST(req: NextRequest) {
       turn = null;
       emit({ type: "warning", data: { text: `场景自动调度未完成，本轮按「无自动取数」继续回答：${(e as Error).message}` } });
     }
+    // P8-⑤：轮末把带上了 args/summary 的终态帧按同序号重发一遍（applyEvent 按步骤号字段合并，
+    // 不产生第二条步骤）——预取侧配 turn.trace、模型自取侧配 r.trace，两段拼接后一次富化。
+    const emitDebugSteps = (steps: StepInfo[], trace: ChatTraceItem[]) => {
+      if (!debugOn || !steps.length) return;
+      for (const f of debugFramesFromSteps(steps, trace)) {
+        if (f.args || f.summary) emit({ type: "step", data: { ...f, status: f.status as StreamStep["status"], ms: f.ms ?? null } });
+      }
+    };
+    const loopStart = Date.now();
     try {
       const r = await runToolLoop({
         url, apiKey, model, messages: buildMessages(turn), agent, emit, isCancelled, ctx,
         stepStart: turn?.nextStep ?? 0,
       });
       if (r.cancelled) {
-        emit({ type: "error", data: { message: "客户端已断开，本次回答提前结束（结束后不会再取数）" } });
+        // 带 run 的轮次 isCancelled 只会被「显式停止」置真（断连不算）——话术必须分开，不把用户自己的停止说成掉线
+        emit({ type: "error", data: { message: runId ? "已按停止请求提前结束本轮，已收到的内容保留在时间线上" : "客户端已断开，本次回答提前结束（结束后不会再取数）" } });
         return;
       }
       // 同一条护栏在两条传输上都要成立：降级路径与非降级路径不能一个查一个不查
@@ -456,11 +481,20 @@ export async function POST(req: NextRequest) {
       // P8-②：流式路径同口径核契约——只补 warning 帧，r.content 原样进 done，不做任何改写/重试
       const cw = turn ? contractWarningOf(turn, r.content) : null;
       if (cw) emit({ type: "warning", data: { text: cw } });
-      emit({ type: "done", data: { fullText: r.content, ...(turn ? { intent: turn.badge } : {}) } });
+      emitDebugSteps([...(turn?.steps ?? []), ...r.steps], [...(turn?.trace ?? []), ...r.trace]);
+      emit({
+        type: "done",
+        data: {
+          fullText: r.content,
+          ...(turn ? { intent: turn.badge } : {}),
+          // P8-⑤：结论留底只给 debug=true 的请求发；耗时是整个模型环（含工具轮）的真实时间
+          ...(debugOn ? { debug: { modelMs: Date.now() - loopStart, transport: "stream" as const } } : {}),
+        },
+      });
     } catch (e) {
       emit({ type: "error", data: { message: `AI 调用失败：${(e as Error).message}` } });
     }
-  });
+  }, runId);
 }
 
 /**
@@ -468,18 +502,33 @@ export async function POST(req: NextRequest) {
  * 这里不用 NextResponse.json 那种「先拿全再返回」的写法，ReadableStream 会真的逐帧 flush；
  * 是否真的逐帧到达以 next build + next start 下 `curl -N` 的时间戳为准（见 worklog），不看代码想当然。
  */
-function sseResponse(run: (emit: (ev: StreamEvent) => void) => Promise<void>): Response {
+function sseResponse(run: (emit: (ev: StreamEvent) => void) => Promise<void>, runId?: string | null): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const emit = (ev: StreamEvent) => {
+        // P8-⑥：带 run 的轮次先进 RunBus（拿序号、同时推给重挂上来的订阅者），再写本连接；
+        // 无 run 时走的就是原来那条 encode——帧与字节数和 A/B 轮完全一致。
+        let line: string;
         try {
-          controller.enqueue(encoder.encode(encodeStreamEvent(ev)));
-        } catch { /* 客户端已断开：enqueue 抛错交给循环里的 isCancelled 收尾 */ }
+          const pub = runId ? RUNS.publish(runId, ev) : null;
+          line = pub ? pub.line : encodeStreamEvent(ev);
+        } catch {
+          line = encodeStreamEvent(ev); // 留底层挂了就裸发，不谎称留了底
+        }
+        try {
+          controller.enqueue(encoder.encode(line));
+        } catch { /* 客户端已断开：enqueue 抛错交给循环里的 isCancelled 收尾（带 run 轮次的 cancel 源是停止键） */ }
       };
       try {
         await run(emit);
       } finally {
+        // 封卷放在 close 之前：订阅者（续传连接）收到收尾信号才会结束，不会挂死
+        if (runId) {
+          try {
+            RUNS.seal(runId);
+          } catch { /* 留底挂了不拖累关流 */ }
+        }
         try { controller.close(); } catch { /* 已关闭 */ }
       }
     },
