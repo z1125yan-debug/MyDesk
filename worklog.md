@@ -1341,3 +1341,41 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 6. **「对话分析」左侧会话清单仍是本机浏览器存档**（界面文案原样说明）；SQLite 承载的历史/策略/选股任务沿用既有数据源，本轮未动表结构。
 7. **`/api/llm/config` 是配置完备性探测，不发试探请求**：「可用」不保证网关此刻在线，真掉线由对话报错文案兜底根因。
 8. **网关侧强校验 Key 属未雨绸缪项**：占位 `admin` 当前可用，将来变了填 `LLM_API_KEY` 即可，未做双向探活。
+
+## P7 第十一阶段 P7-⑪ 任务1 UI 重构（骨架轮）：25 个零散菜单 → 3 大工作台 + 两栏壳 + 旧路由横幅兼容（2026-09-21：nav-core 纯核 + 10 条新单测 + 1 条测试改锚）
+
+任务书第一条按批准口径做完骨架。本仓库 `package.json` / `package-lock.json` diff **为空**（零新增依赖，含折叠面板的替代实现）；`prisma/db/custom.db` 当日差异与 `P1P2_任务书.md` 删除照旧**不入本轮任何 commit**。验收对应任务书第 1 条：最左侧边栏只有大模块按钮，进入后「左窄栏列表 + 右宽栏详情」，无零散菜单、无跳路由白屏，老路由全部保留兼容。
+
+### 这一轮定的口径
+
+1. **派生而非抄写**：`nav-core.ts` 是导航唯一登记表，「当前在哪个工作台」由 `workbenchOf(page)` 从页面反推——侧栏/壳层/测试三处消费同一张表，不存在第二份菜单清单。PageKey 25 个一个不删、不改名，`#/agent` 这类旧 hash 照常直达。
+2. **侧栏只画 3 个大按钮**（AI 决策/量化工具/行情中心），第 4 个「设置」入口按任务书落在**底部状态条齿轮**，弹出下拉含设置+扩展（NAV.system 登记表渲染），系统页不再占主导航位。
+3. **AI 决策的左栏长在 AssistantPage**（模式切换 + 会话历史），壳层对它不重复画栏——两栏历史会打架；量化工具/行情中心才由 `WorkbenchShell` 画左窄栏（分组小标签点即 `go(target)`，不引入第二套选中状态）。
+4. **「并入对话」的 5 个旧页**（aihome/analysis/events/research/agent）退出一切列表但渲染分支原样保留：进旧路由时顶部挂琥珀横幅「此页已并入 AI 决策对话（旧路由保留直达）」+ 一键回到对话，右栏照常渲染原组件——兼容是「照常能看」，不是跳转拦截。
+5. **折叠面板的依赖冲突按用户裁定落地**：任务书写的是 Element Plus `el-collapse`，但项目无此依赖且全局约束禁新增——经确认用既有 radix 壳（`src/components/ui/collapsible.tsx`）封装统一 `DeskCollapse`，决策出处写进组件头注，测试钉住「新文件不许 import element-plus、package.json 不许出现它」。
+6. **初始页 aihome → copilot**（旧默认页已并入对话），但 zustand persist 存储名 `mydesk-state` 一个字母不动——改名等于清光老用户本机状态，有一条测试专门钉它。
+7. **AppShell 25 个渲染分支与 hash 同步逻辑逐字节保留**，外面只包一层 `<WorkbenchShell>`；`syncFromHash` 本轮零改动（后述边界 2 因此是既有行为而非回归）。
+8. **结构测试用「现读全集」策略**：PageKey 全集从 types.ts 当场正则读出，登记表不重不漏、分组目标必须在列表内、25 分支逐个断言在位——将来有人加页漏登记，测试直接红，而不是运行时白屏。
+
+### 落点（4 个新文件 + 4 处改动，判定全在 nav-core 纯核层）
+
+- `src/lib/desk/nav-core.ts` **新增 ~135 行**：`NAV` 四工作台登记表 + `WORKBENCH_ORDER` + `workbenchOf` / `isLegacyPage` / `hasShellLeftRail`；键冲突在模块加载即 throw。零 React/零 window/零存储，单测可直跑。
+- `src/components/desk/WorkbenchShell.tsx` **新增**：两栏壳 + LeftRail（分组 chips + 列表项）+ legacy 横幅三态。
+- `src/components/desk/ui/DeskCollapse.tsx` **新增**：统一折叠面板（radix 壳），箭头 `group-data-[state=closed]` 旋转（`data-state` 挂在 Trigger 上，挂在 svg 永不生效）。
+- `src/components/desk/Sidebar.tsx` **重写**：只画 WORKBENCH_ORDER 派生的 3 按钮 + 底部齿轮下拉；品牌块与「本地运行 · REAL_DATA_ONLY」状态条原样。
+- `AppShell.tsx` 包壳；`store.ts` 初始页；`p6-d-agent-wiring.test.ts` 的「agent 入口」断言从 Sidebar 源码**按意图改锚**到 nav-core 登记表（注释写明口径迁移出处），hash 兼容与渲染分支断言原样守。
+- `tests/quant/p7-ui-nav.test.ts` **新增 10 用例**（全集不重不漏 / 分组目标 / 3 按钮 / legacy 语义 / 纯核纯净 / 25 分支 / 侧栏无散菜单 / 横幅在位 / persist 名 / 零新依赖）。
+
+### 验收数字与实测证据
+
+- `tsc --noEmit` 退出码 **0**；全量 **695 tests / 686 pass / 0 fail / 9 skipped**（基线 685/676/9，+10 恰等于新测试文件，无新增跳过、无断言删除）；`next build` 通过；触碰的 6 源文件 + 2 测试文件 eslint **0 告警**；`git diff HEAD -- package.json` 为空。
+- **实机走查**（3014 隔离实例 + 副本库 `D:/Zai/tmp-p710/accept.db` + `DESK_SCHEDULER=0`，3010/PID 93740 全程未动）：打开即落 `#/copilot` 且侧栏恰 3 按钮；量化工具左栏点「我的策略」→`#/quant`、分组「候选池」→`#/pool`，右栏原页面数据照常；行情中心 6 分组 + 10 项，「行业板块」标题联动；`#/agent` 横幅在、「回到对话」→`#/copilot`；**25 个 hash 全扫零白屏**；齿轮下拉→设置（正文 14706 字符）/扩展均可达且无误挂横幅；刷新驻留 `#/sectors`、侧栏收起/展开、重启后新构建复测一致。
+- 走查取证用 DOM `click()` 驱动（与 React onClick 同一处理器）：隐藏窗口下真实坐标点击不可靠，见边界 1。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+
+1. **走查工具真实鼠标点击在未前台窗口不生效**（viewport `visible=false`），本轮以 DOM click 等价取证；人眼在本机过一遍交互仍是最终验收。
+2. **`#/analysis?symbol=` 书签直达进不去是 HEAD 既有行为**（`syncFromHash` 判带 query 的 hash 无效回写当前页，该逻辑与 HEAD 逐字节相同），本轮按「不擅动路由」约束未修，留给 P8 路由口径一并收。
+3. **冷刷新后标签页标题短暂为默认值**，点一次导航即恢复——同为既有行为，非本轮引入。
+4. **system 工作台（设置/扩展）目前也走壳层画 2 项左窄栏**，是统一规则的自然结果；若要系统页铺满，登记表一行可改。
+5. **本轮只立骨架与导航**：右栏各页技术细节批量替换为 DeskCollapse、context 面板联动（P8 做）尚未铺开；DeskCollapse 与静态面板已就位待接。
