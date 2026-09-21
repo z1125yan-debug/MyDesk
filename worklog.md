@@ -1442,3 +1442,44 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 3. **本轮 node 工具链为 playwright 自带 v24 shim**（`D:/Zai/tmp-p8/bin/node`）：PATH 里原 node 消失后重建的等价物，测试/构建均经它跑通；环境恢复后可无痛切回。
 4. **结论卡 30s 超时是软闸**：超时只降级为「未构建契约」并写进 skipped，不阻塞回答——慢标的（日 K 拉取卡壳）场景下契约缺席是预期行为。
 5. **行情类场景（market_overview/sector_*）不注入契约也没有新鲜度纪律段之外的动作**：任务书口径如此；若后续要求行情轮也带日历缺口提示的独立呈现，属新增口径非本轮范围。
+
+## P8 子轮 B：③技能插件体系 + ④完整 Agent Loop 闭环 + 独立代理网关（2026-09-21：33 条新单测，分流/闭环/记忆四链路实机取证）
+
+接用户口径（2026-09-21 重述）开工子轮 B：3014 本身不做分流逻辑、收到请求就执行全套量化业务；分流拆成独立代理网关，由上层客户端传 `enable_kairo_engine` 布尔控制路由，true 转 3014（后端 LLM 不限，完整启用 Agent/契约/新鲜度），false 直透对应 LLM、不访问 3014、不触发任何量化业务；无论切换任何模型大脑，同一会话自动继承全部当前对话记忆。同时按任务书八-1/2 落 ③（硬编码工具→可注册技能表，按意图自动判断调用哪些工具、不写死顺序）与 ④（取数后先校验完整性、不足补一轮，再进综合分析）。A 子轮的未收口边界按用户指示原文保留、未改动。`package.json` / `package-lock.json` diff 照旧为空；`prisma/db/custom.db` 与 `P1P2_任务书.md` 删除照旧不入任何 commit。
+
+### 这一轮定的口径
+
+1. **解耦的物理化**：网关放在仓库根 `gateway/`（纯 `.mjs`）——tsconfig include 只有 `**/*.ts`，tsc/next build 对其不可见，3014 内核对它的存在零感知；网关也不 import 任何 `src/`，唯一接触面是 3014 对外既有契约（`/api/ai/proxy` 的 scene 门、`x-ai-*` 头、五类 SSE 帧）。3014 侧零处出现 `enable_kairo_engine` 判定。
+2. **分流只读字段、不做推理**：`readEngineFlag` 只认布尔 `true`；false/缺省/`"true"`/1 一律透传且各给不同的如实原因。透传分支连 scene 字段都不塞，路由字段（`enable_kairo_engine`/`kairo_backend`/`conversation_id`）剥干净再交给 LLM。
+3. **记忆继承一条规则**：`conversation_id` → 网关会话存档，两条分支共用一份——薄客户端（只带本句）由存档补全，带全量者以客户端为准并刷新存档。gateway 型大脑（豆包本地网关）在 true 分支**不发** x-ai-* 头、走 3014 自己的 .env 通道，让内核既有的网关消息折叠兜住「只吃最后一条 user」的网关——换脑不换记忆靠的就是这层不越权。
+4. **③ 表驱动、行为一字不变**：预取编排从 `planDispatch` 的 switch 搬进 `skills-core.ts` 声明表（scene/spread/args/reason/gate/dedupe_snapshot/required），文案单一出处留在判定层，news 两变体（消息面/原因 vs 消息面/为什么）逐字照抄不擅自统一；per_symbol 保持「标的外层、技能内层」的三件套逐只成组。坏注册（重名/缺 desc/假场景）一律拒绝并回原因，不静默覆盖内置。
+5. **④ 补充轮有界且对得上账**：`AGENT_LOOP_MAX_ROUNDS=2`（首轮+1 次补充，502 风暴期补三轮也只是三轮失败）；只重跑「required 且没取到」的项、args 原样；rows/missing 按 dispatch-core 的「非 ok 行必产一条 gap」不变量按位配对，对不上账（行数≠gap 数）宁可不补；合并时 why 按位次取、不按工具名 find——同批重试两只票的快照，名字匹配会把第一只的因安到第二只头上。补不齐的以「补充后仍缺：第二轮话术（首轮：第一轮话术）」双留底进未取到清单。
+6. **校验步进时间线**：「校验本轮取数完整性（必读读数逐项对账）」本身是一个 prefetch 步骤（⑤ 的 Debug 面板要靠步骤重放链路，看不见校验＝看不见闭环）；补充轮复用首轮同一 `execute` 闭包，新鲜度 raws 自动包含补回来的原始读数。
+
+### 落点（4 个新文件 + 3 个 src 改动 + 2 个测试新文件）
+
+- 新 `src/lib/desk/skills-core.ts`：技能表 + `createSkillRegistry`/`registerSkill` 单例（12 内置项、required 标记=旧必读口径、SCENE_DISPATCH_CONFIG/SCENE_PREFERS 原样搬）。
+- 改 `intent-core.ts`：`planDispatch(ctx, registry=SKILLS)`/`toolsForScene(scene, registry=SKILLS)` 改从表消费；上限话术与全部文案逐字保住。
+- 新 `src/lib/desk/agent-loop-core.ts`：findRequiredGaps / planSupplementRound / mergeSupplement / completenessVerdict / stillMissingNote 五个纯函数。
+- 改 `scene-dispatch.ts`：首轮预取后接「校验→补充→合并」，判定全部在纯核；`chat-tools.ts` 新增 `registerChatTool`（校验形状、拒重名，findTool 读活表所以注册即生效）。
+- 新 `gateway/router-core.mjs`（分流/记忆/翻译纯层，零 import）+ `gateway/kairo-router.mjs`（HTTP 服务层：`POST /v1/chat/completions`、`GET /healthz`，默认 :7900，`KAIRO_WORKBENCH_URL` 指 3014，`KAIRO_BACKENDS_JSON/FILE` 配大脑，内置 doubao(gateway)/deepseek/siliconflow 三项）。
+- 新 `tests/quant/p8-skills-loop.test.ts` 16 用例（表形状/required 对齐/注册即生效与拒绝/④五函数含对不上账与按位配 why 的反例/接线不外溢 grep）+ 新 `tests/quant/p8-router.test.ts` 17 用例（flag 严格性/记忆合并规则/帧翻译五类/包装剥字段 + 5 条进程内 e2e：false 零碰工作台、true 非流式包装、true 流式翻译收口、跨分支跨大脑记忆继承 deepEqual、坏输入三态不碰上游）。
+
+### 验收数字与实测证据
+
+- `tsc --noEmit` **0**；全量 **751 tests / 742 pass / 0 fail / 9 skipped**（基线 718/709/9，+33 恰为两份新文件）；`next build` 通过；9 个触碰文件（含 2 个 gateway .mjs）eslint **0 problems**；依赖 diff 空。
+- **实机三件**：3014 新构建（`next start -p 3014`，隔离库 + `DESK_SCHEDULER=0`）+ mock-p8 顶 :7861 + 网关 :7900。取证件在 `D:/Zai/tmp-p8/p8b-*.json|out`。
+  - **false 直透**：回答是 mock 原始 OpenAI 形状、无 kairo 字段，回执「契约注入=否」——同句问题走 true 会变「是」，对照组证明透传轮零量化业务；e2e 里假工作台命中计数钉死为 0。
+  - **true 非流式**：6 步预取时间线，第 4 步即「校验本轮取数完整性（必读读数逐项对账）· ok」；`kairo.intent.scene=stock_analysis`；warning 完整公示「999.9→本地引擎是 33.2 / 强势看多→震荡偏强」。
+  - **true 流式**：9 条 `: kairo-step` 注释行（含校验步）、delta chunk 逐字、`finish_reason":"stop"` + `data: [DONE]` 收口，警示走 `: kairo-warning` 注释不冒充正文。
+  - **跨分支记忆**：`conversation_id=smoke-b1` 先透传轮再开引擎，健康检查 `conversations:1`，true 轮正常判出 stock_analysis；「存档补全后 3014 真收到跨分支时间线」由 e2e 的 m3 `deepEqual(["第一问","回答1","第二问","回答2","那它明天怎么看"])` 钉住（mock 不回显历史，实机只能证明计数与链路通）。
+- 环境事件如实记录：mock :7861 的两次后台任务重启均在打印 listen 后随任务壳退出（exit 1），本轮改用 nohup 分离进程后稳定；3014 旧实例（构建已被本轮 build 刷新）按协议杀旧 PID 151372、启新实例。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+
+1. **:7861 仍是 mock-p8 顶替**（承 A 边界 2）：真实豆包网关未重启，true 分支的「换脑」实测只覆盖了「gateway 标记大脑走 .env 通道」这条机制路；真网关下复测留给后续。
+2. **④ 补充轮实机只点亮「校验 ok」分支**：当日取数全成、无洞可补；「有洞→补一轮→仍缺双留底」整链由 12 条单测 + 结构 grep 钉住，实机需构造一次取数失败（拔网/坏 symbol）未做。
+3. **网关会话存档是内存表**：进程重启即清、200 会话粗上限先丢最旧、不落盘——本机代理工具的既定简化，多实例部署会各记各的，边界如实记录。
+4. **false 透传只实现 OpenAI 兼容协议**（`/v1/chat/completions`）：Anthropic/Gemini 原生形状不在网关范围（那是 3014 proxy 的差异化能力，未复制过来，也刻意不复制以免第二套口径）。
+5. **「插件体系」当前交付的是注册能力而非动态发现**：`registerSkill`/`registerChatTool` 是进程内注入口，MCP 管理器（stdio）尚未桥接进技能表，也没有技能包文件监听——按意图「自动判断调用哪些工具」已由表+required+gate 实现，第三方技能包热插拔属后续口径。
+6. **网关记忆只对走网关的调用方生效**：3014 前端自己的会话体系（sessions/localStorage）与网关 conversation_id 存档是两套，互不共享；「同一会话继承全部记忆」的口径主语是本网关路由的会话。
