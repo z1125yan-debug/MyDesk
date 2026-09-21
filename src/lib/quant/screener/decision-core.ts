@@ -1143,3 +1143,190 @@ export function decisionToText(d: Decision): string {
   lines.push(`口径：${d.basis}`);
   return lines.join("\n");
 }
+
+/* ------------------------------------------------------------------ P8-② v3 结论契约（强制注入 + 引用一致性校验） */
+//
+// 任务书 P8 第 4 条：「把 v3 最终得分、六档趋势等级、各维度分值以固定结构化字段注入 Prompt，
+// 锁死数字，模型不得自行修改或虚构」。这一节就是那个「结构化字段」的唯一出处：
+//  · renderDecisionContract 把引擎结果压成键序固定的 JSON —— 注入给模型的是它，
+//    事后校验比对的也是它，不存在第二份「引擎数字的转述」。
+//  · verifyContractCitations 只查回答里**明确挂词引用**的数字（「综合得分 X」「技术面折算分 X」…），
+//    没被这些模式点到的数字一概不校验 —— 宁可漏报，不能把行文里的普通数字误判成造假。
+//  · 校验不一致的唯一后果是一条警告（风险点 4）：本层只产出违规清单与文案，
+//    不改写模型输出、不触发自动重试 —— 那是调用方（聊天路由）的事，而且它们也不会那么做。
+//  · 注入条件（风险点 3）：只有本轮真的算出了决策结果才注入；纯行情查询走不到这里，
+//    判「走不走」的闸在 scene-dispatch（服务层），入口条件由 shouldBuildDecisionContract 把死。
+
+/** 契约里每一维只带这几格：归因明细进契约会让 JSON 大十倍，而「锁数字」需要的是各维分值本身 */
+export interface DecisionContractDim {
+  key: DimensionKey;
+  label: string;
+  rule_version: string | null;
+  /** 字面分（折算前，本维规则表原样求和）；null = 算不出 */
+  raw_score: number | null;
+  /** 折算到 −100~+100 的分；null = 未参与加权 */
+  norm_score: number | null;
+  /** 本次生效权重（重归一后的实际值） */
+  weight_applied: number;
+}
+
+export interface DecisionContract {
+  protocol_version: string;
+  grade_mapping_version: string;
+  subject: string | null;
+  final_score: number | null;
+  grade: string | null;
+  dimensions: DecisionContractDim[];
+  /** 本结论的取数时刻与服务端参考日（决策卡页面的同一对字段，不另算一份） */
+  as_of: string;
+  trade_date: string;
+  /** 技术面最后一根日K的日期：与 trade_date 不等就是既有口径里的「要说得出口」，进契约让模型也看得见 */
+  technical_bar_date: string | null;
+}
+
+/**
+ * 从结论卡响应里取契约。参数写成结构而不是 DecisionView：decision-core 不 import 接线内核
+ * （方向反过来才对：wiring 依赖 core），调用方传 { decision, as_of, trade_date, wiring } 四件即可。
+ */
+export function buildDecisionContract(view: {
+  decision: Decision;
+  as_of: string;
+  trade_date: string;
+  wiring: { technical_bar_date: string | null };
+}): DecisionContract {
+  const d = view.decision;
+  return {
+    protocol_version: d.protocol_version,
+    grade_mapping_version: GRADE_MAPPING_VERSION,
+    subject: d.subject ?? null,
+    final_score: d.final_score,
+    grade: d.grade,
+    dimensions: d.dimensions.map((dim) => ({
+      key: dim.key,
+      label: DIMENSION_LABEL[dim.key],
+      rule_version: dim.rule_version,
+      raw_score: dim.raw_score,
+      norm_score: dim.norm_score,
+      weight_applied: dim.weight_applied,
+    })),
+    as_of: view.as_of,
+    trade_date: view.trade_date,
+    technical_bar_date: view.wiring.technical_bar_date,
+  };
+}
+
+/** 契约的注入形态：固定键序的紧凑 JSON（对象字面量的插入序就是 stringify 的输出序，两次渲染逐字节一致） */
+export function renderDecisionContract(view: {
+  decision: Decision;
+  as_of: string;
+  trade_date: string;
+  wiring: { technical_bar_date: string | null };
+}): string {
+  return JSON.stringify(buildDecisionContract(view));
+}
+
+/** 是否该为本轮建结论卡（P8-② 的闸，风险点 3 的代码化）：只有个股研判类场景有「决策结果」可言 */
+export function shouldBuildDecisionContract(scene: string): boolean {
+  return scene === "stock_analysis";
+}
+
+/** 跟契约原文的引用规则：进 system prompt，和契约 JSON 贴在一起，「怎么引用」也只有一个出处 */
+export const CONTRACT_QUOTE_RULE =
+  "【v3 结论契约（本机引擎实算，数字锁死）】上面 [本地决策结论卡] 块末尾的 JSON 是本次四维打分与" +
+  "趋势等级的契约原文：final_score=综合得分（折算刻度 −100~+100），grade=六档等级，dimensions[]=各维" +
+  "字面分与折算分，as_of/trade_date/technical_bar_date=口径日期。引用这些数字时只能逐字引用契约里的值" +
+  "（含符号与小数位），禁止重算、取整、改档或引用一份你没见到的分数；契约里没有的数字不要以" +
+  "「综合得分/趋势等级」的名义给出。本轮回答与契约不一致会被系统比对并公示警告。";
+
+/** 数值引用：只认「标签 + 至多几个连接符 + 数字」这种明确挂词的写法 */
+const CITE_NUM_SPECS: { key: "final" | DimensionKey; label: string; re: string }[] = [
+  { key: "final", label: "综合得分", re: "(?:综合得分|最终得分|总得分|综合评分|总分)" },
+  { key: "technical", label: DIMENSION_LABEL.technical, re: `(?:${DIMENSION_LABEL.technical}|技术面|技术维)(?:的)?(?:折算)?(?:得分|分值|分)` },
+  { key: "probability", label: DIMENSION_LABEL.probability, re: `(?:${DIMENSION_LABEL.probability}|概率面|概率维)(?:的)?(?:折算)?(?:得分|分值|分)` },
+  { key: "market", label: DIMENSION_LABEL.market, re: `(?:${DIMENSION_LABEL.market}|市场面|情绪面|情绪分)(?:的)?(?:折算)?(?:得分|分值|分)` },
+  { key: "event", label: DIMENSION_LABEL.event, re: `(?:${DIMENSION_LABEL.event}|事件面|消息面|事件分)(?:的)?(?:折算)?(?:得分|分值|分)` },
+];
+
+/** 等级引用：本项目六档词表是唯一合法档位名，普通行文里的「偏弱」不挂「等级」字样就不会被算成引用 */
+const GRADE_ALT = [...GRADE_ORDER].sort((a, b) => b.length - a.length).join("|");
+const GRADE_CITE_RE = new RegExp(`(?:趋势等级|综合等级|六档|等级|档位)[^。；，,！!？?\\n]{0,3}?(${GRADE_ALT})`, "g");
+
+export interface ContractCitation {
+  field: string;
+  /** 数值引用的数字；等级引用为 null（等级走 cited_text 比对） */
+  cited: number | null;
+  cited_text: string;
+  target: "final" | DimensionKey | "grade";
+}
+
+/** 抽出回答里全部「明确引用」。循环内新建正则实例：共享 /g 正则会带着 lastIndex 串到下一次调用（intent-core 的 codeRe 同一教训） */
+export function extractContractCitations(text: string): ContractCitation[] {
+  const src = text ?? "";
+  const out: ContractCitation[] = [];
+  for (const s of CITE_NUM_SPECS) {
+    const re = new RegExp(`${s.re}[^+\\-\\d]{0,4}([+-]?\\d+(?:\\.\\d+)?)`, "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src))) {
+      const v = Number(m[1]);
+      if (Number.isFinite(v)) out.push({ field: s.label, cited: v, cited_text: m[0].trim().slice(0, 40), target: s.key });
+    }
+  }
+  const gre = new RegExp(GRADE_CITE_RE.source, "g");
+  gre.lastIndex = 0;
+  let gm: RegExpExecArray | null;
+  while ((gm = gre.exec(src))) {
+    out.push({ field: "趋势等级", cited: null, cited_text: gm[1], target: "grade" });
+  }
+  return out;
+}
+
+export interface ContractViolation {
+  field: string;
+  cited_text: string;
+  engine_value: string;
+}
+
+/** 四舍五入等价：引用位数比引擎少时按引用自己的精度收引擎值（写 33 对上 32.6 是显示精度，不是造假） */
+function equalsWithinRounding(engine: number, cited: number): boolean {
+  const digits = /\.(\d+)$/.exec(String(cited))?.[1].length ?? 0;
+  const factor = 10 ** digits;
+  return Math.round(engine * factor) / factor === cited;
+}
+
+/** 回答 vs 契约的一致性校验：只出违规清单，不改写、不重试（风险点 4 的落点） */
+export function verifyContractCitations(text: string, contract: DecisionContract): ContractViolation[] {
+  const cites = extractContractCitations(text ?? "");
+  if (!cites.length) return [];
+  const bad: ContractViolation[] = [];
+  for (const c of cites) {
+    if (c.target === "grade") {
+      if (contract.grade && c.cited_text !== contract.grade) {
+        bad.push({ field: c.field, cited_text: c.cited_text, engine_value: contract.grade });
+      }
+      continue;
+    }
+    if (c.cited === null) continue;
+    // 提出来给闭包用：c.cited 是可变属性，TS 不把它在 continue 之后的收窄带进回调（TS2345）
+    const cited = c.cited;
+    let candidates: number[] = [];
+    if (c.target === "final") {
+      if (contract.final_score !== null) candidates = [contract.final_score];
+    } else {
+      const dim = contract.dimensions.find((d) => d.key === c.target);
+      if (!dim) continue;
+      if (dim.raw_score !== null) candidates.push(dim.raw_score);
+      if (dim.norm_score !== null) candidates.push(dim.norm_score);
+    }
+    if (!candidates.length) continue; // 引擎本身没有这个数：不拿「引用了一个算不出的字段」当违规
+    if (!candidates.some((v) => equalsWithinRounding(v, cited))) {
+      bad.push({ field: c.field, cited_text: c.cited_text, engine_value: candidates.map((v) => String(v)).join(" / ") });
+    }
+  }
+  return bad;
+}
+
+/** 警告横幅的唯一文案出处（SSE warning 帧与非流式 JSON 的 warning 字段共用这一份） */
+export function contractWarningText(violations: ContractViolation[]): string {
+  const list = violations.map((v) => `「${v.cited_text}」→ 本地引擎是 ${v.engine_value}`).join("；");
+  return `结论契约校验：模型回答里引用的数字与本地 v3 引擎的对不上（${list}）。以本地引擎为准；模型原文未被改动，也没有自动重答。`;
+}

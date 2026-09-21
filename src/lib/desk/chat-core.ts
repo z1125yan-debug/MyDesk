@@ -15,7 +15,11 @@ export type ChatRole = "user" | "assistant";
 export interface StepInfo {
   step: number;
   label: string;
-  status: "running" | "ok" | "error" | "missing";
+  /**
+   * P8-① 新增 stale：接口正常返回了值、但比真实交易日历滞后（或新鲜度无法判定）——
+   * 它跟 missing 是两件事：missing 是「没取到」，stale 是「取到了但不是新的」。
+   */
+  status: "running" | "ok" | "error" | "missing" | "stale";
   tool?: string;
   detail?: string;
   ms?: number | null;
@@ -376,7 +380,7 @@ export function injectSceneContext<T extends ContextMsg>(
 
 /** 状态词的唯一出处：发给模型的取数记录行（renderStepsLine）与 P7-⑧③ 的上下文面板都用它，两处不会各写一套说法 */
 export const STEP_STATUS_WORD: Record<StepInfo["status"], string> = {
-  ok: "已取到", running: "未结束", missing: "缺数据", error: "取数失败",
+  ok: "已取到", running: "未结束", missing: "缺数据", error: "取数失败", stale: "数据滞后",
 };
 
 /** 最多列几步：追问时模型需要知道上文取过什么，不需要一份完整调用日志 */

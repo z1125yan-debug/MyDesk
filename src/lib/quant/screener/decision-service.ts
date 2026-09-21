@@ -16,6 +16,9 @@
 //   - 事件解释：event_interpretation 表（AI_INTERPRETATION 层，不是事实本身）。
 import { db } from "@/lib/db";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
+// P8-①（风险点 2）：「日K日期没对上决策参考日」的判定收编进 freshness-core.dateMismatch，
+// 与对话链路的新鲜度核对共用同一份规则——原来这里是裸字符串 !== 比对，两处各写一套迟早漂移。
+import { dateMismatch } from "@/lib/desk/freshness-core";
 import { getProvider } from "@/lib/quant/data/index";
 import { fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
 import type { BarsLike } from "@/lib/quant/factors/fields.ts";
@@ -309,7 +312,9 @@ export async function buildDecisionForSymbol(
   // ---- 6) 汇总：技术 / 概率 / 市场 / 事件 → buildDecision ----
   const tech = technicalFromBars(barsBySymbol.get(subject) ?? [], { rsi_period: opts.rsi_period });
   notes.push(...tech.notes);
-  if (tech.bar_date && tech.bar_date !== tradeDate) {
+  // 与 P8-① 同源的单处规则：dateMismatch 语义与原裸比对一致（不同即提醒），差别只在带时区标记的串
+  // 先折算北京日历日再比、认不出的串不误报。
+  if (dateMismatch(tech.bar_date, tradeDate)) {
     notes.push(`技术面取的是 ${tech.bar_date} 那根日K，而决策参考日是 ${tradeDate}：休市或数据滞后时的正常情形，但这一维说的不是 ${tradeDate} 当天的结构`);
   }
   const decision = buildDecision({

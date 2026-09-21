@@ -3,7 +3,7 @@ import { ProxyAgent, fetch as undiciFetch, type RequestInit as UndiciInit } from
 import {
   injectSceneContext, type ChatRequestMessage, type ContextMsg, type StepInfo,
 } from "@/lib/desk/chat-core";
-import { prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
+import { contractWarningOf, prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
 import type { ToolCtx } from "@/lib/desk/chat-tools";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { shanghaiDate } from "@/lib/desk/session";
@@ -417,6 +417,10 @@ export async function POST(req: NextRequest) {
             emit({ type: "error", data: { message: `上游未返回内容${via}` } });
             return;
           }
+          // P8-②：回答完成后拿结论契约核对引用的数字。对不上只补一条 warning，
+          // 不改模型原文、不自动重答（风险点 4）——而且只有本轮真有契约才核（风险点 3）。
+          const cw = turn ? contractWarningOf(turn, content) : null;
+          if (cw) emit({ type: "warning", data: { text: cw } });
           emit({ type: "done", data: { fullText: content, ...(turn ? { intent: turn.badge } : {}) } });
         } catch (e) {
           const raw = (e as Error).message || "";
@@ -428,6 +432,9 @@ export async function POST(req: NextRequest) {
               const c2 = await callOpenAI(baseUrl, apiKey, model, sentMessages, agent);
               if (c2) {
                 emit({ type: "warning", data: { text: "流式未走通，已自动降级为一次性非流式请求取回全文；本轮回答整体到达，不是上游逐字流。" } });
+                // 降级路径同样要核契约：两条传输不能一个查一个不查
+                const cw2 = turn ? contractWarningOf(turn, c2) : null;
+                if (cw2) emit({ type: "warning", data: { text: cw2 } });
                 emit({ type: "delta", data: { content: c2 } });
                 emit({ type: "done", data: { fullText: c2, ...(turn ? { intent: turn.badge } : {}) } });
                 return;
@@ -468,12 +475,15 @@ export async function POST(req: NextRequest) {
 
     if (!content) return NextResponse.json({ error: `上游未返回内容${via}` }, { status: 502 });
     const steps: StepInfo[] = turn?.steps ?? [];
+    // P8-②：非流式同样核一遍契约引用；只并进 warning 字段，content 一个字符都不动（风险点 4）
+    const contractWarn = turn ? contractWarningOf(turn, content) : null;
+    const warn = [sceneFailure ? `本轮未做场景自动取数：${sceneFailure}` : "", contractWarn ?? ""].filter(Boolean).join("；");
     return NextResponse.json({
       content,
       // 非流式没有 step 事件可走，徽章与步骤只能随 JSON 一起回（客户端把它们并成同一种时间线）
       ...(turn ? { intent: turn.badge } : {}),
       ...(steps.length ? { steps } : {}),
-      ...(sceneFailure ? { warning: `本轮未做场景自动取数：${sceneFailure}` } : {}),
+      ...(warn ? { warning: warn } : {}),
     });
   } catch (e) {
     const raw = (e as Error).message || "";

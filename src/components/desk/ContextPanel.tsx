@@ -182,7 +182,12 @@ export default function ContextPanel({ symbol, basis, intent, steps, warning, on
         <section>
           <div className="mb-1 flex items-center justify-between text-[10.5px] font-medium text-muted-foreground">
             <span>数据来源（本轮真实调用）</span>
-            {counts.total > 0 && <span>{counts.ok}/{counts.total} 步取到</span>}
+            {counts.total > 0 && (
+              <span>
+                {counts.ok}/{counts.total} 步取到
+                {counts.stale ? ` · ${counts.stale} 步数据滞后` : ""}
+              </span>
+            )}
           </div>
           {srcRows.length ? (
             <div className="space-y-1">
@@ -190,7 +195,9 @@ export default function ContextPanel({ symbol, basis, intent, steps, warning, on
                 <div key={`${s.step}-${s.tool}`} className="rounded-lg border border-border/70 px-2 py-1.5">
                   <div className="flex flex-wrap items-baseline gap-1.5 text-[10.5px]">
                     <span className="rounded bg-accent px-1 font-mono text-[9.5px] text-muted-foreground">步 {s.step}</span>
-                    <span className={s.status === "ok" ? "text-emerald-300" : s.status === "missing" ? "text-amber-300" : s.status === "error" ? "text-red-300" : "text-sky-300"}>
+                    {/* P8-①：stale（取到了但不新鲜）与 missing 同用琥珀色系——都是「有话要用户对答案打折」，
+                        但落到文案上各说各的（数据滞后 / 缺数据），不混成一个词 */}
+                    <span className={s.status === "ok" ? "text-emerald-300" : s.status === "missing" || s.status === "stale" ? "text-amber-300" : s.status === "error" ? "text-red-300" : "text-sky-300"}>
                       {s.statusText}
                     </span>
                     <span className="text-foreground/90">{s.label}</span>

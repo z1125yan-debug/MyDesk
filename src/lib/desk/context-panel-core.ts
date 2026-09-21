@@ -218,6 +218,8 @@ export interface PanelSourceCounts {
   total: number;
   ok: number;
   missing: number;
+  /** P8-①：取到了但不新鲜/无法判定新鲜度——与 missing 分开数，两件事两种说法 */
+  stale: number;
   error: number;
   running: number;
   prefetch: number;
@@ -247,6 +249,7 @@ export function sourceCountsOf(steps: StepInfo[] | undefined): PanelSourceCounts
     total: list.length,
     ok: n((s) => s.status === "ok"),
     missing: n((s) => s.status === "missing"),
+    stale: n((s) => s.status === "stale"),
     error: n((s) => s.status === "error"),
     running: n((s) => s.status === "running"),
     prefetch: n((s) => s.source === "prefetch"),
