@@ -1,0 +1,184 @@
+// P8-③ 技能插件体系的纯内核：把「哪个场景自动派哪些工具、按什么形状给参」从 intent-core 的
+// 硬编码 switch 里搬出来，变成一张可注册的数据表（任务书八-1：不写死调用顺序）。
+//
+// 三条口径：
+//  1) 本层零运行时依赖（只 type-import intent-core，测试可直跑）；执行本体仍在 chat-tools
+//     （服务层，带网络/prisma），两层靠 name 对齐 —— 名字漂了会被 execute 的
+//     「调度计划里的工具未注册」如实接住，不会静默少取数。
+//  2) 这是**声明式规则表**，不是模型判定：每条 entry 带 scene/spread/args/gate 判别符，
+//     为什么取它、取几份都能一眼看出出处；注册新技能=往表里加一条，不用改调度代码。
+//  3) 表驱动重构必须逐字保住既有编排（p7-intent 的 25 条调度断言是这轮的回归闸）：
+//     per_symbol 项按「标的外层、技能内层」展开（个股分析三件套逐只成组，不是三个工具各扫一遍），
+//     gate 不满足时静默不出 call，dedupe_snapshot 抵掉时留 skipped 原话。
+import type { Scene } from "./intent-core.ts";
+
+/** 入参形状判别符（具体拼法在 intent-core 的 planDispatch，文案单一出处） */
+export type SkillArgs = "empty" | "news8" | "sector_kind" | "symbol";
+/** 「为什么取它」的文案键（渲染时套 SCENE_LABELS，与旧 switch 逐字一致；news 两变体照抄不统一） */
+export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "news" | "news_why" | "watchlist";
+/** 出条件判别符：news=提问显式要消息面；watchlist_nonempty=本机自选非空 */
+export type SkillGate = "news" | "watchlist_nonempty";
+
+export interface SkillPlanEntry {
+  scene: Scene;
+  /** once=整轮一次；per_symbol=按识别到的标的逐个展开（同场景的 per_symbol 项逐只成组） */
+  spread: "once" | "per_symbol";
+  args: SkillArgs;
+  reason: SkillReason;
+  gate?: SkillGate;
+  /** 客户端实时快照已带该品种就不重复取（只对 per_symbol 的快照类工具有意义） */
+  dedupe_snapshot?: boolean;
+  /** P8-④ 的输入：这一项没取到＝本轮必读数据有洞，触发一轮补充调用 */
+  required?: boolean;
+}
+
+export interface Skill {
+  /** 与 chat-tools 注册表同名的工具本体 */
+  name: string;
+  desc: string;
+  /** 自动调度参与项（可多场景）；不给 = 只被模型自取，不被系统预取 */
+  plan?: SkillPlanEntry[];
+}
+
+/** 场景级编排参数：标的上限、超限话术键、静态 skipped 话术键 */
+export interface SceneDispatchConfig {
+  /** 该场景 per_symbol 最多展开几个标的（省略＝全局 DISPATCH_MAX_SYMBOLS） */
+  symbol_max?: number;
+  /** 超限话术键（analysis=「个股分析一次最多看 N 只」原话） */
+  cap?: "analysis";
+  /** 整场景的静态留痕键（screener/qimen/general 与「不预取」的原因） */
+  skip?: "screener" | "qimen" | "general";
+}
+
+/** 全局一次对话最多预取几只（口径搬自 intent-core，导出名不变） */
+export const DISPATCH_MAX_SYMBOLS = 5;
+/** 个股分析最多预取几只（每只 3 个工具，再深就慢得没法用） */
+export const DISPATCH_ANALYSIS_MAX = 3;
+
+// ---------- 内置技能表（顺序=chat-tools TOOLS 的注册顺序；换顺序会换调度顺序，别乱动） ----------
+
+export const BUILTIN_SKILLS: Skill[] = [
+  {
+    name: "market_sentiment",
+    desc: "大盘情绪：涨跌家数/涨停/跌停/成交额/主力净额/风险等级",
+    plan: [{ scene: "sentiment", spread: "once", args: "empty", reason: "scene", required: true }],
+  },
+  {
+    name: "sector_rank",
+    desc: "行业/概念板块资金榜（按主力净流入排序）",
+    plan: [{ scene: "sector", spread: "once", args: "sector_kind", reason: "scene", required: true }],
+  },
+  {
+    name: "stock_snapshot",
+    desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业",
+    plan: [
+      { scene: "quote", spread: "per_symbol", args: "symbol", reason: "scene_snapshot", dedupe_snapshot: true, required: true },
+      { scene: "stock_analysis", spread: "per_symbol", args: "symbol", reason: "scene_snapshot", dedupe_snapshot: true, required: true },
+    ],
+  },
+  // stock_depth / stock_trades 不进自动调度：盘口与主动买卖是对话里模型自取的深水区读数，
+  // 预取它们只会让每轮行情查询多打两次 eltdx（旧 switch 也没取，行为一字不变）。
+  { name: "stock_depth", desc: "个股五档盘口（eltdx）" },
+  { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标）" },
+  {
+    name: "stock_kline_summary",
+    desc: "个股技术状态：均线/MACD/KDJ/RSI/VWAP/RPS + 历史条件概率",
+    plan: [{ scene: "stock_analysis", spread: "per_symbol", args: "symbol", reason: "kline", required: true }],
+  },
+  {
+    name: "stock_fund_flow",
+    desc: "个股近14日主力资金净额（东财）",
+    plan: [{ scene: "stock_analysis", spread: "per_symbol", args: "symbol", reason: "fund_flow", required: true }],
+  },
+  {
+    name: "market_news",
+    desc: "最新宏观/市场快讯",
+    plan: [
+      { scene: "sentiment", spread: "once", args: "news8", reason: "news", gate: "news" },
+      { scene: "stock_analysis", spread: "once", args: "news8", reason: "news_why", gate: "news" },
+    ],
+  },
+  // factor_screener / historical_probability：选股条件必须由模型从自然语言抽出来，
+  // 系统替它猜条件＝替用户做决定（旧 switch 明确不预取，这里同样不给 plan）。
+  { name: "factor_screener", desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录" },
+  { name: "historical_probability", desc: "个股历史条件概率：conditions 中的 field 必须来自因子目录" },
+  {
+    name: "watchlist_overview",
+    desc: "自选股实时总览（清单取自用户本机存档，行情现取）",
+    plan: [{ scene: "watchlist", spread: "once", args: "empty", reason: "watchlist", gate: "watchlist_nonempty", required: true }],
+  },
+  { name: "run_backtest", desc: "因子组合历史回测（真实引擎计算），只由模型按需自调用，系统不预取" },
+  // 奇门解盘是面板本地实算，对话链路不起局不取行情（plan 缺席 = 永不进自动调度）。
+];
+
+export const SCENE_DISPATCH_CONFIG: Record<Scene, SceneDispatchConfig> = {
+  sentiment: {},
+  sector: {},
+  screener: { skip: "screener" },
+  quote: {},
+  watchlist: {},
+  stock_analysis: { symbol_max: DISPATCH_ANALYSIS_MAX, cap: "analysis" },
+  qimen: { skip: "qimen" },
+  general: { skip: "general" },
+};
+
+/** 场景到优先工具（不排他：模型仍可调注册表里任何一个）。表驱动前是 switch 里的数组，原样搬 */
+export const SCENE_PREFERS: Record<Scene, string[]> = {
+  sentiment: ["market_sentiment", "market_news"],
+  sector: ["sector_rank", "market_sentiment"],
+  screener: ["factor_screener", "historical_probability"],
+  quote: ["stock_snapshot"],
+  watchlist: ["watchlist_overview", "market_sentiment"],
+  stock_analysis: ["stock_snapshot", "stock_kline_summary", "stock_fund_flow", "market_news"],
+  qimen: [],
+  general: [],
+};
+
+// ---------- 注册表（可注册 = 技能能被外部加进来，重名/缺描述会被如实拒绝） ----------
+
+export interface SkillRegistry {
+  skills(): Skill[];
+  get(name: string): Skill | undefined;
+  /** 注册新技能：名字必须没被占用且带 desc；成功 true，失败回原因（不静默覆盖内置） */
+  register(skill: Skill): { ok: boolean; error?: string };
+  /** 某场景的自动调度参与项（按注册顺序，per_symbol 项按注册相邻性成组） */
+  entriesForScene(scene: Scene): { tool: string; entry: SkillPlanEntry }[];
+  /** 某场景的必读工具集（P8-④ 完整性校验的输入） */
+  requiredToolsForScene(scene: Scene): Set<string>;
+  prefersForScene(scene: Scene): string[];
+  configForScene(scene: Scene): SceneDispatchConfig;
+}
+
+export function createSkillRegistry(initial: Skill[] = [], config?: Partial<Record<Scene, SceneDispatchConfig>>, prefers?: Partial<Record<Scene, string[]>>): SkillRegistry {
+  const map = new Map<string, Skill>();
+  const cfg: Record<Scene, SceneDispatchConfig> = { ...SCENE_DISPATCH_CONFIG, ...config } as Record<Scene, SceneDispatchConfig>;
+  const pref: Record<Scene, string[]> = { ...SCENE_PREFERS, ...prefers } as Record<Scene, string[]>;
+  for (const s of initial) map.set(s.name, s);
+  return {
+    skills: () => [...map.values()],
+    get: (name) => map.get(name),
+    register(skill) {
+      if (!skill?.name || typeof skill.name !== "string") return { ok: false, error: "技能名必须是非空字符串" };
+      if (!skill.desc) return { ok: false, error: `技能 ${skill.name} 缺 desc：模型与界面都要能看出它是干什么的` };
+      if (map.has(skill.name)) return { ok: false, error: `技能 ${skill.name} 已注册，不静默覆盖（要换实现请先摘旧的）` };
+      for (const e of skill.plan ?? []) {
+        if (!(e.scene in cfg)) return { ok: false, error: `技能 ${skill.name} 的 plan 指向不存在的场景 ${e.scene}` };
+      }
+      map.set(skill.name, skill);
+      return { ok: true };
+    },
+    entriesForScene: (scene) =>
+      [...map.values()].flatMap((s) => (s.plan ?? []).filter((e) => e.scene === scene).map((e) => ({ tool: s.name, entry: e }))),
+    requiredToolsForScene: (scene) =>
+      new Set([...map.values()].flatMap((s) => (s.plan ?? []).filter((e) => e.scene === scene && e.required).map(() => s.name))),
+    prefersForScene: (scene) => pref[scene] ?? [],
+    configForScene: (scene) => cfg[scene] ?? {},
+  };
+}
+
+/** 进程内默认注册表：内置 12 项技能；registerSkill 是给扩展方（含测试）的唯一注入口 */
+export const SKILLS = createSkillRegistry(BUILTIN_SKILLS);
+
+export function registerSkill(skill: Skill): { ok: boolean; error?: string } {
+  return SKILLS.register(skill);
+}
