@@ -5,6 +5,7 @@ import { useDesk } from "@/lib/desk/store";
 import { LifecyclePanel } from "../LifecyclePanel";
 import { CapabilityPanel } from "../CapabilityPanel";
 import { aiChat, aiConfigured, PROVIDER_PRESETS } from "@/lib/desk/ai";
+import { useServerLlm } from "@/lib/desk/use-server-llm";
 import type { AiProvider, McpServerConfig, McpToolInfo } from "@/lib/desk/types";
 
 export default function SettingsPage() {
@@ -151,6 +152,7 @@ export default function SettingsPage() {
 
   const providerKeys = Object.keys(PROVIDER_PRESETS) as AiProvider[];
   const configured = aiConfigured(ai);
+  const serverLlm = useServerLlm();
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-5">
@@ -168,6 +170,14 @@ export default function SettingsPage() {
           <span className={"rounded-full px-2.5 py-1 text-[11px] " + (configured ? "bg-emerald-500/12 text-emerald-300" : "bg-amber-500/12 text-amber-300")}>
             {configured ? "已配置" : "未配置"}
           </span>
+        </div>
+        <div className="border-b border-border px-4 py-2 text-[11.5px] text-muted-foreground">
+          服务端 .env 模型通道：
+          {serverLlm === null
+            ? "探测中…（浏览器未配置凭据时自动走这条）"
+            : serverLlm.available
+              ? `可用 · ${serverLlm.mode === "gateway" ? "本地网关（免 Key）" : "官方 API"} · ${serverLlm.baseUrl} · ${serverLlm.model}（Key 只存在服务端 .env，不进浏览器）`
+              : `不可用 —— ${serverLlm.reason ?? "未知原因"}`}
         </div>
         <div className="space-y-3.5 px-4 py-4">
           <div>

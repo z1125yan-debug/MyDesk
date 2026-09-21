@@ -16,7 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Send, Sparkles, ChevronDown } from "lucide-react";
 import { SourceBadge, PctText } from "../SourceBadge";
 import { useDesk } from "@/lib/desk/store";
-import { aiConfigured } from "@/lib/desk/ai";
+import { aiReady } from "@/lib/desk/ai";
 import { CHAT_MODES, chatModeLabel } from "@/lib/desk/modes";
 import { fetchSentiment, type SentimentClient } from "@/lib/desk/quant-api";
 
@@ -125,9 +125,9 @@ export default function AiHomePage() {
           </div>
         </div>
 
-        {!aiConfigured(ai) && (
+        {!aiReady(ai) && (
           <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-            AI 未配置：现在提问只会切到对话页并显示这条提醒，不会真的取数。
+            没有可用的模型通道：浏览器侧未配置，服务端 .env 通道也不可用（本地网关未启动或配置无效）。
             <button onClick={() => go("settings")} className="ml-2 underline">去设置</button>
           </div>
         )}

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, MessagesSquare, Send, Square, X } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
-import { aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
+import { aiReady, assistantSystemPrompt } from "@/lib/desk/ai";
 import { fetchNewsBlock } from "@/lib/desk/market";
 import type { ChatMessage } from "@/lib/desk/chat-core";
 import { useChatSend } from "@/lib/desk/use-chat";
@@ -64,7 +64,7 @@ export default function AssistantWidget({
 
   const session = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
   const messages: ChatMessage[] = session?.messages ?? [];
-  const configured = aiConfigured(ai);
+  const configured = aiReady(ai);
 
   const submit = (preset?: string) => {
     const content = (preset ?? input).trim();
@@ -144,7 +144,7 @@ export default function AssistantWidget({
         ))}
         {!configured && (
           <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
-            未配置 AI 接口：到「设置 → AI 接口」填写后才能对话。
+            未配置 AI 接口，且服务端 .env 模型通道也不可用：到「设置 → AI 接口」填写，或启动本地豆包网关（见 worklog P7-⑩）。
           </div>
         )}
         <div ref={endRef} />

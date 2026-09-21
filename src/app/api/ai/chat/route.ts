@@ -24,6 +24,8 @@ import {
 } from "@/lib/desk/chat-stream-core";
 import { injectSceneContext, trimDialog, clampTurns, type ChatRequestMessage, type ContextMsg, type StepInfo } from "@/lib/desk/chat-core";
 import { asChatMode, type ChatMode } from "@/lib/desk/modes";
+import { getServerLlm } from "@/lib/llm/model-config";
+import { renderAnalysisFrames } from "@/lib/llm/analysis-frames";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -103,6 +105,10 @@ function systemPrompt(mode: ChatMode, focusSymbol?: string): string {
     "4. **风险提示**：反向条件、逻辑失效点",
     "不给直接买卖建议，不预测涨跌幅目标；概率必须带样本数。",
     "简体中文，简洁 markdown，表格最多 1 个。",
+    // P7-⑩ 任务4：50 个深度研究框架随系统 Prompt 全局下发（文案与客户端那份同源于
+    // analysis-frames.ts，一处改动两条链路同步，不存在「首页有框架、交易员页没有」的漂移）。
+    "",
+    renderAnalysisFrames(),
   ].filter(Boolean).join("\n");
 }
 
@@ -312,12 +318,34 @@ async function runToolLoop(opts: {
 
 export async function POST(req: NextRequest) {
   quantBootstrap();
-  const provider = req.headers.get("x-ai-provider") ?? "";
-  const baseUrl = (req.headers.get("x-ai-base-url") ?? "").trim();
-  const apiKey = req.headers.get("x-ai-api-key") ?? "";
-  const model = (req.headers.get("x-ai-model") ?? "").trim();
+  let provider = req.headers.get("x-ai-provider") ?? "";
+  let baseUrl = (req.headers.get("x-ai-base-url") ?? "").trim();
+  let apiKey = req.headers.get("x-ai-api-key") ?? "";
+  let model = (req.headers.get("x-ai-model") ?? "").trim();
   const body = (await req.json().catch(() => null)) as ChatBody | null;
   const wantStream = body?.stream === true || /text\/event-stream/i.test(req.headers.get("accept") ?? "");
+
+  // P7-⑩ 任务4：浏览器未配置凭据时落服务端 .env 通道 —— 但工具环只放官方 API 模式过去。
+  // 本地网关（doubao2API）实测只取最后一条 user 消息、不执行 function call，把 tools 发过去
+  // 等于让模型在没有工具的世界里硬编「我调过了」—— 这条路上宁可少一条工具链，不能多一批假数据。
+  // 对话层的网关通路在 /api/ai/proxy（系统按场景预取数据），不损失回答能力，只损失「模型自己补数」。
+  if (!baseUrl || req.headers.get("x-ai-server") === "1") {
+    const r = getServerLlm();
+    if (!r.available) {
+      const invalid = `服务端模型通道不可用：${r.reason}`;
+      if (!wantStream) return NextResponse.json({ error: invalid, trace: [] }, { status: 400 });
+      return sseResponse(async (emit) => { emit({ type: "error", data: { message: invalid } }); });
+    }
+    if (r.channel.mode === "gateway") {
+      const invalid = "本地豆包网关不支持工具调用环（只收最后一条提问、不走 function call），AI 交易员这条路需要 OpenAI 兼容的工具能力：请在 .env 把 LLM_BASE_URL 指向官方 API 模式，或到设置页填写浏览器侧凭据；普通对话与奇门解盘不受影响，走网关照常可用。";
+      if (!wantStream) return NextResponse.json({ error: invalid, trace: [] }, { status: 400 });
+      return sseResponse(async (emit) => { emit({ type: "error", data: { message: invalid } }); });
+    }
+    provider = "openai";
+    baseUrl = r.channel.baseUrl;
+    apiKey = r.channel.apiKey;
+    model = r.channel.model;
+  }
 
   const invalid = validateConfig(provider, baseUrl, model, body);
   if (invalid) {

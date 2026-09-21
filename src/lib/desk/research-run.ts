@@ -10,7 +10,7 @@
 // - AI 未配置 ⇒ AI_NOT_CONFIGURED，页面显示 DEGRADED，绝不本地编一份「市场环境报告」；
 // - 服务端台账为空 ⇒ NO_EVIDENCE，不去猜读数，也不向模型提问；
 // - 模型失败/回复为空 ⇒ AI_FAILED，不写库、不把失败显示成「0 条结论所以一切正常」。
-import { aiChat, aiConfigured } from "./ai";
+import { aiChat, aiReady } from "./ai";
 import type { AiSettings } from "./types";
 import { fetchResearchPrompt, storeResearchApi, type ResearchPromptClient, type ResearchStoreClient } from "./quant-api";
 import { RESEARCH_NOT_RUN_STATUSES } from "@/lib/quant/screener/research-core";
@@ -54,7 +54,7 @@ export async function runMarketResearch(
     ok: false, status: RESEARCH_NOT_RUN_STATUSES.ai_unconfigured, message: "", model: ai.model || "未配置",
     prompt_version: "", evidence_total: 0, raw_chars: 0, prompt: null, store: null, missing: [],
   };
-  if (!aiConfigured(ai)) {
+  if (!aiReady(ai)) {
     return {
       ...base,
       message: "尚未配置 AI 服务商（Base URL / 模型 / Key）：这一步只能由本机浏览器带着凭据去调模型，服务端没有 Key，也不会替你编一份市场环境报告。",

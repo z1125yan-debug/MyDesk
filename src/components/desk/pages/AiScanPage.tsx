@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Radar, Loader2, Snowflake, Bot, ListFilter, Globe2, BookmarkCheck } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
 import { useDesk, type FrozenPool } from "@/lib/desk/store";
-import { aiConfigured } from "@/lib/desk/ai";
+import { aiReady } from "@/lib/desk/ai";
 import { runScreenerApi, aiChatTools, freezePoolApi, saveScanAsStrategyApi, type ScreenerCond, type ScreenerRespClient } from "@/lib/desk/quant-api";
 
 const RESULTS_FIELDS = ["change_pct", "amount_yi", "turnover_rate", "volume_ratio", "main_net_yi", "rps_50", "above_ma_20", "macd_cross"];
@@ -73,7 +73,7 @@ export default function AiScanPage() {
     if (!text) return;
     setCondSource("");
     // AI 配置了 → LLM 解析为结构化条件（字段白名单校验，AI 不能创造字段）
-    if (aiConfigured(ai)) {
+    if (aiReady(ai)) {
       try {
         const { content } = await aiChatTools(
           { provider: ai.provider, baseUrl: ai.baseUrl, apiKey: ai.apiKey, model: ai.model, proxy: ai.proxy },

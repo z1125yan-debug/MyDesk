@@ -6,6 +6,7 @@
 // 结果仍然是真的，只是没有逐字节奏 —— 这里如实返回 usedStream:false，由界面改成本机节奏并写明原因。
 import type { AiSettings } from "./types";
 import type { StepInfo } from "./chat-core";
+import { aiRequestHeaders, ensureServerLlm } from "./ai";
 import { asStreamIntent, chatRequestBody, decodeStreamEvent, isEventStream, type StreamEvent, type StreamStep } from "./chat-stream-core";
 
 export const CHAT_ENDPOINTS = {
@@ -27,15 +28,9 @@ export interface StreamChatResult {
 }
 
 function aiHeaders(ai: AiSettings): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    Accept: "text/event-stream",
-    "x-ai-provider": ai.provider,
-    "x-ai-base-url": ai.baseUrl,
-    "x-ai-api-key": ai.apiKey,
-    "x-ai-model": ai.model,
-    ...(ai.proxy?.trim() ? { "x-ai-proxy": ai.proxy.trim() } : {}),
-  };
+  // P7-⑩：与 aiChatPlain 同一份口径 —— 浏览器凭据没填全时一个 x-ai-* 都不发，
+  // 只带 x-ai-server:1 让路由去读 .env；填全了则维持原样（设置页配置优先）。
+  return aiRequestHeaders(ai, { Accept: "text/event-stream" });
 }
 
 export async function streamChat(opts: {
@@ -48,6 +43,7 @@ export async function streamChat(opts: {
   onEvent: (ev: StreamEvent) => void;
   signal?: AbortSignal;
 }): Promise<StreamChatResult> {
+  ensureServerLlm();
   const url = CHAT_ENDPOINTS[opts.endpoint ?? "plain"];
   const timeout = AbortSignal.timeout(opts.timeoutMs ?? 120_000);
   const res = await fetch(url, {

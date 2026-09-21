@@ -11,6 +11,11 @@ import {
   createSseScanner, encodeStreamEvent, isEventStream, notStreamedWarning, parseUpstreamFrame,
   type StreamEvent,
 } from "@/lib/desk/chat-stream-core";
+import {
+  foldHistoryForGateway, gatewayUnreachableText, isLanBaseUrl, shouldRetryNonStream,
+  type ServerLlmChannel,
+} from "@/lib/llm/model-config-core";
+import { getServerLlm } from "@/lib/llm/model-config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -93,16 +98,9 @@ async function windowsSystemProxy(): Promise<string | null> {
 }
 
 function isLanUrl(base: string): boolean {
-  try {
-    const h = new URL(base).hostname;
-    return (
-      h === "localhost" || h === "::1" ||
-      /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(h) || h.endsWith(".local")
-    );
-  } catch {
-    return false;
-  }
+  // P7-⑩：口径收进 model-config-core 一处（局域网=直连、可免 Key 的判定和模型通道共用同一条线），
+  // 这里只留转发，避免路由与内核各写一份、哪天判歪一边都没人发现。
+  return isLanBaseUrl(base);
 }
 
 async function resolveProxy(req: NextRequest, baseUrl: string): Promise<ProxyAgent | null> {
@@ -317,17 +315,39 @@ function sseResponse(run: (emit: (ev: StreamEvent) => void) => Promise<void>): R
 
 export async function POST(req: NextRequest) {
   let body: ProxyBody | null = null;
+  // 给最外层 catch 用的两份信息：非流式分支的网关连不上也要指到「先启动网关」这个病根
+  let serverChannelMode: "gateway" | "official" | null = null;
+  let serverChannelBase = "";
   try {
-    const provider = req.headers.get("x-ai-provider") ?? "openai";
-    const baseUrl = req.headers.get("x-ai-base-url") ?? "";
-    const apiKey = req.headers.get("x-ai-api-key") ?? "";
-    const model = req.headers.get("x-ai-model") ?? "";
+    const clientProvider = req.headers.get("x-ai-provider") ?? "openai";
+    let baseUrl = req.headers.get("x-ai-base-url") ?? "";
+    let apiKey = req.headers.get("x-ai-api-key") ?? "";
+    let model = req.headers.get("x-ai-model") ?? "";
 
-    if (!baseUrl) return NextResponse.json({ error: "缺少 x-ai-base-url" }, { status: 400 });
-    if (!apiKey && provider !== "ollama") {
-      return NextResponse.json({ error: "缺少 x-ai-api-key（Ollama 可免）" }, { status: 400 });
+    // P7-⑩ 任务4：服务端 .env 模型通道。浏览器没填凭据（或显式带 x-ai-server:1）时走这里，
+    // 三元组全部来自 resolveServerLlm 的默认值口径 —— .env 什么都不配也能直接跑本地网关模式。
+    // 优先级写死为「浏览器凭据优先」：设置页填过的人行为一字不变（验收标准 2），
+    // .env 通道是浏览器未配置时的默认大脑，不是覆盖用户手填配置的暗道。
+    let serverChannel: ServerLlmChannel | null = null;
+    const wantsServer = !baseUrl.trim() || req.headers.get("x-ai-server") === "1";
+    if (wantsServer) {
+      const r = getServerLlm();
+      if (!r.available) {
+        return NextResponse.json({ error: `服务端模型通道不可用：${r.reason}` }, { status: 400 });
+      }
+      serverChannel = r.channel;
+      serverChannelMode = r.channel.mode;
+      serverChannelBase = r.channel.baseUrl;
+      baseUrl = serverChannel.baseUrl;
+      apiKey = serverChannel.apiKey;
+      model = serverChannel.model;
+    } else {
+      if (!apiKey && clientProvider !== "ollama") {
+        return NextResponse.json({ error: "缺少 x-ai-api-key（Ollama 可免）" }, { status: 400 });
+      }
+      if (!model) return NextResponse.json({ error: "缺少 x-ai-model" }, { status: 400 });
     }
-    if (!model) return NextResponse.json({ error: "缺少 x-ai-model" }, { status: 400 });
+    const provider = serverChannel ? "openai" : clientProvider;
 
     body = (await req.json().catch(() => null)) as ProxyBody | null;
     const messages = body?.messages ?? [];
@@ -366,8 +386,13 @@ export async function POST(req: NextRequest) {
     };
     // 这一路没有工具调用环（Anthropic/Gemini 原生协议更是连 tools 字段都不认），
     // 所以预取就是本轮唯一的取数途径：数据由系统取好、随提示词一起给模型，模型不再自己调接口。
-    const withScene = (turn: SceneTurn | null): MsgIn[] =>
-      injectSceneContext(messages, turn ? { prompt: turn.prompt, block: turn.block } : {}, (role, content) => ({ role, content }));
+    // 网关模式在注入之后才折叠（顺序不能反）：doubao2API 实测只取最后一条 user 消息
+    // （README 6.5），先折叠会把注入的 system 件丢在折叠范围外，模型就拿不到本轮场景数据了。
+    // 折叠层把 system + 既往轮次 + 本轮问题拼成一条 user，理由与形状见 foldHistoryForGateway。
+    const withScene = (turn: SceneTurn | null): MsgIn[] => {
+      const merged = injectSceneContext(messages, turn ? { prompt: turn.prompt, block: turn.block } : {}, (role, content) => ({ role, content }));
+      return serverChannel?.mode === "gateway" ? (foldHistoryForGateway(merged) as MsgIn[]) : merged;
+    };
 
     // 流式：只有 OpenAI 兼容协议有逐字能力。其余服务商走整体返回，
     // 客户端会因为拿不到 event-stream 而如实登记「本机节奏」。
@@ -380,15 +405,43 @@ export async function POST(req: NextRequest) {
           turn = null;
           emit({ type: "warning", data: { text: `场景自动调度未完成，本轮按「无自动取数」继续回答：${(e as Error).message}` } });
         }
+        const sentMessages = withScene(turn);
+        let emittedDelta = false;
+        const emitCounted = (ev: StreamEvent) => {
+          if (ev.type === "delta") emittedDelta = true;
+          emit(ev);
+        };
         try {
-          const content = await callOpenAIStream(baseUrl, apiKey, model, withScene(turn), agent, emit, req.signal);
+          const content = await callOpenAIStream(baseUrl, apiKey, model, sentMessages, agent, emitCounted, req.signal);
           if (!content) {
             emit({ type: "error", data: { message: `上游未返回内容${via}` } });
             return;
           }
           emit({ type: "done", data: { fullText: content, ...(turn ? { intent: turn.badge } : {}) } });
         } catch (e) {
-          emit({ type: "error", data: { message: proxyErrorMessage(e) } });
+          const raw = (e as Error).message || "";
+          // 任务书「网关不支持 SSE 自动切轮询，不直接报错」的落地形态：对同一上游补发一次
+          // **非流式**请求（一次性取全量）。两条铁理由纯函数判定：吐过 delta 不重发（会看到
+          // 半截答案被重答）、鉴权类错误不重发（只会多等一次失败）。降级也失败就落回原文报错。
+          if (shouldRetryNonStream(raw, emittedDelta)) {
+            try {
+              const c2 = await callOpenAI(baseUrl, apiKey, model, sentMessages, agent);
+              if (c2) {
+                emit({ type: "warning", data: { text: "流式未走通，已自动降级为一次性非流式请求取回全文；本轮回答整体到达，不是上游逐字流。" } });
+                emit({ type: "delta", data: { content: c2 } });
+                emit({ type: "done", data: { fullText: c2, ...(turn ? { intent: turn.badge } : {}) } });
+                return;
+              }
+            } catch { /* 保持下面按原始流式错误说话 */ }
+          }
+          emit({
+            type: "error",
+            data: {
+              message: serverChannel?.mode === "gateway" && /ECONNREFUSED|ENOTFOUND|fetch failed/i.test(raw)
+                ? gatewayUnreachableText(baseUrl)
+                : proxyErrorMessage(e),
+            },
+          });
         }
       });
     }
@@ -423,7 +476,9 @@ export async function POST(req: NextRequest) {
       ...(sceneFailure ? { warning: `本轮未做场景自动取数：${sceneFailure}` } : {}),
     });
   } catch (e) {
-    return NextResponse.json({ error: proxyErrorMessage(e) }, { status: 502 });
+    const raw = (e as Error).message || "";
+    const gwDown = serverChannelMode === "gateway" && /ECONNREFUSED|ENOTFOUND|fetch failed/i.test(raw);
+    return NextResponse.json({ error: gwDown ? gatewayUnreachableText(serverChannelBase) : proxyErrorMessage(e) }, { status: 502 });
   }
 }
 

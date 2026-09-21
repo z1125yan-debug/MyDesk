@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { PanelLeftClose, Search, Sparkles, RefreshCw } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { searchSymbols, type SuggestItem } from "@/lib/desk/market";
-import { aiConfigured } from "@/lib/desk/ai";
+import { aiReady } from "@/lib/desk/ai";
 import { useMarketSession } from "@/hooks/use-market-session";
 import ThemeToggle from "./ThemeToggle";
 
@@ -40,7 +40,7 @@ export default function TopBar() {
     setOpen(false);
   };
 
-  const configured = aiConfigured(ai);
+  const configured = aiReady(ai);
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/70 px-4 backdrop-blur">

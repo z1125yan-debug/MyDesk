@@ -1,0 +1,148 @@
+// P7-⑩ 任务4「模型配置化层」的纯内核：不读 process.env、不 fetch、不碰时钟。
+//
+// 为什么 env 要作为参数传进来（而不是这里直接读 process.env）：
+//  1) 这一层要同时被服务端（proxy/chat 路由）和单测使用，纯函数才能把「默认值/双模式」
+//     的所有边界钉死在测试里，不需要伪造运行时环境；
+//  2) 它和 QimenPanel 一样会被浏览器侧代码间接引用（判断「该走服务端通道还是浏览器配置」
+//     的文案在内核里），内核一 import process.env 就会把 Node 依赖拖进浏览器包。
+// 读 process.env 的脏活留在 model-config.ts（仅服务端 import）。
+//
+// 口径来源（任务书《KairoTrend P7 下一阶段开发任务书》第五节 任务4）：
+//  - 三个配置项：LLM_BASE_URL（默认 http://localhost:7861/v1）、LLM_API_KEY（本地网关模式
+//    网关不校验，随便填）、LLM_MODEL_NAME（默认 doubao-pro）；
+//  - 两种模式由 .env 切换：本地网关模式（豆包大脑）/ 官方 API 模式（OpenAI 兼容 Key 直连）；
+//  - 换 GLM/DeepSeek 等任何 OpenAI 兼容模型只改 .env，不改业务代码 —— 所以这里不许出现
+//    任何按模型名分支的逻辑，baseUrl+model+key 三元组就是全部。
+//
+// 模式判定为什么用「局域网地址 = 网关」而不是再加一个 LLM_MODE 开关：多一个开关就多一个
+// 和 baseUrl 打架的状态。任务书自己给的默认值就是 localhost:7861，本地/官方的区别在网关
+// 上不校验 Key、官方上要 Key —— 这恰好是「地址是否本机/内网」能推出的唯一那条线。
+
+/** 网关不校验 Key，但请求头总得有个 Bearer 值；README 通篇用 admin，占位沿用它。 */
+export const GATEWAY_PLACEHOLDER_KEY = "admin";
+
+export const DEFAULT_LLM_BASE_URL = "http://localhost:7861/v1";
+export const DEFAULT_LLM_MODEL = "doubao-pro";
+
+/** .env 能出现的三个键（单测钉住，防止改名后默认值悄悄失效） */
+export const LLM_ENV_KEYS = ["LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL_NAME"] as const;
+
+export interface LlmEnvLike {
+  LLM_BASE_URL?: string;
+  LLM_API_KEY?: string;
+  LLM_MODEL_NAME?: string;
+}
+
+/** 解析成功：拿到可直接转发的三元组。mode 只影响两处行为：Key 可否为空、历史要不要折叠。 */
+export interface ServerLlmChannel {
+  mode: "gateway" | "official";
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export type ServerLlmResult =
+  | { available: true; channel: ServerLlmChannel }
+  | { available: false; reason: string };
+
+/**
+ * GET /api/llm/config 的响应形状（也是浏览器侧缓存的那份）：
+ * 只有模式/地址/模型名与不可用原因，Key 的值永不出现在这里。
+ */
+export interface ServerLlmPublic {
+  available: boolean;
+  mode?: "gateway" | "official";
+  baseUrl?: string;
+  model?: string;
+  reason?: string;
+}
+
+export const TEXT_BAD_BASE = "LLM_BASE_URL 不是合法的 http(s) 地址（需要形如 http://127.0.0.1:7861/v1 的完整地址；漏了 scheme 的 localhost:7861 会被 URL 解析器当成名为 localhost 的协议）";
+export const TEXT_OFFICIAL_NO_KEY =
+  "官方 API 模式下必须填 LLM_API_KEY（非本机/内网地址不做无 Key 直连）；想用免 Key 的本地豆包大脑，把 LLM_BASE_URL 指回 http://localhost:7861/v1 即可";
+
+/** 本机与内网判定：与 proxy 路由原有 isLanUrl 同一份口径（这里成为唯一实现，路由改为引用它）。 */
+export function isLanBaseUrl(base: string): boolean {
+  try {
+    const h = new URL(base).hostname;
+    return (
+      h === "localhost" || h === "::1" ||
+      /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(h) || h.endsWith(".local")
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function resolveServerLlm(env: LlmEnvLike): ServerLlmResult {
+  const baseUrl = (env.LLM_BASE_URL ?? "").trim() || DEFAULT_LLM_BASE_URL;
+  const model = (env.LLM_MODEL_NAME ?? "").trim() || DEFAULT_LLM_MODEL;
+  const key = (env.LLM_API_KEY ?? "").trim();
+  try {
+    const u = new URL(baseUrl);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return { available: false, reason: TEXT_BAD_BASE };
+  } catch {
+    return { available: false, reason: TEXT_BAD_BASE };
+  }
+  if (isLanBaseUrl(baseUrl)) {
+    return { available: true, channel: { mode: "gateway", baseUrl, apiKey: key || GATEWAY_PLACEHOLDER_KEY, model } };
+  }
+  if (!key) return { available: false, reason: TEXT_OFFICIAL_NO_KEY };
+  return { available: true, channel: { mode: "official", baseUrl, apiKey: key, model } };
+}
+
+// ---------- 历史折叠（只对网关模式做） ----------
+//
+// doubao2API README 6.5 实测口径：OpenAI 兼容请求里它**只取最后一条 user 消息**，多轮上下文由
+// 豆包服务端按自己的 conversation 管理。这对我们是功能性伤害：本项目每轮都带完整历史与 system
+// 提示词，模型会「看不见前文、也看不见我们的纪律」。所以网关模式下把 system + 既往轮次 + 本轮
+// 问题折成一条 user 消息发出去 —— 不改上游代码、不猜网关的私有接口，OpenAI 兼容层内自救。
+
+export interface FoldableMsg {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+const FOLD_SYSTEM_HEADER = "【系统要求（须全部遵守）】";
+const FOLD_HISTORY_HEADER = "【既往对话（前端存档，按时间顺序）】";
+const FOLD_CURRENT_HEADER = "【本轮问题】";
+
+export function foldHistoryForGateway(messages: FoldableMsg[]): FoldableMsg[] {
+  const lastUserIdx = messages.map((m) => m.role).lastIndexOf("user");
+  if (lastUserIdx === -1) return messages; // 没有 user 发言就没有「本轮问题」可折，原样交出去让上游报错
+  const systems = messages.filter((m) => m.role === "system" && m.content.trim()).map((m) => m.content.trim());
+  const prior = messages.slice(0, lastUserIdx).filter((m) => m.role !== "system");
+  const last = messages[lastUserIdx];
+  // 本轮问题之后的 assistant 残留（理论上不该有）不参与折叠，避免把未完成的一轮当成已发生
+  const parts: string[] = [];
+  if (systems.length) parts.push(`${FOLD_SYSTEM_HEADER}\n${systems.join("\n\n")}`);
+  if (prior.length) {
+    parts.push(`${FOLD_HISTORY_HEADER}\n${prior.map((m) => `${m.role === "user" ? "用户" : "助手"}：${m.content}`).join("\n")}`);
+  }
+  parts.push(`${FOLD_CURRENT_HEADER}\n${last.content}`);
+  return [{ role: "user", content: parts.join("\n\n") }];
+}
+
+/** 折叠段的三个标题暴露给单测与面板文案：拼出来的形状变了要能被发现。 */
+export const FOLD_HEADERS = { system: FOLD_SYSTEM_HEADER, history: FOLD_HISTORY_HEADER, current: FOLD_CURRENT_HEADER };
+
+// ---------- 流式降级判定 ----------
+//
+// 任务书要求「网关不支持 SSE 就自动切轮询，不直接报错」。可落地的形态：同一地址重发一次
+// **非流式**请求（对上游就是一次性取全量结果；本项目没有第二条私有轮询协议可查，
+// 假装知道网关有 job 接口才是虚构）。两条铁律：
+//  1) 已经吐出过 delta 就不许重发 —— 否则用户会看到半截答案被同轮重答一遍；
+//  2) 只有连接类错误才降级。鉴权 401/参数 400 重试一次只会多等一次失败。
+
+const RETRYABLE_STREAM_FAIL = /ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up|UND_ERR|fetch failed|Premature close|terminated: i\/o error/i;
+
+export function shouldRetryNonStream(errMessage: string, emittedAnyDelta: boolean): boolean {
+  if (emittedAnyDelta) return false;
+  return RETRYABLE_STREAM_FAIL.test(errMessage || "");
+}
+
+/** 本地网关连不上时的指路文案：指向真正的病根（网关没启动），而不是笼统的「无法连接上游」。 */
+export function gatewayUnreachableText(baseUrl: string): string {
+  return `无法连接模型通道 ${baseUrl}：本地豆包网关未启动或端口不对。先启动 D:\\doubao2API-main（python start.py，默认监听 7861），或在 .env 里改 LLM_BASE_URL 切到官方 API 模式`;
+}

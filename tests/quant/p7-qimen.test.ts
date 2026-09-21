@@ -990,6 +990,18 @@ test("parseInterpretation：三段齐全就切开，切不齐就 parsed=false �
   assert.equal(rb.advice, "- 乙");
   assert.equal(rb.risk, "丙");
 
+  // P7-⑩ 豆包实测变体：`# 小标题` 独占一行、不带冒号（网关解盘真实回法）
+  const heading = "# 核心结论\n盘面利弊交织。\n# 操作建议\n1. 观望。\n# 风险提示\n1. 不构成投资建议。";
+  const rh = parseInterpretation(heading);
+  assert.equal(rh.parsed, true, "markdown 标题行小标题也要能认");
+  assert.equal(rh.core, "盘面利弊交织。");
+  assert.equal(rh.advice, "1. 观望。");
+  assert.equal(rh.risk, "1. 不构成投资建议。");
+  assert.equal(
+    parseInterpretation("整体格局里，核心结论 这一词出现在正文中间。风险提示：无").parsed,
+    false, "行中出现「核心结论」四个字不算标题（标题分支必须行首 + # 前缀）",
+  );
+
   const noRisk = "核心结论：甲\n操作建议：乙";
   const rn = parseInterpretation(noRisk);
   assert.equal(rn.parsed, false, "缺一段就是没解析出来");

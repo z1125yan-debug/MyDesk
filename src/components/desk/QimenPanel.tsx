@@ -11,7 +11,7 @@
 import { useCallback, useState } from "react";
 import { Loader2, Sparkles, Compass } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
-import { aiChat, aiConfigured } from "@/lib/desk/ai";
+import { aiChat, aiReady } from "@/lib/desk/ai";
 import { MISSING_TEXT } from "@/lib/desk/context-panel-core";
 import {
   CITIES, QUESTION_TYPES, QIMEN_SYSTEM_PROMPT, buildInterpretPrompt, parseInterpretation, provenanceLine,
@@ -25,7 +25,7 @@ const DEFAULT_QT = QUESTION_TYPES[0]?.value ?? "decision";
 export default function QimenPanel() {
   const ai = useDesk((s) => s.ai);
   const go = useDesk((s) => s.go);
-  const configured = aiConfigured(ai);
+  const configured = aiReady(ai);
 
   // 表单：日期/时间留空＝服务端用当前北京时间起局（不接受客户端伪造的「现在」）
   const [date, setDate] = useState("");
@@ -339,7 +339,7 @@ function InterpretCard(props: {
 
       {!configured && (
         <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11.5px] leading-5 text-amber-200">
-          模型接口未配置，解盘文本{MISSING_TEXT}。排盘本身不依赖模型，盘面照常可用；配置好服务商与 Key 后回来点「生成解盘」。
+          没有可用的模型通道（浏览器未配置，且服务端 .env 通道不可用），解盘文本{MISSING_TEXT}。排盘本身不依赖模型，盘面照常可用；配好任一条路后回来点「生成解盘」。
         </p>
       )}
       {interpError && (

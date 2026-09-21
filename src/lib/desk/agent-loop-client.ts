@@ -17,7 +17,7 @@
 // - 模型失败 ⇒ AI_FAILED：已经记账的步不会消失（库里那几行是真的），只是这次没走到收尾；
 // - 本机停止/保险触发 ⇒ ABORTED / CLIENT_GUARD：如实说是客户端这边的原因，与内核的 8 种停止原因是两套东西；
 // - 没走到 finalize 的运行在库里仍是 running——页面照实显示 running，不写成「已完成」。
-import { aiChat, aiConfigured } from "./ai";
+import { aiChat, aiReady } from "./ai";
 import type { AiSettings } from "./types";
 import {
   agentFinalizeApi, agentRunApi, agentToolApi, type AgentApi,
@@ -121,7 +121,7 @@ function empty(over: Partial<AgentLoopResult>): AgentLoopResult {
  */
 export async function runAgentLoop(ai: AiSettings, opts: AgentLoopOptions): Promise<AgentLoopResult> {
   const base = empty({ run_id: opts.run_id, model: ai.model || "未配置", question: opts.question });
-  if (!aiConfigured(ai)) {
+  if (!aiReady(ai)) {
     return {
       ...base, status: "AI_NOT_CONFIGURED",
       message: "尚未配置 AI 服务商（Base URL / 模型 / Key）：工具选择这一步只能由本机浏览器带着凭据去问模型，服务端没有 Key，也不会替你跑一轮假的。",

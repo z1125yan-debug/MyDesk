@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Loader2, RefreshCw, Square } from "lucide-react";
 import { SourceBadge } from "../SourceBadge";
 import { useDesk } from "@/lib/desk/store";
-import { aiConfigured } from "@/lib/desk/ai";
+import { aiReady as aiChannelReady } from "@/lib/desk/ai";
 import {
   AGENT_LOOP_STATUS_TEXT, CLIENT_TURN_GUARD, runAgentLoop,
   type AgentLoopResult, type AgentLoopStatus, type AgentLoopTurn,
@@ -241,7 +241,8 @@ export default function AgentPage() {
   const toolCalls = turns.filter((t) => !!call(t));
   const viewLedger = view?.ledger ?? [];
   const viewLineage = view?.lineage ?? [];
-  const aiReady = aiConfigured(ai);
+  // P7-⑩：门换成 aiReady —— 浏览器没填凭据但服务端 .env 通道可用时，循环照跑（凭据在服务端）。
+  const aiReady = aiChannelReady(ai);
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-4">
@@ -258,7 +259,7 @@ export default function AgentPage() {
           {view && (
             <SourceBadge
               status={!aiReady ? "AI_NOT_CONFIGURED 缺失" : "AI_INTERPRETATION"}
-              source={!aiReady ? "本机未配置模型凭据：循环跑不了（读数与工具目录不受影响）" : `agent_run ${view.run_id} · ${view.status}`}
+              source={!aiReady ? "无可用模型通道（浏览器未配置且服务端 .env 通道不可用）：循环跑不了（读数与工具目录不受影响）" : `agent_run ${view.run_id} · ${view.status}`}
               time={view.started_at?.slice(5, 16)}
             />
           )}
@@ -284,7 +285,7 @@ export default function AgentPage() {
               <Square size={12} /> 停止
             </button>
             : <button onClick={() => void start()} disabled={!question.trim() || !aiReady}
-              title={!aiReady ? "AI 未配置：这一步只能由本机浏览器带着凭据去问模型" : "开一次运行并逐格驱动到收尾（会写 agent_run / agent_tool_call 两张表）"}
+              title={!aiReady ? "AI 未配置：这一步要么由本机浏览器带着凭据去问模型，要么服务端 .env 通道可用" : "开一次运行并逐格驱动到收尾（会写 agent_run / agent_tool_call 两张表）"}
               className="flex items-center gap-1 rounded-md bg-sky-500 px-2.5 py-1.5 text-xs text-white hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40">
               <Bot size={12} /> 运行研究循环
             </button>}
@@ -307,7 +308,7 @@ export default function AgentPage() {
         </div>
         {!aiReady && (
           <div className="mt-1.5 text-[10.5px] text-amber-300">
-            本机未配置 AI 服务商（AI_NOT_CONFIGURED）：工具目录、历史运行与每条血缘照常可查，缺的是「问模型选哪条工具」这一步——请到设置页填 Base URL / 模型 / Key。服务端没有凭据，也不会替你跑一轮假的。
+            没有可用的模型通道（AI_NOT_CONFIGURED）：工具目录、历史运行与每条血缘照常可查，缺的是「问模型选哪条工具」这一步——到设置页填 Base URL / 模型 / Key，或在服务端 .env 配一条可用通道。服务端不会替你跑一轮假的。
           </div>
         )}
         {!question.trim() && aiReady && !running && (
