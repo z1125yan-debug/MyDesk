@@ -1483,3 +1483,32 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 4. **false 透传只实现 OpenAI 兼容协议**（`/v1/chat/completions`）：Anthropic/Gemini 原生形状不在网关范围（那是 3014 proxy 的差异化能力，未复制过来，也刻意不复制以免第二套口径）。
 5. **「插件体系」当前交付的是注册能力而非动态发现**：`registerSkill`/`registerChatTool` 是进程内注入口，MCP 管理器（stdio）尚未桥接进技能表，也没有技能包文件监听——按意图「自动判断调用哪些工具」已由表+required+gate 实现，第三方技能包热插拔属后续口径。
 6. **网关记忆只对走网关的调用方生效**：3014 前端自己的会话体系（sessions/localStorage）与网关 conversation_id 存档是两套，互不共享；「同一会话继承全部记忆」的口径主语是本网关路由的会话。
+
+## P8 子轮 C：⑤ Debug 步骤时间线 + ⑥ SSE 断点续传（2026-09-22：29 条新单测，curl 四链路取证 + 实机走查揪出两处修复）
+
+### 这一轮定的口径（六条，对应细则与三项拍板点）
+1. **富化=轮末重发同序号终帧，不新增事件类**：STREAM_EVENT_TYPES 仍是 step/delta/warning/done/error 五项；debug=true 时路由把带 args/summary 的 step 终帧按同序号再发一遍，applyEvent 按步骤号字段合并——scene-dispatch/dispatch-core/技能表逐字零改动，五类 data 形状只加可选键（step.args/step.summary/done.debug/顶层 seq）。
+2. **外部输入零猜测**：`debug` 只认布尔 true、`run` 只认非空字符串（与 B 轮 enable_kairo_engine 同一纪律）；形状不对就当本轮没开调试/没挂底，轮次照旧跑完，不谎称可续传。
+3. **RunBus 是单进程内存态，丢了不自动重问（拍板点 1）**：完成留 5 分钟、上限 20 个 run（LRU 逐封卷最久，全活口就如实拒绝新建）；续传拿 404 只出 warning + 就地收口——把行情答案残片写进存档目录是另一种脏，不做落盘。
+4. **断连≠取消（拍板点 3）**：带 run 的轮次断连后进 grace（跑完自然封卷或显式 stop），无 run 请求逐字保留 P7「断连即 notRun」语义——两条路的差别就是这一个字段。
+5. **续传顺序只插不改（细则 §2.5）**：流式失败 →（带 run 且已有 seq）续传一次 → 仍不行才整体兜底；兜底一次性（fallbackStarted 闸门），gone 收口后不再兜底（resumeGaveUp）；seq 水位去重在传输层（chat-stream-client），use-chat 只攒「从哪接」。
+6. **调试面板默认关、只存本机（拍板点 2）**：关着时请求体与 A/B 轮逐字节一致；调试视图三段（意图/步骤富化行/结论+七维计数）全部由 debug-core 从已回传帧组装，不产生新事实——没留底就整节写「未留底」。
+
+### 落点（4 个新 src 文件 + 10 个改动文件 + 2 个测试新文件）
+- 新增：`src/lib/desk/run-bus-core.ts`（帧缓冲纯核：双闸逐出/gap 标记/封卷拒收）、`run-bus.ts`（服务层：订阅/取消/TTL/20 位 LRU，注入时钟）、`debug-core.ts`（三段视图纯核 + 五态文案单一出处）、`src/app/api/ai/run/route.ts`（stop/resume 两 action，续传重放与挂订同一次同步执行）。
+- 改动：`chat-stream-core.ts`（顶层 seq + 三个可选键的严解码）、`chat-core.ts`（ChatMessage 两个可选小键 debug/runRef + applyEvent done 捡 debug）、`chat-stream-client.ts`（seq 水位去重）、`use-chat.ts`（run id 生成、续传一次、resumePendingDrafts 扫未收口草稿、grace 语义）、`store.ts`（debugPanel 默认关 + 落盘收敛成布尔）、`/api/ai/proxy` 与 `/api/ai/chat` 两路由（挂底/发布/封卷/轮末富化，非流式 JSON 路径不碰 RunBus）、`StepTimeline.tsx`（三段调试视图，关着时与 A/B 渲染逐字一致）、`AssistantPage.tsx` 与 `AssistantWidget.tsx`（顶栏开关 + 递参）。
+- 测试：`p8-debug-panel.test.ts` 13 条 + `p8-run-resume.test.ts` 16 条（含 3 条进程内 e2e：掐线续传逐帧对账、封卷即收流、TTL 回收=404 语义）。
+
+### 验收数字与实测证据
+- tsc 0 错；全量 780 / 771 过 / 0 败 / 9 跳（基线 751/742/9，+29 恰为两个新文件）；next build 通过（走查修复后重新打包复验一次）；eslint 本轮全部触网文件 0 报；package.json/package-lock diff 为空（未新增依赖）。
+- **p7-dispatch 钉句逐字保住、A/B 既有断言一条未改**：done 回放分支重构为「runPatch 先落 → 钉句 `if (!ev.data?.intent) return;` 原样 → 徽章后落」，全量绿。
+- curl 实机（:3014，mock-7861 顶包如实声明）：① debug=true 行情轮 → 7 帧带 seq 1..7，同序号终帧带 `"args":{"symbol":"600519.SH"}`+摘要，done 带 `debug:{modelMs,transport:"stream"}`；② 面板关（smoke-c-2）→ args/summary/debug 零次出现、seq 照常；③ 续传 since=1 → 恰发 seq 2、3 + 收口、无 gap；④ 未知 run → 404 原文「本轮已无留底（服务重启或超出 5 分钟保留窗口）：不可续传，保留断点前内容即可」；⑤ stop → `{"ok":true}`；伪造 action → 400「本端点只认 stop/resume」；⑥ 非流式 JSON 带 run+debug → 响应形状一字未变且随后续传 404（细则 §2.6：JSON 路径从不挂底）。
+- 实机走查（:3014/#copilot，服务端 .env 通道，板块对比问题）：调试开关 reload 后仍「开」（本机持久化生效）；时间线展开后意图行「判为『行业板块』（命中词：板块）…」、步 1/3 带「入参 {…}/摘要 {…}」、补充轮「第 2 轮」小徽、七维计数、「结论 流式 · 模型 Nms」全部在位。**走查当场揪出两处真 bug 并修复**：done 回放分支只捡 intent 把 done.debug 丢在原地、flushNow 刷盘白名单漏 debug 键（cur 攒到了也永远刷不进消息）——两处各加一条钉测后全量复绿。走查中临时清过浏览器侧 fake-stream 配置（指向已关的 :8899），走查后原样恢复。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+1. **活流掐线的实时机续传未复现**：mock 上游约 40ms 答完，curl 掐不到断点窗口；由进程内 e2e（假上游逐帧写 + 手动 destroy 连接 → replay+重挂订逐帧对账）覆盖，边界如实记。
+2. **RunBus 单进程内存态**：服务重启/热重载=续传全 404（走同一条诚实收口路径）；多实例部署各记各的，不做跨进程同步。
+3. **与细则 §1.6 的声明偏差**：ChatMessage 实际新增 debug/runRef 两个可选小键（细则原话「不加新字段」）——done.debug 不落进消息就永远只在流里一闪，结论小节全程「未留底」；runRef 不落盘则刷新后没有认得出「哪条草稿可续传」的锚。偏差在两处留痕（字段注释 + 变更报告）。
+4. **面板关着的轮次没有富化帧**：历史消息不会被事后回填（当时没发的帧补不出来），重新打开开关只影响之后的轮次。
+5. **transport 的 fallback/settle 两档暂无合成方**：兜底（一次性返回）轮客户端不合成 debug 字段，结论小节如实显示「未留底」；契约形状三档是为续传/降级预留，不是已发生的事实。
+6. **`/api/ai/run` 无鉴权与归属校验**：本机单人桌面场景按细则口径不做（run id 本身不可猜度低），多用户/公网部署时这条必须重审。
