@@ -13,6 +13,7 @@ import {
 } from "@/lib/desk/chat-stream-core";
 import { RUNS } from "@/lib/desk/run-bus";
 import { debugFramesFromSteps } from "@/lib/desk/debug-core";
+import { asChatMode, MODE_NOTES } from "@/lib/desk/modes";
 import {
   foldHistoryForGateway, gatewayUnreachableText, isLanBaseUrl, shouldRetryNonStream,
   type ServerLlmChannel,
@@ -51,6 +52,12 @@ interface ProxyBody {
   watchlist?: { symbol: string; name?: string | null }[];
   /** P7-⑥⑤：带上＝这一轮是对话，要做意图识别 + 场景自动调度；不带＝原样转发 */
   scene?: SceneReq;
+  /**
+   * 回答风格（决策/研判/深度/搜索）。与 /api/ai/chat 的 body.mode 同一份口径：
+   * 只在带 scene 的对话轮生效（研究页/自检那类「一次一问」不吃风格，见 withScene 的注释）；
+   * 外部输入先过 asChatMode 白名单，认不出的按默认口径答、不静默丢风格说明。
+   */
+  mode?: string;
   /**
    * P8-⑥：客户端生成的本轮留底号（外部输入，非空字符串才认）。带上＝这轮进 RunBus，
    * 断线/刷新后可按序号续传；且断连不再取消上游（grace=跑完或显式停止）——细则 §5-3 拍板项。
@@ -421,9 +428,17 @@ export async function POST(req: NextRequest) {
     // 网关模式在注入之后才折叠（顺序不能反）：doubao2API 实测只取最后一条 user 消息
     // （README 6.5），先折叠会把注入的 system 件丢在折叠范围外，模型就拿不到本轮场景数据了。
     // 折叠层把 system + 既往轮次 + 本轮问题拼成一条 user，理由与形状见 foldHistoryForGateway。
+    // 回答风格：纯对话这一路的消费方就是这条 system 件（工具环那路在 /api/ai/chat 的 systemPrompt 里，
+    // 两处查的是 modes.ts 同一份 MODE_NOTES，不会出现「chip 同名、两端口径不同」）。
+    // 只对带 scene 的对话轮生效——研究页/事件理解/自检那些一次一问的调用要的是原口径，
+    // 给它们塞交易风格句和给它们塞场景提示词是同一类污染（见 prepare 上方的注释）。
+    const modeNote = body?.scene ? MODE_NOTES[asChatMode(body.mode)] : "";
     const withScene = (turn: SceneTurn | null): MsgIn[] => {
       const merged = injectSceneContext(messages, turn ? { prompt: turn.prompt, block: turn.block } : {}, (role, content) => ({ role, content }));
-      return serverChannel?.mode === "gateway" ? (foldHistoryForGateway(merged) as MsgIn[]) : merged;
+      // 风格件放整份消息的最前：场景提示词由 injectSceneContext 接在「开头 system 串」之后，两者顺序稳定；
+      // 无 scene 时 modeNote 为空串，一个 system 件都不多插（p7 钉测：原消息一条不改）
+      const out: MsgIn[] = modeNote ? [{ role: "system", content: modeNote }, ...merged] : merged;
+      return serverChannel?.mode === "gateway" ? (foldHistoryForGateway(out) as MsgIn[]) : out;
     };
 
     // 流式：只有 OpenAI 兼容协议有逐字能力。其余服务商走整体返回，

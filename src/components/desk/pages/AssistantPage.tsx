@@ -385,18 +385,19 @@ export default function AssistantPage() {
           <div ref={endRef} />
         </div>
 
-        {/* 回答风格：只有工具调用端点会按 mode 改服务端口径，纯对话端点上这条禁用并说明原因，
-            而不是让用户以为选了就会变。场景本身不用选：服务端每轮按这句话自动判（见场景徽章）。 */}
+        {/* 回答风格：两条端点都消费这份 mode —— 工具环在 /api/ai/chat 的 systemPrompt 里内嵌，
+            纯对话/网关在 /api/ai/proxy 里随请求体带 mode 注入 system 件（同一份 MODE_NOTES）。
+            所以 chip 不再按 toolsOn 禁用：换大脑、换本地 key、走 .env 网关都照常生效。
+            场景本身不用选：服务端每轮按这句话自动判（见场景徽章）。 */}
         <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-3.5 pt-2.5">
           <span className="text-[10.5px] text-muted-foreground">回答风格</span>
           {CHAT_MODES.map((m) => (
-            <button key={m.key} onClick={() => setMode(m.key)} disabled={!configured || !toolsOn} title={m.desc}
+            <button key={m.key} onClick={() => setMode(m.key)} disabled={!configured} title={m.desc}
               className={"rounded-full border px-2.5 py-1 text-[11.5px] transition-colors disabled:opacity-40 " +
-                (mode === m.key && toolsOn ? "border-sky-500/50 bg-sky-500/12 text-sky-300" : "border-border text-muted-foreground hover:text-foreground")}>
+                (mode === m.key ? "border-sky-500/50 bg-sky-500/12 text-sky-300" : "border-border text-muted-foreground hover:text-foreground")}>
               {m.label}
             </button>
           ))}
-          {!toolsOn && <span className="text-[10.5px] text-muted-foreground/80">（当前服务商无工具调用环，风格项不生效）</span>}
         </div>
         <div className="flex flex-wrap gap-1.5 border-t border-border px-3.5 pt-2.5">
           {["关键位在哪", "多周期趋势总结", "现在适合进场吗", "给我一个风控清单"].map((q) => (

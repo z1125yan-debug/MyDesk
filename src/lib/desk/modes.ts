@@ -13,6 +13,19 @@ export const CHAT_MODES: { key: ChatMode; label: string; desc: string }[] = [
   { key: "search", label: "实时搜索", desc: "优先引用最新快讯" },
 ];
 
+/**
+ * 回答风格的服务端口径句（进系统提示词的那一句）。与 CHAT_MODES 同址存放的原因一样：
+ * 工具端点（/api/ai/chat，systemPrompt 内嵌）与纯对话端点（/api/ai/proxy，独立 system 件）
+ * 现在都要消费 mode——抄两份必然漂（改了一边、另一边界面照样显示选中，回答口径却没变）。
+ * 键型钉死为 ChatMode：加模式漏登记，两条链路都在编译期报错。
+ */
+export const MODE_NOTES: Record<ChatMode, string> = {
+  decision: "决策模式：面向操作前的快速研判，结论前置、证据充分。",
+  judge: "研判模式：侧重技术结构与资金结构的客观描述，减少主观倾向。",
+  deep: "深度思考模式：先梳理数据，再做逻辑推演，最后给风险清单。",
+  search: "实时搜索模式：优先引用 market_news 返回的真实快讯，注明时间；无数据则明说。",
+};
+
 /** 外部输入（存档里可能被改坏）只认这四个键，认不出就退回默认 */
 export function isChatMode(value: unknown): value is ChatMode {
   return CHAT_MODES.some((m) => m.key === value);

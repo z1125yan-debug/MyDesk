@@ -25,7 +25,7 @@ import {
 import { RUNS } from "@/lib/desk/run-bus";
 import { debugFramesFromSteps } from "@/lib/desk/debug-core";
 import { injectSceneContext, trimDialog, clampTurns, type ChatRequestMessage, type ContextMsg, type StepInfo } from "@/lib/desk/chat-core";
-import { asChatMode, type ChatMode } from "@/lib/desk/modes";
+import { asChatMode, MODE_NOTES, type ChatMode } from "@/lib/desk/modes";
 import { getServerLlm } from "@/lib/llm/model-config";
 import { renderAnalysisFrames } from "@/lib/llm/analysis-frames";
 
@@ -80,14 +80,10 @@ async function resolveProxy(req: NextRequest, baseUrl: string): Promise<ProxyAge
 function systemPrompt(mode: ChatMode, focusSymbol?: string): string {
   // 服务端日期只走 shanghaiDate()：new Date() 直接格式化在跨时区机器上会把今天算错一天
   const today = shanghaiDate();
-  const modeNote: Record<ChatMode, string> = {
-    decision: "决策模式：面向操作前的快速研判，结论前置、证据充分。",
-    judge: "研判模式：侧重技术结构与资金结构的客观描述，减少主观倾向。",
-    deep: "深度思考模式：先梳理数据，再做逻辑推演，最后给风险清单。",
-    search: "实时搜索模式：优先引用 market_news 返回的真实快讯，注明时间；无数据则明说。",
-  };
+  // 风格句的正文在 modes.ts 的 MODE_NOTES 一处定义：纯对话端点（/api/ai/proxy）现在也消费
+  // mode，两条链路查同一张表，不会出现「chip 同名、两端口径不同」的漂移。
   return [
-    `你是 MyDesk 的 AI 交易员分析引擎。今天是 ${today}。${modeNote[mode]}`,
+    `你是 MyDesk 的 AI 交易员分析引擎。今天是 ${today}。${MODE_NOTES[mode]}`,
     focusSymbol ? `用户当前关注标的：${focusSymbol}。` : "",
     "",
     "【数据纪律（最高优先级）】",
