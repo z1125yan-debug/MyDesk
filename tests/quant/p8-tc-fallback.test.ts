@@ -130,7 +130,9 @@ test("东财板块榜断源：行业换腾讯涨幅榜（概念/个股不假兜�
   const src = readSrc("src/lib/desk/em.ts");
   assert.match(src, /if \(kind === "industry"\) return fetchTcIndustryBoard\(dir, size\);/);
   assert.match(src, /fundsMissing\?: boolean/);
-  assert.match(src, /secid: "", .*\n\s*name: b\.name,\n\s*changePct: b\.changePct,\n\s*main: 0/);
+  // \r?\n：钉的是映射形状，不是行的换行符写法（autocrlf=true 的机器上 checkout 出来就是 CRLF，
+  // 2026-09-22 兜底轮提交后被 stash 对照改写过一次行尾，这条曾被误报挂——形状断言不该依赖 EOL）
+  assert.match(src, /secid: "", .*\r?\n\s*name: b\.name,\r?\n\s*changePct: b\.changePct,\r?\n\s*main: 0/);
 });
 
 test("上层 source 文案跟着真实来源走：sentiment/limitup/全A/主线热点四处都按 universeSource 分支，不冒充东财口径", () => {

@@ -105,7 +105,7 @@ async function defaultFallback(
     // 非流式返回的是 trace：归一成与流式 step 事件同一种步骤，时间线才不会两种形状
     return { text: r.content, steps: r.steps ?? stepsFromTrace(r.trace), intent: r.intent, warning: r.warning };
   }
-  const r = await aiChatPlain(ai, messages, { timeoutMs: 120_000, watchlist: extras.watchlist, scene });
+  const r = await aiChatPlain(ai, messages, { timeoutMs: 120_000, watchlist: extras.watchlist, scene, mode: extras.mode });
   return { text: r.text, steps: r.steps, intent: r.intent, warning: r.warning };
 }
 
