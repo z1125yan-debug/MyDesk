@@ -1156,3 +1156,71 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 4. 刷新按钮的转圈状态**没在实机抓到**：这一路现取在 100ms 内就返回了，采样间隔比它长；证实的是点下去之后读数确实重取了一次（取数时刻变了）。
 5. 面板的「本轮取数步骤」摘要与步骤列表都来自**当前那条助手消息**；如果用户切到一条很旧的会话，面板显示的就是那条的取数记录——这是「本轮」的字面口径，不额外做时间校验。
 6. **未 commit**，等分项报告确认。3014 隔离实例当前仍在跑（副本库、调度器关闭），需要的话随时可以停。
+
+## P7 第八阶段 P7-⑧④ 回测接进对话链路：AI 只能从已入库因子的白名单里选，跑完画的是量化页那张卡（2026-09-21：同进程直调引擎，回测接口一行未动）
+
+任务书那条按批准的口径做完：`run_backtest` 成为对话里的第 12 个工具，因子必须来自数据库里「已入库且 expression 非空」的 factorKey，选不中直接整轮拒绝；跑起来的结果不新写渲染，复用量化研究页那张回测卡。`/api/quant/backtest` 接口、runner、引擎、指纹算法全部零改动（`git diff` 里 `src/lib/quant/**` 与 `src/app/api/quant/**` 一行都没有）。
+
+### 这一轮定的六条口径
+
+1. **调用方式：同进程直调 registry，不自指 HTTP**。按拍板选的路：`chat-tools.ts` 里 `quantBootstrap() + registerStrategyRunners()` 后直接 `startJob/getJob`，和量化页点「开始回测」走的是同一个入口。自指 HTTP 会把「本机自己打自己」变成一处要管超时和重连的网络代码，而且一旦端口被防火墙挡就出现「页面上能跑、对话里不能跑」这种最难查的分叉。
+2. **白名单只认库，且一项被拒就整轮拒**。名单是 `listLatestFactors()` → `whitelistOf()`（expression 非空）现查的，本机真实库里当前是 8 个可回测因子（`corr_c_v_20@1, div_c_ma_c_20@1, div_c_ma_c_60@1, div_ma_v_20_ma_v_60@1, div_ma_v_5_ma_v_60@1, neg_cap@1, neg_pb@1, roc_v_10@1`）。模型报出自造名字（`my_magic_factor`）时不回「最接近的那个」，直接 `当前因子不在可回测白名单，无法执行回测` + 被拒清单 + 可回测清单。跑一半因子再把收益报出来，那不是用户要的那组。
+3. **区间不够就不算**：按 `000001.SH` 日K数真实交易日，不足本次要求的日数（下限 240）直接 `回测区间太短：…`，不强行计算。参数一律夹取：`periodDays ∈ [240,500]`、`topN ∈ [1,50]`、`rebalanceEvery ∈ [1,20]`、`maxSymbols ∈ [20,120]`（引擎侧上限 300，对话里等不起那么久的取数）。
+4. **节拍按任务书**：固定 1 秒一次、最多 60 秒；先判「结束了没有」再判超时（反过来会把刚好第 60 秒跑完的任务说成超时）。超时那句用原文 `回测超时，请稍后在策略历史查看结果`，同时**带 jobId 返回**——任务没被取消、还在本进程里跑，前端凭这个号继续看得见。
+5. **结果复用，不重写渲染**：把原来内联在回测 Tab 里的那段抽成 `BacktestJobCard`（12 项指标 + 验证结论），量化页与对话共用；轮询用同一份 `useJobPoll`。对话侧只存 jobId、按号现查引擎，**不在消息里存一份指标**——存了就会有第二套渲染，量化页改了对话不改，两边数字对不上。
+6. **指纹与量化页同一份算法**：`experimentFingerprint` 逐字段对齐 runner（含 `split {0.6,0.2,0.2}` 与 `validate:true`）。实测双向成立：对话里先跑（fp `y4m35j_9a`）→ 页面用同参数 POST `/api/quant/backtest` 返回 `skipped:true` 且 `experiment.fingerprint` 同为 `y4m35j_9a`；反向也一样。对话启动的 job 在量化页「长任务」列表里看得见、指标齐全。不带 split 那版是对不上的（本轮实测改掉）。
+
+顺带钉了护栏：模型正文里出现「回测」但这一轮没真跑成（没调用 / 被白名单挡 / 超时），`backtestClaimWarning` 会发 `warning` 事件并在回答下方如实标一行，推测不允许冒充计算结果；`/api/ai/proxy` 那条没有工具环的路显式 `backtestReady:false`，提示词只能说「本轮没有可用的回测工具」，不再写「P7-⑦ 之后才做」那句已经过期的话。
+
+### 落点（3 个新文件 + 8 处改动，判定全在内核层）
+
+- `src/lib/desk/backtest-core.ts` **新增 369 行**：纯内核（不 fetch、不碰库、不碰时钟）。`BACKTEST_MIN_TRADING_DAYS/_POLL_INTERVAL_MS/_POLL_TIMEOUT_MS`、三条任务书原文常量、`whitelistOf` / `resolveWhitelistFactors` / `whitelistPromptLine` / `rangeVerdict` / `pollAction` / `jobLookupVerdict` / `ratioToPct` / `metricViews` / `metricObject` / `backtestRan` / `backtestClaimWarning` / `backtestReadout`。缺数措辞直接复用 `context-panel-core.MISSING_TEXT`，不另立第二个词。
+- `src/components/desk/ChatBacktestCards.tsx` **新增 53 行**：按步骤里的 jobId 逐条问引擎、把任务交给 `BacktestJobCard` 画（一条回答里可能回测两次，不合并）。
+- `tests/quant/p7-backtest.test.ts` **新增 298 行 / 28 个用例**（未删改任何既有测试与断言）。
+- `src/lib/desk/chat-tools.ts` **+225 / −0**：`toolRunBacktest` + 白名单服务层 + `BACKTEST_READY` 导出。
+- `src/components/desk/quant/LabTabs.tsx` **+85 / −38**：抽出并导出 `useJobPoll`/`JobPanel`/`BacktestJobCard`/`JobView`；`useJobPoll` 增加「任务号问不出东西」的收尾（见下面边界第 2 条，是本轮实机抓出来的真缺陷）。
+- `src/app/api/ai/chat/route.ts` **+18 / −1**（数据纪律第 5 条、steps/emit 带 jobId、warning 事件）、`chat-stream-core.ts` **+16 / −1**（`StreamStep.jobId` 进 `asStreamEvent` 白名单、回测步骤标签带因子名）、`chat-core.ts` **+6**（`StepInfo.jobId`）、`intent-core.ts` **+15 / −1**（白名单行两分支）、`scene-dispatch.ts` **+24 / −3**（只在句中出现「回测」时才查库，其余轮不付这次查询的成本）、`proxy/route.ts` **+3**（`backtestReady:false`）、`AssistantPage.tsx` / `AssistantWidget.tsx` **+3 / +3**（挂结果卡）。
+
+### 验收（全部当场重跑）
+
+- `npx tsc --noEmit` 退出码 **0**。
+- `node --experimental-strip-types --test tests/quant/p7-backtest.test.ts` = **28 通过 / 0 失败**。
+- 全量 `tests/quant/*.test.ts` = **617 tests / 608 pass / 0 fail / 9 skipped**（开工前基线 613/604/9，差 4 条＝本轮补的 4 条 `jobLookupVerdict`）⇒ 无回归、未降断言。9 条 skipped 仍是需 `MYDESK_INTEGRATION=1` 的集成用例。
+- `npx eslint` 对 13 个涉及文件 = **1 条 error、0 warning**，且这条是既有代码：`LabTabs.tsx` 的 `if (p?.length) setPipeline(p)`（`HEAD` 里第 447 行原样在场，本轮只是被顶到 494 行）⇒ 未新增告警。
+- `package.json` / `package-lock.json` / `prisma/schema.prisma` 的 `git diff` = **空**（`git diff --numstat` 三者 0 行）⇒ 未新增依赖、未改库结构。
+- 真实数据未动：`prisma/db/custom.db` md5 本轮前后均为 `9b98e11cedff742e1a077af3b767c0e2`；`data/factor-verified.json` 为 `899b77992e61cc8903ebf79c2d4f8125` 且 `git status` 未标改；用户 3010（PID 93740）全程未动，只对 3014 的副本库 `D:/Zai/p7-check/p7v3-3014.db` 写入（`DESK_SCHEDULER=0`）。
+- `npx next build` 退出码 **0**（`build-p784d.log`，"✓ Compiled successfully in 4.7s"），`next start -p 3014` 跑新产物（`next-3014-p784d.log`），**收尾后 3014 仍在运行**（按指示不停）；假上游 8898/8899 已停。
+- 凭据自查：`git diff` + 三个新增文件对 `sk_[a-z0-9]{8,}|Bearer|api[_-]?key|inceptionlabs|mercury|password` 命中 **0**；测试全程走免 Key 的假上游（`x-ai-provider: ollama` + `127.0.0.1:8899`），本轮未读取、未搬运、未代填任何密钥。真实 Key 的端到端复测按指示仍留到开发完成后。
+
+### 生产实测（`next build` + `next start` 下当场跑，curl 原样输出）
+
+三条错误口径与三条成功路径全部在 3014 上真跑过（请求体用仓库外 UTF-8 fixture + `--data-binary @file`，内联中文会被 git-bash 改成乱码）：
+
+1. **白名单挡下**（`factors:[{factorKey:"my_magic_factor"}]`）：`HTTP 200 time=2.717795s`，步骤帧 `[missing] ms=7 jobId=(无)`，detail = `缺失：当前因子不在可回测白名单，无法执行回测`（任务书原文，一字未改），7ms 出结果 ⇒ 引擎一次都没被调用。
+2. **完成分支**（`roc_v_10@1`、250 交易日、20 只）：`HTTP 200 time=6.009240s`，步骤帧 `[ok] ms=3290 jobId=qj_muag8q4d_8`，detail 第一个键就是摘要：`{"摘要":"回测完成 250 交易日 × 20 只 · 胜率65.6% 年化收益率216.4% 最大回撤-30.3% 盈亏比1.22 交易次数376","jobId":"qj_muag8q4d_8","指标":{…`。上游侧只两轮回（`消息件数=3` → `5`），第 4 件是 `assistant tool_calls=run_backtest`、第 5 件是 `tool` 结果，节拍正确。
+3. **去重分支**（同一组合再问一次）：`[ok] ms=1018`、**整条 SSE 里 `jobId` 出现 0 次**，detail = `{"摘要":"相同因子的回测此前已完成过，本轮未重跑","说明":"完全相同的实验已完成或进行中（指纹去重）","指引":"同参数的上一次实验是任务 qj_muafunvz_1，可在量化研究页的回测任务列表里查看它当时的结果","提示":…}`。
+4. **`asOf` 透传**：`payload.asOf=2023-01-04` 被引擎采用（区间预检按该日数交易日通过 ⇒ 本机 `000001.SH` 历史在 2023-01-04 之前已 ≥240 交易日）。
+5. **最大合法负载**：`periodDays 500 / maxSymbols 120 / rebalanceEvery 1` → `[ok] ms=21478 jobId=qj_muagdb2g_c`，摘要 `回测完成 514 交易日 × 120 只 · 胜率58.6% 年化159.5% 最大回撤-26.2% 盈亏比1.39 交易次数3142`。
+
+实机（内嵌浏览器驱动 3014 生产页 `#/copilot`，假上游）：
+
+- 完成那一轮画出全量卡：`回测任务 qj_muag3rpv_4 · 由本轮 run_backtest 启动 · 下方按这个任务号现查量化研究页的同一组件（数据源 em 真实行情；历史回测不代表未来收益）` + 12 项指标（年化 135.2% / Sharpe 2.15 / … / 综合分 1.644，另一张为 216.3%/2.63/…）+ 验证结论 `fail · OOS/IS 衰减 -23%` + 过拟合提示两条。红涨绿跌与出处标注沿用量化页那份渲染，本层未换算任何指标。
+- 去重那一轮：`工作过程 · 1 步` → 步骤 `已取到 1010ms`，展开是摘要/说明/指引三键，**页面全文 `qj_` 引用为 0、结果卡一张不画**（改之前这里会画一张标着 done 却空白的卡）。
+- 新产物下重跑一次全新回测（`topN 12` → `qj_muago359_1`）：12 项指标 + 验证结论齐全 ⇒ 抽组件与改轮询没有把成功路径碰坏。
+- 控制台报错：整轮收尾后**只剩 1 条**（旧会话里那张卡的 404，问到一次就停），不再随时间增长。
+
+### 本轮实机抓出来并修掉的两个缺陷
+
+1. **去重任务画空卡**：skipped 的 result 只有 `{skipped, reason, experiment}` 三个键，按 jobId 现查回来就是一张 `done` 却什么都没有的卡。改成 skipped 分支不带 jobId、只给「摘要/说明/指引」，并明确写「本轮没有新的回测数字，不要把历史实验的数字当成本轮算出来的」。
+2. **服务重启后无限 404**：对话历史存的是 jobId，重启后这些号不在本进程任务表里，旧版 `useJobPoll` 只在查到 settled 时停表 ⇒ 每 2.5 秒一条 404、卡片位置一块空白（实机控制台一次刷出 15 条并继续增长）。修法是判定进内核（`jobLookupVerdict` 三分：取到 / 明确「不存在」/ 这次没问出来），只有第二种停表并换一句实话：`本进程已无该回测任务（服务重启过，内存任务列表不保留历史任务）：任务不存在：…。本轮步骤里已列出的读数不受影响；要回看完整结果，请到量化研究页按实验台账查该任务号。` 网络抖动与 5xx 仍按原节拍继续问，绝不把「没问出来」报成「任务没了」。判定有 4 条单测钉住。
+
+### 本轮的边界（必须说清）
+
+1. **60 秒超时那句在合法参数下打不出来**：本机最大合法负载（500 交易日 × 120 只 × 每日调仓）实测 21.5 秒完成，引擎比这道闸快。该分支只有单测覆盖（`pollAction` 逐字断言原文 + 超时仍带 jobId），运行时行为未实机观测到。要造它只能人为拖慢引擎——那属于改引擎，任务书禁止。
+2. **「回测区间太短」同样未实机触发**：`asOf=2023-01-04` 时指数历史仍 ≥240 交易日；本机库里的指数历史比这条闸长，构造不出「不足」。同样只有单测断言原文与判定。
+3. **`盈亏比 99` 哨兵值在结果卡里仍显示 99.00**：卡片是量化页原有渲染（`num()` 直接给两位小数），任务书要求「不重新写渲染逻辑」，所以这里没动。对话侧的文字读数不受影响——`metricViews` 会把它换成「只赚不亏哨兵」的说法。要统一改，得连量化页一起改，那是另一件事。
+4. **引擎的实验指纹不含 weight 与 direction**：同 `factorKey@version` 但权重不同也会被去重成一条。这是 `experimentFingerprint` 既有口径（改它会影响量化页已有的台账对照），本轮没改；后果是对话里「换个权重重跑」拿不到新数字，只会走 skipped——上面第 3 条实测（1018ms 出 skipped）就是它。
+5. **runner 缺省 `asOf` 用 UTC 日期**（`new Date().toISOString().slice(0,10)`），与 `shanghaiDate()` 在 00:00–08:00 这段会差一天。对话侧总是显式传 `asOf`，所以这条路不受影响；不显式传的那条（量化页直接 POST）仍是既有行为，未动。
+6. **升级前存档的旧会话**里，skipped 那一步仍带着 jobId ⇒ 打开这种历史会话会看到上面那句「本进程已无该回测任务」。这是本机 localStorage 的历史数据，不回填、不改写。
+7. **本轮没有真实模型参与**：正文是假上游的脚本常量（自标「不构成任何行情事实」），只有 `run_backtest` 返回的数字是引擎按真实行情算的。带真实 Key 的端到端复测按指示留到开发完成后统一做。
+8. **未 commit**，等分项报告确认。3014 隔离实例按指示仍在运行（副本库、调度器关闭），假上游已停。
