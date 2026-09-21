@@ -13,9 +13,9 @@
 import type { Scene } from "./intent-core.ts";
 
 /** 入参形状判别符（具体拼法在 intent-core 的 planDispatch，文案单一出处） */
-export type SkillArgs = "empty" | "news8" | "sector_kind" | "symbol";
+export type SkillArgs = "empty" | "news8" | "sector_kind" | "symbol" | "screener_pool";
 /** 「为什么取它」的文案键（渲染时套 SCENE_LABELS，与旧 switch 逐字一致；news 两变体照抄不统一） */
-export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "news" | "news_why" | "watchlist";
+export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "news" | "news_why" | "watchlist" | "screener_pool";
 /** 出条件判别符：news=提问显式要消息面；watchlist_nonempty=本机自选非空 */
 export type SkillGate = "news" | "watchlist_nonempty";
 
@@ -46,8 +46,8 @@ export interface SceneDispatchConfig {
   symbol_max?: number;
   /** 超限话术键（analysis=「个股分析一次最多看 N 只」原话） */
   cap?: "analysis";
-  /** 整场景的静态留痕键（screener/qimen/general 与「不预取」的原因） */
-  skip?: "screener" | "qimen" | "general";
+  /** 整场景的静态留痕键（qimen/general 与「不预取」的原因；screener 自 P10 择优轮起预取候选池，不再跳过） */
+  skip?: "qimen" | "general";
 }
 
 /** 全局一次对话最多预取几只（口径搬自 intent-core，导出名不变） */
@@ -98,9 +98,15 @@ export const BUILTIN_SKILLS: Skill[] = [
       { scene: "stock_analysis", spread: "once", args: "news8", reason: "news_why", gate: "news" },
     ],
   },
-  // factor_screener / historical_probability：选股条件必须由模型从自然语言抽出来，
-  // 系统替它猜条件＝替用户做决定（旧 switch 明确不预取，这里同样不给 plan）。
-  { name: "factor_screener", desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录" },
+  // factor_screener：P10 择优轮起进自动调度（用户裁定改口径，参考 aiwuchuan 的「候选池→择优」链路）。
+  // P7 旧拍板「条件由模型抽、系统不替猜」拆成两半保住：抽得到的照抽（确定性正则），
+  // 抽不到用默认活跃池但必须如实标注「系统默认口径」——把猜的条件当用户要求仍是事故。
+  // historical_probability 维持不预取：那是逐只统计，池子出来后再由模型按需调用才有意义。
+  {
+    name: "factor_screener",
+    desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录",
+    plan: [{ scene: "screener", spread: "once", args: "screener_pool", reason: "screener_pool" }],
+  },
   { name: "historical_probability", desc: "个股历史条件概率：conditions 中的 field 必须来自因子目录" },
   {
     name: "watchlist_overview",
@@ -114,7 +120,8 @@ export const BUILTIN_SKILLS: Skill[] = [
 export const SCENE_DISPATCH_CONFIG: Record<Scene, SceneDispatchConfig> = {
   sentiment: {},
   sector: {},
-  screener: { skip: "screener" },
+  // P10：screener 不再整场景跳过（候选池预取见 factor_screener.plan）；skip 联合类型保留键位说明
+  screener: {},
   quote: {},
   watchlist: {},
   stock_analysis: { symbol_max: DISPATCH_ANALYSIS_MAX, cap: "analysis" },

@@ -179,9 +179,12 @@ export default function AssistantPage() {
     void send(pending);
   }, [send, takePendingAsk]);
 
-  // 刷新/进入对话页回到 Hello 首页，不自动续上旧会话。
-  // 旧会话不会被删：空状态下的「最近对话」列表就是续上它们的入口（小窗「在助手页继续」同理，点一下即回）。
-  useEffect(() => { newSession(); }, [newSession]);
+  // P10（用户裁定改口径）：切到别的页面再回来，这一轮对话要还在——刷新也还在。
+  // 旧行为是挂载即 newSession()（P8 设计：回 Hello 首页），用户实测反馈「切换后再回来对话就没了」，
+  // 判定那是把工程上的「新开会话干净」错当成了用户预期。会话本来就整份存在 zustand persist
+  // （localStorage，删了才真没了），这里只是不再每次挂载强行开新会话；
+  // 「新对话」按钮保留：想清空时点它，或直接删对应会话（空状态最近对话里的垃圾桶）。
+  // 副作用口径：进页不再动会话，首页/小窗交来的 pendingAsk 就落在当前会话里续着说。
 
   const session = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
   const messages: ChatMessage[] = session?.messages ?? [];

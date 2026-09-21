@@ -57,7 +57,7 @@ export interface PrefetchResult {
   steps: StepInfo[];
   /** 非流式路径用的执行记录，与工具调用环的 trace 同形 */
   trace: DispatchTrace[];
-  /** 计划阶段就没取的项（自选为空 / 选股条件待抽取 / 奇门不取数…） */
+  /** 计划阶段就没取的项（自选为空 / 奇门不取数…；screener 自 P10 起预取候选池，不再整场景跳过） */
   skipped: string[];
   /** 模型自己的工具调用要接着这个序号往下编，两套步骤不能都从 1 开始 */
   nextStep: number;

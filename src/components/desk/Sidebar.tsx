@@ -20,7 +20,6 @@ const WB_ICONS: Record<Workbench, React.ComponentType<{ size?: number | string; 
 export default function Sidebar() {
   const page = useDesk((s) => s.page);
   const go = useDesk((s) => s.go);
-  const newSession = useDesk((s) => s.newSession);
   const [menuOpen, setMenuOpen] = useState(false);
   const activeWb = workbenchOf(page);
 
@@ -51,8 +50,11 @@ export default function Sidebar() {
             <button
               key={wb.key}
               onClick={() => {
-                // 点「AI 决策」= 回到 Hello 首页：先清出一个全新空会话，再落到对话页
-                if (wb.key === "ai") { newSession(); go("copilot"); }
+                // P10（用户裁定改口径）：点「AI 决策」= 回到正在进行的对话，不再先清会话。
+                // 旧注释写的是「回到 Hello 首页：先清出一个全新空会话」——配合对话页挂载时
+                // 那次 newSession()，两处一起造成「切个页面回来话就没了」。
+                // 新会话的入口留给用户主动动作：页内「新对话」按钮（AssistantPage / 小窗都有）。
+                if (wb.key === "ai") { go("copilot"); }
                 else { go(NAV[wb.key].items[0].key); }
               }}
               className={

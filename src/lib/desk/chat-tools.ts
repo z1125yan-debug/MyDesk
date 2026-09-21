@@ -11,6 +11,8 @@
 //  - 每个返回值自带 数据源 字段，前端与模型都能看到这条数据是从哪儿来的。
 import { computeSentiment } from "@/lib/quant/screener/sentiment";
 import { runScreener } from "@/lib/quant/screener/run";
+// P10 择优轮：默认活跃池条件、条件中文读法、出身文案与五条择优纪律（一份定义多处消费，纯核零 IO）
+import { DEFAULT_PICK_CONDS, pickCondText, poolOriginText, PICK_DISCIPLINE } from "@/lib/quant/screener/pick-pool-core";
 import { buildFieldPanel, lastValues, type BarsLike } from "@/lib/quant/factors/fields";
 import { historicalWinProbability, type ScreenerCond } from "@/lib/quant/factors/probability";
 import { getProvider } from "@/lib/quant/data/index";
@@ -190,9 +192,19 @@ async function toolMarketNews(args: { limit?: number }): Promise<unknown> {
   return { 数据源: "东财7x24/新浪快讯", 快讯: rows };
 }
 
-async function toolFactorScreener(args: { conditions: ScreenerCond[]; limit?: number }): Promise<unknown> {
-  const conds = Array.isArray(args.conditions) ? args.conditions : [];
-  if (!conds.length) return { missing: "conditions 为空：需要至少一个 {field, op, value}" };
+async function toolFactorScreener(args: {
+  conditions?: ScreenerCond[]; limit?: number;
+  /** P10 择优轮：候选池出身（预取侧由 planDispatch 给；模型自调不带就按 model 口径说） */
+  pool_origin?: "extracted" | "default" | "model"; pool_matched?: string[];
+}): Promise<unknown> {
+  const raw = Array.isArray(args.conditions) ? args.conditions : [];
+  // P10 口径（用户裁定，参考 aiwuchuan「候选池→择优」）：空条件不再拒绝开工，
+  // 而是按系统默认活跃池跑，并把「这是默认口径」如实写进返回——含糊的「帮我选股」
+  // 从此有真池可择优，不再逼用户先报条件。
+  const conds = raw.length ? raw : DEFAULT_PICK_CONDS;
+  const origin = raw.length ? (args.pool_origin === "extracted" ? "extracted" : "model") : "default";
+  const matched = Array.isArray(args.pool_matched) && args.pool_matched.length
+    ? args.pool_matched : conds.map(pickCondText);
   const result = await runScreener({
     universe: "all_a",
     conditions: conds,
@@ -204,6 +216,10 @@ async function toolFactorScreener(args: { conditions: ScreenerCond[]; limit?: nu
   return {
     funnel: result.funnel, trade_date: result.as_of_trade_date,
     数据源: result.source.provider, 口径提示: result.warnings,
+    // P10 择优轮：池子出身必须摆在结果前面——默认池不是用户条件，模型不许混为一谈；
+    // 五条择优纪律随返回下发（与场景提示词同源一份定义），纯对话端没有工具环也照吃注入块。
+    条件口径: poolOriginText(origin, matched),
+    择优纪律: PICK_DISCIPLINE,
     // P9-经验轮：字段全缺被忽略的条件单独摆到模型眼前——「筛不出」与「数据缺口」
     // 是两个事实，模型只看到空 funnel 时会把缺口转述成「没有符合的股票」。
     ...(result.unavailable_fields.length
@@ -519,7 +535,7 @@ export const TOOLS: ChatTool[] = [
   { name: "stock_kline_summary", desc: "个股技术状态：均线/MACD/KDJ/RSI/VWAP/RPS + 历史条件概率", fn: toolStockKline, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "stock_fund_flow", desc: "个股近14日主力资金净额（东财）", fn: toolStockFundFlow, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "market_news", desc: "最新宏观/市场快讯", fn: toolMarketNews, params: { type: "object", properties: { limit: { type: "number" } } } },
-  { name: "factor_screener", desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录", fn: toolFactorScreener, params: { type: "object", properties: { conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string", enum: ["=", ">=", ">", "<=", "<", "!="] }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } }, limit: { type: "number" } }, required: ["conditions"] } },
+  { name: "factor_screener", desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录；不给 conditions 时按系统默认活跃池跑（返回里会如实标注是默认口径）", fn: toolFactorScreener, params: { type: "object", properties: { conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string", enum: ["=", ">=", ">", "<=", "<", "!="] }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } }, limit: { type: "number" } } } },
   { name: "historical_probability", desc: "个股历史条件概率：conditions 中的 field 必须来自因子目录", fn: toolHistoricalProbability, params: { type: "object", properties: { symbol: { type: "string" }, conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string" }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } } }, required: ["symbol", "conditions"] } },
   { name: "watchlist_overview", desc: "自选股实时总览（清单取自用户本机存档，行情现取）", fn: toolWatchlistOverview, params: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } } } },
   {

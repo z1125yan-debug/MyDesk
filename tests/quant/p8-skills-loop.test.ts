@@ -26,13 +26,18 @@ function intent(question: string, extra: Partial<Intent> = {}): Intent {
 
 // ---------- ③ 注册表本体 ----------
 
-test("内置技能表就是旧 switch 的形状：12 个工具、plan 覆盖 5 个自动调度场景", () => {
+test("内置技能表形状：12 个工具、plan 覆盖 6 个自动调度场景（P10 起含选股）", () => {
   assert.equal(BUILTIN_SKILLS.length, 12, "与 chat-tools TOOLS 的注册项数一致（多了/少了都要两边同步改）");
-  // 深水区与选股类工具不进自动调度（预取＝替用户猜条件、每轮多打接口）
-  for (const cold of ["stock_depth", "stock_trades", "factor_screener", "historical_probability", "run_backtest"]) {
+  // 口径迁移（P10 择优轮，用户裁定改口径）：本条原钉「深水区与选股类工具不进自动调度
+  // （预取＝替用户猜条件、每轮多打接口）」——factor_screener 按 aiwuchuan「候选池→择优」
+  // 链路改为预取（抽不到的条件走默认活跃池并如实标注，不再替用户猜）；其余四个冷工具原样。
+  for (const cold of ["stock_depth", "stock_trades", "historical_probability", "run_backtest"]) {
     assert.ok(BUILTIN_SKILLS.find((s) => s.name === cold), `${cold} 仍在技能表里（模型可自取）`);
     assert.ok(!BUILTIN_SKILLS.find((s) => s.name === cold)!.plan?.length, `${cold} 不参与自动调度`);
   }
+  const fs = BUILTIN_SKILLS.find((s) => s.name === "factor_screener");
+  assert.ok(fs?.plan?.some((e) => e.scene === "screener" && e.args === "screener_pool"), "选股场景现跑候选池");
+  assert.ok(!SKILLS.requiredToolsForScene("screener").has("factor_screener"), "候选池不是必读项：池挂了走 missing 留痕，不触发补跑整池");
   assert.ok(!BUILTIN_SKILLS.some((s) => (s.plan ?? []).some((e) => e.scene === "qimen" || e.scene === "general")));
 });
 
