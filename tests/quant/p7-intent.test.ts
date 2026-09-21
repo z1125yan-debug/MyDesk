@@ -290,10 +290,23 @@ test("自选股：清单为空不调工具（空清单不是取数失败）", ()
   assert.deepEqual(has.calls.map((c) => c.tool), ["watchlist_overview"]);
 });
 
-test("选股场景不预取：条件由模型抽，不能把猜的条件当用户要求", () => {
-  const r = planDispatch({ intent: intent("screener", { question: "帮我选出缩量回调的股票" }) });
-  assert.deepEqual(r.calls, []);
-  assert.ok(r.skipped.some((s) => s.includes("未预取")));
+test("选股场景现跑候选池：抽到的条件带原话，抽不到走默认池（口径迁移见注释）", () => {
+  // 口径迁移（P10 择优轮，用户裁定）：本条原钉「选股场景不预取：条件由模型抽，
+  // 不能把猜的条件当用户要求」（原断言：calls 为空 + skipped 含「未预取」，
+  // 原话术「选股条件需由模型从提问里抽取，未预取（把猜出来的条件当成用户要求是事故）」）。
+  // 新口径把「不替用户猜」拆成：抽得到的照抽（确定性正则+原话留痕）、抽不到用默认活跃池
+  // 且必须标注「系统默认」——「缩量回调」这类没抽到的说法不再拦停整轮。
+  const vague = planDispatch({ intent: intent("screener", { question: "帮我选出缩量回调的股票" }) });
+  assert.deepEqual(vague.calls.map((c) => c.tool), ["factor_screener"]);
+  assert.deepEqual(vague.calls[0].args.conditions, [], "抽不出的说法不硬凑条件（交给默认池）");
+  assert.equal(vague.calls[0].args.pool_origin, "default");
+  assert.ok(!vague.skipped.some((s) => s.includes("未预取")), "screener 不再整场景跳过");
+  const sharp = planDispatch({ intent: intent("screener", { question: "换手率大于3%且量比超过2的股票有哪些" }) });
+  assert.deepEqual(sharp.calls[0].args.pool_origin, "extracted");
+  assert.deepEqual(sharp.calls[0].args.conditions, [
+    { field: "volume_ratio", op: ">=", value: 2 },
+    { field: "turnover_rate", op: ">=", value: 3 },
+  ], "条件按纯核的产出顺序（量比在换手率前），不是提问里的字面顺序");
 });
 
 test("奇门 / 通用不取数：没有真实盘局可取，也不会画出一个失败的取数步骤", () => {

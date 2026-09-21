@@ -17,6 +17,8 @@ import {
   SKILLS, DISPATCH_MAX_SYMBOLS, DISPATCH_ANALYSIS_MAX,
   type SkillArgs, type SkillPlanEntry, type SkillReason, type SkillRegistry,
 } from "./skills-core.ts";
+// P10 择优轮：选股场景候选池的条件抽取纯核（同为零 IO 纯函数，node --test 直跑不受影响）
+import { extractPickConds, PICK_DISCIPLINE } from "../quant/screener/pick-pool-core.ts";
 export { DISPATCH_MAX_SYMBOLS, DISPATCH_ANALYSIS_MAX };
 
 export type Scene =
@@ -217,8 +219,23 @@ export function classifyIntent(input: IntentInput): Intent {
   const symbols = extractSymbols(question);
   const followUp = isFollowUp(question);
   const matched = sceneHits(question);
-  const own = matched[0];
-  const alternates = matched.slice(1, 3).map((m) => m.scene);
+  // P10 择优轮：条件句式选股（「帮我找成交额大于5亿、站上20日线的股票」这类）词表没覆盖到，
+  // 但纯核能抽出 ≥2 条量化条件、句子里有股/票、又没给具体代码——按 screener 处理，
+  // hits 直接摆抽到的条件原话（徽章看得见「为什么判成选股」）。2 条起判是防误伤：
+  // 单一条「站上20日线」更可能是在问某只票的技术面，不该抢成整池筛选；自选/奇门在场不抢。
+  let own = matched[0];
+  {
+    const ex = extractPickConds(question);
+    const noClaim = !matched.some((m) => m.scene === "watchlist" || m.scene === "screener" || m.scene === "qimen");
+    const overwritable = !own || own.scene === "sentiment" || own.scene === "sector" || own.scene === "quote" || own.scene === "stock_analysis" || own.scene === "general";
+    if (ex.conds.length >= 2 && /股票|个股|票/.test(question) && !symbols.length && noClaim && overwritable) {
+      own = { scene: "screener", hits: ex.matched };
+    }
+  }
+  // alternates：正常路径与旧口径逐字一致（第 2~3 个命中场景）；只有「条件句式抢判」发生时，
+  // 原第一命中（如成交额→情绪）降级为 alternates，不丢。
+  const grabbed = own?.scene === "screener" && matched[0]?.scene !== "screener";
+  const alternates = (grabbed ? matched.slice(0, 2) : matched.slice(1, 3)).map((m) => m.scene);
   // 「那 600519 呢」这类：一个场景词都没有，只换了代码 + 带着指代/语气词 —— 场景该沿用上一轮，标的必须换。
   // chat-core.isFollowUp 看到 6 位代码就判「不是追问」（它的用途是决定要不要重新认标的），所以这里要自己再判一次。
   const trimmed = question.trim();
@@ -299,10 +316,14 @@ export function scenePrompt(scene: Scene, ctx: ScenePromptCtx): string {
       );
       break;
     case "screener":
+      // P10 择优轮（用户裁定改口径，参考 aiwuchuan 的「候选池→择优」链路）：旧三条里
+      // 「条件含糊时先问清一句再跑」把「帮我选股」这类请求拦死在原地——改为系统先给真池，
+      // 模型在池内择优；「条件必须结构化、按真实命中数答、不得凭印象报票」三条原样保住。
       lines.push(
-        "选股类问题：条件必须写成结构化 conditions（field 只能取自因子目录），并用 factor_screener 现跑，按真实命中数回答。",
-        "命中 0 只就说 0 只，不要为了显得有结论而放宽条件；条件含糊时先问清一句再跑。",
-        "不得凭印象报「哪些票强势」，那不是算出来的。",
+        "本轮候选池已按你的提问（或系统默认活跃池）用 factor_screener 现跑，注入块里的就是真实命中清单。",
+        ...PICK_DISCIPLINE,
+        "想换条件就带着新 conditions 再调一次 factor_screener（field 只能取自因子目录）；命中 0 只就说 0 只，不要为了显得有结论而放宽条件。",
+        "不得凭印象报「哪些票强势」，那不是池子里算出来的。",
       );
       break;
     case "quote":
@@ -439,6 +460,7 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
       case "news": return "同时问了消息面/原因";
       case "news_why": return "同时问了消息面/为什么";
       case "watchlist": return `按「${SCENE_LABELS.watchlist}」取全部自选的实时行情`;
+      case "screener_pool": return "按「量化选股」现跑候选池（条件从提问抽取，抽不到按系统默认活跃池并如实标注）";
     }
   };
   const argsOf = (a: SkillArgs, symbol: string): Record<string, unknown> => {
@@ -446,6 +468,18 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
       case "symbol": return { symbol };
       case "news8": return { limit: 8 };
       case "sector_kind": return { kind: intent.question.includes("概念") ? "concept" : "industry", size: 15 };
+      // P10 择优轮：选股场景的候选池。条件由纯核从提问里确定性抽取（抽不到给空数组，
+      // 工具层按默认活跃池跑并如实标注 origin）——「把猜的条件当用户要求」仍是事故，
+      // 所以 matched 原话片段随参数一起走，注入块里要摆给用户看。
+      case "screener_pool": {
+        const ex = extractPickConds(intent.question);
+        return {
+          conditions: ex.conds,
+          limit: 15,
+          pool_origin: ex.conds.length ? "extracted" : "default",
+          pool_matched: ex.matched,
+        };
+      }
       case "empty":
       default: return {};
     }
@@ -485,7 +519,7 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
     calls.push({ tool, args: argsOf(entry.args, ""), reason: reasonOf(entry.reason) });
   }
 
-  if (cfg.skip === "screener") skipped.push("选股条件需由模型从提问里抽取，未预取（把猜出来的条件当成用户要求是事故）");
+  // P10：screener 的「未预取」留痕随候选池上线一起退场（旧文案钉在 p10 测试的口径迁移注释里）
   if (cfg.skip === "qimen") skipped.push("奇门排盘在「奇门解盘」面板本地实算，对话链路本轮不起局、不取行情数（取行情只会让它看起来像在算盘）");
   if (cfg.skip === "general") skipped.push("按通用问答处理，未取数");
   return { calls, skipped };
