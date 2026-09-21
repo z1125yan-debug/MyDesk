@@ -1379,3 +1379,33 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 3. **冷刷新后标签页标题短暂为默认值**，点一次导航即恢复——同为既有行为，非本轮引入。
 4. **system 工作台（设置/扩展）目前也走壳层画 2 项左窄栏**，是统一规则的自然结果；若要系统页铺满，登记表一行可改。
 5. **本轮只立骨架与导航**：右栏各页技术细节批量替换为 DeskCollapse、context 面板联动（P8 做）尚未铺开；DeskCollapse 与静态面板已就位待接。
+
+## P7 第十二阶段 P7-⑫ 任务1 收尾轮：16 处原生 `<details>` 全量铺开为 DeskCollapse（2026-09-21：4 条新单测，全仓组件目录原生 details 清零）
+
+接 P7-⑪ 边界 5 开工。清单在开工前钉死为 9 文件 16 处：StepTimeline×1、DecisionCard×3、CapabilityPanel×2、EventInterpretation×1、LifecyclePanel×1、AgentPage×3、ResearchPage×3、QimenPanel×1、MiningTab×1——全部就地换容器，**正文逐字保留**（含「系统预取/模型自取」区分、提示词原文、状态三表、台账目录），只改收纳方式。`package.json` / `package-lock.json` diff 照旧为空；`prisma/db/custom.db` 与 `P1P2_任务书.md` 删除照旧不入任何 commit。
+
+### 这一轮定的口径
+
+1. **排印「替换不叠加」**：触发器/正文的字号、字重、颜色（含 hover 色）都是「默认值整段被 `?? 拼接` 顶替」，绝不允许两个尺寸/颜色 class 并存——Tailwind 冲突谁赢取决于样式表顺序，不赌。
+2. **`tone="amber"` 给警示面板**（CapabilityPanel「还缺什么」琥珀常开）：border/bg 走 tone 分叉，不靠 className 覆盖同名工具类。
+3. **受控透传给 radix**（`open`/`onOpenChange`）：StepTimeline 的「开流自动展开、流毕自动收起、中途用户手点作数」用 pinned 派生值 + 「翻转才强制对齐」的 effect 复刻；**hooks 一律挪到 early-return 之前**（steps 会从零到有，条件后挂 hook 就是渲染间 hook 数不一致），有测试同时钉 hook 顺序、派生值、手点出口接线三件事。
+4. **「搬家不删信息」用锚点测试兜底**：16 处旧面板标题原文逐条 `includes` 断言 + 所在文件必须 import DeskCollapse——文案丢了会被判「删除」而不是「收纳」，这条正是任务书全局约束 1 在折叠轮的具体化。
+5. **注释同步口径**：`event-interpret-core.ts` 里「给页面 `<details>` 用」的注释改为 DeskCollapse，防止口径注释过期误导后人。
+6. **统一内边距的既定代价**：个别原 9.5px 紧凑面板视觉略变宽，属「统一样式」方向的决定，记录不回填。
+
+### 落点（1 个测试新文件 + 12 个文件改动，无新文件进业务层）
+
+- `src/components/desk/ui/DeskCollapse.tsx`：扩为 ReactNode 标题 + hint + tone + 受控透传 + 排印可替换三承诺。
+- 9 个组件/页面文件按清单替换；`src/lib/quant/screener/event-interpret-core.ts` 注释一处。
+- `tests/quant/p7-desk-collapse.test.ts` **新增 4 用例**（零原生 details 全目录扫描·注释行剔除 / 16 处锚点不丢 / StepTimeline 受控语义三条 / DeskCollapse 三承诺且不许引 element-plus）。
+
+### 验收数字与实测证据
+
+- `tsc --noEmit` **0**；全量 **699 tests / 690 pass / 0 fail / 9 skipped**（基线 695/686/9，+4 恰为新文件）；`next build` 通过；12 个触碰文件 eslint 与 HEAD stash 对照 **4→4 条同规则**（全是既有 `react-hooks/set-state-in-effect`，行号位移恰等于插入行数）⇒ 零新增。
+- **3014 实机**（新构建 + cache-buster，隔离副本库 + `DESK_SCHEDULER=0`，3010 未动）：`#/agent` 0 原生 details、口径面板 closed→open 正文在；对话页 StepTimeline closed→open→closed 手动往返、步内容在；奇门「起局」后 raw 折叠可开、JSON 渲染；`#/settings` **45 个折叠件**全为 DeskCollapse，「还缺什么」保持琥珀+常开；控制台零 React/JS 运行时错误（只剩东财 sectors/risk/themes 与 /api/ai/chat 的上游 502 风暴，改动前同款）。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+
+1. **「开流自动展开」未在实机演示成**：走查窗口内行情上游连续 fetch failed，steps 从未到达时间线；语义靠 ⑫-3 结构测试 + 手动展开实机证据兜底，肉眼确认留给上游恢复后复跑（`.env` 指 mock 也可演示）。
+2. **数据条件型折叠未现场点亮**：AgentPage「这一格原文」需真实 run、ResearchPage 三折叠需报告落库，本轮未造数据；同容器同 API 的其余实例已验证。
+3. **东财 502 风暴是本轮走查期间的真实外部状态**：对话预取连带失败，属数据源问题，不掩盖也不误报为代码缺陷。
