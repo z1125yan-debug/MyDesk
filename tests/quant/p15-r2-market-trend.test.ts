@@ -63,8 +63,11 @@ test("R2a-⑤ 接线钉：端点/客户端/页面三层同吃这份纯核，趋�
   const mk = readSrc("src/components/desk/pages/MarketPage.tsx");
   assert.ok(mk.includes("loadTrend(trendFrom, trendTo)"), "日期范围进请求：加载按钮按所选区间重取");
   assert.ok(mk.includes("void loadTrend()"), "首屏自动带默认窗口（近 90 天），成交额监控卡不用点按钮也有数");
-  assert.ok(mk.includes("低5日 暂无数据") && mk.includes("管线未建"), "要逐日沉淀的读数：明说没有，不拿快照猜新低");
-  assert.ok(mk.includes("大盘情绪（5日线占比）趋势") && mk.includes("不拿别的东西冒充趋势"), "5日线占比图如实空置");
+  // P15-R2b 口径迁移：逐日沉淀管线已部署，「管线未建」的说法随文案退役；
+  // 不变量没动——没跑出第一批前 chip 仍是「暂无数据」+ 明说不拿快照猜新低，攒够前只报进度不出数。
+  assert.ok(mk.includes("低5日 暂无数据") && mk.includes("拿今天快照猜新低"), "第一批沉淀没出来前：明说没有，不拿快照猜新低");
+  assert.ok(mk.includes("攒中") && mk.includes("/5"), "沉淀中显示真实进度 N/5，不提前出假数");
+  assert.ok(mk.includes("大盘情绪（5日线占比）趋势") && mk.includes("不拿别的东西冒充趋势"), "5日线占比图攒不够就如实空置");
   assert.ok(mk.includes("setTrendError(String((e as Error).message || e))"), "趋势失败落自己的小告警——不打掉情绪主体，也不共用页面级 error");
 });
 

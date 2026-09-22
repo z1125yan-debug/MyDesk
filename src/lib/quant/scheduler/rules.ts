@@ -3,7 +3,7 @@
 //       无法确证交易日时不猜测，交上层记为 skipped。
 // 时区口径：一律按北京时间（A股交易日历语义），不依赖宿主时区；北京固定 UTC+8 无夏令时。
 
-export type TaskKind = "radar" | "events";
+export type TaskKind = "radar" | "events" | "breadth";
 
 export interface SchedulerConfig {
   /** 收盘时刻（北京时间当日分钟数，15:00 = 900） */

@@ -519,3 +519,25 @@ model AgentToolCall {
   @@index([runId])
   @@map("agent_tool_call")
 }
+
+// ===== P15-R2b 逐日宽度沉淀：全A收盘价逐日存档 =====
+// 为什么要有这张表：稳智同款监控卡里的「低5日/低3日」「站上5日线占比」要的是**逐日历史**，
+// 而快照只有当日价格——库里此前没有任何逐票日线存档。禁造史：不回填、不拿别的东西换算，
+// 从部署日起由收盘后调度器（kind=breadth，15:05 后）每天沉淀一行/票，攒够 5 个交易日才出真数。
+// 写入口径（实现在 screener/breadth-collect.ts）：
+// 1) 只认收盘后（北京 15:05 之后）的全A快照价——盘中价冒充收盘价会把历史钉死成假数，直接拒跑；
+// 2) (symbol, tradeDate) 唯一 + 写入侧先查当日已有键再纯插（SQLite 方言没有 skipDuplicates）：同日重跑不重写，收盘价不可变；
+// 3) 停牌/无价格（price 缺失或 ≤0）不写行——缺就是缺，宽度统计的分母只数当日真实有行的票；
+// 4) 周末拒跑：周六的快照是周五收盘价，拿周六日期入库就是造了个对不上的交易日。
+model StockDailyClose {
+  id        String   @id @default(cuid())
+  symbol    String // 688256.SH
+  tradeDate String // 北京时间交易日 YYYY-MM-DD（收盘后沉淀当天）
+  close     Float // 收盘价（全A快照当日价格读数）
+  name      String   @default("") // 沉淀时名（仅备查；统计只认 symbol+close）
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, tradeDate])
+  @@index([tradeDate])
+  @@map("stock_daily_close")
+}

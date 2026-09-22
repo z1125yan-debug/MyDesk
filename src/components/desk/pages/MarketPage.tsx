@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { PctText } from "../SourceBadge";
-import { fetchSentiment, fetchLimitUp, fetchTrend, type SentimentClient, type LimitUpClient, type TrendClient, type TrendDayPoint } from "@/lib/desk/quant-api";
+import { fetchSentiment, fetchLimitUp, fetchTrend, fetchBreadth, type SentimentClient, type LimitUpClient, type TrendClient, type TrendDayPoint, type BreadthClient } from "@/lib/desk/quant-api";
 // P11 情绪温度：仪表盘与对话工具吃同一份纯核（零 IO，浏览器端直接 import），
 // 三态切换只换权重、不重取数——分量各算一次，牛/熊/震荡是同一批读数的三种加权。
 import { computeTemperature, REGIMES, type MarketRegime } from "@/lib/quant/screener/sentiment-temperature-core";
@@ -29,6 +29,17 @@ export default function MarketPage() {
   const [trendFrom, setTrendFrom] = useState("");
   const [trendTo, setTrendTo] = useState("");
   const [trendError, setTrendError] = useState("");
+  // P15-R2b 逐日宽度（站上5日线占比/创5日·3日新低）：来自 stock_daily_close 的收盘后沉淀。
+  // 攒不够天数不是错误——chips 与图各按「攒中 N/x」如实显示进度，取数失败也只是没数。
+  const [breadth, setBreadth] = useState<BreadthClient | null>(null);
+
+  const loadBreadth = useCallback(async () => {
+    try {
+      setBreadth(await fetchBreadth(90));
+    } catch {
+      setBreadth(null); // 宽度失败不打掉情绪主体：chips 走「暂无数据」分支，tooltip 说清原因
+    }
+  }, []);
 
   const loadTrend = useCallback(async (from = "", to = "") => {
     setTrendBusy(true); setTrendError("");
@@ -62,12 +73,13 @@ export default function MarketPage() {
       setBoards(Array.isArray(j.rows) && j.rows.length ? (j.rows as SectorRow[]) : null);
       void loadTiers();
       void loadTrend(); // 顶部成交额监控卡第一屏就要有数，不等用户点按钮
+      void loadBreadth(); // P15-R2b 逐日宽度：与趋势一样首屏自动带，攒够没攒够页面自会显示
     } catch (e) {
       setError(String((e as Error).message || e));
     } finally {
       setBusy(false);
     }
-  }, [loadTiers, loadTrend]);
+  }, [loadTiers, loadTrend, loadBreadth]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -94,6 +106,10 @@ export default function MarketPage() {
   // 成交额卡：取最近一个「两市齐有读数」的日子；缺就是缺，不拿单边合计
   const tLatest = trend ? [...trend.days].reverse().find((d) => d.totalYi !== null) ?? null : null;
   const fmtYi = (yi: number) => (yi >= 10000 ? `${(yi / 1e4).toFixed(2)} 万亿` : `${yi.toFixed(0)} 亿`);
+  // P15-R2b 宽度派生量：只有攒满根数的日子才有点（above_ma5_pct 非 null）；进度按库里真实天数说
+  const bLatest = breadth?.latest ?? null;
+  const bStored = breadth?.stored_trading_days ?? 0;
+  const bPoints = (breadth?.series ?? []).filter((s) => s.above_ma5_pct !== null);
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 px-6 py-6">
@@ -195,16 +211,32 @@ export default function MarketPage() {
               <div className="mt-1.5 flex flex-wrap gap-1 text-[10.5px] text-muted-foreground">
                 <span className="rounded bg-white/[0.05] px-1.5 py-0.5">涨 <b className="text-red-400">{sent.advancers}</b></span>
                 <span className="rounded bg-white/[0.05] px-1.5 py-0.5">跌 <b className="text-emerald-400">{sent.decliners}</b></span>
-                <span className="rounded bg-white/[0.05] px-1.5 py-0.5 text-muted-foreground/70"
-                  title="创5日新低家数：要逐日历史沉淀才有的读数，本库还没有这条管线——不做「拿今天快照猜新低」这种假数">低5日 暂无数据</span>
-                <span className="rounded bg-white/[0.05] px-1.5 py-0.5 text-muted-foreground/70"
-                  title="创3日新低家数：同上，逐日统计管线未建，缺就明说">低3日 暂无数据</span>
+                {bLatest && bLatest.ma5_eligible > 0 ? (
+                  <span className="rounded bg-white/[0.05] px-1.5 py-0.5"
+                    title={`创5日新低 ${bLatest.new_low_5} 家（${bLatest.date} 收盘沉淀·分母是满 5 根的 ${bLatest.ma5_eligible} 只）· ${breadth?.caliber ?? ""}`}>低5日 <b className="text-orange-300">{bLatest.new_low_5}</b></span>
+                ) : (
+                  <span className="rounded bg-white/[0.05] px-1.5 py-0.5 text-muted-foreground/70"
+                    title={bStored > 0
+                      ? `创5日新低家数：逐日沉淀管线已在跑（本库已攒 ${bStored}/5 个交易日），满 5 天才出数——不拿 4 天凑 5 天的口径`
+                      : "创5日新低家数：要逐日收盘价沉淀才有的读数。收盘后调度器（breadth 任务）从部署日起攒，还没跑出第一批——不做「拿今天快照猜新低」这种假数"}>
+                    {bStored > 0 ? `低5日 攒中 ${bStored}/5` : "低5日 暂无数据"}</span>
+                )}
+                {bLatest && bLatest.ma3_eligible > 0 ? (
+                  <span className="rounded bg-white/[0.05] px-1.5 py-0.5"
+                    title={`创3日新低 ${bLatest.new_low_3} 家（${bLatest.date} 收盘沉淀·分母是满 3 根的 ${bLatest.ma3_eligible} 只；并列最低算新低）`}>低3日 <b className="text-orange-300">{bLatest.new_low_3}</b></span>
+                ) : (
+                  <span className="rounded bg-white/[0.05] px-1.5 py-0.5 text-muted-foreground/70"
+                    title={bStored > 0
+                      ? `创3日新低家数：已攒 ${bStored}/3 个交易日，满 3 天出数（比 5 日口径早两个交易日）`
+                      : "创3日新低家数：同上，逐日收盘价沉淀未跑过第一批，缺就明说"}>
+                    {bStored > 0 ? `低3日 攒中 ${bStored}/3` : "低3日 暂无数据"}</span>
+                )}
               </div>
             </div>
           </div>
 
           {/* P15-R2a 复盘统计：日期范围 + 加载按钮 + 三张图（成交额趋势/情绪5日线占比趋势/指数累计涨跌）。
-              5日线占比那条要逐日积累，管线未建前这张图永远如实空着——不画假趋势。 */}
+              R2b 后 5日线占比那条吃 stock_daily_close 的逐日沉淀：攒够 2 个真实统计日才画线，攒不够如实报进度。 */}
           <div className="apple-card apple-fade-in p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div className="text-[14px] font-medium">大盘复盘统计</div>
@@ -235,12 +267,28 @@ export default function MarketPage() {
                 </div>
                 {trend?.notes.map((n, i) => <div key={i} className="text-[10.5px] text-amber-200/70">· {n}</div>)}
               </div>
-              <div className="rounded-xl border border-dashed border-border/60 bg-white/[0.01] p-3">
+              <div className="rounded-xl border border-border/60 bg-white/[0.02] p-3">
                 <div className="mb-1.5 text-[12.5px] font-medium">大盘情绪（5日线占比）趋势</div>
-                <div className="flex h-[150px] flex-col items-center justify-center gap-1 text-center text-[11.5px] text-muted-foreground">
-                  <span>暂无数据</span>
-                  <span className="max-w-[220px] text-[10.5px] leading-4">「高于5日线占比」要逐日沉淀全A收盘对 5 日线的关系，这条统计管线还没有：图画出来那天起才是真数，不拿别的东西冒充趋势。</span>
-                </div>
+                {bPoints.length >= 2 ? (
+                  <>
+                    <BreadthPctLine points={bPoints} />
+                    <div className="mt-1 text-[10.5px] text-muted-foreground/70" title={breadth?.caliber ?? ""}>
+                      站上5日线占比 · {bPoints.length} 个真实统计日（自 {bPoints[0].date} 起逐日沉淀·无回填）
+                    </div>
+                  </>
+                ) : bPoints.length === 1 ? (
+                  <div className="flex h-[150px] flex-col items-center justify-center gap-1 text-center text-[11.5px] text-muted-foreground">
+                    <span>首日读数 {bPoints[0].above_ma5_pct?.toFixed(1)}%（{bPoints[0].date}）</span>
+                    <span className="max-w-[220px] text-[10.5px] leading-4">趋势要两个点以上才成立：现在只攒出 1 个真实统计日，不画「一条横线冒充趋势」。</span>
+                  </div>
+                ) : (
+                  <div className="flex h-[150px] flex-col items-center justify-center gap-1 text-center text-[11.5px] text-muted-foreground">
+                    <span>暂无数据{bStored > 0 ? `（已攒 ${bStored}/5 个交易日）` : ""}</span>
+                    <span className="max-w-[220px] text-[10.5px] leading-4">
+                      「高于5日线占比」要逐日沉淀全A收盘对 5 日线的关系（收盘后调度器 breadth 任务，自部署日起攒、不回填）：图画出来那天起才是真数，不拿别的东西冒充趋势。
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="rounded-xl border border-border/60 bg-white/[0.02] p-3">
                 <div className="mb-1.5 text-[12.5px] font-medium">指数区间累计涨跌</div>
@@ -535,5 +583,34 @@ function IndexCumLines({ cum }: { cum: TrendClient["cum"] | null }) {
         ))}
       </div>
     </div>
+  );
+}
+
+// P15-R2b：站上5日线占比折线。点集只收 pct 非 null 的真实统计日（攒不满 5 根的日子不进图，
+// 也不会被 0 补上——线断在第一天是事实，不是画漏了）。y 轴固定 0-100%：占比就这个量纲，不自动缩放夸大波动。
+function BreadthPctLine({ points }: { points: { date: string; above_ma5_pct: number | null }[] }) {
+  const pts = points.filter((p): p is { date: string; above_ma5_pct: number } => p.above_ma5_pct !== null);
+  if (pts.length < 2) return null;
+  const x = (i: number) => CHART_PAD + (i / (pts.length - 1)) * (CHART_W - CHART_PAD * 2);
+  const y = (v: number) => 14 + (1 - v / 100) * (CHART_H - 34);
+  const last = pts[pts.length - 1];
+  return (
+    <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full" role="img" aria-label="大盘情绪（5日线占比）趋势">
+      {[0, 25, 50, 75, 100].map((g) => (
+        <g key={g}>
+          <line x1={CHART_PAD} y1={y(g)} x2={CHART_W - CHART_PAD} y2={y(g)} stroke="currentColor" strokeOpacity={g === 50 ? 0.25 : 0.1} strokeDasharray={g === 50 ? "3 3" : undefined} />
+          <text x={CHART_PAD} y={y(g) - 2} fontSize={8} opacity={0.45}>{g}%</text>
+        </g>
+      ))}
+      <polyline fill="none" stroke="#34d399" strokeWidth={1.8} points={pts.map((p, i) => `${x(i).toFixed(1)},${y(p.above_ma5_pct).toFixed(1)}`).join(" ")} />
+      {pts.map((p, i) => (
+        <circle key={p.date} cx={x(i)} cy={y(p.above_ma5_pct)} r={2.2} fill="#34d399">
+          <title>{`${p.date} 站上5日线 ${p.above_ma5_pct.toFixed(1)}%`}</title>
+        </circle>
+      ))}
+      <text x={CHART_PAD} y={CHART_H - 5} fontSize={9} opacity={0.55}>{pts[0].date}</text>
+      <text x={CHART_W - CHART_PAD} y={CHART_H - 5} textAnchor="end" fontSize={9} opacity={0.55}>{last.date}</text>
+      <text x={CHART_W - CHART_PAD - 4} y={y(last.above_ma5_pct) - 6} textAnchor="end" fontSize={10} fill="#34d399">{last.above_ma5_pct.toFixed(1)}%</text>
+    </svg>
   );
 }

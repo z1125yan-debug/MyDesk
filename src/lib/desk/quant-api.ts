@@ -159,6 +159,38 @@ export async function fetchTrend(from: string, to: string): Promise<TrendClient>
   return j;
 }
 
+// P15-R2b：逐日宽度统计（站上5日线占比 / 创5日·3日新低）——读 stock_daily_close 的沉淀行。
+// 与 breadth-core 的 BreadthDayStat 一一对应；攒不够天数时 latest 各口径自然为 0/null，页面显示进度。
+export interface BreadthDayStat {
+  date: string;
+  universe: number;
+  ma5_eligible: number;
+  ma3_eligible: number;
+  above_ma5: number;
+  above_ma5_pct: number | null;
+  new_low_5: number;
+  new_low_3: number;
+}
+export interface BreadthClient {
+  ok: boolean;
+  as_of: string;
+  window: { from: string; to: string };
+  stored_trading_days: number;
+  needed_days: number;
+  latest: BreadthDayStat | null;
+  series: BreadthDayStat[];
+  caliber: string;
+  missing: string[];
+  source: string;
+  error?: string;
+}
+export async function fetchBreadth(days = 90): Promise<BreadthClient> {
+  const res = await fetch(`/api/market/breadth?days=${days}`);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "宽度统计获取失败");
+  return j;
+}
+
 export interface AllStockRow {
   symbol: string; name: string; industry: string | null;
   price: number | null; change_pct: number | null; amount_yi: number | null;
