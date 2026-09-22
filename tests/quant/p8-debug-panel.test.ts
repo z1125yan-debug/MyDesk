@@ -176,7 +176,10 @@ test("debug 只认布尔 true（与网关 enable_kairo_engine 同一严格度）
 
 test("P7-⑫ 锚点不丢：时间线标题与 foot 长文案逐字未动；状态文案改由单一出处供给；调试三段只在 debugOn 下组装", () => {
   const tl = readSrc("src/components/desk/StepTimeline.tsx");
-  assert.match(tl, /工作过程 · \{steps\?\.length \?\? 0\} 步/, "标题原文");
+  // P15 口径迁移：标题从「工作过程 · N 步」改为稳智式收口措辞（跑完=「AI 已完成分析 · 共 N 步」，
+  // 流中=「正在分析 · 已走完 N 步」）。钉的是「标题必须带步数、不许含糊」这个不变量，不是旧文案本身。
+  assert.match(tl, /AI 已完成分析 · 共 \$\{steps\?\.length \?\? 0\} 步/, "收口标题原文");
+  assert.match(tl, /正在分析 · 已走完 \$\{steps\?\.length \?\? 0\} 步/, "进行时标题原文");
   assert.match(tl, /以上是本次真实调用过的步骤；标「缺数据」表示接口这次没给值，不是数值为 0/, "foot 长文案原文在位");
   assert.match(tl, /const STATUS_META: Record<StepInfo\["status"\], \{ icon: typeof Loader2; tone: string \}>/, "STATUS_META 只留图标与色");
   assert.equal(/text: "/.test(tl.split("const STATUS_META")[1].split("};")[0]), false, "组件内不再自带状态文案（否则就是第二个出处）");

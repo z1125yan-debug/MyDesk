@@ -1,57 +1,23 @@
 "use client";
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, Fragment, type ReactNode } from "react";
 import { cloneElement, isValidElement, Children } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { splitByLinks, type DeskLink, type LinkSegment, type SectorRef } from "@/lib/desk/link-core";
+import { splitBlocks, stripLeadingEmoji, SECTION_EMOJI, SECTION_DEFS, type MdBlock } from "@/lib/desk/markdown-sections-core";
 
-// 聊天气泡内的 Markdown 渲染（P7-⑤③ 升级为「结构化渲染」）。
+// 聊天气泡内的 Markdown 渲染（P7-⑤③ 结构化 → P15 对齐稳智「分区卡」）。
 //
-// 升级点一（P7-⑤③）：模型按开发文档 §2.4 用带图标的二级/三级标题分块时（🎯 结论 / 📊 基本面 /
-// ⚠️ 风险 / 🧭 操作参考 / 💰 资金 / 📈 技术 / 📰 事件 / 🔥 市场 / 📌 备注），
-// 界面把它渲染成对应的分区卡片，而不是让它落回普通标题。
+// P15 的关键改动（对齐从 aiwuchuan.com 前端 bundle 实测拆出的表达层）：
+//  - 不再只画一条标题色带、正文散落外面——「小节标题 + 它下面的正文」一起包进一张圆角分区卡。
+//    卡是同款灰卡：1px 浅描边 + 14px 圆角 + 浅灰底，卡头不再按九类分色（分类只决定 emoji 与成不成卡）。
+//    一屏下来一块一块的，这才是「不像死人机」的那层观感。
+//    分类与切块规则全在纯核 markdown-sections-core（有单测），这里只管画。
+//  - 标题 emoji 由纯核按关键词自动挂（模型没写也挂）；认不出的小节不硬凑卡、按普通标题渲染。
 //
-// 升级点二（P7-⑧②，本轮）：正文里的 6 位代码与「已知清单内的板块名」渲染成可点片段，点一下切标的/跳板块榜。
-// 判定全在纯内核 link-core（有单测），这里只负责「把命中的区间换成按钮」。三条渲染约束：
+// P7-⑧② 保留：正文里的 6 位代码与「已知清单内的板块名」渲染成可点片段。三条渲染约束不变：
 //  - 不引新依赖、不改文案：切分保证拼回去逐字等于原文，链接不吞字不改字；
-//  - code / pre / a 里不做二次识别：代码块里的示例代码、外链的显示文字都不是「AI 在指一只票」；
-//  - 模块卡片标题里不放链接：卡片头是「这一块讲什么」，塞按钮会把标题画歪，且点标题跳走很怪。
-// 不引新依赖，也不在这里判定内容真假：卡片只管「这一块是什么」，数据真伪仍由上下文来源分层负责。
-type ModuleKey = "decision" | "fundamental" | "risk" | "action" | "capital" | "technical" | "event" | "market" | "note";
-
-const MODULES: Record<ModuleKey, { emoji: string; words: string[]; ring: string; bg: string; text: string }> = {
-  decision:     { emoji: "🎯", words: ["结论", "决策", "综合判断", "评分"], ring: "border-sky-500/40",     bg: "bg-sky-500/10",     text: "text-sky-200" },
-  fundamental:  { emoji: "📊", words: ["基本面", "财务", "估值"],           ring: "border-indigo-500/40",  bg: "bg-indigo-500/10",  text: "text-indigo-200" },
-  risk:         { emoji: "⚠️", words: ["风险", "提示"],                     ring: "border-rose-500/40",    bg: "bg-rose-500/10",    text: "text-rose-200" },
-  action:       { emoji: "🧭", words: ["操作参考", "应对", "计划", "风控清单"], ring: "border-teal-500/40",  bg: "bg-teal-500/10",  text: "text-teal-200" },
-  capital:      { emoji: "💰", words: ["资金", "主力", "筹码"],             ring: "border-amber-500/40",   bg: "bg-amber-500/10",   text: "text-amber-200" },
-  technical:    { emoji: "📈", words: ["技术", "结构", "关键位", "支撑", "阻力"], ring: "border-emerald-500/40", bg: "bg-emerald-500/10", text: "text-emerald-200" },
-  event:        { emoji: "📰", words: ["事件", "消息", "快讯", "新闻"],     ring: "border-violet-500/40",  bg: "bg-violet-500/10",  text: "text-violet-200" },
-  market:       { emoji: "🔥", words: ["市场", "大盘", "情绪", "板块"],     ring: "border-orange-500/40",  bg: "bg-orange-500/10",  text: "text-orange-200" },
-  note:         { emoji: "📌", words: ["备注", "说明", "口径", "数据来源"], ring: "border-slate-500/40",   bg: "bg-slate-500/10",   text: "text-slate-200" },
-};
-
-/** 标题文本 → 模块：emoji 命中或关键词命中都算，认不出就返回 null（按普通标题渲染） */
-function moduleOf(text: string): ModuleKey | null {
-  const t = text.replace(/[#*`]/g, "").trim();
-  if (!t) return null;
-  for (const [key, m] of Object.entries(MODULES) as [ModuleKey, (typeof MODULES)[ModuleKey]][]) {
-    if (t.startsWith(m.emoji)) return key;
-  }
-  for (const [key, m] of Object.entries(MODULES) as [ModuleKey, (typeof MODULES)[ModuleKey]][]) {
-    if (t.length <= 16 && m.words.some((w) => t.includes(w))) return key;
-  }
-  return null;
-}
-
-function textOf(node: ReactNode): string {
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(textOf).join("");
-  if (node && typeof node === "object" && "props" in node) {
-    return textOf((node as { props?: { children?: ReactNode } }).props?.children);
-  }
-  return "";
-}
+//  - code / pre / a 里不做二次识别；卡片标题里不放链接（标题是「这块讲什么」，塞按钮会画歪）。
 
 // ---------- P7-⑧② 可点片段：渲染层 ----------
 
@@ -148,28 +114,20 @@ function MdBlockquote({ children }: { children?: ReactNode }) {
   );
 }
 
-function ModuleHeading({ level, children }: { level: 2 | 3; children: ReactNode }) {
-  const label = textOf(children);
-  const key = moduleOf(label);
+/**
+ * 没被切成卡的 ##/### 标题（分类认不出的）：按普通标题渲染。
+ * P15 起 ModuleHeading 退役——命中的标题已经被 splitBlocks 拿去当卡头，走到这里的都是不该成卡的。
+ */
+function PlainHeading({ level, children }: { level: 2 | 3; children: ReactNode }) {
+  const Tag = level === 2 ? "h2" : "h3";
   const size = level === 2 ? "text-[14px]" : "text-[13px]";
-  if (!key) {
-    const Tag = level === 2 ? "h2" : "h3";
-    return <Tag className={`${size} font-bold ${level === 3 ? "text-sky-300" : ""}`}><Linked>{children}</Linked></Tag>;
-  }
-  const m = MODULES[key];
-  return (
-    <div className={`mt-1 flex items-center gap-1.5 rounded-t-md border ${m.ring} ${m.bg} px-2 py-1`}>
-      <span aria-hidden className="text-[12px] leading-none">{m.emoji}</span>
-      <span className={`${size} font-semibold ${m.text}`}>{label.replace(m.emoji, "").trim() || m.words[0]}</span>
-      <span className="ml-auto font-mono text-[9.5px] uppercase opacity-60">{key}</span>
-    </div>
-  );
+  return <Tag className={`${size} font-bold ${level === 3 ? "text-sky-300" : ""}`}><Linked>{children}</Linked></Tag>;
 }
 
 const COMPONENTS: Components = {
   h1: MdH1,
-  h2: ({ children }) => <ModuleHeading level={2}>{children}</ModuleHeading>,
-  h3: ({ children }) => <ModuleHeading level={3}>{children}</ModuleHeading>,
+  h2: ({ children }) => <PlainHeading level={2}>{children}</PlainHeading>,
+  h3: ({ children }) => <PlainHeading level={3}>{children}</PlainHeading>,
   p: MdP,
   li: MdLi,
   // 表格里最容易整格都是代码：逐格换，不整表换（表头/结构节点不动）
@@ -188,6 +146,33 @@ const COMPONENTS: Components = {
   code: ({ children }) => <InlineCode>{children}</InlineCode>,
 };
 
+/** 一段 markdown 走同一套组件渲染（intro/plain 块/卡体共用，保证两处画法不漂） */
+function MdTree({ text }: { text: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>{text}</ReactMarkdown>;
+}
+
+/**
+ * 分区卡：同款灰卡——1px 浅描边 + 圆角 + 浅灰底，九类不再各配一色（用户口径：想收成同款灰卡）。
+ * 分类只决定两件事：成不成卡、卡头挂哪个 emoji；配色统一由界面基调出，深浅色主题都成立。
+ */
+function SectionCard({ block }: { block: Extract<MdBlock, { kind: "card" }> }) {
+  const emoji = SECTION_EMOJI[block.section];
+  const fallback = SECTION_DEFS.find((d) => d.kind === block.section)?.words[0] ?? "";
+  // 标题里的 emoji 剥掉再画：卡头左边已经挂了统一的一个，不重复
+  const title = stripLeadingEmoji(block.head) || fallback;
+  return (
+    <section className="rounded-xl border border-border/80 bg-card">
+      <header className="flex items-center gap-1.5 rounded-t-xl border-b border-border/60 bg-accent/40 px-2.5 py-1.5">
+        <span aria-hidden className="text-[13px] leading-none">{emoji}</span>
+        <span className="text-[13px] font-semibold text-foreground">{title}</span>
+      </header>
+      {block.body && (
+        <div className="px-3 py-2"><MdTree text={block.body} /></div>
+      )}
+    </section>
+  );
+}
+
 export default function Markdown({
   content, sectors, onLink,
 }: {
@@ -198,12 +183,18 @@ export default function Markdown({
   onLink?: (link: DeskLink) => void;
 }) {
   const ctx: LinkCtx | null = onLink ? { sectors: sectors ?? [], onLink } : null;
+  const { intro, blocks } = splitBlocks(content);
   return (
     <div
       className="space-y-2 [&_code]:rounded [&_code]:bg-accent [&_code]:px-1 [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-accent/60 [&_pre]:p-2 [&_strong]:font-semibold [&_strong]:text-foreground [&_tbody_tr]:border-b [&_tbody_tr]:border-border/50 [&_td]:px-1.5 [&_td]:py-1 [&_th]:border-b [&_th]:border-border [&_th]:px-1.5 [&_th]:py-1 [&_ul]:list-disc [&_ul]:pl-4"
     >
       <DeskLinkCtx.Provider value={ctx}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>{content}</ReactMarkdown>
+        {intro && <MdTree text={intro} />}
+        {blocks.map((b, i) => (
+          b.kind === "card"
+            ? <Fragment key={i}><SectionCard block={b} /></Fragment>
+            : <MdTree key={i} text={b.text} />
+        ))}
       </DeskLinkCtx.Provider>
     </div>
   );

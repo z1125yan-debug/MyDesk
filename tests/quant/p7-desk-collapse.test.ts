@@ -15,7 +15,7 @@ const code = (src: string) =>
   src.split("\n").filter((l) => !/^(\/\/|\*|\/\*)/.test(l.trim())).join("\n");
 
 const MOVED: { file: string; anchors: string[] }[] = [
-  { file: "src/components/desk/StepTimeline.tsx", anchors: ["工作过程 ·", "系统预取", "模型自取"] },
+  { file: "src/components/desk/StepTimeline.tsx", anchors: ["AI 已完成分析 · 共", "系统预取", "模型自取"] },
   { file: "src/components/desk/DecisionCard.tsx", anchors: ["接线层登记", "这份结论的完整文字口径（与 AI 上下文共用同一份）", "分项"] },
   { file: "src/components/desk/CapabilityPanel.tsx", anchors: ["已知局限", "还缺什么", "这些结论不能用真实数据支撑"] },
   { file: "src/components/desk/EventInterpretation.tsx", anchors: ["展开完整回溯链（原始事件 → AI 提取 → AI 解释 → 状态分层）", "字段归属（内核唯一出处，页面不自己判）"] },
