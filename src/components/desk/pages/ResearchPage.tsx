@@ -20,6 +20,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, Microscope, RefreshCw, Sparkles } from "lucide-react";
 import { SourceBadge } from "../SourceBadge";
 import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
+// R3d 血缘收口：本页从「一屏散卡」收成一张卡——只换壳，取数/判定/文案逻辑一字未动；
+// 台账行/引用条目/采集器行是节内图元不是卡，留在本页（同 FactorLab 的 GroupBars 口径）。
+import { LineageCard, LineageSection, type SectionTone } from "../ui/LineageCard";
 import { useDesk } from "@/lib/desk/store";
 import { aiReady } from "@/lib/desk/ai";
 import { RESEARCH_RUN_STATUS_TEXT, runMarketResearch, type ResearchRunResult } from "@/lib/desk/research-run";
@@ -166,18 +169,25 @@ export default function ResearchPage() {
   const sections = rep ? researchLayerSections(rep, ledger) : [];
   const completeness = rep ? researchFieldCompleteness(rep) : null;
   const statusText = rep ? RESEARCH_STATUS_TEXT[rep.interpretation_status] : "";
+  // R3d：tone 承载真实判定——被剔=红、完整解释=绿、部分/未收口=橙，不是装饰
+  const repTone: SectionTone = !rep ? "info"
+    : rep.interpretation_status === "REJECTED" ? "danger"
+      : rep.interpretation_status === "INTERPRETED" ? "success" : "warning";
+  const collectorTone: SectionTone = (view?.sources ?? []).some((s) => s.status === "failed") ? "warning" : "info";
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 px-6 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2 text-lg font-bold"><Microscope size={18} className="text-sky-400" /> AI 市场环境研究</div>
-          <div className="text-[11px] text-muted-foreground">
-            服务端现取真实读数编成台账 → 本机配置的模型跨源解释 → 服务端复校验后才落库<br />
+    <div className="mx-auto max-w-6xl px-6 py-4">
+      {/* R3d 收口：一件事一张卡——四块读数、研究问题、报告、采集器观测同属这一份研究，按血缘分节不再散摆 */}
+      <LineageCard
+        title={<span className="flex items-center gap-2"><Microscope size={17} className="text-sky-400" /> AI 市场环境研究</span>}
+        note={
+          <>
+            服务端现取真实读数编成台账 → 本机配置的模型跨源解释 → 服务端复校验后才落库 ·
             本层不重算任何指标（MA/MACD/RSI/IC/回测/条件概率都来自已有引擎），不产概率、不给投资建议；解释不是市场事实
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+          </>
+        }
+        actions={
+          <>
           {view && (
             <SourceBadge
               status={!aiReady(ai) ? "AI_NOT_CONFIGURED 缺失" : "AI_INTERPRETATION"}
@@ -194,12 +204,13 @@ export default function ResearchPage() {
             className="flex items-center gap-1 rounded-md bg-fuchsia-500 px-2.5 py-1.5 text-xs text-white hover:bg-fuchsia-400 disabled:cursor-not-allowed disabled:opacity-40">
             {running ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} 生成研究报告
           </button>
-        </div>
-      </div>
-
+          </>
+        }
+      >
       {/* ① 当前状态四块：与风险/主线/雷达/事件页面同一批接口，字段口径照抄，不在这里二次加工 */}
+      <LineageSection title="当前读数" hint="风险 / 主线 / 雷达 / 事件 · 与对应页面同源同口径" divided={false}>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card/60 px-3 py-2">
+        <div className="rounded-lg border border-border/70 bg-card/40 px-3 py-2">
           <div className="text-[10.5px] text-muted-foreground">风险等级</div>
           <div className="text-base font-bold">{risk?.risk.level ?? "未取到"}</div>
           {risk ? (
@@ -212,7 +223,7 @@ export default function ResearchPage() {
             </>
           ) : <div className="text-[10px] text-red-300">{topErr.risk || "正在读取…"}</div>}
         </div>
-        <div className="rounded-xl border border-border bg-card/60 px-3 py-2">
+        <div className="rounded-lg border border-border/70 bg-card/40 px-3 py-2">
           <div className="text-[10.5px] text-muted-foreground">主线（规则版）</div>
           <div className="text-base font-bold">{themes ? `主线 ${themes.main.length} 个` : "未取到"}</div>
           {themes ? (
@@ -223,7 +234,7 @@ export default function ResearchPage() {
             </>
           ) : <div className="text-[10px] text-red-300">{topErr.themes || "正在读取…"}</div>}
         </div>
-        <div className="rounded-xl border border-border bg-card/60 px-3 py-2">
+        <div className="rounded-lg border border-border/70 bg-card/40 px-3 py-2">
           <div className="text-[10.5px] text-muted-foreground">雷达候选</div>
           <div className="text-base font-bold">{radar ? `${radar.items.length} 条 live` : "未取到"}</div>
           {radar ? (
@@ -235,7 +246,7 @@ export default function ResearchPage() {
             </>
           ) : <div className="text-[10px] text-red-300">{topErr.radar || "正在读取…"}</div>}
         </div>
-        <div className="rounded-xl border border-border bg-card/60 px-3 py-2">
+        <div className="rounded-lg border border-border/70 bg-card/40 px-3 py-2">
           <div className="text-[10.5px] text-muted-foreground">今日事件</div>
           <div className="text-base font-bold">{events ? `${events.items.length} 条入库` : "未取到"}</div>
           {events ? (
@@ -248,9 +259,10 @@ export default function ResearchPage() {
           ) : <div className="text-[10px] text-red-300">{topErr.events || "正在读取…"}</div>}
         </div>
       </div>
+      </LineageSection>
 
       {/* ② 研究问题 */}
-      <div className="rounded-xl border border-border bg-card/50 px-3 py-2">
+      <LineageSection title="研究问题" hint="留空 = 服务端按默认问题「当前市场环境如何」组装，并把这一条写进缺失口径">
         <div className="flex flex-wrap items-center gap-2">
           <input
             value={question}
@@ -277,7 +289,7 @@ export default function ResearchPage() {
             无可用模型通道（浏览器未配置，且服务端 .env 通道不可用）：解释层跑不了（AI_NOT_CONFIGURED）。上方四块读数与台账都是真实的，缺的只是解释这一步；配好任一条路再生成。
           </div>
         )}
-      </div>
+      </LineageSection>
 
       {(err || run?.message) && (
         <div className={`rounded-lg border px-3 py-2 text-xs ${err ? "border-red-500/30 bg-red-500/10 text-red-300" : `border-border bg-card/60 ${STATUS_TONE[run!.status] ?? "text-muted-foreground"}`}`}>
@@ -287,10 +299,11 @@ export default function ResearchPage() {
       )}
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
-        {/* ③ 研究结果：七分区 */}
-        <div className="space-y-3">
+        {/* ③ 研究结果：报告头（口径块）+ 七分区明细 */}
+        <div>
+          <LineageSection title="研究报告" tone={repTone} divided={false}>
           {rep ? (
-            <div className="rounded-xl border border-fuchsia-500/25 bg-card/50 px-4 py-3">
+            <div className="rounded-lg border border-fuchsia-500/25 bg-card/40 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`text-sm font-semibold ${STATUS_TONE[rep.interpretation_status]}`}>{rep.interpretation_status}</span>
                 <span className="text-[10.5px] text-muted-foreground">{statusText}</span>
@@ -323,16 +336,18 @@ export default function ResearchPage() {
               ) : null}
             </div>
           ) : (
-            <div className="rounded-xl border border-border bg-card/40 px-4 py-3 text-xs text-muted-foreground">
+            <div className="rounded-lg border border-border/70 bg-card/40 px-4 py-3 text-xs text-muted-foreground">
               {viewBusy ? "正在读取报告…" : `${view?.as_of || "本日"} 还没有 ${view?.scope || "market"} 范围的 AI 市场研究报告：这一层只在有人点「生成研究报告」时产生，没做过就是空（不是失败，也不会自动补）。`}
               {!!view?.missing.length && <div className="mt-1 text-[10.5px]">{view.missing.join("；")}</div>}
             </div>
           )}
+          </LineageSection>
 
           {rep && (
+            <LineageSection title="七分区明细" hint="FACTS/SIGNALS/HIST 是服务端台账 · 其余四层是模型产出、经服务端复校验">
             <div className="space-y-2">
               {sections.map((s) => (
-                <div key={s.layer} className="rounded-xl border border-border bg-card/40 px-3 py-2">
+                <div key={s.layer} className="rounded-lg border border-border/70 bg-card/40 px-3 py-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-[10.5px] font-semibold">{s.layer}</span>
                     <SourceBadge status={s.owner === "服务端" ? (s.layer === "FACTS" ? "REAL" : s.layer === "SIGNALS" ? "DERIVED" : "HISTORICAL") : "AI_INTERPRETATION"} source={s.owner === "服务端" ? "服务端台账" : "模型产出，经服务端复校验"} />
@@ -361,14 +376,14 @@ export default function ResearchPage() {
                 <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-background/60 p-2 text-[10px] leading-4">{renderResearchTrace(rep, ledger)}</pre>
               </DeskCollapse>
             </div>
+            </LineageSection>
           )}
         </div>
 
         {/* ④ Tool Calls 侧栏：采集器观测 + 本次台账目录 + 缺失口径 */}
-        <div className="space-y-2">
-          <div className="rounded-xl border border-border bg-card/50 px-3 py-2">
-            <div className="text-[11px] font-semibold">Tool Calls（采集器观测）</div>
-            <div className="mt-0.5 text-[9.5px] leading-snug text-amber-300/90">
+        <div>
+          <LineageSection title="Tool Calls · 采集器观测" tone={collectorTone} hint="服务端取数观测，不是模型的工具调用" divided={false}>
+            <div className="text-[9.5px] leading-snug text-amber-300/90">
               这一栏是服务端本次向哪些能力取了数、取到没有，<b>不是模型的工具调用</b>：模型只拿到下面这份台账文本，自己没有取数能力（Agent 自主调用在 P6-D）。
             </div>
             <div className="mt-1.5 space-y-1.5">
@@ -378,44 +393,38 @@ export default function ResearchPage() {
             <div className="mt-1 text-[9.5px] text-muted-foreground/80">
               台账上限 {MAX_LEDGER_LINES} 行：超出部分不参与本次提示词，截断条数会出现在下方「缺失口径」里（不静默丢行）。
             </div>
-          </div>
+          </LineageSection>
 
           {!!ledger.length && (
-            <DeskCollapse
-              defaultOpen
-              title={`台账目录（${ledger.length} 行，服务端现取）`}
-              triggerClassName="text-[11px] font-semibold text-muted-foreground hover:text-foreground"
-              contentClassName="text-[11px] text-muted-foreground"
-            >
+            <LineageSection title={`台账目录（${ledger.length} 行，服务端现取）`} collapsible defaultOpen>
               <div className="space-y-1.5">{ledger.map((l) => <LedgerLine key={l.id} l={l} />)}</div>
-            </DeskCollapse>
+            </LineageSection>
           )}
 
-          <div className="rounded-xl border border-border bg-card/50 px-3 py-2">
-            <div className="text-[11px] font-semibold">缺失口径（{view?.missing.length ?? 0} 条）</div>
+          <LineageSection title={`缺失口径（${view?.missing.length ?? 0} 条）`} hint="引擎自报缺口原样列，不合并成「一切正常」">
             {view?.missing.length ? (
               <ul className="mt-1 space-y-1 text-[10px] leading-snug text-muted-foreground">
                 {view.missing.map((m) => <li key={m} className="list-disc pl-3">{m}</li>)}
               </ul>
             ) : <div className="mt-1 text-[10px] text-muted-foreground">本批没有登记的缺失项（引擎自报缺失为 0，不代表市场没有风险）。</div>}
-          </div>
-
-          {view && (
-            <div className="rounded-xl border border-border bg-card/50 px-3 py-2 text-[9.5px] leading-snug text-muted-foreground">
+            {view && (
+            <div className="mt-2 rounded-lg border border-border/70 bg-card/40 px-3 py-2 text-[9.5px] leading-snug text-muted-foreground">
               <div>{view.layering}</div>
               <div className="mt-1">读库依据：{view.basis}</div>
               <div className="mt-1">生成时刻台账：{view.report ? `${view.report.evidence_total} 行（落库时冻结）` : "无"}</div>
               {view.report?.stale_evidence && <div className="mt-1 text-amber-300">读数已刷新：这份报告对应的是更早一版扫描结果，要重做才对得上最新读数</div>}
             </div>
           )}
-          {run?.prompt && (
-            <div className="rounded-xl border border-border bg-card/50 px-3 py-2 text-[9.5px] leading-snug text-muted-foreground">
+            {run?.prompt && (
+            <div className="mt-1.5 rounded-lg border border-border/70 bg-card/40 px-3 py-2 text-[9.5px] leading-snug text-muted-foreground">
               本次提示词：台账 {run.prompt.lines.length} 行 · 采集器 {run.prompt.sources.length} 个 · 截断 {run.prompt.truncated} 行 · as_of {run.prompt.as_of}
               <div className="mt-1">组装依据：{run.prompt.basis}</div>
             </div>
           )}
+          </LineageSection>
         </div>
       </div>
+      </LineageCard>
     </div>
   );
 }

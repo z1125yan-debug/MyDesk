@@ -17,6 +17,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Loader2, RefreshCw, Square } from "lucide-react";
 import { SourceBadge } from "../SourceBadge";
 import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
+// R3d 血缘收口：一次自主运行 = 一张卡（问题→结论→步骤→台账→血缘→观测按血缘分节）；
+// 只换壳——StepRow/LedgerRow/工具条目是节内图元不是卡，取数与状态逻辑一字未动。
+import { LineageCard, LineageSection, type SectionTone } from "../ui/LineageCard";
 import { useDesk } from "@/lib/desk/store";
 import { aiReady as aiChannelReady } from "@/lib/desk/ai";
 import {
@@ -248,19 +251,26 @@ export default function AgentPage() {
   const viewLineage = view?.lineage ?? [];
   // P7-⑩：门换成 aiReady —— 浏览器没填凭据但服务端 .env 通道可用时，循环照跑（凭据在服务端）。
   const aiReady = aiChannelReady(ai);
+  // R3d：tone 承载真实判定——收尾结论 采纳=绿 / 部分=橙 / 被剔=红，没收尾或没选中不预涂色
+  const answerTone: SectionTone = !view ? "info"
+    : view.answer_status === "ACCEPTED" ? "success"
+      : view.answer_status === "PARTIAL" ? "warning"
+        : view.answer_status ? "danger" : "info";
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 px-6 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2 text-lg font-bold"><Bot size={18} className="text-sky-400" /> Agent 自主研究（只读）</div>
-          <div className="text-[11px] leading-snug text-muted-foreground">
+    <div className="mx-auto max-w-6xl px-6 py-4">
+      {/* R3d 收口：一次自主运行 = 一张卡——问题/结论/步骤/台账/血缘/观测按血缘分节，不再一屏散卡 */}
+      <LineageCard
+        title={<span className="flex items-center gap-2"><Bot size={17} className="text-sky-400" /> Agent 自主研究（只读）</span>}
+        note={
+          <>
             模型每轮只选一条工具，服务端真的去取数并逐条记账，再把观测喂回下一轮<br />
             协议：回复文本里的一个 JSON（无原生 function-calling，凭据只在浏览器）；这一格一格由本机浏览器驱动，关掉页面就停在那里，已记账的步不会丢<br />
             模型自称调用过不算数：<b className="text-foreground">只有下面这些库里读回来的行算数</b>；本层不下单、不改策略、不写任何业务表
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+          </>
+        }
+        actions={
+          <>
           {view && (
             <SourceBadge
               status={!aiReady ? "AI_NOT_CONFIGURED 缺失" : "AI_INTERPRETATION"}
@@ -272,11 +282,11 @@ export default function AgentPage() {
             className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent">
             {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
           </button>
-        </div>
-      </div>
-
+          </>
+        }
+      >
       {/* ① 研究问题 + 预算收紧（留空=服务端默认；超硬上限会被钳并说明，这里不假装能突破） */}
-      <div className="rounded-xl border border-border bg-card/50 px-3 py-2">
+      <LineageSection title="研究问题与预算" hint="留空=服务端默认 · 超硬上限会被钳到上限并写进「预算说明」" divided={false}>
         <div className="flex flex-wrap items-center gap-2">
           <input value={runId} onChange={(e) => setRunId(e.target.value.slice(0, 64))}
             title="同一步要挂在同一次运行上；同一个 id 再点一次是续跑（库里已有记录不清空、不重打上游）"
@@ -321,7 +331,7 @@ export default function AgentPage() {
             问题为空时按钮不可点：没有研究问题的自主循环没有目标（服务端会把它记成缺失口径，本页不替模型编一个问题）。
           </div>
         )}
-      </div>
+      </LineageSection>
 
       {err && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{err}</div>}
 
@@ -338,10 +348,11 @@ export default function AgentPage() {
       )}
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-3">
+        <div>
           {/* ② 结论（排在调用记录之后：先看跑了什么，再看它说了什么） */}
+          <LineageSection title="结论" tone={answerTone} hint="排在调用记录之后 · 服务端按库内调用行复校验的判定，不是市场结论" divided={false}>
           {view && (view.answer_text || view.answer_status) ? (
-            <div className="rounded-xl border border-fuchsia-500/25 bg-card/50 px-4 py-3">
+            <div className="rounded-lg border border-fuchsia-500/25 bg-card/40 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`text-sm font-semibold ${view.answer_status === "ACCEPTED" ? "text-emerald-300" : view.answer_status === "PARTIAL" ? "text-amber-300" : "text-red-300"}`}>
                   {view.answer_status || "未收尾"}
@@ -373,23 +384,21 @@ export default function AgentPage() {
               )}
             </div>
           ) : (
-            <div className="rounded-xl border border-border bg-card/40 px-4 py-3 text-xs text-muted-foreground">
+            <div className="rounded-lg border border-border/70 bg-card/40 px-4 py-3 text-xs text-muted-foreground">
               {view ? `这次运行（${view.run_id}）还没有结论：库里状态 ${view.status}。${view.stop_reason ? `停止原因：${textOf(AGENT_STOP_REASON_TEXT, view.stop_reason)}。` : ""}没收尾就是没收尾，本页不会显示一条编出来的答案。`
                 : "还没有选中任何一次运行：填好问题点「运行研究循环」，或在右边列表点一条回看。"}
             </div>
           )}
+          </LineageSection>
 
           {/* ③ 步骤时间线 */}
-          <div className="rounded-xl border border-border bg-card/40 px-3 py-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="text-[11px] font-semibold">步骤时间线（{view ? `${view.timeline?.length ?? 0} 条库内记录` : `${toolCalls.length} 步`}）</div>
-              <span className="text-[9.5px] text-muted-foreground">跑动中显示本机这一轮；选中回看时显示库里全部行（同一份字段，接口同一映射）</span>
-              {view?.budget_left && (
-                <span className="text-[9.5px] text-muted-foreground">
-                  余量：步 {view.budget_left.steps}｜调用 {view.budget_left.tool_calls}｜时长 {Math.round(view.budget_left.ms / 1000)}s｜台账 {view.budget_left.evidence_lines}
-                </span>
-              )}
-            </div>
+          <LineageSection title={`步骤时间线（${view ? `${view.timeline?.length ?? 0} 条库内记录` : `${toolCalls.length} 步`}）`}
+            hint="跑动中显示本机这一轮；选中回看时显示库里全部行（同一份字段，接口同一映射）">
+            {view?.budget_left && (
+              <div className="mb-1.5 text-[9.5px] text-muted-foreground">
+                余量：步 {view.budget_left.steps}｜调用 {view.budget_left.tool_calls}｜时长 {Math.round(view.budget_left.ms / 1000)}s｜台账 {view.budget_left.evidence_lines}
+              </div>
+            )}
             <div className="mt-1.5 space-y-1.5">
               {(view && !running && viewId
                 ? (view.timeline ?? []).map((c, i) => <StepRow key={`${c.step ?? "n"}-${i}-${c.tool ?? ""}`} t={rowToTurn(c)} />)
@@ -409,20 +418,18 @@ export default function AgentPage() {
                 {!!view.rebuild_check.unknown_layer_rows?.length && ` ｜ 分层值不认识的行 ${view.rebuild_check.unknown_layer_rows.length} 条（原样显示）`}
               </div>
             )}
-          </div>
+          </LineageSection>
 
-          {/* ④ 台账 + 血缘 */}
-          <div className="grid gap-2 md:grid-cols-2">
-            <div className="rounded-xl border border-border bg-card/40 px-3 py-2">
-              <div className="text-[11px] font-semibold">台账（{viewLedger.length} 行，服务端真取到的读数）</div>
-              <div className="mt-1.5 space-y-1.5">
+          {/* ④ 台账 + 血缘：同一件事实的两面——取到了什么、能不能回到取到它的那行 */}
+          <div className="mt-4 grid gap-2 md:grid-cols-2">
+            <LineageSection divided={false} title={`台账（${viewLedger.length} 行）`} hint="服务端真取到的读数">
+              <div className="space-y-1.5">
                 {viewLedger.length ? viewLedger.map((l) => <LedgerRow key={l.id} l={l} />)
                   : <div className="text-[10.5px] text-muted-foreground">没有台账行：这次运行还没有取到任何可读的数（被挡下的调用会留行但不出台账）。</div>}
               </div>
-            </div>
-            <div className="rounded-xl border border-border bg-card/40 px-3 py-2">
-              <div className="text-[11px] font-semibold">血缘：结论 → 台账 → 工具 → 出处（{viewLineage.length} 条）</div>
-              <div className="mt-1.5 space-y-1.5">
+            </LineageSection>
+            <LineageSection divided={false} title={`血缘：结论 → 台账 → 工具 → 出处（${viewLineage.length} 条）`}>
+              <div className="space-y-1.5">
                 {viewLineage.length ? viewLineage.map((l) => (
                   <div key={`${l.evidence_id}-${l.call_key}`} className="rounded-lg border border-border/70 bg-card/60 px-2.5 py-1.5 text-[10px] leading-snug">
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -441,12 +448,11 @@ export default function AgentPage() {
                   {view?.answer_status ? "这次收尾没有可用引用：结论里的每一句都回不到取数行（上面已逐条点名）。" : "还没有收尾结论，也就没有「结论 → 出处」这一段；台账行仍然列在左边。"}
                 </div>}
               </div>
-            </div>
+            </LineageSection>
           </div>
 
           {/* ⑤ 缺失与预算说明：内核报的缺口原样列，不合并成「一切正常」 */}
-          <div className="rounded-xl border border-border bg-card/50 px-3 py-2">
-            <div className="text-[11px] font-semibold">缺失口径（{(view?.missing ?? []).length} 条）· 预算说明（{(view?.budget_notes ?? []).length} 条）</div>
+          <LineageSection title={`缺失口径（${(view?.missing ?? []).length} 条）· 预算说明（${(view?.budget_notes ?? []).length} 条）`}>
             {view?.missing?.length ? <ul className="mt-1 space-y-1 text-[10px] leading-snug text-muted-foreground">{view.missing.map((m) => <li key={m} className="list-disc pl-3">{m}</li>)}</ul>
               : <div className="mt-1 text-[10px] text-muted-foreground">这批没有登记缺口（不等于市场没有风险：只是这次没取到缺失自报）。</div>}
             {view?.budget_notes?.length ? <ul className="mt-1 space-y-1 text-[10px] leading-snug text-amber-300/90">{view.budget_notes.map((n) => <li key={n}>· {n}</li>)}</ul> : null}
@@ -457,14 +463,13 @@ export default function AgentPage() {
                 <div className="mt-0.5">分层含义：{Object.entries(DATA_STATUS_TABLE).map(([k, v]) => `${k}=${v}`).join("；")}</div>
               </div>
             )}
-          </div>
+          </LineageSection>
         </div>
 
         {/* ⑥ 侧栏：工具目录 / 历史运行 / 协议原文 */}
-        <div className="space-y-2">
-          <div className="rounded-xl border border-border bg-card/50 px-3 py-2">
-            <div className="text-[11px] font-semibold">工具目录（{tools ? `${tools.enabled} 可调用 / ${tools.total} 登记，禁用 ${tools.disabled}` : "读取中…"}）</div>
-            <div className="mt-0.5 text-[9.5px] leading-snug text-amber-300/90">
+        <div>
+          <LineageSection title={`工具目录（${tools ? `${tools.enabled} 可调用 / ${tools.total} 登记，禁用 ${tools.disabled}` : "读取中…"}）`} divided={false}>
+            <div className="text-[9.5px] leading-snug text-amber-300/90">
               模型能选的只有这张表；表里没有的工具不存在。禁用项留着是为了说清「为什么不能选」，不是等它自己变可用。
             </div>
             {tools?.self_check && (tools.self_check.unimplemented_executors.length > 0 || tools.self_check.read_only_violations.length > 0) && (
@@ -494,18 +499,17 @@ export default function AgentPage() {
               ))}
               {!tools && <div className="text-[10px] text-muted-foreground">正在读取 /api/agent/tools…</div>}
             </div>
-          </div>
+          </LineageSection>
 
-          <div className="rounded-xl border border-border bg-card/50 px-3 py-2">
-            <div className="text-[11px] font-semibold">历史运行（库内 {list.length} 次，按开始时间倒序）</div>
-            <div className="mt-0.5 text-[9.5px] text-muted-foreground">这些行是真事：模型自称跑过而没有落库的，这里不会有</div>
+          <LineageSection title={`历史运行（库内 ${list.length} 次）`} hint="按开始时间倒序 · 这些行是真事：模型自称跑过而没有落库的，这里不会有">
             <div className="mt-1.5 space-y-1.5">
               {list.length ? list.map((r) => <RecentRun key={r.run_id} r={r} active={r.run_id === viewId} onPick={(id) => { setRunId(id); void loadView(id); }} />)
                 : <div className="text-[10px] text-muted-foreground">agent_run 当前 0 行：还没有人带着真实模型回复跑完一轮（不是失败，也不是「自动跑过」）。</div>}
             </div>
-          </div>
+          </LineageSection>
 
           <DeskCollapse
+            className="mt-4"
             title="状态与停止原因的口径（本页所有文案都来自内核同一份）"
             triggerClassName="text-[11px] font-semibold text-foreground hover:text-foreground"
             contentClassName="text-[10px] text-muted-foreground"
@@ -521,6 +525,7 @@ export default function AgentPage() {
           </DeskCollapse>
 
           <DeskCollapse
+            className="mt-3"
             title="本轮系统提示词原文（服务端给模型的，前端不另写一份）"
             triggerClassName="text-[11px] font-semibold text-foreground hover:text-foreground"
             contentClassName="text-[9.5px] leading-snug text-muted-foreground"
@@ -533,6 +538,7 @@ export default function AgentPage() {
           </DeskCollapse>
         </div>
       </div>
+      </LineageCard>
     </div>
   );
 }

@@ -9,6 +9,9 @@ import { useDesk } from "@/lib/desk/store";
 import { searchSymbols, normalizeTradingViewSymbol } from "@/lib/desk/market";
 import { fetchStockProfile, aiChatTools, type ProfileResp } from "@/lib/desk/quant-api";
 import { aiReady } from "@/lib/desk/ai";
+// P15-R3d：画像区块散开的本地卡（原 `function Section`）退役，换统一血缘卡组件——
+// 头部收成卡标题，各区块收成卡内小节；Cell/Empty 是瓦片不是卡，保留。取数与口径逻辑一字未动。
+import { LineageCard, LineageSection } from "../ui/LineageCard";
 
 const TECH_LABELS: Record<string, string> = {
   above_ma_5: "站上MA5", above_ma_10: "站上MA10", above_ma_20: "站上MA20", above_ma_60: "站上MA60", above_ma_144: "站上MA144",
@@ -125,34 +128,37 @@ export default function ProfilePage() {
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
 
       {data && (
-        <>
-          {/* 头部 */}
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
-            <div className="text-xl font-bold">{data.symbol}</div>
-            <div className="text-lg">{data.name ?? "—"}{data.industry ? <span className="ml-2 text-xs text-muted-foreground">{data.industry}</span> : null}</div>
-            {data.blocks.quote && (
-              <>
-                <div className="text-2xl font-bold"><NumText value={data.blocks.quote.data.price} /></div>
-                <PctText value={data.blocks.quote.data.changePct} className="text-lg font-semibold" />
-              </>
-            )}
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <SourceBadge status={data.blocks.quote ? data.blocks.quote.status : "OFFLINE"} source={data.blocks.quote?.source} time={data.as_of.slice(11, 19)} />
-              <span className="text-[10.5px] text-muted-foreground">{data.session.label}</span>
+        <LineageCard
+          title={
+            <div className="flex flex-wrap items-center gap-3 font-normal">
+              <span className="text-lg font-bold">{data.symbol}</span>
+              <span className="text-base">{data.name ?? "—"}{data.industry ? <span className="ml-2 text-xs text-muted-foreground">{data.industry}</span> : null}</span>
+              {data.blocks.quote && (
+                <>
+                  <span className="text-2xl font-bold"><NumText value={data.blocks.quote.data.price} /></span>
+                  <PctText value={data.blocks.quote.data.changePct} className="text-lg font-semibold" />
+                </>
+              )}
+              <span className="ml-auto flex flex-wrap items-center gap-2">
+                <SourceBadge status={data.blocks.quote ? data.blocks.quote.status : "OFFLINE"} source={data.blocks.quote?.source} time={data.as_of.slice(11, 19)} />
+                <span className="text-[10.5px] text-muted-foreground">{data.session.label}</span>
+              </span>
             </div>
-          </div>
-
+          }
+        >
           {data.missing.length > 0 && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
+            <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
               以下数据块暂缺（不参与结论，不冒充实数）：{data.missing.join("；")}
             </div>
           )}
 
           {/* 四维决策结论（P7-④）：独立取数，慢不阻塞下面的画像区块 */}
-          <DecisionCard symbol={data.symbol} />
+          <div className="mt-3">
+            <DecisionCard symbol={data.symbol} />
+          </div>
 
           {/* 资金状态 */}
-          <Section title="📊 资金状态" badge={data.blocks.trades?.source ?? data.blocks.fundflow?.source}>
+          <LineageSection title="资金状态" hint={data.blocks.trades?.source ?? data.blocks.fundflow?.source} divided={false}>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {data.blocks.trades ? (
                 <>
@@ -229,10 +235,10 @@ export default function ProfilePage() {
                 </div>
               </div>
             ) : <Empty text="五档盘口：暂无数据（eltdx 网关未运行）" />}
-          </Section>
+          </LineageSection>
 
           {/* 技术面 */}
-          <Section title="📈 技术面" badge={data.blocks.tech?.source}>
+          <LineageSection title="技术面" hint={data.blocks.tech?.source}>
             {data.blocks.tech ? (
               <div className="flex flex-wrap gap-2">
                 {Object.entries(data.blocks.tech.data).filter(([, v]) => v !== null).map(([k, v]) => (
@@ -245,10 +251,10 @@ export default function ProfilePage() {
                 ))}
               </div>
             ) : <Empty text="技术指标：日K历史不足" />}
-          </Section>
+          </LineageSection>
 
           {/* 板块&主线 */}
-          <Section title="🏭 板块强度" badge={data.blocks.sector?.source}>
+          <LineageSection title="板块强度" hint={data.blocks.sector?.source}>
             {data.blocks.sector ? (
               <div className="flex flex-wrap items-center gap-4 text-[12.5px]">
                 <span>行业：<b>{data.blocks.sector.data.name}</b></span>
@@ -258,10 +264,10 @@ export default function ProfilePage() {
                 <span className="text-[10.5px] text-muted-foreground">板块RPS/主线判定属 P2 主线发现</span>
               </div>
             ) : <Empty text="板块强度：行业未匹配到榜单" />}
-          </Section>
+          </LineageSection>
 
           {/* 新闻&事件 */}
-          <Section title="📰 新闻&事件" badge={data.blocks.news?.source}>
+          <LineageSection title="新闻&事件" hint={data.blocks.news?.source}>
             {data.blocks.news ? (
               <ul className="space-y-1 text-[12px]">
                 {data.blocks.news.data.map((n, i) => (
@@ -270,10 +276,11 @@ export default function ProfilePage() {
                 <li className="text-[10.5px] text-muted-foreground/70">个股级新闻：暂无数据源（P2 全球事件雷达接入后补齐）</li>
               </ul>
             ) : <Empty text="宏观快讯：暂无数据" />}
-          </Section>
+          </LineageSection>
 
           {/* 历史条件概率 */}
-          <Section title="🎯 历史条件概率" badge={data.blocks.probability?.source} note={data.blocks.probability?.note}>
+          <LineageSection title="历史条件概率" tone={data.blocks.probability?.data.sample_ok === false ? "warning" : "info"}
+            hint={<>{data.blocks.probability?.source}{data.blocks.probability?.note ? <span className="ml-1.5 text-muted-foreground/70">· {data.blocks.probability.note}</span> : null}</>}>
             {data.blocks.probability ? (
               <>
                 <div className="grid grid-cols-3 gap-3 sm:grid-cols-3">
@@ -296,31 +303,30 @@ export default function ProfilePage() {
                 ))}
               </>
             ) : <Empty text="历史条件概率：日K历史不足或条件无法匹配" />}
-          </Section>
+          </LineageSection>
 
           {/* 风险提示 */}
           {data.blocks.risk && (
-            <Section title="⚠️ 市场风险" badge={data.blocks.risk.source}>
+            <LineageSection title="市场风险" tone={/高/.test(data.blocks.risk.data.level ?? "") ? "danger" : "warning"} hint={data.blocks.risk.source}>
               <div className="text-sm">当前市场风险等级：<b className="text-amber-400">{data.blocks.risk.data.level}</b></div>
               <ul className="mt-1 space-y-0.5 text-[11.5px] text-muted-foreground">
                 {data.blocks.risk.data.triggers.map((t, i) => <li key={i}>· {t}</li>)}
               </ul>
-            </Section>
+            </LineageSection>
           )}
 
           {/* AI 条件式解读 */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between">
-              <div className="text-[12px] font-semibold text-foreground/80">AI 条件式解读（事实/推断/风险分层，非预测）</div>
+          <LineageSection title="AI 条件式解读" hint="事实/推断/风险分层，非预测"
+            actions={
               <button onClick={aiExplain} disabled={aiBusy || !aiReady(ai)}
                 className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-40">
                 {aiBusy ? "解读中…" : "生成 AI 解读"}
               </button>
-            </div>
+            }>
             {aiText && <div className="mt-2 text-sm"><Markdown content={aiText} /></div>}
             {!aiReady(ai) && <div className="mt-1 text-[10.5px] text-muted-foreground">无可用模型通道（浏览器未配置，且服务端 .env 通道不可用）</div>}
-          </div>
-        </>
+          </LineageSection>
+        </LineageCard>
       )}
 
       {!data && !busy && !error && (
@@ -328,19 +334,6 @@ export default function ProfilePage() {
           输入代码生成画像：实时报价 → 五档盘口 → 逐笔资金 → 主力资金流 → 技术状态 → 板块强度 → 历史条件概率 → 市场风险
         </div>
       )}
-    </div>
-  );
-}
-
-function Section({ title, badge, note, children }: { title: string; badge?: string; note?: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <div className="text-sm font-semibold">{title}</div>
-        {badge && <span className="text-[10px] text-muted-foreground">{badge}</span>}
-        {note && <span className="text-[10px] text-muted-foreground/70">{note}</span>}
-      </div>
-      {children}
     </div>
   );
 }
