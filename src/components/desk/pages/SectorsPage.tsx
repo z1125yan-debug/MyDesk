@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { LayoutGrid, Loader2, RefreshCw, X, Filter } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
+import { LineageCard, LineageSection, StatCard } from "../ui/LineageCard";
 import { useDesk } from "@/lib/desk/store";
 import { aggregateSectors } from "@/lib/quant/screener/sector-stats-core";
 
@@ -156,49 +157,59 @@ export default function SectorsPage() {
     : jump.outcome === "already" ? `已定位到「${jump.name}」（${jump.code}）：该行本来就已展开，未重复开合`
     : `已按对话里的链接展开「${jump.name}」（${jump.code}）的成分股`;
 
+  // P15-R3b 页面血缘卡制：原来标题行、三条告警横条、统计五卡、榜单表各自散摆，
+  // 收成一张卡——标题行=控制面板（Tab+刷新在右），卡内按血缘分节：提醒 → 统计 → 排行。
+  // 数据口径一个字没动：兜底榜出身行、缺列自报、跳转结算都在原位。
+  const alerted = Boolean(error) || missing.length > 0 || Boolean(jumpNotice);
+
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-lg font-bold"><LayoutGrid size={18} className="text-sky-400" /> {kind === "concept" ? "概念板块排行" : "行业板块排行"}</div>
-          <div className="text-[11px] text-muted-foreground">
+      <LineageCard
+        title={<span className="flex items-center gap-2"><LayoutGrid size={17} className="text-sky-400" />{kind === "concept" ? "概念板块排行" : "行业板块排行"}</span>}
+        note={
+          <>
             {list?.length && list.every((r) => r.fundsMissing)
               ? "腾讯板块兜底榜（东财板块榜断源：涨幅口径，无主力资金读数）"
               : "东财板块榜（主力资金口径合并流入/流出两侧）"}
             {" · 点板块行展开成分股 · 点个股跳画像 · "}{asOf ? `更新 ${asOf}` : ""}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* P12-①：行业 / 概念 双 Tab（对齐稳智 control-tabs）——换榜即换数据源，标题/空态文案同步 */}
-          <div className="flex rounded-lg border border-border p-0.5 text-xs">
-            {([["industry", "行业"], ["concept", "概念"]] as const).map(([k, label]) => (
-              <button key={k} onClick={() => switchKind(k)}
-                className={"rounded-md px-3 py-1.5 transition-colors " + (kind === k ? "bg-sky-500/20 font-medium text-sky-300" : "text-muted-foreground hover:text-foreground")}>
-                {label}
+          </>
+        }
+        actions={
+          <>
+            {/* P12-①：行业 / 概念 双 Tab（对齐稳智 control-tabs）——换榜即换数据源，标题/空态文案同步 */}
+            <div className="flex rounded-lg border border-border p-0.5 text-xs">
+              {([["industry", "行业"], ["concept", "概念"]] as const).map(([k, label]) => (
+                <button key={k} onClick={() => switchKind(k)}
+                  className={"rounded-md px-3 py-1.5 transition-colors " + (kind === k ? "bg-sky-500/20 font-medium text-sky-300" : "text-muted-foreground hover:text-foreground")}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button onClick={load} disabled={busy}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
+            </button>
+          </>
+        }
+      >
+      {alerted && (
+        <LineageSection title="数据提醒" tone={error ? "danger" : "warning"} divided={false}>
+          {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}（数据源失败时不展示任何假数据）</div>}
+          {missing.length > 0 && (
+            <div className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[10.5px] leading-5 text-amber-300/90">
+              暂无数据列（现有数据源封装不含该字段，拒绝演示兜底）：{missing.join("；")}。RPS 为榜单内涨幅百分位，非全市场口径。
+            </div>
+          )}
+          {/* P7-⑧②：从对话正文点板块名跳过来时把结果写明白（命中/已展开过/查无此板块/榜单没取到），不做静默跳转 */}
+          {jumpNotice && (
+            <div className="mt-2 flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-[11px] text-sky-200">
+              <span className="flex-1">{jumpNotice}</span>
+              <button onClick={() => setJump(null)} aria-label="关闭跳转提示" className="text-muted-foreground hover:text-sky-300">
+                <X size={12} />
               </button>
-            ))}
-          </div>
-          <button onClick={load} disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
-          </button>
-        </div>
-      </div>
-
-      {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}（数据源失败时不展示任何假数据）</div>}
-      {missing.length > 0 && (
-        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[10.5px] leading-5 text-amber-300/90">
-          暂无数据列（现有数据源封装不含该字段，拒绝演示兜底）：{missing.join("；")}。RPS 为榜单内涨幅百分位，非全市场口径。
-        </div>
-      )}
-      {/* P7-⑧②：从对话正文点板块名跳过来时把结果写明白（命中/已展开过/查无此板块/榜单没取到），不做静默跳转 */}
-      {jumpNotice && (
-        <div className="flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-[11px] text-sky-200">
-          <span className="flex-1">{jumpNotice}</span>
-          <button onClick={() => setJump(null)} aria-label="关闭跳转提示" className="text-muted-foreground hover:text-sky-300">
-            <X size={12} />
-          </button>
-        </div>
+            </div>
+          )}
+        </LineageSection>
       )}
 
       {/* P12-①统计行：5 张聚合卡（对齐稳智 stats-row）。数字只从当前榜真实读数聚合，
@@ -213,43 +224,45 @@ export default function SectorsPage() {
           { label: "主力净额合计", value: st.mainSumYi === null ? "—" : `${st.mainSumYi > 0 ? "+" : ""}${st.mainSumYi}亿`, tone: (st.mainSumYi ?? 0) >= 0 ? "text-red-400" : "text-emerald-400", title: st.mainSumYi === null ? st.mainMissingNote : "榜内主力净额求和（亿）" },
         ];
         return (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-            {cards.map((c, i) => (
-              <div key={i} title={c.title} className="apple-card px-3.5 py-3">
-                <div className="text-[11px] text-muted-foreground">{c.label}</div>
-                <div className={`mt-1 font-mono text-lg font-semibold ${c.tone}`}>{c.value}</div>
-              </div>
-            ))}
-          </div>
+          <LineageSection title="统计" hint={`${noun}榜口径，缺读数显「—」不补 0`} divided={alerted}>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              {cards.map((c, i) => (
+                <StatCard key={i} label={c.label} value={c.value} toneClass={c.tone} title={c.title} />
+              ))}
+            </div>
+          </LineageSection>
         );
       })()}
 
       {list && (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground">
-                {["#", noun, "涨幅%", "主力净额(亿)", "净占比%", "超大单(亿)", "大单(亿)", "RPS(榜内)", "领涨股", "成交额", "上涨/涨停家数", "持续天数", "去选股", ""].map((h) => (
-                  <th key={h} className="px-3 py-2">{h}</th>
+        <LineageSection title={`${noun}排行`} hint="按涨幅榜内排序 · 点行展开成分股" divided={alerted || (list?.length ?? 0) > 0}>
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border text-left text-muted-foreground">
+                  {["#", noun, "涨幅%", "主力净额(亿)", "净占比%", "超大单(亿)", "大单(亿)", "RPS(榜内)", "领涨股", "成交额", "上涨/涨停家数", "持续天数", "去选股", ""].map((h) => (
+                    <th key={h} className="px-3 py-2">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((b, i) => (
+                  <SectorBlock key={b.code} rank={i + 1} board={b}
+                    expanded={openBoard === b.code}
+                    busy={membersBusy} error={membersError} members={members}
+                    canScreen={canScreen(b.code)}
+                    onToggle={() => (openBoard === b.code ? closeBoard() : void openMembers(b.code))} onOpenProfile={openProfile}
+                    onScreen={() => screenBoard(b)} />
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((b, i) => (
-                <SectorBlock key={b.code} rank={i + 1} board={b}
-                  expanded={openBoard === b.code}
-                  busy={membersBusy} error={membersError} members={members}
-                  canScreen={canScreen(b.code)}
-                  onToggle={() => (openBoard === b.code ? closeBoard() : void openMembers(b.code))} onOpenProfile={openProfile}
-                  onScreen={() => screenBoard(b)} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        </LineageSection>
       )}
       {!list && !busy && !error && (
-        <div className="rounded-xl border border-border bg-card px-6 py-12 text-center text-sm text-muted-foreground">暂无{noun}数据</div>
+        <div className="py-8 text-center text-sm text-muted-foreground">暂无{noun}数据</div>
       )}
+      </LineageCard>
     </div>
   );
 }

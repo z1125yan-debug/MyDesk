@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search, Plus, X, Loader2, Sparkles, ArrowRight } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
+import { LineageCard, LineageSection } from "../ui/LineageCard";
 import { useDesk } from "@/lib/desk/store";
 import {
   fetchFactorCatalog, fetchTradeDates, runScreenerApi, aiChatTools,
@@ -149,8 +150,14 @@ export default function ScreenerPage() {
         </p>
       </div>
 
-      {/* 条件区 */}
-      <div className="apple-card apple-fade-in p-5">
+      {/* 条件区 + 已选条件 + 操作：原来两张散卡，R3b 按血缘合一张——
+          加条件和看条件是同一条决策链上的两步，不该让用户在两张卡之间跳。
+          数据逻辑零改动，只换壳。 */}
+      <LineageCard
+        title="AI 选股 · 条件与执行"
+        note="上面选条件、下面看当前条件并开跑；被数据缺口忽略的字段会在结果里单独说明，不假装筛过。"
+      >
+        <LineageSection title="加条件" hint="点标签即加入，可改数值">
         {catalog ? Object.entries(catalog.category).map(([cat, keys]) => (
           <div key={cat} className="mb-4 last:mb-0">
             <div className="mb-2 text-[12px] font-medium text-muted-foreground/80">{cat}</div>
@@ -188,11 +195,9 @@ export default function ScreenerPage() {
             </div>
           </div>
         )) : <div className="py-6 text-center text-[13px] text-muted-foreground">正在准备选股条件…</div>}
-      </div>
+        </LineageSection>
 
-      {/* 已选条件 + 操作 */}
-      <div className="apple-card apple-fade-in p-5">
-        <div className="mb-2.5 text-[12px] font-medium text-muted-foreground/80">当前条件</div>
+        <LineageSection title="当前条件">
         <div className="flex min-h-9 flex-wrap items-center gap-2">
           {chips.length === 0 && <span className="text-[13px] text-muted-foreground/70">还没有条件——点上面的标签添加，例如「放量上涨」「主力流入」</span>}
           {chips.map((c, i) => (
@@ -272,7 +277,8 @@ export default function ScreenerPage() {
         </div>
 
         {error && <div className="mt-3 rounded-xl border border-red-400/25 bg-red-400/10 px-3.5 py-2.5 text-[13px] text-red-300">{error}</div>}
-      </div>
+        </LineageSection>
+      </LineageCard>
 
       {/* AI 解读 */}
       {aiNote && (
