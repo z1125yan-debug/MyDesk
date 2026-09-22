@@ -10,6 +10,8 @@ import {
   upsertSession, type ChatMessage, type ChatSession,
 } from "./chat-core";
 import type { ChatHorizon, ChatMode } from "./modes";
+// P14：自选分组的三个纯操作（建/删/移）住在零 IO 纯核里，store 只做接线——行为可直接 node --test
+import { addGroupCore, removeGroupCore, moveWatchCore } from "./watchlist-group-core";
 
 // 回答风格的清单只有一份（modes.ts），这里原样转出键类型，页面不再各自声明一遍联合类型
 export type { ChatMode };
@@ -42,6 +44,11 @@ interface DeskState {
   sidebarCollapsed: boolean;
   focusSymbol: string;         // 分析页当前品种
   watchlist: WatchItem[];
+  /**
+   * P14：自选分组（对齐稳智 watchlist groups）。只存 {id,name}——成员关系挂在
+   * watch[].groupId 上，一份事实一个正身。「未分组」不是这里的条目，是 groupId 为空。
+   */
+  watchlistGroups: { id: string; name: string }[];
   tracker: TrackerPlan[];
   history: HistoryEntry[];
   /** P7-⑤②：会话从「二维消息数组」升级为带 id/标题/关联标的的 ChatSession（旧存档自动迁移） */
@@ -105,6 +112,12 @@ interface DeskState {
   setDebugPanel: (v: boolean) => void;
   addWatch: (w: WatchItem) => void;
   removeWatch: (symbol: string) => void;
+  /** P14：建组（同名不重建、返回既有 id；空名拒），返回组 id */
+  addWatchGroup: (name: string) => string | null;
+  /** P14：删组只销组——成员一律回未分组，不拿删组当删自选 */
+  removeWatchGroup: (id: string) => void;
+  /** P14：把一只票移进/移回分组（groupId=null 回未分组） */
+  moveWatch: (symbol: string, groupId: string | null) => void;
   addTracker: (t: TrackerPlan) => void;
   updateTrackerStatus: (id: string, status: TrackerPlan["status"]) => void;
   removeTracker: (id: string) => void;
@@ -171,6 +184,8 @@ export const useDesk = create<DeskState>()(
         { symbol: "000300.SH", name: "沪深300", kind: "watch" },
         { symbol: "688256.SH", name: "寒武纪", kind: "watch" },
       ],
+      // P14：默认无组（「未分组」即 groupId 为空，不是一条假分组记录）
+      watchlistGroups: [],
       tracker: [],
       history: [],
       sessions: [FIRST_SESSION],
@@ -217,6 +232,18 @@ export const useDesk = create<DeskState>()(
       setDebugPanel: (v) => set({ debugPanel: v === true }),
       addWatch: (w) => set((s) => (s.watchlist.some((x) => x.symbol === w.symbol) ? s : { watchlist: [w, ...s.watchlist] })),
       removeWatch: (sym) => set((s) => ({ watchlist: s.watchlist.filter((x) => x.symbol !== sym) })),
+      addWatchGroup: (name) => {
+        // 语义都在 watchlist-group-core（空名拒 / 同名回既有 id / trim）——行为可测，不埋在 action 里
+        const { groups, id } = addGroupCore(get().watchlistGroups, name, () => `g${Date.now().toString(36)}`);
+        if (id !== null && !get().watchlistGroups.some((g) => g.id === id)) set({ watchlistGroups: groups });
+        return id;
+      },
+      removeWatchGroup: (id) => set((s) => {
+        // 键名在这里对回 store 字段（纯核返回的是 {groups, watchlist}）——实机走查抓到过直塞导致的「组删不掉」
+        const r = removeGroupCore(s.watchlistGroups, s.watchlist, id);
+        return { watchlistGroups: r.groups, watchlist: r.watchlist };
+      }),
+      moveWatch: (symbol, groupId) => set((s) => ({ watchlist: moveWatchCore(s.watchlist, symbol, groupId) })),
       addTracker: (t) => set((s) => ({ tracker: [t, ...s.tracker] })),
       updateTrackerStatus: (id, status) =>
         set((s) => ({ tracker: s.tracker.map((t) => (t.id === id ? { ...t, status } : t)) })),
@@ -312,6 +339,7 @@ export const useDesk = create<DeskState>()(
         sidebarCollapsed: s.sidebarCollapsed,
         focusSymbol: s.focusSymbol,
         watchlist: s.watchlist,
+        watchlistGroups: s.watchlistGroups,
         tracker: s.tracker,
         history: s.history,
         // 落盘前清掉「正在生成」的瞬时标记：中途关标签页不该留下一个永远在转的光标

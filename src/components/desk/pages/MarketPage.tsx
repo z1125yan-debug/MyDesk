@@ -101,7 +101,16 @@ export default function MarketPage() {
               <div className="bg-emerald-400/80" style={{ width: `${advPct(sent.decliners)}%` }} />
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <Card label="成交额" value={`${sent.amount_total_yi.toFixed(0)} 亿`} />
+              <Card label="成交额" value={
+                sent.amount_known === 0 ? (
+                  <span className="text-[13px] font-normal text-muted-foreground" title="快照里没有任何一只票带成交额读数——合计 0 是「没抓到」不是「成交 0 亿」">暂无数据</span>
+                ) : (
+                  // P14 对齐稳智格式：≥万亿显 X.XX 万亿。vs昨日不硬凑——数据源不提供昨日全市场成交额字段，缺就是缺
+                  <span title={`全A快照合计口径（${sent.amount_known} 只有成交额读数）；数据源无「昨日全市场成交额」字段，不做 vs 昨日对比`}>
+                    {sent.amount_total_yi >= 10000 ? `${(sent.amount_total_yi / 1e4).toFixed(2)} 万亿` : `${sent.amount_total_yi.toFixed(0)} 亿`}
+                  </span>
+                )
+              } />
               <Card label="主力净额" value={<span className={sent.main_net_sum_yi >= 0 ? "text-red-400" : "text-emerald-400"}>{sent.main_net_sum_yi >= 0 ? "+" : ""}{sent.main_net_sum_yi.toFixed(0)} 亿</span>} />
               <Card label="中位涨跌" value={<PctText value={sent.median_pct} />} />
               <Card label="涨跌比" value={(sent.decliners > 0 ? sent.advancers / sent.decliners : 99).toFixed(2)} />
@@ -168,6 +177,23 @@ export default function MarketPage() {
           <div className="apple-card apple-fade-in p-5">
             <div className="mb-3 flex items-center justify-between">
               <div className="text-[14px] font-medium">涨停梯队{tiers && <span className="ml-2 text-[12px] font-normal text-muted-foreground">最高 {tiers.max_boards} 板</span>}</div>
+              {/* P14 对齐稳智连板分档：三/四/五板+ 计数从「3连板+」名单实数推（capped 20+ 计入五板+），不是新读数 */}
+              {tiers && tiers.tiers.some((t) => t.stocks.length > 0) && (() => {
+                const p3 = tiers.tiers.find((t) => t.label === "3连板+")?.stocks ?? [];
+                const n3 = p3.filter((s) => s.boards === 3).length;
+                const n4 = p3.filter((s) => s.boards === 4).length;
+                const n5 = p3.filter((s) => s.boards >= 5).length;
+                return (
+                  <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground"
+                    title={`涨停 ${tiers.limit_up_count}（触板 ${tiers.touched_count}）· 跌停 ${sent.limit_down} · 三板 ${n3} · 四板 ${n4} · 五板+ ${n5}——分档按连板数实数归档（20+ 计入五板+）`}>
+                    <span className="rounded-full bg-white/[0.05] px-2 py-0.5">涨停 <b className="text-red-400">{tiers.limit_up_count}</b></span>
+                    <span className="rounded-full bg-white/[0.05] px-2 py-0.5">跌停 <b className="text-emerald-400">{sent.limit_down}</b></span>
+                    <span className="rounded-full bg-white/[0.05] px-2 py-0.5">三板 <b>{n3}</b></span>
+                    <span className="rounded-full bg-white/[0.05] px-2 py-0.5">四板 <b>{n4}</b></span>
+                    <span className="rounded-full bg-orange-400/10 px-2 py-0.5 text-orange-300">五板+ <b>{n5}</b></span>
+                  </div>
+                );
+              })()}
               <button onClick={loadTiers} className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-sky-200">
                 {tiersBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
               </button>

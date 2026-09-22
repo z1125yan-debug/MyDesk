@@ -73,6 +73,12 @@ export interface WatchItem {
   symbol: string;
   name: string;
   kind: "watch" | "hot";
+  /**
+   * P14：所属自选分组（watchlistGroups 的 id）；null/缺省 = 未分组。
+   * 存 id 不存名字——改名不动成员；删组时成员一律回未分组（见 store.removeWatchGroup），
+   * 所以这里不会出现指向已消失分组的悬空名。旧存档没这个字段，按未分组读，无需迁移。
+   */
+  groupId?: string | null;
 }
 
 export interface Candle {
