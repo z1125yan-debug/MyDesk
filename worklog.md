@@ -1917,3 +1917,27 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 - 冷加载瞬间标题落 layout 全局名、SPA 切换后才落页名——HEAD 同构既有行为（effect 依赖首帧不重跑），本轮未动，要修单独开小口。
 - 仍散卡的页面：ResearchPage/AgentPage/HistoryPage/ProfilePage 及行情组其余页（血缘卡制推广按页排队）；candidate_pool 工具中文标签、P3 快捷区间筛选+分页、AiScan 次日自动验证继续挂账。
 - breadth 逐日统计仍攒真数中（~2026-09-29 起可读）；3010 仍跑 P14 存档，重启需新授权词。
+
+## P15-R3d 散卡页血缘收口（Research / Agent / History / Profile）
+
+### 背景与口径
+R3b/R3c 把情绪/板块/选股/因子/自选收成卡后，Research / Agent / History / Profile 四页还是一屏一块块散摆的小卡，看不出谁跟谁是一回事。本轮延续稳智「一件事一张卡、卡内按血缘分节」的观感：同一份研究 / 同一次运行 / 同一条存档 / 同一份画像，收进一张 LineageCard。纪律：只换壳不动取数——原诚实缺失串（「—」「暂无数据」「不冒充实数」「网关未运行」「不以0代替」）必须原样活过重构；tone 色点承载真实状态不是装饰；组件全仓库唯一源，页面不许再 local 抄一张卡壳。
+
+### 落点
+- 三件套用法：页面顶部标题→卡头 title（图标 17px）、说明→note、控制按钮(SourceBadge/刷新/清空/生成)→actions，原散块降为卡内 LineageSection（首节 divided={false}）。
+- ResearchPage：当前读数/研究问题/研究报告/七分区明细/采集器观测/台账目录/缺失口径 一卡收口；repTone 从 interpretation_status 推（REJECTED=danger、INTERPRETED=success、其余=warning），collectorTone 从 sources 有 failed 推。
+- AgentPage：研究问题与预算/结论/步骤时间线/台账/血缘/缺失与预算说明/工具目录/历史运行 一卡；台账与血缘并排两节；answerTone 跟服务端 answer_status（ACCEPTED绿/PARTIAL橙/其余有值红）；p6-d 红线 agent_tool_call「只有库里读回来的行算数」保住。
+- HistoryPage：列表一卡（清空进 actions、记录降为卡内瓦片、空态「还没有分析记录」在）；详情一卡（交易计划/技术快照数字走统一 StatCard、缺数显「—」不补值、方向仍从 bias/几何关系推导）。
+- ProfilePage：local `function Section` 卡壳退役换 LineageSection（漂移钉的 Section 禁止项从这一刻生效），画像七块 + AI 条件式解读一卡，头部代码/价/SourceBadge→卡头，DecisionCard（P7-④ 独立取数）留卡内；市场风险 tone=/高/→danger 否则 warning、历史条件概率 tone 跟 sample_ok；小节标题的 emoji 统一换成 tone 色点（与其他收口页观感一致）。
+- 测试：p15-r3b-lineage「页面不许再 local 定义同名卡组件」清单加进这四页、禁止名单补 `Section`；新建 p15-r3d-scattered.test.ts 逐页钉结构 + tone 推导 + 诚实串 + 组件唯一源。
+
+### 验收数字与实测证据
+- 门禁：tsc 0；`node --test tests/quant/*.test.ts` = 913 / 904 / 0 fail / 9 skip（基线 908 + 本轮 5 条 R3d 新钉，零回归）；`next build` 过；触碰 4 页 eslint 仅 4 条 `react-hooks/set-state-in-effect`，in-src HEAD 副本对照同为 4 条 → 全先存非新增；`git diff --stat package.json package-lock.json` 空。
+- 3014 实机（accept.db，R3d build）：#/research 1 卡 5 节（当天无落库报告，报告相关节按缺不显）；#/agent 1 卡 8 节 8 tone 点、工具目录真读数 35 可调用/42 登记；#/history 列表 1 卡 存档记录节（无存档→空态在）；#/profile 自动载入 688256 寒武纪，1 卡 7 节、tone 点 sky×4+amber×2+sky（历史条件概率样本不足橙、市场风险「注意」橙，非「高」才升红）、不冒充实数/网关未运行/不以0代替串全在。走查纯读无副作用需回退。
+
+### 未收口边界
+- 报告相关两节（七分区明细、台账目录）实机未触发：当天无落库研究报告，节按缺不显；结构有钉，需真跑一次 AI 报告才看得到并入卡观感。
+- HistoryPage 详情视图实机未走：accept.db 无分析存档，详情仅靠单测钉 + 编译，未实机点进。
+- 画像小节 emoji 换成 tone 色点是一致性取舍非明令，要保留可回加。
+- 剩余散卡页未动：Overview / Pool / Board / Analysis / AiScan / QimenPanel / Settings / ContextPanel 仍一屏散块。
+- DB 当日变更、P1P2_任务书.md 删除、用户未入库 .md 未碰；3010 未动。
