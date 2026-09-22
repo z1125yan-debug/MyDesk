@@ -13,6 +13,11 @@
 //
 // 为什么留子项：对方「量化因子选股」一级页内部也是选股器/因子/池多块并列；
 // 我们把它们提成指端子项是为了「点了就到、不玩两栏捉迷藏」，而不是再造一层工作台。
+//
+// R3c 双入口裁决（用户拍板「合并成一条」）：quant 门户主入口与 aiscan 是两个窗口同一套内容
+// （P13 收敛的既成事实）——菜单删「全A 实时选股」子项，aiscan 降级为路由别名：
+// 旧 hash、板块页递棒 go("aiscan") 一律收口到 quant 门户主 Tab（那里挂的就是 AiScanPage 本体），
+// 内容从此只有一条通路，但 PageKey、渲染分支、P12 递棒钉全部原样活着。
 import type { PageKey } from "./types";
 
 export interface MenuLeaf {
@@ -41,7 +46,6 @@ export const MENU: MenuEntry[] = [
     label: "量化选股",
     children: [
       { key: "quant", label: "AI 选股 · 研究台" },
-      { key: "aiscan", label: "全A 实时选股" },
       { key: "screener", label: "因子选股 · 历史" },
       { key: "factorlab", label: "因子库 · 测试台" },
       { key: "pool", label: "候选池" },
@@ -81,6 +85,20 @@ export const SYSTEM_ITEMS: MenuLeaf[] = [
   { key: "extension", label: "扩展" },
 ];
 
+/**
+ * 路由重定向：旧 PageKey 仍在（AppShell 分支、types.ts 枚举一个不删），但导航时收口到统一入口。
+ * aiscan → quant：门户主 Tab 挂的就是 AiScanPage 本体，两者本是同一份实现，
+ * 用户拍板「合并成一条」——菜单不再单列「全A 实时选股」，点它/递棒过来都落门户。
+ */
+export const ROUTE_REDIRECTS: Partial<Record<PageKey, PageKey>> = {
+  aiscan: "quant",
+};
+
+/** 导航前解析：有重定向就换目标，没有原样返回（store.go 统一过一遍，收口在一处） */
+export function resolveRoute(p: PageKey): PageKey {
+  return ROUTE_REDIRECTS[p] ?? p;
+}
+
 /** 一级项的默认落点：单项直达用 key；有子项的落第 1 个子项（点组名 = 进该组的主页） */
 export function entryTarget(entry: MenuEntry): PageKey {
   if (entry.key) return entry.key;
@@ -111,6 +129,14 @@ const { GROUP_OF, LEGACY_OF } = (() => {
       take(p, `${e.id}.legacyPages`);
       legacyOf.set(p, e.id);
     }
+  }
+  // 重定向源也算「登记一处」：不给菜单位，但归组可查（刷新到旧 hash 的瞬间高亮不闪丢）、
+  // 目标必须是已登记的真实入口——防止有人重定向到一个已经不存在/漏登记的页。
+  for (const [from, to] of Object.entries(ROUTE_REDIRECTS) as [PageKey, PageKey][]) {
+    take(from, "ROUTE_REDIRECTS");
+    const targetGroup = groupOf.get(to) ?? legacyOf.get(to);
+    if (!targetGroup) throw new Error(`nav-core 口径错误：${from} 重定向到未登记的 ${to}`);
+    groupOf.set(from, targetGroup);
   }
   return { GROUP_OF: groupOf, LEGACY_OF: legacyOf };
 })();

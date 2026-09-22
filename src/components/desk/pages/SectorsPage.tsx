@@ -168,7 +168,9 @@ export default function SectorsPage() {
         title={<span className="flex items-center gap-2"><LayoutGrid size={17} className="text-sky-400" />{kind === "concept" ? "概念板块排行" : "行业板块排行"}</span>}
         note={
           <>
-            {list?.length && list.every((r) => r.fundsMissing)
+            {!list || !list.length
+              ? error ? "数据源失败，未出榜（下面提醒有原因）" : "榜单未取到"
+              : list.every((r) => r.fundsMissing)
               ? "腾讯板块兜底榜（东财板块榜断源：涨幅口径，无主力资金读数）"
               : "东财板块榜（主力资金口径合并流入/流出两侧）"}
             {" · 点板块行展开成分股 · 点个股跳画像 · "}{asOf ? `更新 ${asOf}` : ""}
