@@ -92,6 +92,11 @@ export interface SentimentClient {
   limit_up_broken: number; // 炸板数
   break_rate: number | null; // 炸板率 %（触板为0时 null）
   amount_total_yi: number; main_net_sum_yi: number; median_pct: number;
+  /**
+   * P14：全A快照里成交额真实有值的家数。与 main_net_known 同一纪律——
+   * 合计 0 可能是「一家都没抓到」而不是「全市场成交 0 元」，万亿格式换算前必须先问这个数。
+   */
+  amount_known: number;
   /** 全 A 快照里主力净额真实有值的家数（P11 情绪温度必需：0 时合计是 ?? 0 累加的假 0，资金流分量必按缺读数处理） */
   main_net_known: number;
   indices: { symbol: string; name: string; price: number; changePct: number }[];

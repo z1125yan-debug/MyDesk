@@ -172,6 +172,7 @@ export default function QimenPanel() {
               interpreting={interpreting}
               interp={interp}
               interpError={interpError}
+              chart={chart}
               onInterpret={() => void interpret()}
               onConfigure={() => go("settings")}
             />
@@ -312,12 +313,18 @@ function Line({ k, v }: { k: string; v: string }) {
   );
 }
 
-/** 解盘卡：走既有模型通道生成，永远带「术数推演≠市场事实≠投资建议」的定性 */
+/**
+ * 解盘卡：走既有模型通道生成，永远带「术数推演≠市场事实≠投资建议」的定性。
+ * P14 对齐稳智「友好多色卡片」分层：蓝=整体判断 / 绿=正面可行动 / 橙=警示 / 灰=技术补充（可折叠）——
+ * 分层只给已解析出的真实段落换色贴标签，不拿颜色当新结论；模型没按格式回就整段照展示，
+ * 绝不为了凑四张卡把一段话硬切成假分层（宁缺不假，与全站同纪律）。
+ */
 function InterpretCard(props: {
   configured: boolean; interpreting: boolean; interp: Interpretation | null; interpError: string | null;
+  chart: QimenChart;
   onInterpret: () => void; onConfigure: () => void;
 }) {
-  const { configured, interpreting, interp, interpError, onInterpret, onConfigure } = props;
+  const { configured, interpreting, interp, interpError, chart, onInterpret, onConfigure } = props;
   return (
     <section className="flex flex-col rounded-xl border border-border bg-card p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -354,9 +361,11 @@ function InterpretCard(props: {
         <div className="space-y-2.5">
           {interp.parsed ? (
             <>
-              <Seg title="核心结论" body={interp.core} />
-              <Seg title="操作建议" body={interp.advice} />
-              <Seg title="风险提示" body={interp.risk} tone="amber" />
+              <FriendlyCard tone="blue" title="整体判断 · 核心结论" body={interp.core} />
+              <FriendlyCard tone="green" title="正面 · 操作建议" body={interp.advice} />
+              <FriendlyCard tone="orange" title="警示 · 风险提示" body={interp.risk} />
+              {/* 灰=技术补充：盘面前因后项的可折叠底账，想深究的人一开就有，不摊在普通人眼前 */}
+              <FriendlyTechCard chart={chart} />
             </>
           ) : (
             <div className="rounded-md border border-border/70 bg-accent/20 px-2.5 py-2">
@@ -374,12 +383,51 @@ function InterpretCard(props: {
   );
 }
 
-function Seg({ title, body, tone }: { title: string; body: string; tone?: "amber" }) {
-  const head = tone === "amber" ? "text-amber-300" : "text-sky-300";
+type FriendlyTone = "blue" | "green" | "orange";
+const FRIENDLY_TONE: Record<FriendlyTone, { box: string; head: string }> = {
+  blue: { box: "border-sky-500/30 bg-sky-500/[0.07]", head: "text-sky-300" },
+  green: { box: "border-emerald-500/30 bg-emerald-500/[0.07]", head: "text-emerald-300" },
+  orange: { box: "border-amber-500/35 bg-amber-500/[0.08]", head: "text-amber-300" },
+};
+
+function FriendlyCard({ tone, title, body }: { tone: FriendlyTone; title: string; body: string }) {
+  const t = FRIENDLY_TONE[tone];
   return (
-    <div className="rounded-md border border-border/70 bg-accent/20 px-2.5 py-2">
-      <div className={"mb-1 text-[11px] font-medium " + head}>{title}</div>
+    <div className={"rounded-md border px-2.5 py-2 " + t.box}>
+      <div className={"mb-1 text-[11px] font-medium " + t.head}>{title}</div>
       <div className="whitespace-pre-wrap text-[12.5px] leading-6 text-foreground">{body || MISSING_TEXT}</div>
+    </div>
+  );
+}
+
+/** 灰=技术补充（可折叠）：解盘文本所依据的盘面要项原样列给想深究的人——全是排盘接口回来的真实字段 */
+function FriendlyTechCard({ chart }: { chart: QimenChart }) {
+  const c = chart.chart;
+  const gz = chart.ganzhi;
+  const tst = chart.calendar.true_solar_time;
+  return (
+    <div className="rounded-md border border-border/70 bg-accent/20">
+      <DeskCollapse
+        title="技术补充 · 盘面要项（解盘文本的输入底账）"
+        triggerClassName="px-2.5 py-2 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+        contentClassName="px-2.5 pb-2 text-[11.5px] leading-5 text-muted-foreground"
+      >
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <span>{c.full_name}</span><span>节气 {c.jieqi}</span>
+          <span>值符 {c.zhifu}</span><span>值使 {c.zhishi}</span>
+          <span>{c.kong_kind}空亡 {c.kong}</span><span>旬首 {c.xunshou}</span>
+          <span>四柱 {gz.year} {gz.month} {gz.day} {gz.hour}</span>
+          <span title={tst.enabled ? `东经 ${tst.longitude}°，偏移 ${tst.offsetMinutes.toFixed(1)} 分` : undefined}>
+            {tst.enabled ? `真太阳时 ${tst.corrected}（偏移 ${tst.offsetMinutes.toFixed(1)} 分）` : "真太阳时未启用（按北京时间）"}
+          </span>
+        </div>
+        {chart.warnings.length > 0 && (
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-amber-300/90">
+            {chart.warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        )}
+        <div className="mt-1.5 opacity-75">{provenanceLine(chart)}</div>
+      </DeskCollapse>
     </div>
   );
 }
