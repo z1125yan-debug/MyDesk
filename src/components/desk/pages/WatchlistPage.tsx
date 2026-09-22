@@ -8,6 +8,7 @@
 import { Fragment, useState, useEffect, useCallback, useMemo } from "react";
 import { Target, Loader2, RefreshCw, Trash2, LineChart, ChevronDown, ChevronRight } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
+import { LineageCard, LineageSection } from "../ui/LineageCard";
 import Sparkline from "../Sparkline";
 import TrackerPage from "./TrackerPage";
 import { useDesk } from "@/lib/desk/store";
@@ -103,22 +104,26 @@ export default function WatchlistPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-6 py-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-lg font-bold"><Target size={18} className="text-sky-400" /> 自选股行情</div>
-          <div className="text-[11px] text-muted-foreground">
+      {/* P15-R3c 血缘收口：标题块/分组工具条/表卡三块散摆收成一张卡——
+          工具条是本卡的控制面板，表是它的正文，不该各套各的边框。交易计划区仍是独立一页逻辑，留在卡外。 */}
+      <LineageCard
+        title={<span className="flex items-center gap-2"><Target size={17} className="text-sky-400" />自选股行情</span>}
+        note={
+          <>
             真实报价（eltdx/腾讯优先）· 取不到显示暂无数据 · {updatedAt ? `更新 ${updatedAt}` : ""}
             {visible.length > BATCH ? ` · 当前视图 ${visible.length} 只，仅取前 ${BATCH} 只报价（接口单次上限，其余未取）` : ""}
-          </div>
-        </div>
-        <button onClick={load} disabled={busy}
-          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
-        </button>
-      </div>
-
-      {/* P14 分组工具条：过滤下拉 + 新建组 + （选中某组时）删组。组是本机管理视图，不是数据源 */}
-      <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          </>
+        }
+        actions={
+          <button onClick={load} disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
+          </button>
+        }
+      >
+        {/* P14 分组工具条：过滤下拉 + 新建组 + （选中某组时）删组。组是本机管理视图，不是数据源 */}
+        <LineageSection title="自选列表" hint="分组是本机管理视图 · 删组退回未分组不丢票" divided={false}>
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-[12px]">
         <select className={selectCls} value={groupFilter} onChange={(e) => { setGroupFilter(e.target.value); setExpanded(null); }}
           title="按分组过滤自选列表（只影响视图，不动任何成员关系）">
           <option value="all">全部（{watchlist.length}）</option>
@@ -142,22 +147,22 @@ export default function WatchlistPage() {
         )}
       </div>
 
-      {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+      {error && <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
 
       {!watchlist.length && (
-        <div className="rounded-xl border border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
+        <div className="px-6 py-10 text-center text-sm text-muted-foreground">
           还没有自选股 · 在「全A列表」或「个股画像」页点「+自选」添加
         </div>
       )}
 
       {watchlist.length > 0 && !visible.length && (
-        <div className="rounded-xl border border-border bg-card px-6 py-8 text-center text-sm text-muted-foreground">
+        <div className="px-6 py-8 text-center text-sm text-muted-foreground">
           {groupFilter === "none" ? "所有自选都分了组 · 「未分组」现在没有票" : `组「${groupName(groupFilter)}」里还没有票 · 在行右侧「移入」里挑一只进来`}
         </div>
       )}
 
       {visible.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground">
@@ -241,6 +246,8 @@ export default function WatchlistPage() {
           </table>
         </div>
       )}
+        </LineageSection>
+      </LineageCard>
 
       {/* 交易计划区：完整复用旧追踪页 */}
       <div className="border-t border-border pt-2">

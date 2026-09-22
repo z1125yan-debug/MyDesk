@@ -30,6 +30,7 @@ import ResearchPage from "./pages/ResearchPage";
 import AgentPage from "./pages/AgentPage";
 import { useDesk } from "@/lib/desk/store";
 import { PAGE_TITLES, type PageKey } from "@/lib/desk/types";
+import { resolveRoute } from "@/lib/desk/nav-core";
 import WorkbenchShell from "./WorkbenchShell";
 
 export default function AppShell() {
@@ -44,7 +45,11 @@ export default function AppShell() {
       const fromHash = window.location.hash.replace(/^#\/?/, "") as PageKey;
       const cur = useDesk.getState().page;
       if (fromHash && PAGE_TITLES[fromHash]) {
-        if (fromHash !== cur) go(fromHash);
+        // R3c：别名 hash（#/aiscan）先回写成收口目标再放行——go 收口后状态常已是 quant，
+        // 若只是「URL 变了、page 没变」，下面的自愈 effect 因依赖未变不会重跑，地址栏会卡在别名上。
+        const target = resolveRoute(fromHash);
+        if (target !== fromHash) { window.location.hash = `#/${target}`; return; }
+        if (target !== cur) go(target);
       } else if (window.location.hash !== `#/${cur}`) {
         window.location.hash = `#/${cur}`;
       }
@@ -55,9 +60,13 @@ export default function AppShell() {
   }, [go]);
 
   useEffect(() => {
+    // R3c 双入口合并：存档里可能还躺着旧页 aiscan（persist 恢复不过 go()）——状态自愈到统一入口，
+    // URL/标题都按收口后的目标写，避免「#/aiscan 还挂在地址栏但内容已是门户」的口径分裂。
+    const target = resolveRoute(page);
+    if (target !== page) { go(target); return; }
     window.location.hash = `#/${page}`;
     document.title = `${PAGE_TITLES[page]} · MyDesk`;
-  }, [page]);
+  }, [page, go]);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
@@ -69,6 +78,8 @@ export default function AppShell() {
               下面 25 个分支一个不删——旧 hash 路由全部保留做兼容跳转，右栏渲染的就是原页面组件本身。 */}
           <WorkbenchShell>
             {page === "aihome" && <AiHomePage />}
+            {/* R3c 合并后 go("aiscan") 已在 store 收口到 quant 门户，此分支是「分支一个不删」的兼容兜底：
+                persist 恢复出 aiscan 的瞬间也会先渲染这里，effect 随即自愈改判——不留双窗口的第二份入口。 */}
             {page === "aiscan" && <AiScanPage />}
             {page === "pool" && <PoolPage />}
             {page === "screener" && <ScreenerPage />}

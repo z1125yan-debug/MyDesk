@@ -12,6 +12,8 @@ import {
 import type { ChatHorizon, ChatMode } from "./modes";
 // P14：自选分组的三个纯操作（建/删/移）住在零 IO 纯核里，store 只做接线——行为可直接 node --test
 import { addGroupCore, removeGroupCore, moveWatchCore } from "./watchlist-group-core";
+// R3c：导航重定向表住在 nav-core 纯核里，store.go 只是照表收口——菜单/递棒/旧 hash 共用一条裁决
+import { resolveRoute } from "./nav-core";
 
 // 回答风格的清单只有一份（modes.ts），这里原样转出键类型，页面不再各自声明一遍联合类型
 export type { ChatMode };
@@ -211,7 +213,9 @@ export const useDesk = create<DeskState>()(
       focusSector: null,
       scanBoard: null,
 
-      go: (p) => set({ page: p }),
+      // R3c 双入口合并（用户拍板「合并成一条」）：导航目标先过 nav-core 重定向表收口在这一处——
+      // go("aiscan") 自动落 quant 门户（主 Tab 挂的就是 AiScanPage 本体），页面侧调用方一个字不用改。
+      go: (p) => set({ page: resolveRoute(p) }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setFocusSymbol: (sym) => set({ focusSymbol: sym }),
       setFocusSector: (code) => set({ focusSector: code }),

@@ -34,7 +34,8 @@ test("组件唯一源：LineageCard/LineageSection/StatCard 都在 ui/LineageCar
 });
 
 test("页面不许再 local 定义同名卡组件：全仓库只认 ui/LineageCard 这一份实现", () => {
-  for (const rel of [MARKET, SECTORS, SCREENER]) {
+  // R3c 起清单加进 FactorLabPage（local Metric 小卡已退役换 StatCard）与 WatchlistPage
+  for (const rel of [MARKET, SECTORS, SCREENER, "src/components/desk/pages/FactorLabPage.tsx", "src/components/desk/pages/WatchlistPage.tsx"]) {
     const src = readSrc(rel);
     assert.match(src, /from "\.\.\/ui\/LineageCard"/, `${rel} 应引用统一组件`);
     assert.ok(!/function (LineageCard|LineageSection|StatCard)\s*\(/.test(src),

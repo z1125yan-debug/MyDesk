@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  MENU, SYSTEM_ITEMS, entryTarget, isLegacyPage, legacyReturnTarget, menuGroupOf,
+  MENU, SYSTEM_ITEMS, ROUTE_REDIRECTS, resolveRoute, entryTarget, isLegacyPage, legacyReturnTarget, menuGroupOf,
 } from "../../src/lib/desk/nav-core.ts";
 
 const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "utf8");
@@ -36,6 +36,8 @@ function allRegistered() {
     for (const p of e.legacyPages ?? []) put(p, `${e.id}.legacyPages`);
   }
   for (const s of SYSTEM_ITEMS) put(s.key, "SYSTEM_ITEMS");
+  // R3c：合并后 aiscan 从 children 挪进 ROUTE_REDIRECTS——别名源也算「登记一处」（漏页防线不放松）
+  for (const from of Object.keys(ROUTE_REDIRECTS)) put(from, "ROUTE_REDIRECTS");
   return listed;
 }
 
@@ -81,8 +83,7 @@ test("nav-core：一级菜单顺序文案钉死（稳智左栏顺序，用户要
   }
 });
 
-test("nav-core：每个一级项要么直达、要么有非空子项；点组必有落点", () => {
-  for (const e of MENU) {
+test("nav-core：每个一级项要么直达、要么有非空子项；点组必有落点", () => {  for (const e of MENU) {
     const hasKey = Boolean(e.key);
     const hasChildren = (e.children?.length ?? 0) > 0;
     assert.ok(hasKey !== hasChildren, `${e.id} 必须「直达 key」和「children」二选一（都有/都无都说明口径写错）`);
@@ -101,6 +102,25 @@ test("nav-core：并入对话的旧页可 hash 直达但不上菜单；copilot �
     assert.equal(menuGroupOf(p)?.id, "ai", `${p} 归属 AI 对话组`);
   }
   assert.equal(isLegacyPage("copilot"), false, "copilot 是对话本体，不是兼容路由");
+});
+
+test("R3c 双入口合并：菜单不再单列「全A 实时选股」，aiscan 收口到 quant 门户主 Tab", () => {
+  // 用户拍板「合并成一条」：quant 门户主 Tab 挂的就是 AiScanPage 本体，两个窗口同一份实现——
+  // 菜单删重复子项、导航收口到统一入口，但 PageKey/渲染分支/P12 递棒钉一个不删。
+  const quantEntry = MENU.find((e) => e.id === "quant")!;
+  assert.ok(!quantEntry.children!.some((c) => c.key === "aiscan"),
+    "「全A 实时选股」不许再作为独立子项挂在菜单里（否则合并白做）");
+  // 旧 key 走重定向到 quant
+  assert.equal(resolveRoute("aiscan"), "quant", "aiscan 导航应收口到 quant 门户");
+  assert.equal(resolveRoute("screener"), "screener", "未登记重定向的页原样返回");
+  assert.equal(menuGroupOf("aiscan")!.id, "quant", "别名页归属仍查得到（刷新到旧 hash 高亮不闪丢）");
+  assert.equal(isLegacyPage("aiscan"), false, "aiscan 不是 legacy 横幅页，是被合并的门户主页");
+  // store.go 统一过一遍重定向——收口在这一处，页面侧调用方（含 P12 递棒 go("aiscan")）不用改
+  const store = read("src/lib/desk/store.ts");
+  assert.match(store, /page:\s*resolveRoute\(p\)/, "store.go 必须过 resolveRoute，否则合并只在菜单、导航仍分两条");
+  assert.match(store, /import \{ resolveRoute \} from "\.\/nav-core"/, "重定向表来自 nav-core 纯核，store 只接线");
+  // QuantPage 门户主 Tab 仍挂 AiScanPage 本体（合并的落点必须真有其页）
+  assert.match(read("src/components/desk/QuantPage.tsx"), /value="portal"[\s\S]*<AiScanPage \/>/);
 });
 
 test("nav-core 是纯核：不 import React/window/存储，保证单测可直跑", () => {

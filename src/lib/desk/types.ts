@@ -2,7 +2,7 @@
 
 export type PageKey =
   | "aihome"       // 实时选股 · AI 对话首页（重定位后的一级入口）
-  | "aiscan"       // AI 实时选股（全A扫描漏斗）
+  | "aiscan"       // AI 实时选股（全A扫描漏斗）——R3c 起为路由别名：导航收口到 quant 门户（nav-core ROUTE_REDIRECTS）
   | "pool"         // 候选池（冻结 + 次日验证）
   | "screener"     // 因子选股器
   | "profile"      // 个股资金画像
