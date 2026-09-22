@@ -135,6 +135,30 @@ export async function fetchLimitUp(): Promise<LimitUpClient> {
   return j;
 }
 
+// P15-R2a：大盘趋势（两市成交额按日 + vs昨日 + 指数区间累计涨跌）。
+// 类型与 /api/market/trend 的返回一一对应；缺数走 missing/notes，界面照实画。
+export interface TrendDayPoint { date: string; shYi: number | null; szYi: number | null; totalYi: number | null }
+export interface TrendClient {
+  ok: boolean;
+  range: { from: string; to: string };
+  days: TrendDayPoint[];
+  delta: { yi: number | null; prev_date: string | null };
+  cum: { sh: { date: string; pct: number }[]; sz: { date: string; pct: number }[]; cyb: { date: string; pct: number }[] };
+  notes: string[];
+  missing: string[];
+  source: string;
+  error?: string;
+}
+export async function fetchTrend(from: string, to: string): Promise<TrendClient> {
+  const q = new URLSearchParams();
+  if (from) q.set("from", from);
+  if (to) q.set("to", to);
+  const res = await fetch(`/api/market/trend?${q.toString()}`);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "趋势数据获取失败");
+  return j;
+}
+
 export interface AllStockRow {
   symbol: string; name: string; industry: string | null;
   price: number | null; change_pct: number | null; amount_yi: number | null;
