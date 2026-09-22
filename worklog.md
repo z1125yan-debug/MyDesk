@@ -1890,3 +1890,30 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 - quant 门户 × aiscan 双入口去重仍是待用户拍板的决策，挂着。
 - 概念榜走查时东财 clist 恰时无返回属断源窗口未关（先存问题非本轮引入）；红条如实报「暂不可用」行为正确。
 - 板块页 note 出身行在 list=null（源失败）时仍显示「东财板块榜」字样——先存三元逻辑（fundsMissing 判据只在有榜时生效），banner 已如实兜底；若要更严可留 leftover 把 note 也接 error 态。
+
+## P15-R3c 收口轮（2026-09-22）
+
+### 背景与口径
+- 双入口合并用户拍板「合并成一条」：菜单去掉重复项、直达统一到一页、实现只留一份——quant 门户主 Tab 挂的就是 AiScanPage 本体，合并≠搬家更不是删页。
+- 收口必须单级：别名表 ROUTE_REDIRECTS 住 nav-core 纯核，store.go 一处 resolveRoute 是唯一裁决点——板块递棒 go("aiscan") 等全部调用方零改动；PageKey、AppShell 兼容分支、p7 不重不漏/p12 递棒/p13 门户钉一个不删（合并本体反而靠这些钉证住）。
+- 收口≠瞒：别名收口后 URL/标题必须跟着走。「go 把状态收口成 quant 后 page 未变 → 自愈 effect 依赖不变不重跑 → 地址栏卡 #/aiscan」是 3014 实机走查抓到的真口径分裂，修法在 hashchange 监听器先回写别名再放行，并钉死（URL 与实际页面一致是这台工作台的底线）。
+- FactorLab 对齐=壳收口取数零改动：local Metric 小卡退役（卡实现不许漂移），但 GroupBars/MonthlyBars 是图元不是卡、留本页是对的；tooltip 定义必须逐条对着 metrics.ts/tester.ts 读出来写，不凭印象；tone 承载真实判定（通过绿/未过橙）。
+- 自选页收口不碰 P14 语义：分组工具条整段搬进卡内一节，建组/删组退回不丢票等钉住文案一字未改；交易计划区是独立一页逻辑，留在卡外不是没收干净。
+- 事故口径（血的教训）：3014 在跑时严禁 git stash——node 锁 custom.db 会让 stash 中段 reset 失败、工作区部分打回、改动只活在 stash 里。恢复走「杀进程放锁 → 只 checkout 需要的源码文件（永不带 custom.db/用户删除项）→ grep+测试对账 → 才 drop」。lint 先存性对照必须把 HEAD 副本放进 src 内（项目外路径 eslint 直接 ignore，那份对照是无效证据）。
+- 走查副作用不入库：实跑验证写落的 factor-verified.json rps_50 属验收产物，回滚后再提交。
+
+### 落点
+- nav-core：ROUTE_REDIRECTS+resolveRoute+别名注册进 map 构建器（未登记目标直接 throw）；store.go 单点收口；AppShell 双自愈（effect 改判 + hashchange 回写）；types PageKey 注释标别名。
+- FactorLabPage 一张 LineageCard 三节+卡头控制面板；WatchlistPage 标题块/工具条/表收一卡；SectorsPage note 补源失败出身行（R3b 边界⑤）。
+- 新钉 p15-r3c-consolidate.test.ts（合并落地/FactorLab 结构/控制面板升格/别名 URL 自愈）+ p7 双入口合并与收口行为钉 + r3b 血缘钉扩两页。
+
+### 验收数字与实测证据
+- tsc 0；node --test tests/quant/*.test.ts = 908/899/0/9（R3b 基线 903 之上 +5 全为新增钉，零回归）；next build 过；触碰 7 文件 eslint 仅 2 先存 set-state-in-effect（src 内 HEAD 副本同规则同位对照证过）；package.json/lock diff 空。
+- 3014 实机（重建后）：菜单量化组无「全A 实时选股」；#/aiscan SPA 内切换与冷加载直达均回写 #/quant 且落门户「AI 选股」Tab 真 AiScanPage；FactorLab 一张大卡（.apple-card 8=1 大卡+7 唯一源 StatCard 非回潮）、实跑 RPS50 ✓通过七指标真数（IC 0.0108/RankIC -0.0319/ICIR -0.144/单调ρ 0.933/月胜率 65.2%/换手 0.045/回撤 -24.6%）+G1-G5+逐月柱+记录表新行；自选页一卡含工具条 3 行真报价、追踪计划区在卡外；板块页兜底榜 note 实报「腾讯板块兜底榜（东财板块榜断源：涨幅口径，无主力资金读数）」。
+- 事故恢复对账：stash 精准恢复后 907/898 与事故前分毫不差，再 +1 新钉成 908。
+
+### 未收口边界
+- 递棒「去选股」实点路径本轮实机未走：兜底榜期非 BK 码按钮如实缺席（设计内），由单测钉+别名等价实跑覆盖；东财恢复后可顺带补走。
+- 冷加载瞬间标题落 layout 全局名、SPA 切换后才落页名——HEAD 同构既有行为（effect 依赖首帧不重跑），本轮未动，要修单独开小口。
+- 仍散卡的页面：ResearchPage/AgentPage/HistoryPage/ProfilePage 及行情组其余页（血缘卡制推广按页排队）；candidate_pool 工具中文标签、P3 快捷区间筛选+分页、AiScan 次日自动验证继续挂账。
+- breadth 逐日统计仍攒真数中（~2026-09-29 起可读）；3010 仍跑 P14 存档，重启需新授权词。
