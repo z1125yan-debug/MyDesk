@@ -1673,3 +1673,33 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 3. **统计卡为榜内截面口径**：count 是资金口径榜去重条数非全市场板块总数，均值是一位小数截面——title 已写明，但口径与稳智原卡不可直接对数。
 4. **文档 P3 未做**：区间筛选、分页、列排序（本轮吃 P0-P2 核心：双 Tab+去选股+统计行）。
 5. **3010 未重启**（用户指令：P12–P14 做完统一重启）；池接棒自动化仅经测试钉与代码路径保证，UI 点击链要等 BK 数据恢复后人工走一遍。
+
+## P13 量化门户轮：门户收敛（分组不删）/ 因子 pill 中文化 / 存池交 AI 择优一条龙（2026-09-22：870 条基线，3014 实机闭环全通）
+
+### 背景与口径（本轮钉死的说法，后续续建照此执行）
+- **收敛是分组不是删除**：方案文档的诊断是「八个平铺 Tab 淹了主路径」，动的是层级（主入口/专业工具/系统三组带分隔线、默认落 AI 选股门户），原 8 个 Tab 的 key 与内容区一个不许少——钉测逐 key 双查（按钮在+内容区在），谁拿「收敛」当「删功能」的口子当场红。
+- **门户=同一实现的两处挂载**：TabsContent 直接挂 `<AiScanPage />`，不抄第二份选股页；一份实现两处消费，与 focusSector/scanBoard 的「同源不复制」纪律同族。
+- **中文化是换脸不是藏身份**：pill 主文案中文名优先，但 name 缺失/等于 key/全空白一律如实回退 key（不硬翻译出假中文名）；hover title 保留 `key@version · 中文类目`——存储协议照旧可见；**选择串（`key@version` / `key@version,1,1`）与勾选拼接语义一个字没动**，API 协议零变化。类目中文表与 quant/types.FACTOR_CATEGORIES 九对九双向钉死：谁新增类目不给中文读法、或中文表偷藏野类目，测试即红。
+- **研究指令是纯核装配不是页面拼文案**：poolPickThesis 一份定义——池号回显两处（指令文案+工具提示）、最多 X 只、可少选可不选、「池序是排序不是推荐」说两遍、名单内联截断 30 且自报、五段收口（理由/入场/仓位/失效/风险）、「取不到写暂无数据不许凭记忆编」；页面只调装配不自己造句，页面/工具两侧口径必然同源。
+- **名单必须随指令 inline（通道冗余不是重复）**：本地网关没有 function call，读不到 candidate_pool 工具——指令里没名单就只剩一句空话；工具是深口径补充，不是这条链路的必要条件。
+- **交接走一次性 store 不是路由参数**：freeze(true) 成功后 askInAssistant（pendingAsk take-once，与 focusSector/scanBoard 同手法）；普通冻结按钮必须包箭头 `() => void freeze()`——直挂 onClick 会把 MouseEvent 当成 forPick，点「冻结」变「交择优」是本轮主动拦下的坑。
+- **离线不假装**：冻结失败走本地存档时如实说「池仅存本地、未转交择优」，绝不演一副闭环没事的样子。
+- **candidate_pool 不猜池**：不带 pool_id 返回 missing+最近 5 个池号让选（拿错池=择优选错素材）；名单截断到 40 且随数据带「其余未读，别当成整池都看过」；旧池没记 dataSource 就说没说 0。
+
+### 落点
+- 新纯核 src/lib/quant/screener/factor-pill-core.ts（类目中文表/pillLabel 回退/pillTitle/分组保持库序未知类目垫底不丢条目）；pick-pool-core.ts 追加 poolPickThesis + 两个上限常量。
+- QuantPage 三组 TabsList+defaultValue="portal"+门户挂 AiScanPage；LabTabs 抽出 FactorPillGrid 供选股/回测两处共用（旧平铺 Badge 列表清除）；AiScanPage freeze 加 forPick 形参与「存池并交 AI 择优」按钮；chat-tools 新工具 candidate_pool 注册进 TOOLS（服务端直读 db.candidatePool，不经 HTTP 自环）。
+- 次日验证展示为 PoolPage 既有实现，本轮零改动、以活体池为素材确认。
+
+### 验收数字与实测证据
+- tsc 0；全量 **870 / 861 过 / 0 败 / 9 跳**（基线 857/848 严格 +13 全为新文件 p13-portal.test.ts，零回归）；build 过；触碰文件 eslint 0 新增（QuantPage:110 与 LabTabs:527 两处 set-state-in-effect 均经 HEAD 版本复证为存量）；依赖 diff 空。
+- 3014 新构建实机（DOM click 取证，工具限制照旧注明；Radix Tab 需补发 mousedown 才切换——首次点击无效的排查结论，留给下轮）：默认落 AI 选股门户、9 tab 全在；accept.db 8 因子全部中文名按 量能/趋势/基本面 分组、title 实锤 `div_c_ma_c_20@1 · 量能` 形状、点选激活态正常。
+- **闭环 ③→④→⑤ 实机全通（本轮硬证据）**：扫描全A 真数（漏斗 5567→5362→150→150 命中，eltdx 直连 149+腾讯兜底 1 如实分列）→点「存池并交 AI 择优」→池 `2026-09-22-全A-101` 落库（/api/pool/list 实锤 data_source=「腾讯批量快照兜底（东财 clist 断源…）」20 行 has_verify=false）→助手页自动发出含真实名单的指令（中际旭创 941 +1.57% 等）→工具环回出**五段式**且诚实缺失（「板块指数当前暂无数据」「主力净额数据缺失，无法判断主动封板还是被动接盘」——没编）。
+- 走查时东财 push2 仍断源（P8 起环境事件）：选股主通道靠 eltdx+腾讯兜底照常出数，恰好证明闭环不吃东财单点。
+
+### 未收口边界（如实列出，不含任何「已完成」含义）
+1. **thesis 不落库**：研究指令只随对话消息携带，CandidatePool 无 thesis 列——加列需 migration，DB 变更永不入库约束在先；「哪条指令对应哪个池」事后不可考。
+2. **candidate_pool 在工作过程时间线显示「调用 candidate_pool」**：stepLabelFor 兜底形状，chat-stream-core 在不动清单，不为其改——中文标签留给未来白名单轮。
+3. **旧池 `2026-09-11-all_a-901` universe 是英文旧口径**：与新池「全A」并存属历史数据非本轮产出，PoolPage 直存直显不洗史。
+4. **回测 Tab 的 pill 分组仅经代码钉与选股页实机代表**：同一 FactorPillGrid 两处消费，未逐 Tab 实机点开（截图取证只走了选股引擎）。
+5. **3010 仍未重启**（用户指令：四文档做完统一重启）；P12 遗留「板块池真数端到端」照旧待东财恢复复测。
