@@ -59,6 +59,7 @@ export const MENU: MenuEntry[] = [
     children: [
       { key: "sectors", label: "行业 · 概念资金流" },
       { key: "themes", label: "主线热点" },
+      { key: "themeoverview", label: "主题血缘总览" },
     ],
   },
   {

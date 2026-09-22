@@ -21,6 +21,7 @@ export type PageKey =
   | "risk"         // P2-1 风险监控
   | "problab"      // P2-2 历史条件概率
   | "themes"       // P2-3 主线发现
+  | "themeoverview" // P15-R4 主题血缘总览：选一个主题，右栏按血缘读完整条故事（市场环境→…→分层结论）
   | "radar"        // P2-4 AI 主动发现
   | "events"       // P2-5 全球事件雷达
   | "research"     // P6-C AI 市场环境研究（七分区研究报告 + 服务端台账）
@@ -182,6 +183,7 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   risk: "风险监控",
   problab: "历史条件概率",
   themes: "主线发现",
+  themeoverview: "主题血缘总览",
   radar: "AI 主动发现",
   events: "全球事件雷达",
   research: "AI 市场研究",

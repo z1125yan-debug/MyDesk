@@ -24,6 +24,7 @@ import AllStocksPage from "./pages/AllStocksPage";
 import RiskPage from "./pages/RiskPage";
 import ProbabilityPage from "./pages/ProbabilityPage";
 import ThemesPage from "./pages/ThemesPage";
+import ThemeOverviewPage from "./pages/ThemeOverviewPage";
 import RadarPage from "./pages/RadarPage";
 import EventsPage from "./pages/EventsPage";
 import ResearchPage from "./pages/ResearchPage";
@@ -99,6 +100,7 @@ export default function AppShell() {
             {page === "risk" && <RiskPage />}
             {page === "problab" && <ProbabilityPage />}
             {page === "themes" && <ThemesPage />}
+            {page === "themeoverview" && <ThemeOverviewPage />}
             {page === "radar" && <RadarPage />}
             {page === "events" && <EventsPage />}
             {page === "research" && <ResearchPage />}
