@@ -91,6 +91,8 @@ export interface SentimentClient {
   limit_up_broken: number; // 炸板数
   break_rate: number | null; // 炸板率 %（触板为0时 null）
   amount_total_yi: number; main_net_sum_yi: number; median_pct: number;
+  /** 全 A 快照里主力净额真实有值的家数（P11 情绪温度必需：0 时合计是 ?? 0 累加的假 0，资金流分量必按缺读数处理） */
+  main_net_known: number;
   indices: { symbol: string; name: string; price: number; changePct: number }[];
   risk: { level: string; triggers: string[] };
   missing: string[];
@@ -190,6 +192,8 @@ export async function aiChatTools(
   messages: { role: "user" | "assistant" | "system"; content: string }[],
   opts?: {
     mode?: string; focusSymbol?: string; contextWindow?: number; timeoutMs?: number;
+    /** P11：持仓周期（短/中/长线；未选传 null/不传）——与流式请求体同一份顶层 horizon 键 */
+    horizon?: string | null;
     /** P7-⑥④：本机自选清单（服务端不读浏览器存档，自选股场景只能靠请求体里这份） */
     watchlist?: { symbol: string; name?: string | null }[];
     /** P7-⑥⑤：追问要沿用的标的与上一轮场景（都来自上一条助手消息的场景徽章，不是会话字段） */
@@ -207,6 +211,7 @@ export async function aiChatTools(
       messages,
       mode: opts?.mode ?? "decision",
       focusSymbol: opts?.focusSymbol,
+      ...(opts?.horizon ? { horizon: opts.horizon } : {}),
       ...(opts?.sessionSymbol ? { sessionSymbol: opts.sessionSymbol } : {}),
       ...(opts?.prevScene ? { prevScene: opts.prevScene } : {}),
       ...(opts?.contextWindow ? { contextWindow: opts.contextWindow } : {}),

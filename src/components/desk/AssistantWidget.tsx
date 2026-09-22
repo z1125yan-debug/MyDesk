@@ -56,8 +56,8 @@ export default function AssistantWidget({
     systemPrompt: assistantSystemPrompt,
     snapshot,
     // 小窗挂在分析页上，「这只股」指的就是图表里那只：交给服务端，并如实标注来源
-    // 回答风格取 store 里那份共享设置（小窗不另画一套选择器，但也不能默默用别的口径）
-    extra: () => ({ focusSymbol, mode: useDesk.getState().assistantMode }),
+    // 回答风格与持仓周期都取 store 里那份共享设置（小窗不另画选择器，但也不能默默用别的口径）
+    extra: () => ({ focusSymbol, mode: useDesk.getState().assistantMode, horizon: useDesk.getState().assistantHorizon }),
     onNotConfigured: () => go("settings"),
   });
 

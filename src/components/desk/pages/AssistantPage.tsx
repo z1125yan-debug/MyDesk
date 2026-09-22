@@ -24,6 +24,8 @@ import Markdown from "../Markdown";
 import StepTimeline from "../StepTimeline";
 import ChatBacktestCards from "../ChatBacktestCards";
 import ChatModeMenu from "../ui/ChatModeMenu";
+// P11 持仓周期：与风格菜单同一套「一处定义、发送时现读」的画法（modes.ts 唯一正身）
+import HorizonPicker from "../ui/HorizonPicker";
 
 // 回答风格：清单与文案唯一出处是 @/lib/desk/modes（CHAT_MODES 画界面、MODE_NOTES 进提示词），
 // 首页下拉与本页 composer 都经共享组件 ChatModeMenu 出，选中值存 store.assistantMode，
@@ -167,7 +169,8 @@ export default function AssistantPage() {
     snapshot,
     // 当前关注品种交给服务端：说「这只股」时它才知道指谁，并且会如实标注「分析页当前品种」
     // 模式在发送那一刻从 store 现读：首页刚改完风格就提交，这一轮用的就是新值，不依赖渲染节奏
-    extra: () => ({ focusSymbol, mode: useDesk.getState().assistantMode }),
+    // P11：周期同 rule——没选就是 null，请求体连 horizon 键都不带（未选≠默认某周期）
+    extra: () => ({ focusSymbol, mode: useDesk.getState().assistantMode, horizon: useDesk.getState().assistantHorizon }),
     onNotConfigured: () => go("settings"),
   });
 
@@ -225,6 +228,7 @@ export default function AssistantPage() {
           <div className="apple-slide-up mt-8 rounded-[20px] border border-white/10 bg-[#17191f] p-2 shadow-2xl">
             <div className="flex items-center gap-2 px-1.5 py-1.5">
               <ChatModeMenu disabled={!configured} />
+              <HorizonPicker disabled={!configured} />
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -339,6 +343,7 @@ export default function AssistantPage() {
           <div className="mx-auto w-full max-w-6xl">
             <div className="flex items-center gap-2 rounded-[20px] border border-white/10 bg-[#17191f] p-2">
               <ChatModeMenu disabled={!configured} />
+              <HorizonPicker disabled={!configured} />
               <input value={input} onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
                 placeholder={configured ? "输入股票代码、板块或您的投资疑问…" : "配置 AI 后即可对话"}

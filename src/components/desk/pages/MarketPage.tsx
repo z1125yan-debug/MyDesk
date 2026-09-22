@@ -5,6 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { PctText } from "../SourceBadge";
 import { fetchSentiment, fetchLimitUp, type SentimentClient, type LimitUpClient } from "@/lib/desk/quant-api";
+// P11 情绪温度：仪表盘与对话工具吃同一份纯核（零 IO，浏览器端直接 import），
+// 三态切换只换权重、不重取数——分量各算一次，牛/熊/震荡是同一批读数的三种加权。
+import { computeTemperature, REGIMES, type MarketRegime } from "@/lib/quant/screener/sentiment-temperature-core";
 import type { SectorRow } from "@/lib/desk/types";
 import { useDesk } from "@/lib/desk/store";
 
@@ -17,6 +20,8 @@ export default function MarketPage() {
   const [boards, setBoards] = useState<SectorRow[] | null>(null);
   const [tiers, setTiers] = useState<LimitUpClient | null>(null);
   const [tiersBusy, setTiersBusy] = useState(false);
+  // 行情类型（牛/熊/震荡）只影响温度权重，是本机视图状态、不进 store 也不发请求
+  const [regime, setRegime] = useState<MarketRegime>("range");
 
   const loadTiers = useCallback(async () => {
     setTiersBusy(true);
@@ -104,6 +109,53 @@ export default function MarketPage() {
             </div>
           </div>
 
+          {/* 情绪温度（P11 对齐稳智表达层）：四分量加权成一个 0-100 的分 + 半环仪表，权重随行情类型切 */}
+          {(() => {
+            const temp = computeTemperature({
+              advancers: sent.advancers, decliners: sent.decliners, median_pct: sent.median_pct,
+              limit_up: sent.limit_up, limit_down: sent.limit_down, break_rate: sent.break_rate,
+              main_net_sum_yi: sent.main_net_sum_yi, main_net_known: sent.main_net_known,
+            }, regime);
+            return (
+              <div className="apple-card apple-fade-in p-5">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[14px] font-medium">情绪温度</div>
+                  <div className="flex items-center gap-1">
+                    {REGIMES.map((rg) => (
+                      <button key={rg.key} onClick={() => setRegime(rg.key)}
+                        className={
+                          "rounded-full px-3 py-1 text-[12px] transition-colors " +
+                          (regime === rg.key ? "bg-sky-400/15 font-medium text-sky-200" : "text-muted-foreground hover:text-foreground")
+                        }
+                      >{rg.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-6">
+                  <TempGauge value={temp.temperature} label={temp.label} />
+                  <div className="min-w-[240px] flex-1 space-y-2">
+                    {temp.components.map((c) => (
+                      <div key={c.key} className="flex items-baseline gap-2 text-[12.5px]">
+                        <span className="w-14 shrink-0 text-muted-foreground">{c.label}</span>
+                        <span className="w-11 shrink-0 font-medium">{c.score === null ? "缺" : c.score}</span>
+                        <span className="w-10 shrink-0 text-muted-foreground/70">{c.score === null ? "—" : `${c.weight}%`}</span>
+                        <span className="truncate text-muted-foreground/80" title={c.score === null ? c.missing_note : c.raw}>
+                          {c.score === null ? c.missing_note : c.raw}
+                        </span>
+                      </div>
+                    ))}
+                    {temp.temperature === null && (
+                      <div className="text-[12px] text-amber-300/80">全部分量没有真实读数：温度按「无读数」显示，不硬造一个数。</div>
+                    )}
+                    {temp.temperature !== null && temp.missing.length > 0 && (
+                      <div className="text-[11.5px] text-amber-300/70">{temp.missing[0]}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* 风险等级 */}
           <div className={`apple-card apple-fade-in border p-5 ${riskColor(sent.risk.level)}`}>
             <div className="flex items-center gap-2 text-[16px] font-semibold">市场风险：{sent.risk.level}</div>
@@ -178,6 +230,49 @@ function Card({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="apple-inset px-3.5 py-3">
       <div className="text-[11.5px] text-muted-foreground">{label}</div>
       <div className="mt-1 text-[15px] font-semibold">{value}</div>
+    </div>
+  );
+}
+
+// 半环温度计表盘：0-100 五段色带（冰点/偏冷/中性/偏热/过热），指针指当前分。
+// 色带分段与 sentiment-temperature-core 的 temperatureLabel 档位同线（25/45/60/80）；
+// 没有真实读数时画灰盘 + 「—」，不画一根指向编造位置的针。
+function TempGauge({ value, label }: { value: number | null; label: string }) {
+  const cx = 100, cy = 96, r = 74;
+  const pt = (pct: number) => {
+    const a = Math.PI * (1 - Math.min(100, Math.max(0, pct)) / 100);
+    return { x: cx + r * Math.cos(a), y: cy - r * Math.sin(a) };
+  };
+  const arc = (from: number, to: number) => {
+    const p1 = pt(from), p2 = pt(to);
+    return `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} A ${r} ${r} 0 0 1 ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  };
+  const bands = [
+    { from: 0, to: 25, color: "#38bdf8" },
+    { from: 25, to: 45, color: "#34d399" },
+    { from: 45, to: 60, color: "#94a3b8" },
+    { from: 60, to: 80, color: "#fb923c" },
+    { from: 80, to: 100, color: "#f87171" },
+  ];
+  const active = bands.find((b) => (value ?? -1) >= b.from && (value ?? -1) < b.to)?.color ?? "#94a3b8";
+  const needle = value === null ? null : pt(value);
+  return (
+    <div className="relative shrink-0" style={{ width: 200 }}>
+      <svg width="200" height="118" viewBox="0 0 200 118" role="img" aria-label={`情绪温度 ${value ?? "无读数"}`}>
+        {bands.map((b) => (
+          <path key={b.from} d={arc(b.from + 0.8, b.to - 0.8)} stroke={b.color}
+            strokeOpacity={value === null ? 0.2 : b.color === active ? 0.95 : 0.3}
+            strokeWidth="10" fill="none" strokeLinecap="round" />
+        ))}
+        {needle && <line x1={cx} y1={cy} x2={needle.x} y2={needle.y} stroke={active} strokeWidth="3" strokeLinecap="round" />}
+        {needle && <circle cx={cx} cy={cy} r="4.5" fill={active} />}
+      </svg>
+      <div className="absolute inset-x-0 bottom-0 text-center">
+        <span className="text-[30px] font-semibold tracking-tight" style={{ color: value === null ? undefined : active }}>
+          {value === null ? "—" : value}
+        </span>
+        <span className="ml-1 text-[12px] text-muted-foreground">{value === null ? "无读数" : `/ 100 · ${label}`}</span>
+      </div>
     </div>
   );
 }

@@ -4,7 +4,7 @@
 // 本文件里那套 serverLlm* 状态就是该通道的浏览器侧镜像 —— 只缓存 GET /api/llm/config 的
 // 公开形状（模式/地址/模型名），Key 永不进这里；判定与默认值的正身在 model-config-core.ts。
 import type { AiProvider, AiSettings } from "./types";
-import type { ChatMode } from "./modes";
+import type { ChatHorizon, ChatMode } from "./modes";
 import type { IntentBadge, StepInfo } from "./chat-core";
 import { pickChatEndpoint } from "./chat-stream-core.ts";
 import { renderAnalysisFrames } from "../llm/analysis-frames.ts";
@@ -157,6 +157,8 @@ export async function aiChatPlain(
     scene?: { focusSymbol?: string | null; sessionSymbol?: string | null; prevScene?: string | null };
     /** 回答风格：与流式请求体同一份顶层 mode 键，服务端只在带 scene 时消费（校验在 /api/ai/proxy） */
     mode?: ChatMode;
+    /** P11 持仓周期：与流式请求体同一份顶层 horizon 键；未选传 null/不传，服务端一个字都不注入 */
+    horizon?: ChatHorizon | null;
   }
 ): Promise<PlainChatResult> {
   ensureServerLlm();
@@ -169,6 +171,7 @@ export async function aiChatPlain(
       ...(opts?.watchlist?.length ? { watchlist: opts.watchlist } : {}),
       ...(opts?.scene ? { scene: opts.scene } : {}),
       ...(opts?.mode ? { mode: opts.mode } : {}),
+      ...(opts?.horizon ? { horizon: opts.horizon } : {}),
     }),
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 60000),
   });
