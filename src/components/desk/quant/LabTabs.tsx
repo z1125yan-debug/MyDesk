@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { jobLookupVerdict, type JobLookup } from "@/lib/desk/backtest-core";
+// P13 门户轮：因子 pill 中文化（展示换脸、协议不换——选择串仍是 key@version[，权重，方向]）
+import { groupFactorsByCategory, pillLabel, pillTitle, type PillFactor } from "@/lib/quant/screener/factor-pill-core";
 
 const inputCls = "h-8 rounded-md border border-border bg-background px-2 text-[13px]";
 
@@ -93,6 +95,42 @@ function num(v: unknown, d = 2): string {
 }
 
 /**
+ * P13 门户轮：因子 pill 分组（选股/回测两个 Tab 共用一份渲染）。
+ * 展示层口径：中文 name 优先、无 name 回退 key（不硬造翻译）；按 category 中文分组；
+ * hover title 保留 factorKey@version——中文化是换脸不是藏身份。
+ * **选择串由调用方给**：协议（key@version / key@version,权重,方向）一个字没动。
+ */
+function FactorPillGrid({ factors, isSelected, onToggle, emptyText }: {
+  factors: PillFactor[];
+  isSelected: (f: PillFactor) => boolean;
+  onToggle: (f: PillFactor) => void;
+  emptyText?: string;
+}) {
+  if (!factors.length) return <span className="text-[12px] text-muted-foreground">{emptyText ?? "因子库为空"}</span>;
+  return (
+    <div className="space-y-1.5">
+      {groupFactorsByCategory(factors).map((g) => (
+        <div key={g.category || "none"} className="flex flex-wrap items-start gap-1.5">
+          <span className="w-16 shrink-0 pt-1.5 text-right text-[10.5px] text-muted-foreground/80">{g.label}</span>
+          <span className="flex flex-wrap gap-1.5">
+            {g.factors.map((f) => {
+              const active = isSelected(f);
+              return (
+                <Badge key={`${f.factorKey}@${f.version}`} variant="outline" title={pillTitle(f)}
+                  className={"cursor-pointer text-[11px] " + (active ? "border-sky-500/50 bg-sky-500/15 text-sky-200" : "")}
+                  onClick={() => onToggle(f)}>
+                  {pillLabel(f)}<span className="ml-1 opacity-60">v{f.version}</span>
+                </Badge>
+              );
+            })}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * 回测结果卡 —— 全工程唯一一份回测渲染（任务状态 + 12 项指标网格）。
  * P7-⑧④：对话链路里 run_backtest 带回的 jobId 也画这一张。
  * 任务书的原话是「回测结果直接复用现有量化工具页的回测组件渲染，不重新写渲染逻辑」，
@@ -136,7 +174,7 @@ export function BacktestJobCard({ job }: { job: JobView | null }) {
 
 export function BacktestTab() {
   const { toast } = useToast();
-  const [factors, setFactors] = useState<{ factorKey: string; version: number; status: string }[]>([]);
+  const [factors, setFactors] = useState<{ factorKey: string; version: number; status: string; name?: string; category?: string }[]>([]);
   const [sel, setSel] = useState<string>(""); // factorKey@version,weight,dir;...
   const [topN, setTopN] = useState(10);
   const [rebalance, setRebalance] = useState(5);
@@ -204,19 +242,17 @@ export function BacktestTab() {
           </label>
           <div className="md:col-span-3">
             <div className="text-[11.5px] text-muted-foreground">选择因子（可多选；格式 key@version,权重,方向）</div>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {factors.map((f) => {
-                const tag = `${f.factorKey}@${f.version},1,1`;
-                const active = sel.includes(tag);
-                return (
-                  <Badge key={`${f.factorKey}@${f.version}`} variant="outline"
-                    className={"cursor-pointer text-[11px] " + (active ? "border-sky-500/50 bg-sky-500/15 text-sky-200" : "")}
-                    onClick={() => setSel(active ? sel.replace(tag + ";", "").replace(tag, "") : sel + tag + ";")}>
-                    {f.factorKey}@{f.version}
-                  </Badge>
-                );
-              })}
-              {factors.length === 0 && <span className="text-[12px] text-muted-foreground">因子库为空，先去挖掘</span>}
+            <div className="mt-1">
+              <FactorPillGrid
+                factors={factors}
+                emptyText="因子库为空，先去挖掘"
+                isSelected={(f) => sel.includes(`${f.factorKey}@${f.version},1,1`)}
+                onToggle={(f) => {
+                  const tag = `${f.factorKey}@${f.version},1,1`;
+                  const active = sel.includes(tag);
+                  setSel(active ? sel.replace(tag + ";", "").replace(tag, "") : sel + tag + ";");
+                }}
+              />
             </div>
           </div>
           <div className="md:col-span-3">
@@ -234,7 +270,7 @@ export function BacktestTab() {
 
 export function SelectionTab() {
   const { toast } = useToast();
-  const [factors, setFactors] = useState<{ factorKey: string; version: number }[]>([]);
+  const [factors, setFactors] = useState<{ factorKey: string; version: number; name?: string; category?: string }[]>([]);
   const [sel, setSel] = useState<string>("");
   const [asOf, setAsOf] = useState("");
   const [topN, setTopN] = useState(10);
@@ -307,19 +343,16 @@ export function SelectionTab() {
             </label>
           )}
           <div className="md:col-span-3">
-            <div className="flex flex-wrap gap-1.5">
-              {factors.map((f) => {
+            <FactorPillGrid
+              factors={factors}
+              emptyText="因子库为空"
+              isSelected={(f) => sel.includes(`${f.factorKey}@${f.version}`)}
+              onToggle={(f) => {
                 const tag = `${f.factorKey}@${f.version}`;
                 const active = sel.includes(tag);
-                return (
-                  <Badge key={f.factorKey} variant="outline"
-                    className={"cursor-pointer text-[11px] " + (active ? "border-sky-500/50 bg-sky-500/15 text-sky-200" : "")}
-                    onClick={() => setSel(active ? sel.replace(tag + ";", "").replace(tag, "") : sel + tag + ";")}>
-                    {tag}
-                  </Badge>
-                );
-              })}
-            </div>
+                setSel(active ? sel.replace(tag + ";", "").replace(tag, "") : sel + tag + ";");
+              }}
+            />
           </div>
           <div className="md:col-span-3">
             <Button size="sm" disabled={busy} onClick={() => void start()}>{busy ? "启动中…" : replay ? "开始回放" : "开始选股"}</Button>

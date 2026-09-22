@@ -1,7 +1,10 @@
 "use client";
 // Quant Research Lab 页面（新增页面，不改任何现有页面）
-// Phase 1：框架状态（数据源/DB/任务）；后续 Phase 逐 Tab 填充
 // 因子库 / 因子挖掘 / 选股 / 回测 / 实验 / 研究 / 知识库。
+// P13 门户轮（对齐《量化板块改造方案》阶段一）：入口收敛成三层——主入口=AI 选股门户
+// （直接挂 AiScanPage 本体，一份实现两处用，不抄第二份选股页）；专业工具（选股引擎/回测/
+// 因子库/因子挖掘/自主研究）与系统页（实验跟踪/知识库/实验室状态）**一个 Tab 都不删**，
+// 只是分组摆放：普通用户进门先见到「选股」，研究员要找的还在原位。
 import { useCallback, useEffect, useState } from "react";
 import { FlaskConical, RefreshCw, Pause, Play, Square, Database, Activity } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { FactorsTab } from "./quant/FactorsTab";
 import { MiningTab } from "./quant/MiningTab";
 import { BacktestTab, SelectionTab, ExperimentsTab, KnowledgeTab, ResearchTab } from "./quant/LabTabs";
+import AiScanPage from "./pages/AiScanPage";
 
 interface Health {
   ok: boolean;
@@ -43,15 +47,30 @@ interface UniverseRow {
   suspended?: boolean;
 }
 
-const PHASED_TABS: { key: string; label: string; phase: string; ready: boolean }[] = [
-  { key: "overview", label: "实验室状态", phase: "P1", ready: true },
-  { key: "factors", label: "因子库", phase: "P3", ready: true },
-  { key: "mining", label: "因子挖掘", phase: "P2", ready: true },
-  { key: "selection", label: "选股引擎", phase: "P7", ready: true },
-  { key: "backtest", label: "回测", phase: "P5", ready: true },
-  { key: "experiments", label: "实验跟踪", phase: "P9", ready: true },
-  { key: "knowledge", label: "知识库", phase: "P10", ready: true },
-  { key: "research", label: "自主研究", phase: "P11", ready: true },
+/**
+ * P13 三层分组（不删任何 Tab 的硬约束写在测试里：九入口=原 8 个 key 原样 + 新门户）。
+ * 顺序即优先级：主入口默认打开；「系统」组垫底——实验室状态/数据源探测是给开发者看的。
+ */
+const TAB_GROUPS: { label: string; tabs: { key: string; label: string }[] }[] = [
+  { label: "主入口", tabs: [{ key: "portal", label: "AI 选股" }] },
+  {
+    label: "专业工具",
+    tabs: [
+      { key: "selection", label: "选股引擎" },
+      { key: "backtest", label: "回测" },
+      { key: "factors", label: "因子库" },
+      { key: "mining", label: "因子挖掘" },
+      { key: "research", label: "自主研究" },
+    ],
+  },
+  {
+    label: "系统",
+    tabs: [
+      { key: "experiments", label: "实验跟踪" },
+      { key: "knowledge", label: "知识库" },
+      { key: "overview", label: "实验室状态" },
+    ],
+  },
 ];
 
 function StatusBadge({ status }: { status: string }) {
@@ -128,9 +147,9 @@ export default function QuantPage() {
           <FlaskConical size={20} className="text-white" />
         </div>
         <div>
-          <h1 className="text-lg font-bold">Quant Research Lab</h1>
+          <h1 className="text-lg font-bold">量化选股门户</h1>
           <p className="text-xs text-muted-foreground">
-            因子 → 策略 → 选股 → 历史回放 → 回测 → OOS 验证 → 实时选股 → 监控 → 再研究
+            选股 → 候选池 → AI 择优 → 次日验证一条线；专业工具与系统页分两组摆在后面，一个没删
           </p>
         </div>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => void refresh()}>
@@ -138,15 +157,21 @@ export default function QuantPage() {
         </Button>
       </div>
 
-      <Tabs defaultValue="overview">
-        <TabsList className="flex flex-wrap">
-          {PHASED_TABS.map((t) => (
-            <TabsTrigger key={t.key} value={t.key} className="text-[12.5px]">
-              {t.label}
-              <span className="ml-1 text-[10px] text-muted-foreground">{t.ready ? "" : t.phase}</span>
-            </TabsTrigger>
+      <Tabs defaultValue="portal">
+        <TabsList className="flex flex-wrap items-center gap-x-1">
+          {TAB_GROUPS.map((g, gi) => (
+            <span key={g.label} className="flex items-center gap-1">
+              {gi > 0 && <span className="mx-1 h-4 w-px bg-border" aria-hidden />}
+              <span className="px-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">{g.label}</span>
+              {g.tabs.map((t) => (
+                <TabsTrigger key={t.key} value={t.key} className="text-[12.5px]">{t.label}</TabsTrigger>
+              ))}
+            </span>
           ))}
         </TabsList>
+
+        {/* 主入口=AI 选股门户：挂 AiScanPage 本体（一份实现两处用），不是再抄一页选股 */}
+        <TabsContent value="portal" className="pt-0"><AiScanPage /></TabsContent>
 
         <TabsContent value="overview" className="space-y-4 pt-3">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -285,18 +310,6 @@ export default function QuantPage() {
         <TabsContent value="experiments" className="pt-0"><ExperimentsTab /></TabsContent>
         <TabsContent value="knowledge" className="pt-0"><KnowledgeTab /></TabsContent>
         <TabsContent value="research" className="pt-0"><ResearchTab /></TabsContent>
-
-        {PHASED_TABS.filter((t) => !t.ready).map((t) => (
-          <TabsContent key={t.key} value={t.key} className="pt-6">
-            <Card>
-              <CardContent className="flex flex-col items-center gap-1 py-10 text-center">
-                <FlaskConical size={22} className="text-muted-foreground" />
-                <div className="text-sm font-medium">{t.label}</div>
-                <div className="text-[12px] text-muted-foreground">将在 {t.phase} 阶段启用（框架已就绪）</div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        ))}
       </Tabs>
     </div>
   );

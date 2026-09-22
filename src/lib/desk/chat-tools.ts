@@ -16,6 +16,8 @@ import { DEFAULT_PICK_CONDS, pickCondText, poolOriginText, PICK_DISCIPLINE } fro
 import { buildFieldPanel, lastValues, type BarsLike } from "@/lib/quant/factors/fields";
 import { historicalWinProbability, type ScreenerCond } from "@/lib/quant/factors/probability";
 import { getProvider } from "@/lib/quant/data/index";
+// P13 门户轮：candidate_pool 工具直读冻结池（与本层其余工具同在服务端，不经 HTTP 自环）
+import { db } from "@/lib/db";
 import { fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
 import { tdxQuotes, tdxDepth, tdxTradesMoney } from "./tdx";
 import { suffixOf } from "./intent-core";
@@ -204,6 +206,42 @@ async function toolMarketNews(args: { limit?: number }): Promise<unknown> {
   const rows = await fetchNewsReal(Math.min(15, Math.max(5, args.limit ?? 10))).catch(() => null);
   if (!rows) return { missing: "宏观快讯暂无数据" };
   return { 数据源: "东财7x24/新浪快讯", 快讯: rows };
+}
+
+/**
+ * P13 门户轮：读已冻结候选池（「存池 + 交 AI 择优」链路的取素材口，不是新引擎）。
+ * 口径三条与 P10 同源：池序是冻结时点的页面排序不是推荐；出身（source/条件）如实带出；
+ * 名单超长截断必须写明「其余未读」——不许把「只看了前 40 只」说成「整池都研究过」。
+ * 不带 pool_id 不猜池：列出最近几个池号让用户/模型选，指认错池等于择优选错了素材。
+ */
+async function toolCandidatePool(args: { pool_id?: string }): Promise<unknown> {
+  const id = typeof args.pool_id === "string" ? args.pool_id.trim() : "";
+  if (!id) {
+    const recent = await db.candidatePool.findMany({
+      orderBy: { createdAt: "desc" }, take: 5,
+      select: { poolId: true, asOf: true, universe: true, source: true },
+    });
+    return {
+      missing: "未指定池号 pool_id（一次只交一个池，拿错池等于择优选错素材）",
+      最近的候选池: recent.map((r) => `${r.poolId}（${r.asOf} · ${r.universe} · 来源 ${r.source || "未标注"}）`),
+    };
+  }
+  const pool = await db.candidatePool.findUnique({ where: { poolId: id } });
+  if (!pool) return { missing: `候选池不存在：${id}（池号取自「AI 实时选股」冻结后的提示）` };
+  let rows: unknown[] = [];
+  try { rows = JSON.parse(pool.rows); } catch { /* 坏行只报空不炸整池 */ }
+  let conditions: unknown = [];
+  try { conditions = JSON.parse(pool.conditions); } catch { /* 同上 */ }
+  const CAP = 40;
+  return {
+    池号: pool.poolId, 交易日: pool.asOf, 股票池: pool.universe, 条件: conditions,
+    来源: pool.source || "未标注", 数据源: pool.dataSource || "未记录（旧池）",
+    排序提示: "池内行序是冻结时点的页面排序，不是推荐结果；评价维度与权重由你自主决定",
+    择优纪律: PICK_DISCIPLINE,
+    名单: rows.slice(0, CAP),
+    ...(rows.length > CAP ? { 截断说明: `池内共 ${rows.length} 只，这里只给前 ${CAP} 只——其余未读，别当成整池都看过` } : {}),
+    次日验证: pool.verify ? "已回填（逐只 signal→next_close 见候选池页）" : "尚未验证（下一交易日可核对）",
+  };
 }
 
 async function toolFactorScreener(args: {
@@ -550,6 +588,7 @@ export const TOOLS: ChatTool[] = [
   { name: "stock_fund_flow", desc: "个股近14日主力资金净额（东财）", fn: toolStockFundFlow, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "market_news", desc: "最新宏观/市场快讯", fn: toolMarketNews, params: { type: "object", properties: { limit: { type: "number" } } } },
   { name: "factor_screener", desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录；不给 conditions 时按系统默认活跃池跑（返回里会如实标注是默认口径）", fn: toolFactorScreener, params: { type: "object", properties: { conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string", enum: ["=", ">=", ">", "<=", "<", "!="] }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } }, limit: { type: "number" } } } },
+  { name: "candidate_pool", desc: "读取已冻结候选池（择优素材，池序不是推荐）：pool_id 形如 2026-09-22-全A-001（AI 选股页冻结后给的池号）；不带 pool_id 会列出最近的池", fn: toolCandidatePool, params: { type: "object", properties: { pool_id: { type: "string" } } } },
   { name: "historical_probability", desc: "个股历史条件概率：conditions 中的 field 必须来自因子目录", fn: toolHistoricalProbability, params: { type: "object", properties: { symbol: { type: "string" }, conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string" }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } } }, required: ["symbol", "conditions"] } },
   { name: "watchlist_overview", desc: "自选股实时总览（清单取自用户本机存档，行情现取）", fn: toolWatchlistOverview, params: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } } } },
   {

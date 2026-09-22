@@ -6,6 +6,8 @@ import { PctText, NumText } from "../SourceBadge";
 import { useDesk, type FrozenPool } from "@/lib/desk/store";
 import { aiReady } from "@/lib/desk/ai";
 import { runScreenerApi, aiChatTools, freezePoolApi, saveScanAsStrategyApi, type ScreenerCond, type ScreenerRespClient } from "@/lib/desk/quant-api";
+// P13 门户轮：「存池交 AI 择优」的研究指令装配（纯核，与 candidate_pool 工具/择优纪律同源一份定义）
+import { poolPickThesis } from "@/lib/quant/screener/pick-pool-core";
 
 const RESULTS_FIELDS = ["change_pct", "amount_yi", "turnover_rate", "volume_ratio", "main_net_yi", "rps_50", "above_ma_20", "macd_cross"];
 
@@ -60,6 +62,7 @@ export default function AiScanPage() {
   const watchlist = useDesk((s) => s.watchlist);
   const frozenPools = useDesk((s) => s.frozenPools);
   const addFrozenPool = useDesk((s) => s.addFrozenPool);
+  const askInAssistant = useDesk((s) => s.askInAssistant);
 
   const [nl, setNl] = useState("");
   const [conds, setConds] = useState<ScreenerCond[]>([]);
@@ -149,7 +152,13 @@ export default function AiScanPage() {
     });
   }, [takeScanBoard, scan]);
 
-  const freeze = async () => {
+  /**
+   * P13 门户轮：forPick=true 是「存池 + 交 AI 择优」一条龙（对齐稳智 ③→④→⑤）：
+   * 冻结成功才把研究指令（带池号与池内名单，池序不是推荐已写在指令里）递给助手页自动发问。
+   * 离线降级时只冻结、**不交接**——本地池存在这台浏览器里，对话那侧的工具读不到它，
+   * 把「仅存本地」说成「已交 AI 择优」是假交接；两件事分开如实报。
+   */
+  const freeze = async (forPick = false) => {
     if (!result?.list.length) return;
     const rows = result.list.map((r) => ({ symbol: r.symbol, name: r.name, close: r.close, changePct: r.change_pct, reason: condSource }));
     const localPool: FrozenPool = {
@@ -169,11 +178,16 @@ export default function AiScanPage() {
         data_source: result.source?.provider ?? "", // 记录数据来源口径（REAL_DATA_ONLY 审计）
         rows,
       });
-      setFrozen(`已冻结候选池 ${j.pool_id}（${j.row_count} 只，原始结果不再被覆盖）`);
+      setFrozen(forPick
+        ? `已冻结候选池 ${j.pool_id}（${j.row_count} 只，原始结果不再被覆盖）· 研究指令已交给 AI，正在助手页择优`
+        : `已冻结候选池 ${j.pool_id}（${j.row_count} 只，原始结果不再被覆盖）`);
+      if (forPick) askInAssistant(poolPickThesis(j.pool_id, rows));
     } catch {
       // 服务端不可用时降级为 localStorage
       addFrozenPool(localPool);
-      setFrozen(`离线模式：已冻结候选池 ${localPool.id}（${localPool.rows.length} 只，仅存本地）`);
+      setFrozen(forPick
+        ? `离线模式：池仅存本地（${localPool.id}），对话侧读不到本地池——未转交择优，服务可用时再点一次`
+        : `离线模式：已冻结候选池 ${localPool.id}（${localPool.rows.length} 只，仅存本地）`);
     }
   };
 
@@ -273,9 +287,16 @@ export default function AiScanPage() {
           className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-sky-400 disabled:opacity-50">
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Radar size={14} />} 开始筛选
         </button>
+        {/* P13：freeze 的 onClick 必须包一层箭头——直挂会把 MouseEvent 当真参数，点「冻结」变成「交择优」 */}
         {result && (
-          <button onClick={freeze} className="flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm text-muted-foreground hover:border-sky-500/40 hover:text-sky-300">
+          <button onClick={() => void freeze()} className="flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm text-muted-foreground hover:border-sky-500/40 hover:text-sky-300">
             <Snowflake size={14} /> 冻结候选池
+          </button>
+        )}
+        {result && (
+          <button onClick={() => void freeze(true)} title="冻结候选池（服务端）后，把带池号与名单的研究指令交给 AI 择优——池序不是推荐，理由/入场/仓位/失效/风险五段各给"
+            className="flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3.5 py-2 text-sm text-sky-300 hover:bg-sky-500/15">
+            <Bot size={14} /> 存池并交 AI 择优
           </button>
         )}
         {result && conds.length > 0 && (
