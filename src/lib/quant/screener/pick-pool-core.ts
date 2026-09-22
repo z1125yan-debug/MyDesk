@@ -121,3 +121,44 @@ export function poolOriginText(origin: PoolOrigin, matched: string[]): string {
   if (origin === "model") return `本轮条件由模型按提问拟定：${matched.join("；")}`;
   return `从你的提问里抽到的条件：${matched.join("；")}`;
 }
+
+/* ---------------- P13 门户轮：「存池 + 交给 AI 择优」的研究指令装配 ---------------- */
+
+/**
+ * 稳智逆向（StockScreener-DUZZ18EG.js）研究指令原文的本地化口径，四个不可让渡的点：
+ * 最多 X 只 / 可少选可不选 / 页面排序不是推荐结果 / 五段式输出（理由·入场·仓位·失效·风险）。
+ * 名单随指令inline进对话（截断到 POOL_THESIS_ROW_CAP 只）：纯对话通道（本地网关没有
+ * function call）读不到 candidate_pool 工具，指令里没名单就只剩一句空话——工具是深口径的
+ * 补充，不是这条链路的必要条件。
+ */
+export const POOL_PICK_MAX_DEFAULT = 3;
+/** 指令里带多少只票的名单：再多就不是「交给 AI 看的素材」而是刷屏了 */
+export const POOL_THESIS_ROW_CAP = 30;
+
+export interface ThesisRow {
+  symbol: string;
+  name?: string | null;
+  close?: number | null;
+  changePct?: number | null;
+}
+
+export function poolPickThesis(
+  poolId: string,
+  rows: ThesisRow[],
+  maxPicks: number = POOL_PICK_MAX_DEFAULT,
+): string {
+  const shown = rows.slice(0, POOL_THESIS_ROW_CAP);
+  const list = shown
+    .map((r) => `${r.name || "?"}(${r.symbol}${r.close != null && isFinite(r.close) ? ` ${r.close}` : ""}${r.changePct != null && isFinite(r.changePct) ? ` ${r.changePct > 0 ? "+" : ""}${r.changePct}%` : ""})`)
+    .join("、");
+  const truncated = rows.length > shown.length ? `；已按保存时排序截取前 ${shown.length} 只（池内共 ${rows.length} 只）` : "";
+  return (
+    `请从量化候选池（池号 ${poolId}）中自主研究并优选，最多选出 ${maxPicks} 只；` +
+    `没有真正合格的标的可以少选或不选。` +
+    `池内名单是冻结时点的真实行情快照、按保存时的页面排序（那是排序不是推荐）：` +
+    `${list || "（空池）"}${truncated}。` +
+    `请自主决定评价维度与权重、需要补充的数据与工具调用（可用 candidate_pool 工具读池号 ${poolId} 的完整口径，` +
+    `再用个股工具现取更深读数；取不到就写暂无数据，不许凭记忆编），不要把页面原始排序当作推荐结果。` +
+    `最终每只给出：入选理由、入场条件、仓位节奏、失效条件、主要风险。`
+  );
+}
