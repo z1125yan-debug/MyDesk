@@ -25,7 +25,7 @@ import {
 import { RUNS } from "@/lib/desk/run-bus";
 import { debugFramesFromSteps } from "@/lib/desk/debug-core";
 import { injectSceneContext, trimDialog, clampTurns, type ChatRequestMessage, type ContextMsg, type StepInfo } from "@/lib/desk/chat-core";
-import { asChatMode, MODE_NOTES, type ChatMode } from "@/lib/desk/modes";
+import { asChatMode, asHorizon, HORIZON_NOTES, MODE_NOTES, type ChatHorizon, type ChatMode } from "@/lib/desk/modes";
 import { getServerLlm } from "@/lib/llm/model-config";
 import { renderAnalysisFrames } from "@/lib/llm/analysis-frames";
 
@@ -77,13 +77,15 @@ async function resolveProxy(req: NextRequest, baseUrl: string): Promise<ProxyAge
 // 搬动而不是复制：自动调度（scene-dispatch）与工具调用环必须共用同一份实现，
 // 否则同一个「今天大盘情绪」在两条链路上可能算出两个数。本层数据纪律也集中在那一处写。
 
-function systemPrompt(mode: ChatMode, focusSymbol?: string): string {
+function systemPrompt(mode: ChatMode, horizon: ChatHorizon | null, focusSymbol?: string): string {
   // 服务端日期只走 shanghaiDate()：new Date() 直接格式化在跨时区机器上会把今天算错一天
   const today = shanghaiDate();
   // 风格句的正文在 modes.ts 的 MODE_NOTES 一处定义：纯对话端点（/api/ai/proxy）现在也消费
   // mode，两条链路查同一张表，不会出现「chip 同名、两端口径不同」的漂移。
+  // P11 持仓周期同纪律：HORIZON_NOTES 同址同表；没选就一个字都不注入（未选≠中线）。
   return [
     `你是 MyDesk 的 AI 交易员分析引擎。今天是 ${today}。${MODE_NOTES[mode]}`,
+    horizon ? HORIZON_NOTES[horizon] : "",
     focusSymbol ? `用户当前关注标的：${focusSymbol}。` : "",
     "",
     "【数据纪律（最高优先级）】",
@@ -117,6 +119,8 @@ interface ChatTraceItem { name: string; args: Record<string, unknown>; ms: numbe
 interface ChatBody {
   messages?: ChatRequestMessage[];
   mode?: string;
+  /** P11：持仓周期（浏览器带来，过 asHorizon 白名单；认不出/没带＝未选，不注入周期口径） */
+  horizon?: string;
   focusSymbol?: string;
   /** 本会话上一轮用到的标的（客户端从上一条助手消息的场景徽章里取，不新增会话字段） */
   sessionSymbol?: string | null;
@@ -373,6 +377,8 @@ export async function POST(req: NextRequest) {
   // mode 是浏览器带来的外部输入：过一遍 modes.ts 的白名单，认不出的按默认口径答，
   // 而不是带着一个不存在的模式名去查表（查不到就静默少一段风格说明，用户看不出来）
   const mode = asChatMode(body?.mode);
+  // P11：周期同 mode 一样先过白名单（外部输入不查表就进提示词是事故）；null＝用户没选，不注入
+  const horizon = asHorizon(body?.horizon);
   // P8-⑥：仅带 run 的轮次换 cancel 源（grace=跑到自然结束或显式停止，细则 §5-3 拍板项）；
   // 不带 run 的请求保持「断连即停」旧语义逐字不变（P7 口径）。
   const isCancelled = () => (runId ? RUNS.cancelled(runId) : req.signal.aborted);
@@ -385,7 +391,7 @@ export async function POST(req: NextRequest) {
   let sceneFailure: string | null = null;
 
   /** 入口固定提示词 + 场景提示词 + 本轮预取数据，拼成发给模型的消息数组（顺序规则见 chat-core.injectSceneContext） */
-  const baseMessages: ContextMsg[] = [{ role: "system", content: systemPrompt(mode, body?.focusSymbol) }, ...history];
+  const baseMessages: ContextMsg[] = [{ role: "system", content: systemPrompt(mode, horizon, body?.focusSymbol) }, ...history];
   // 交给工具调用环时换成 Record 形状：它还要往同一批消息里追加 tool_calls / tool_call_id
   const buildMessages = (turn: SceneTurn | null): Record<string, unknown>[] =>
     injectSceneContext(baseMessages, turn ?? {}, (role, content) => ({ role, content })).map((m) => ({ ...m }));

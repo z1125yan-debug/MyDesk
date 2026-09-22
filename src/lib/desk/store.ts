@@ -9,10 +9,12 @@ import {
   removeSession as dropSessionById, updateMessage as patchSessionMessage,
   upsertSession, type ChatMessage, type ChatSession,
 } from "./chat-core";
-import type { ChatMode } from "./modes";
+import type { ChatHorizon, ChatMode } from "./modes";
 
 // 回答风格的清单只有一份（modes.ts），这里原样转出键类型，页面不再各自声明一遍联合类型
 export type { ChatMode };
+// P11 持仓周期同纪律：键类型唯一正身在 modes.ts，页面从这里转出去而不是各自抄
+export type { ChatHorizon };
 
 /**
  * 智能助手页的两种工作模式（P7-⑨⑤）：
@@ -57,6 +59,11 @@ interface DeskState {
    */
   assistantMode: ChatMode;
   /**
+   * P11：持仓周期偏好（短/中/长线）。null＝用户没选——不拿「中线」冒充默认，
+   * 两端点也就不注入任何周期口径（选没选是模型必须分清的事实）。
+   */
+  assistantHorizon: ChatHorizon | null;
+  /**
    * P7-⑨⑤：智能助手页当前是「对话分析」还是「奇门解盘」。持久化，刷新后停在原模式。
    * 与 assistantMode（回答风格）互不相干：前者决定右栏画哪一套，后者只影响对话端点的口径。
    */
@@ -85,6 +92,7 @@ interface DeskState {
   setFocusSector: (code: string | null) => void;
   takeFocusSector: () => string | null;
   setAssistantMode: (m: ChatMode) => void;
+  setAssistantHorizon: (h: ChatHorizon | null) => void;
   setDeskMode: (m: DeskMode) => void;
   setDebugPanel: (v: boolean) => void;
   addWatch: (w: WatchItem) => void;
@@ -173,6 +181,7 @@ export const useDesk = create<DeskState>()(
       extensionKey: randKey(),
       frozenPools: [],
       assistantMode: "decision",
+      assistantHorizon: null,
       deskMode: "chat",
       debugPanel: false,
       pendingAsk: null,
@@ -188,6 +197,7 @@ export const useDesk = create<DeskState>()(
         return code;
       },
       setAssistantMode: (m) => set({ assistantMode: m }),
+      setAssistantHorizon: (h) => set({ assistantHorizon: h }),
       setDeskMode: (m) => set({ deskMode: m }),
       setDebugPanel: (v) => set({ debugPanel: v === true }),
       addWatch: (w) => set((s) => (s.watchlist.some((x) => x.symbol === w.symbol) ? s : { watchlist: [w, ...s.watchlist] })),
@@ -297,6 +307,9 @@ export const useDesk = create<DeskState>()(
         activeSessionId: s.activeSessionId,
         ai: s.ai,
         assistantMode: s.assistantMode,
+        // P11：与 assistantMode 同类的长期偏好；白名单收敛——存档被手改成别的字符串时落回 null（未选），
+        // 而不是落回某个周期：没选过的人刷新后不该莫名带上短线口径。
+        assistantHorizon: s.assistantHorizon === "short" || s.assistantHorizon === "mid" || s.assistantHorizon === "long" ? s.assistantHorizon : null,
         // 只落盘合法的两个值：存档被手改成别的字符串时写回时收敛成 chat，页面也只认 "qimen" 一种特例
         deskMode: s.deskMode === "qimen" ? "qimen" : "chat",
         // P8-⑤：与 assistantMode 同类的长期偏好——只认真布尔，坏值收敛成关（默认关是细则 §5-2 的拍板项）

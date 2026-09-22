@@ -43,3 +43,31 @@ export function asChatMode(value: unknown, fallback: ChatMode = "decision"): Cha
 export function chatModeLabel(mode: unknown): string {
   return CHAT_MODES.find((m) => m.key === mode)?.label ?? "未选";
 }
+
+/* ---------------- 持仓周期（horizon）：与回答风格同一套「一处定义、两端消费」纪律 ---------------- */
+// 参考稳智AI 的研究指令口径：「交易周期按所选周期执行」——周期直接改变入场条件/仓位节奏/失效条件的时间尺度，
+// 是决策质量参数而不是界面装饰。默认「未选」：没选就一个字都不注入，不替用户假设他是短线客。
+
+export type ChatHorizon = "short" | "mid" | "long";
+
+export const CHAT_HORIZONS: { key: ChatHorizon; label: string; desc: string }[] = [
+  { key: "short", label: "短线", desc: "数日至一两周" },
+  { key: "mid", label: "中线", desc: "数周至数月" },
+  { key: "long", label: "长线", desc: "数月至一年以上" },
+];
+
+/** 周期的服务端口径句（进系统提示词）。与 MODE_NOTES 同址同纪律：工具环与纯对话端点查同一张表 */
+export const HORIZON_NOTES: Record<ChatHorizon, string> = {
+  short: "用户的持仓周期偏好：短线（数日至一两周）。入场条件、仓位节奏、失效条件、止盈止损都要按短周期给（如 5/10 日线、2~3 成仓分批、跌破 5 日线即失效），不要给长线持有口径。",
+  mid: "用户的持仓周期偏好：中线（数周至数月）。入场条件看 20/60 日线级别的企稳与回踩、仓位以周为单位分批推进、失效条件写在周线级别，不要按日内/数日的短线口径答。",
+  long: "用户的持仓周期偏好：长线（数月至一年以上）。论据侧重基本面与行业景气位置、仓位强调分批建仓与回撤承受、失效条件是逻辑破坏（业绩/行业反转），不是几日的技术位跌破。",
+};
+
+/** 外部输入白名单（与 asChatMode 同一套路）：认不出/未选一律 null——不猜周期、也不注入任何周期口径 */
+export function asHorizon(value: unknown): ChatHorizon | null {
+  return CHAT_HORIZONS.some((h) => h.key === value) ? (value as ChatHorizon) : null;
+}
+
+export function chatHorizonLabel(horizon: unknown): string {
+  return CHAT_HORIZONS.find((h) => h.key === horizon)?.label ?? "未选";
+}

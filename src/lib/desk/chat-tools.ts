@@ -56,10 +56,24 @@ export function normalizeSymbol(raw: string): string | null {
   return null;
 }
 
+// P11 情绪温度：0-100 综合分（缺读数缩权、绝不把缺失当 0 分），工具与仪表盘消费同一份纯核
+import { computeTemperature, temperatureSummary } from "@/lib/quant/screener/sentiment-temperature-core";
+
 async function toolMarketSentiment(): Promise<unknown> {
   const s = await computeSentiment();
+  // 温度按震荡行情（默认口径）算——页面三态切换是表达层的事，模型拿默认档就够说人话。
+  // 分量明细带上：缺哪项、缩了谁的权，模型转述时才不至于把「缩权温度」讲成满分口径。
+  const temp = computeTemperature({
+    advancers: s.advancers, decliners: s.decliners, median_pct: s.median_pct,
+    limit_up: s.limit_up, limit_down: s.limit_down, break_rate: s.break_rate,
+    main_net_sum_yi: s.main_net_sum_yi, main_net_known: s.main_net_known,
+  }, "range");
   return {
     trade_date: s.trade_date, live: s.live,
+    情绪温度: temperatureSummary(temp),
+    ...(temp.temperature !== null ? {
+      温度分量: temp.components.map((c) => ({ 分量: c.label, 得分: c.score, 权重: c.effective_weight || `未计入（${c.missing_note}）` })),
+    } : { 温度未计入原因: temp.missing }),
     涨跌: { 上涨: s.advancers, 下跌: s.decliners, 平盘: s.flat, 总数: s.total },
     涨停: s.limit_up, 跌停: s.limit_down,
     成交额亿: Math.round(s.amount_total_yi), 全A主力净额亿: Math.round(s.main_net_sum_yi),
@@ -527,7 +541,7 @@ export interface ChatTool {
 }
 
 export const TOOLS: ChatTool[] = [
-  { name: "market_sentiment", desc: "大盘情绪：涨跌家数/涨停/跌停/成交额/主力净额/风险等级", fn: toolMarketSentiment, params: { type: "object", properties: {} } },
+  { name: "market_sentiment", desc: "大盘情绪：情绪温度(0-100)/涨跌家数/涨停/跌停/成交额/主力净额/风险等级", fn: toolMarketSentiment, params: { type: "object", properties: {} } },
   { name: "sector_rank", desc: "行业/概念板块资金榜（按主力净流入排序）", fn: toolSectorRank, params: { type: "object", properties: { kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number" } } } },
   { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "stock_depth", desc: "个股五档盘口（eltdx）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },

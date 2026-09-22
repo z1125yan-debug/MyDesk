@@ -13,7 +13,7 @@ import {
 } from "@/lib/desk/chat-stream-core";
 import { RUNS } from "@/lib/desk/run-bus";
 import { debugFramesFromSteps } from "@/lib/desk/debug-core";
-import { asChatMode, MODE_NOTES } from "@/lib/desk/modes";
+import { asChatMode, asHorizon, HORIZON_NOTES, MODE_NOTES } from "@/lib/desk/modes";
 import {
   foldHistoryForGateway, gatewayUnreachableText, isLanBaseUrl, shouldRetryNonStream,
   type ServerLlmChannel,
@@ -58,6 +58,11 @@ interface ProxyBody {
    * 外部输入先过 asChatMode 白名单，认不出的按默认口径答、不静默丢风格说明。
    */
   mode?: string;
+  /**
+   * P11：持仓周期（短/中/长线）。与 /api/ai/chat 的 body.horizon 同一份口径：
+   * 只在带 scene 的对话轮生效、先过 asHorizon 白名单；没带/认不出＝未选，一个字都不注入。
+   */
+  horizon?: string;
   /**
    * P8-⑥：客户端生成的本轮留底号（外部输入，非空字符串才认）。带上＝这轮进 RunBus，
    * 断线/刷新后可按序号续传；且断连不再取消上游（grace=跑完或显式停止）——细则 §5-3 拍板项。
@@ -433,11 +438,16 @@ export async function POST(req: NextRequest) {
     // 只对带 scene 的对话轮生效——研究页/事件理解/自检那些一次一问的调用要的是原口径，
     // 给它们塞交易风格句和给它们塞场景提示词是同一类污染（见 prepare 上方的注释）。
     const modeNote = body?.scene ? MODE_NOTES[asChatMode(body.mode)] : "";
+    // P11 持仓周期：与风格件同一消费路（只认带 scene 的对话轮）、同一张表（modes.ts）、同一道白名单门。
+    // 没选就是一个字都不加——「未选」不能被解释成任何周期口径。
+    const horizon = body?.scene ? asHorizon(body.horizon) : null;
+    const styleNote = [modeNote, horizon ? HORIZON_NOTES[horizon] : ""].filter(Boolean).join("\n");
     const withScene = (turn: SceneTurn | null): MsgIn[] => {
       const merged = injectSceneContext(messages, turn ? { prompt: turn.prompt, block: turn.block } : {}, (role, content) => ({ role, content }));
       // 风格件放整份消息的最前：场景提示词由 injectSceneContext 接在「开头 system 串」之后，两者顺序稳定；
-      // 无 scene 时 modeNote 为空串，一个 system 件都不多插（p7 钉测：原消息一条不改）
-      const out: MsgIn[] = modeNote ? [{ role: "system", content: modeNote }, ...merged] : merged;
+      // 无 scene 时 styleNote 为空串，一个 system 件都不多插（p7 钉测：原消息一条不改）；
+      // 带 scene 但没选周期时 styleNote 只有风格句——与 P10 之前的请求体逐字节一致。
+      const out: MsgIn[] = styleNote ? [{ role: "system", content: styleNote }, ...merged] : merged;
       return serverChannel?.mode === "gateway" ? (foldHistoryForGateway(out) as MsgIn[]) : out;
     };
 

@@ -15,7 +15,7 @@ import {
 } from "./chat-core";
 import { stepsFromTrace, type StreamEvent } from "./chat-stream-core";
 import type { AiSettings } from "./types";
-import type { ChatMode } from "./modes";
+import type { ChatHorizon, ChatMode } from "./modes";
 
 export interface SnapshotResult {
   /** 注入模型的行情上下文（含来源分层），没有数据就返回空串 */
@@ -41,7 +41,7 @@ export interface ChatEndpointCfg {
    */
   systemPrompt?: (context: string) => string;
   /** 端点专属参数（mode / focusSymbol；追问沿用的 sessionSymbol / prevScene 由本 hook 补，页面不用各写一份） */
-  extra?: () => { mode?: ChatMode; focusSymbol?: string };
+  extra?: () => { mode?: ChatMode; focusSymbol?: string; horizon?: ChatHorizon | null };
   /** 每轮提问前取实时快照；不取则不注入 */
   snapshot?: (session: ChatSession, question: string) => Promise<SnapshotResult | null>;
   /**
@@ -73,7 +73,7 @@ const FLUSH_MS = 70;
  * P8-⑥ run：本轮流式的留底 id（浏览器生成；服务端拒挂底就按无 run 正常跑，逐字等同 A/B 轮）。
  * P8-⑤ debug：只有调试面板打开才带 true —— 面板关着时请求体与线上字节一致。
  */
-function requestExtras(cfgExtra?: { mode?: ChatMode; focusSymbol?: string; sessionSymbol?: string | null; prevScene?: string | null; run?: string; debug?: boolean }) {
+function requestExtras(cfgExtra?: { mode?: ChatMode; horizon?: ChatHorizon | null; focusSymbol?: string; sessionSymbol?: string | null; prevScene?: string | null; run?: string; debug?: boolean }) {
   return {
     contextWindow: DEFAULT_MAX_TURNS,
     watchlist: watchlistPayload(),
@@ -99,13 +99,13 @@ async function defaultFallback(
   const scene = { focusSymbol: extras.focusSymbol ?? null, sessionSymbol: extras.sessionSymbol, prevScene: extras.prevScene };
   if (endpoint === "tools") {
     const r = await aiChatTools(ai, messages, {
-      mode: extras.mode, focusSymbol: extras.focusSymbol, contextWindow: extras.contextWindow,
+      mode: extras.mode, horizon: extras.horizon, focusSymbol: extras.focusSymbol, contextWindow: extras.contextWindow,
       watchlist: extras.watchlist, sessionSymbol: extras.sessionSymbol, prevScene: extras.prevScene, timeoutMs: 120_000,
     });
     // 非流式返回的是 trace：归一成与流式 step 事件同一种步骤，时间线才不会两种形状
     return { text: r.content, steps: r.steps ?? stepsFromTrace(r.trace), intent: r.intent, warning: r.warning };
   }
-  const r = await aiChatPlain(ai, messages, { timeoutMs: 120_000, watchlist: extras.watchlist, scene, mode: extras.mode });
+  const r = await aiChatPlain(ai, messages, { timeoutMs: 120_000, watchlist: extras.watchlist, scene, mode: extras.mode, horizon: extras.horizon });
   return { text: r.text, steps: r.steps, intent: r.intent, warning: r.warning };
 }
 
