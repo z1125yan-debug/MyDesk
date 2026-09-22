@@ -1,140 +1,135 @@
-// P7-⑪ 任务1（UI 重构）导航纯核：25 个零散菜单 → 3 大工作台 + 系统入口的映射表。
+// P15-R3a 导航纯核：对齐稳智左侧菜单——单层一级平铺，不再有两层工作台。
 //
-// 纪律与仓库其它 core 层一致：这里只有数据与查表函数——不 import React、不碰 window、不读档，
-// 所以单测可以直接跑，AppShell/Sidebar/WorkbenchShell 三个消费方永远不会各说各话。
+// 口径来源（《稳智AI-全板块数据与UI逆向》§〇 + 用户 2026-09-22 指示「参考对方的源代码去做」）：
+// 对方菜单就是一级列表：大盘情绪 · 量化因子选股 · 行业 · 行情 · 自选 · LLM分析 · 奇门遁甲 · 账号。
+// 我们 26 个页面塞不进 7 个裸链接，归组方式按「血缘」：一个一级项 = 一件事，
+// 点开直接进主页面；血缘近的次级页面挂在该项下面（唯一的两层例外，见「为什么留子项」）。
 //
-// 兼容口径（任务书约束 1.1/1.2）：
-// - PageKey 一个不删、不改名：hash 路由 `#/agent` 这类旧链接全部照常能进；
-// - 「并入对话」的页面（AI 首页 / AI 分析 / 事件雷达 / AI 市场研究 / Agent 自主研究）
-//   不再出现在任何左栏列表里（legacyPages 登记在案），但渲染分支保留，进旧路由时壳层会挂
-//   「已并入对话」横幅指回，而不是让读者对着一个消失的页面猜。
+// 纪律与仓库其它 core 层一致：这里只有数据与查表函数——不 import React、不碰 window、不读档。
+//
+// 兼容口径（P7-⑪ 原意图逐字保住）：
+// - PageKey 一个不删、不改名：`#/agent` 这类旧 hash 全部照常能进（AppShell 分支钉在测试里）；
+// - 「并入对话」的 5 个旧页（AI 首页/分析/事件/研究/Agent）继续不占菜单位，走 legacyPages + 横幅指回。
+//
+// 为什么留子项：对方「量化因子选股」一级页内部也是选股器/因子/池多块并列；
+// 我们把它们提成指端子项是为了「点了就到、不玩两栏捉迷藏」，而不是再造一层工作台。
 import type { PageKey } from "./types";
 
-export type Workbench = "ai" | "quant" | "market" | "qimen" | "system";
-
-export interface NavItem {
+export interface MenuLeaf {
   key: PageKey;
   label: string;
 }
 
-/** 顶部分组小标签：点它 = 选中对应的列表项（不引入第二套状态，跳的就是 go(key)） */
-export interface NavGroupTab {
-  title: string;
-  target: PageKey;
+export interface MenuEntry {
+  /** 组的唯一标识：Sidebar 展开态、测试钉顺序都用它 */
+  id: string;
+  /** 一级菜单文案（稳智文案体系的人话版：「LLM分析」这种行业词不照抄） */
+  label: string;
+  /** 单项直达（对方「大盘情绪」这种一项一页） */
+  key?: PageKey;
+  /** 血缘子项：组内第 1 项就是点父项的默认落点 */
+  children?: MenuLeaf[];
+  /** 已并入本项但不再占菜单位的旧页：仅 hash 可达 + 壳层横幅指回 */
+  legacyPages?: PageKey[];
 }
 
-export interface WorkbenchNav {
-  title: string;
-  /** 左窄栏顶部的分组标签行；AI 决策的左栏由 AssistantPage 自带（模式切换 + 会话历史），这里留空 */
-  groups: NavGroupTab[];
-  /** 左窄栏列表项，点哪项右栏渲染哪个既有页面组件 */
-  items: NavItem[];
-  /** 已并入本工作台但不再占列表位的旧页面：仅保留 hash 可达 + 横幅指回 */
-  legacyPages: PageKey[];
-}
-
-export const WORKBENCH_ORDER: { key: Workbench; label: string }[] = [
-  { key: "ai", label: "AI 决策" },
-  { key: "quant", label: "量化工具" },
-  { key: "market", label: "行情中心" },
-  { key: "qimen", label: "奇门遁甲" },
+/** 顺序即视觉顺序（对齐稳智左栏从左到右/从上到下的排列） */
+export const MENU: MenuEntry[] = [
+  { id: "market", label: "大盘情绪", key: "market" },
+  {
+    id: "quant",
+    label: "量化选股",
+    children: [
+      { key: "quant", label: "AI 选股 · 研究台" },
+      { key: "aiscan", label: "全A 实时选股" },
+      { key: "screener", label: "因子选股 · 历史" },
+      { key: "factorlab", label: "因子库 · 测试台" },
+      { key: "pool", label: "候选池" },
+      { key: "radar", label: "主动发现" },
+      { key: "problab", label: "历史概率" },
+    ],
+  },
+  {
+    id: "sectors",
+    label: "行业板块",
+    children: [
+      { key: "sectors", label: "行业 · 概念资金流" },
+      { key: "themes", label: "主线热点" },
+    ],
+  },
+  {
+    id: "quotes",
+    label: "行情",
+    children: [
+      { key: "allstocks", label: "全A 列表" },
+      { key: "history", label: "历史行情" },
+      { key: "profile", label: "个股画像" },
+      { key: "risk", label: "风险监控" },
+      { key: "board", label: "数据看板" },
+      { key: "dashboard", label: "市场总览" },
+    ],
+  },
+  // 对方把「自选」单列一级（第 5 位），照做——它不是行情的子集，是每天打开的那一页
+  { id: "watch", label: "自选", key: "tracker" },
+  { id: "ai", label: "AI 对话", key: "copilot", legacyPages: ["aihome", "analysis", "events", "research", "agent"] },
+  { id: "qimen", label: "奇门遁甲", key: "qimen" },
 ];
 
-export const NAV: Record<Workbench, WorkbenchNav> = {
-  ai: {
-    title: "AI 决策工作台",
-    groups: [],
-    items: [{ key: "copilot", label: "对话分析 / 奇门解盘" }],
-    legacyPages: ["aihome", "analysis", "events", "research", "agent"],
-  },
-  quant: {
-    title: "量化工具工作台",
-    groups: [
-      { title: "因子库", target: "factorlab" },
-      { title: "我的策略", target: "quant" },
-      { title: "选股历史", target: "screener" },
-      { title: "候选池", target: "pool" },
-    ],
-    items: [
-      { key: "factorlab", label: "因子库 · 测试台" },
-      { key: "quant", label: "我的策略 · 量化研究" },
-      { key: "screener", label: "选股历史 · 因子选股器" },
-      { key: "pool", label: "候选池" },
-      { key: "aiscan", label: "AI 实时选股" },
-      { key: "problab", label: "历史概率" },
-      { key: "radar", label: "主动发现" },
-    ],
-    legacyPages: [],
-  },
-  market: {
-    title: "行情中心工作台",
-    groups: [
-      { title: "大盘情绪", target: "market" },
-      { title: "行业板块", target: "sectors" },
-      { title: "主线热点", target: "themes" },
-      { title: "自选股", target: "tracker" },
-      { title: "全A列表", target: "allstocks" },
-      { title: "风险监控", target: "risk" },
-    ],
-    items: [
-      { key: "market", label: "大盘情绪" },
-      { key: "sectors", label: "行业板块" },
-      { key: "themes", label: "主线热点" },
-      { key: "tracker", label: "自选股" },
-      { key: "allstocks", label: "全A列表" },
-      { key: "risk", label: "风险监控" },
-      { key: "dashboard", label: "总览" },
-      { key: "board", label: "数据看板" },
-      { key: "profile", label: "个股画像" },
-      { key: "history", label: "历史行情" },
-    ],
-    legacyPages: [],
-  },
-  qimen: {
-    title: "奇门遁甲工作台",
-    groups: [],
-    items: [{ key: "qimen", label: "奇门解盘" }],
-    legacyPages: [],
-  },
-  system: {
-    title: "系统",
-    groups: [],
-    items: [
-      { key: "settings", label: "设置" },
-      { key: "extension", label: "扩展" },
-    ],
-    legacyPages: [],
-  },
-};
+/** 底部系统区（对方「订阅账号与点数」的对应位）：不散回主菜单 */
+export const SYSTEM_ITEMS: MenuLeaf[] = [
+  { key: "settings", label: "设置" },
+  { key: "extension", label: "扩展" },
+];
 
-/** 每个 PageKey 恰好落进一个工作台：主项（items）优先，其余按 legacyPages 归位 */
-const WORKBENCH_OF_PAGE = (() => {
-  const map = new Map<PageKey, Workbench>();
-  for (const wb of Object.keys(NAV) as Workbench[]) {
-    for (const it of NAV[wb].items) map.set(it.key, wb);
-  }
-  // legacy 归属单独登记；键冲突直接让它撞出来——两张表都登记同一个键说明口径写错了
-  for (const wb of Object.keys(NAV) as Workbench[]) {
-    for (const p of NAV[wb].legacyPages) {
-      if (map.has(p)) throw new Error(`nav-core 口径冲突：${p} 既是列表项又是 legacy 页`);
-      map.set(p, wb);
+/** 一级项的默认落点：单项直达用 key；有子项的落第 1 个子项（点组名 = 进该组的主页） */
+export function entryTarget(entry: MenuEntry): PageKey {
+  if (entry.key) return entry.key;
+  const first = entry.children?.[0];
+  if (!first) throw new Error(`nav-core 口径错误：${entry.id} 既无 key 也无 children`);
+  return first.key;
+}
+
+// 反查表在模块加载时一次性建成：漏页/重页当场 throw，不留到运行时白屏。
+const { GROUP_OF, LEGACY_OF } = (() => {
+  const groupOf = new Map<PageKey, string>();
+  const legacyOf = new Map<PageKey, string>();
+  const take = (k: PageKey, where: string) => {
+    if (groupOf.has(k) || legacyOf.has(k) || SYSTEM_ITEMS.some((s) => s.key === k)) {
+      throw new Error(`nav-core 口径冲突：${k} 在「${where}」重复登记`);
+    }
+  };
+  for (const e of MENU) {
+    if (e.key) {
+      take(e.key, `${e.id}.key`);
+      groupOf.set(e.key, e.id);
+    }
+    for (const c of e.children ?? []) {
+      take(c.key, `${e.id}.children`);
+      groupOf.set(c.key, e.id);
+    }
+    for (const p of e.legacyPages ?? []) {
+      take(p, `${e.id}.legacyPages`);
+      legacyOf.set(p, e.id);
     }
   }
-  return map;
+  return { GROUP_OF: groupOf, LEGACY_OF: legacyOf };
 })();
 
-export function workbenchOf(page: PageKey): Workbench | null {
-  return WORKBENCH_OF_PAGE.get(page) ?? null;
+/** 页面属于哪个一级菜单组（legacy 页也算组，供高亮）；系统项返回 null */
+export function menuGroupOf(page: PageKey): MenuEntry | null {
+  const id = GROUP_OF.get(page) ?? LEGACY_OF.get(page);
+  return MENU.find((e) => e.id === id) ?? null;
 }
 
-/** 该页面是否只是旧路由兼容（不在左栏列表里）——壳层据此决定挂不挂「已并入」横幅 */
+/** 该页面是否只是旧路由兼容（不在菜单里，壳层据此挂横幅） */
 export function isLegacyPage(page: PageKey): boolean {
-  const wb = workbenchOf(page);
-  return wb !== null && NAV[wb].legacyPages.includes(page);
+  return LEGACY_OF.has(page);
 }
 
-/** 左窄栏是否由工作台壳层渲染（AI 决策的左栏长在 AssistantPage 里，壳层不重复画） */
-export function hasShellLeftRail(page: PageKey): boolean {
-  const wb = workbenchOf(page);
-  return wb !== null && wb !== "ai" && wb !== "qimen" && !isLegacyPage(page);
+/** legacy 页横幅要指回的落点（都在对话组 → copilot） */
+export function legacyReturnTarget(page: PageKey): PageKey | null {
+  const id = LEGACY_OF.get(page);
+  if (!id) return null;
+  const entry = MENU.find((e) => e.id === id)!;
+  return entry.key ?? entryTarget(entry);
 }
