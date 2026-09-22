@@ -13,9 +13,10 @@
 //   as_of / data_status / degraded_from / reason。页面与日志只能照这个说，不允许在中间层再压平。
 import { db } from "@/lib/db";
 import {
-  fetchBoardReal, fetchDetailReal, fetchKlinesReal, fetchNewsReal, fetchQuotesReal, searchReal, symbolToSecid,
+  fetchDetailReal, fetchKlinesReal, fetchNewsReal, fetchQuotesReal, searchReal, symbolToSecid,
   type RealQuote,
 } from "@/lib/desk/em";
+import { fetchBoardRowsRescued } from "@/lib/desk/board-rescue";
 import { tdxDepth, tdxKlines, tdxQuotes, tdxTradesMoney, type TdxQuote } from "@/lib/desk/tdx";
 import { listAllTools, listServers } from "@/lib/desk/mcp-manager";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
@@ -508,14 +509,20 @@ async function dispatch(executor: string | null, toolName: string, p: Params, ms
     case "em.boards": {
       const kind = str(p, "kind", "industry") === "concept" ? "concept" : "industry";
       const dir = str(p, "dir", "in") === "out" ? "out" : "in";
-      const r = await timed(ms, "东财板块榜", () => fetchBoardReal(kind, dir, num(p, "size", 20)));
-      const rows = r.value;
-      if (!rows) return upstreamNull("板块榜", "东财 push2 clist", r.timed_out, r.error);
-      if (!rows.length) return emptyObs(`板块榜 ${kind}/${dir} 本次 0 行：${dir === "in" ? "没有主力净额为正的板块" : "没有主力净额为负的板块"}（该榜按主力净额正负过滤，0 行是真实为空，不是取数失败）`, "东财 clist 板块榜");
+      // R8：走带同花顺整榜兜底的单点入口——过去东财断源时 fetchBoardReal 会带回腾讯涨幅榜
+      // （资金列全是占位 0），本层按 main 正负一过滤就是 0 行，台账把它说成「真实为空」，
+      // 这是拿口径缺陷冒充市场事实；换源后要么给净额真数，要么保留原话术。
+      const r = await timed(ms, "板块榜（东财+同花顺兜底）", () => fetchBoardRowsRescued(kind, dir, num(p, "size", 20)));
+      const rows = r.value?.rows ?? null;
+      const fromThs = r.value?.fromThs ?? false;
+      if (!rows) return upstreamNull("板块榜", "东财 push2 clist（同花顺兜底亦无返回）", r.timed_out, r.error ?? "上游无返回");
+      if (!rows) return upstreamNull("板块榜", "东财 push2 clist（同花顺兜底亦无返回）", r.timed_out, r.error);
+      if (!rows.length) return emptyObs(`板块榜 ${kind}/${dir} 本次 0 行：${dir === "in" ? "没有主力净额为正的板块" : "没有主力净额为负的板块"}（该榜按主力净额正负过滤，0 行是真实为空，不是取数失败）`, fromThs ? "同花顺板块资金流榜（净额口径）" : "东财 clist 板块榜");
+      const boardSource = fromThs ? "同花顺板块资金流榜（东财断源兜底，本机直连；净额=流入−流出）" : "东财 clist 板块榜（本机直连）";
       return okObs({
-        summary: clipText(`${kind === "industry" ? "行业" : "概念"}板块${dir === "in" ? "净流入" : "净流出"}榜 ${rows.length} 条：${rows.slice(0, 5).map((b) => `${b.name} ${signed(b.main)}亿/${signed(b.changePct)}%（净占比 ${n1(b.ratio)}%，领涨 ${b.leader || "未记录"}）`).join("；")}`),
-        payload: { boards: capRows(rows.map((b) => ({ board_code: b.code, name: b.name, changePct: b.changePct, mainYi: b.main, ratio: b.ratio, leader: b.leader })), 12) },
-        source: "东财 clist 板块榜（本机直连）", as_of: shanghaiStamp(), data_status: "REAL",
+        summary: clipText(`${kind === "industry" ? "行业" : "概念"}板块${dir === "in" ? "净流入" : "净流出"}榜 ${rows.length} 条：${rows.slice(0, 5).map((b) => `${b.name} ${signed(b.main)}亿/${signed(b.changePct)}%（净占比 ${b.fundsMissing || b.breakdownMissing ? "无该口径读数" : `${n1(b.ratio)}%`}，领涨 ${b.leader || "未记录"}）`).join("；")}${fromThs ? "；同花顺榜只有净额口径，无净占比/超大单/大单拆分" : ""}`),
+        payload: { boards: capRows(rows.map((b) => ({ board_code: b.code, name: b.name, changePct: b.changePct, mainYi: b.fundsMissing ? null : b.main, ratio: b.fundsMissing || b.breakdownMissing ? null : b.ratio, leader: b.leader })), 12) },
+        source: boardSource, as_of: shanghaiStamp(), data_status: fromThs ? "DEGRADED" : "REAL",
       });
     }
     case "em.board-members":

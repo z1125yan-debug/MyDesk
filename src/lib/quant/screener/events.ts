@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fetchNewsReal, fetchBoardReal, type BoardRow } from "@/lib/desk/em";
+import { fetchNewsReal, type BoardRow } from "@/lib/desk/em";
+import { fetchBoardRowsRescued } from "@/lib/desk/board-rescue";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import {
   classifyNewsTitle, fundStage, type ThemeMapItem, type EventMatch,
@@ -48,15 +49,22 @@ function matchBoards(names: string[], boards: BoardRow[]): { name: string; chang
 
 /** 板块资金榜（4 次请求合并去重）；全量与增量两条链路共用同一份实现 */
 export async function fetchBoardContext(): Promise<{ boards: BoardRow[]; missing: string[] }> {
+  // R8：走带同花顺整榜兜底的单点入口。过去断源日这里整榜为空（概念/地域连腾讯备胎都没有），
+  // 每条事件的资金验证都记「无资金验证」；同花顺净额榜接上后验证有真数可用。
   const [indIn, indOut, cptIn, cptOut] = await Promise.all([
-    fetchBoardReal("industry", "in", 60),
-    fetchBoardReal("industry", "out", 40),
-    fetchBoardReal("concept", "in", 60),
-    fetchBoardReal("concept", "out", 40),
+    fetchBoardRowsRescued("industry", "in", 60),
+    fetchBoardRowsRescued("industry", "out", 40),
+    fetchBoardRowsRescued("concept", "in", 60),
+    fetchBoardRowsRescued("concept", "out", 40),
   ]);
-  const boards = mergeBoards(mergeBoards(indIn, indOut), mergeBoards(cptIn, cptOut));
+  const fromThs = [indIn, indOut, cptIn, cptOut].some((r) => r.fromThs);
+  const boards = mergeBoards(
+    mergeBoards(indIn.rows, indOut.rows),
+    mergeBoards(cptIn.rows, cptOut.rows),
+  );
   const missing: string[] = [];
   if (!boards.length) missing.push("板块榜无返回，资金验证全部为「无资金验证」");
+  else if (fromThs) missing.push("板块资金为同花顺净额榜（流入−流出）：非东财主力拆分口径，净占比/超大单/大单无对等读数");
   return { boards, missing };
 }
 
@@ -83,7 +91,7 @@ export function verifyNewsItems(
       ...m,
       fund: { stage: fs.stage, note: fs.note, boards: boardHits },
       relatedLeaders: boardHits.map((b) => b.name).slice(0, 3),
-      source: "东财7x24/新浪快讯 + 手工映射表 + 东财板块资金",
+      source: "东财7x24/新浪快讯 + 手工映射表 + 板块资金榜（东财口径；断源日为同花顺净额榜，见 fetchBoardContext 自报）",
     });
   }
   return { items, unmatched };

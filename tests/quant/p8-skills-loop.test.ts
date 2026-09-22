@@ -26,8 +26,8 @@ function intent(question: string, extra: Partial<Intent> = {}): Intent {
 
 // ---------- ③ 注册表本体 ----------
 
-test("内置技能表形状：12 个工具、plan 覆盖 6 个自动调度场景（P10 起含选股）", () => {
-  assert.equal(BUILTIN_SKILLS.length, 12, "与 chat-tools TOOLS 的注册项数一致（多了/少了都要两边同步改）");
+test("内置技能表形状：13 个工具、plan 覆盖 6 个自动调度场景（P10 起含选股；R10 扩容加个股消息面）", () => {
+  assert.equal(BUILTIN_SKILLS.length, 13, "与 chat-tools TOOLS 的注册项数一致（多了/少了都要两边同步改）");
   // 口径迁移（P10 择优轮，用户裁定改口径）：本条原钉「深水区与选股类工具不进自动调度
   // （预取＝替用户猜条件、每轮多打接口）」——factor_screener 按 aiwuchuan「候选池→择优」
   // 链路改为预取（抽不到的条件走默认活跃池并如实标注，不再替用户猜）；其余四个冷工具原样。
@@ -41,11 +41,16 @@ test("内置技能表形状：12 个工具、plan 覆盖 6 个自动调度场景
   assert.ok(!BUILTIN_SKILLS.some((s) => (s.plan ?? []).some((e) => e.scene === "qimen" || e.scene === "general")));
 });
 
-test("required 标记＝旧链路的「必读」口径：场景主数据 + 个股三件套 + 自选总览", () => {
+test("required 标记＝旧链路的「必读」口径：场景主数据 + 个股四件套（含消息面） + 自选总览", () => {
   assert.deepEqual([...SKILLS.requiredToolsForScene("sentiment")], ["market_sentiment"]);
   assert.deepEqual([...SKILLS.requiredToolsForScene("sector")], ["sector_rank"]);
   assert.deepEqual([...SKILLS.requiredToolsForScene("quote")], ["stock_snapshot"]);
-  assert.deepEqual([...SKILLS.requiredToolsForScene("stock_analysis")].sort(), ["stock_fund_flow", "stock_kline_summary", "stock_snapshot"]);
+  // R10 扩容：stock_news 进个股分析必读——用户口径「除了技术还要结合新闻回答我」，
+  // 消息面从「gate 附加项」升为「每只票都要有的主数据」（3014 实测模型不会自己调，必须先替它到齐）。
+  assert.deepEqual(
+    [...SKILLS.requiredToolsForScene("stock_analysis")].sort(),
+    ["stock_fund_flow", "stock_kline_summary", "stock_news", "stock_snapshot"],
+  );
   assert.deepEqual([...SKILLS.requiredToolsForScene("watchlist")], ["watchlist_overview"]);
   // 快讯是 gate 附加项，缺了不算洞（用户没问消息面时它本来就不出场）
   assert.ok(!SKILLS.requiredToolsForScene("sentiment").has("market_news"));
@@ -62,12 +67,12 @@ test("注册新技能即生效：entriesForScene / requiredToolsForScene / prefe
   };
   assert.deepEqual(reg.register(skill), { ok: true });
   const r = planDispatch({ intent: intent("688256 怎么看", { scene: "stock_analysis", symbol: "688256.SH", symbols: ["688256.SH"] }) }, reg);
-  assert.deepEqual(r.calls.map((c) => c.tool), ["stock_snapshot", "stock_kline_summary", "stock_fund_flow", "dragon_tiger_board"],
-    "per_symbol 三件套照旧逐只成组，once 新项排在后面——加技能不改调度代码");
+  assert.deepEqual(r.calls.map((c) => c.tool), ["stock_snapshot", "stock_kline_summary", "stock_fund_flow", "stock_news", "dragon_tiger_board"],
+    "per_symbol 四件套照旧逐只成组，once 新项排在后面——加技能不改调度代码");
   assert.ok(reg.requiredToolsForScene("stock_analysis").has("dragon_tiger_board"));
   // 默认表看不到新技能：注册作用域跟着实例走，单例不被测试污染
   const plain = planDispatch({ intent: intent("688256 怎么看", { scene: "stock_analysis", symbol: "688256.SH", symbols: ["688256.SH"] }) });
-  assert.deepEqual(plain.calls.map((c) => c.tool), ["stock_snapshot", "stock_kline_summary", "stock_fund_flow"]);
+  assert.deepEqual(plain.calls.map((c) => c.tool), ["stock_snapshot", "stock_kline_summary", "stock_fund_flow", "stock_news"]);
 });
 
 test("坏注册被如实拒绝：重名、缺描述、空名、指向不存在的场景，一律回原因不静默吞", () => {
@@ -99,7 +104,8 @@ test("toolsForScene 也走注册表：换一份 prefers 表，推荐工具就跟
 test("场景级参数在表里不在代码里：个股分析 symbol_max=3，全局上限 5 仍兜底", () => {
   const many = ["1.SH", "2.SH", "3.SH", "4.SH", "5.SH", "6.SH"];
   const analysis = planDispatch({ intent: intent("1 2 3 4 5 6 怎么看", { scene: "stock_analysis", symbols: many }) });
-  assert.equal(analysis.calls.length, DISPATCH_ANALYSIS_MAX * 3, "分析场景按场景上限展开，不是全局上限");
+  // R10 扩容：每只票的预取从三件套变四件套（+stock_news 消息面），上限 3 只的口径不变
+  assert.equal(analysis.calls.length, DISPATCH_ANALYSIS_MAX * 4, "分析场景按场景上限展开，不是全局上限");
   const quote = planDispatch({ intent: intent("现价", { scene: "quote", symbols: many }) });
   assert.equal(quote.calls.length, DISPATCH_MAX_SYMBOLS);
   assert.ok(quote.skipped.some((s) => s.includes(`只取前 ${DISPATCH_MAX_SYMBOLS} 个`)));

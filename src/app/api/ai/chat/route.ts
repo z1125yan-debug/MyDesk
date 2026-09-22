@@ -91,12 +91,24 @@ function systemPrompt(mode: ChatMode, horizon: ChatHorizon | null, focusSymbol?:
     "【数据纪律（最高优先级）】",
     "1. 所有市场数据必须通过工具获取真实数据，绝不编造数字。",
     "2. 工具返回 missing 或数据为 null 时，必须写「XX：暂无数据」，禁止根据涨跌幅推测「主力流入」等无数据结论。",
-    "3. 相关个股问题并行调用：stock_snapshot + stock_depth + stock_trades + stock_kline_summary + stock_fund_flow。",
+    "3. 相关个股问题并行调用：stock_snapshot + stock_depth + stock_trades + stock_kline_summary + stock_fund_flow + stock_news（这只票自己的新闻/公告）。" +
+      "用户用公司名说票时（「中国电影卖的怎么样」），symbol 直接传公司名——服务层用东财搜索解析成代码并在返回里自报「代码解析」；" +
+      "解析不中就把工具的 missing 如实转述并问清是哪只，禁止凭印象猜代码；也不得反过来断言「该公司未上市/没有上市代码」——没搜到不等于不存在（R10c 事故：「那长鑫呢」被断成长鑫存储无公开 A 股代码，实际长鑫科技 688825 已上市）。",
     "4. 选股类问题用 factor_screener（field 只能取：" + FACTOR_KEYS + "）。",
     // P7-⑧④：回测接进来了，但它的口径和选股不一样——因子必须来自场景提示词里那份白名单，
     // 表达式由引擎从库里带，模型不许现写一个；没跑成都算「没有结果」，不算「结果不好」。
     "5. 回测类问题用 run_backtest：factors 只能取「可回测因子白名单」里的 factorKey（不得自写表达式、不得凭印象编因子名）；" +
       "该工具返回 missing 时，说明这一轮没有回测结果，直接转述它给的原因，不得给出任何收益数字。",
+    // R10 通达信开放：第二只眼看行情——它是交易所行情服务器的快照，不是东财加工层，两家不一致时各说各的出身。
+    "6. 通达信三件套（tdx_market_overview / tdx_quotes / tdx_kline）是直连交易所行情服务器的第二家口径，与东财/eltdx 互为交叉核对：" +
+      "看盘口挂单、内外盘量能、K线对质时用它们；两家数字不一致就分开各报来源与时间，禁止平均、禁止混成一家；" +
+      "通达信系没有资金流读数（上游资金工具是坏的），资金类问题照旧用 stock_fund_flow / sector_rank；" +
+      "它们返回 missing（服务未接通/冷启动失败）时如实说明并回落到原口径，禁止编一个通达信数字。",
+    // 用户口径（R10）：光报数字不算回答——结论必须结合新闻说，没新闻也要自报「纯行情判断」。
+    // R10 扩容：谈个股的消息面升为必读——3014 实测拿美国地产商快讯答中国票就是「宏观快讯冒充个股消息」的事故。
+    "7. 结论必须结合消息面：谈大盘/板块的轮次里调 market_news，至少挂一条带时间的具体快讯进论据，说清它和行情数字是怎么互相印证（或矛盾）的；" +
+      "谈个股必须引用这只票自己的 stock_news（预取块里有就引，没有就自己调），宏观快讯替代不了个股消息面；" +
+      "快讯或个股消息返回 missing/为空时明写「暂无相关新闻，本轮是纯行情数据判断」，不把数据推断包装成有消息面佐证的结论。",
     "",
     "【输出格式（固定）】",
     "开口第一句就给**加粗结论**（🎯 结论：你的判断或现在该怎么做），像一位懂行的朋友当面讲，不要写「根据提供的数据/结合相关信息/以下是具体分析」这类机器人开场白；多用「我建议/更合理的节奏是/现在不宜」这样的人话。",
@@ -113,6 +125,14 @@ function systemPrompt(mode: ChatMode, horizon: ChatHorizon | null, focusSymbol?:
 }
 
 interface ToolCallMsg { id: string; type: "function"; function: { name: string; arguments: string } }
+
+/** R10 步骤条人话前置查表（通达信三件套 + 个股消息面）：chat-stream-core 在不动清单里，新键在本层补 */
+const STEP_LABELS_OVERRIDE: Record<string, string> = {
+  tdx_market_overview: "取通达信指数概况（交易所直连快照）",
+  tdx_quotes: "取通达信实时行情（含盘口/内外盘）",
+  tdx_kline: "取通达信日K（不复权）",
+  stock_news: "取个股新闻与公告（这只票自己的消息面）",
+};
 
 interface ChatTraceItem { name: string; args: Record<string, unknown>; ms: number; status: "ok" | "error"; summary: string }
 
@@ -266,7 +286,9 @@ async function runToolLoop(opts: {
       const step = ++stepNo;
       let parsedArgs: Record<string, unknown> = {};
       try { parsedArgs = JSON.parse(c.argsText || "{}"); } catch { /* 参数坏 → 下面按未知/失败处理 */ }
-      const label = stepLabelFor(c.name, parsedArgs);
+      // R10：tdx_* 步骤的人话文案在本层前置查表——chat-stream-core 在不动清单里，
+      // 不进去加键；未命中仍走它的 stepLabelFor 兜底（「调用 <工具名>」），口径不假装全套齐。
+      const label = STEP_LABELS_OVERRIDE[c.name] ?? stepLabelFor(c.name, parsedArgs);
       // source=model：这一条是模型自己要调的，不是系统按场景预取的。界面必须分开，
       // 否则用户会以为「所有数据都是模型自己取的」，而预取那批其实一句提示词都没给它下过命令。
       emit({ type: "step", data: { step, label, status: "running", tool: c.name, source: "model", reason: "模型判断需要该数据，自行调用" } });

@@ -9,6 +9,9 @@
 //  2) 轮次分组靠 reason 前缀「补充调用（第 2 轮）」（B 轮 ④ 的原文），认不出按首轮——不猜；
 //  3) 五态文案单一出处：stepStatusText 就是 StepTimeline 原来的 STATUS_META.text，
 //     搬进纯核后组件只留图标与色——将来加第六态不会出现「帧里解得出、界面没有这个词」。
+// R10b 补：标的来源一格也不漏原始键——intent.symbolSource 走判定层的 symbolSourceLabel
+//     （认得人话化，认不出的历史留底原样透传），与 SceneBadge 同一份措辞出处。
+import { symbolSourceLabel } from "./intent-core.ts";
 
 /** 入参值展示上限（细则 §1.3）；返回摘要的 120 字口径复用 chat-stream-core.stepDetailOf，这里不新写截断 */
 export const DEBUG_ARG_MAX_CHARS = 80;
@@ -221,7 +224,7 @@ function intentSectionOf(intent: DebugIntentLike | null | undefined): DebugInten
   const parts = [
     `判为「${intent.label || intent.scene}」${hits.length ? `（命中词：${hits.join("、")}）` : ""}`,
     alternates.length ? `同时问到：${alternates.join("、")}` : "",
-    `标的 ${symbol ?? "无"}${symbol && symbolSource ? `（来源：${symbolSource}）` : ""}`,
+    `标的 ${symbol ?? "无"}${symbol && symbolSource ? `（来源：${symbolSourceLabel(symbolSource)}）` : ""}`,
     intent.inherited === true ? "沿用上一轮场景" : "",
     typeof intent.prefetchChars === "number" ? `注入数据 ${Math.max(0, Math.trunc(intent.prefetchChars))} 字` : "本轮无注入数据",
   ].filter(Boolean);

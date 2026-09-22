@@ -15,7 +15,7 @@ import type { Scene } from "./intent-core.ts";
 /** 入参形状判别符（具体拼法在 intent-core 的 planDispatch，文案单一出处） */
 export type SkillArgs = "empty" | "news8" | "sector_kind" | "symbol" | "screener_pool";
 /** 「为什么取它」的文案键（渲染时套 SCENE_LABELS，与旧 switch 逐字一致；news 两变体照抄不统一） */
-export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "news" | "news_why" | "watchlist" | "screener_pool";
+export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "news" | "news_why" | "watchlist" | "screener_pool" | "stock_news";
 /** 出条件判别符：news=提问显式要消息面；watchlist_nonempty=本机自选非空 */
 export type SkillGate = "news" | "watchlist_nonempty";
 
@@ -98,6 +98,14 @@ export const BUILTIN_SKILLS: Skill[] = [
       { scene: "stock_analysis", spread: "once", args: "news8", reason: "news_why", gate: "news" },
     ],
   },
+  // R10 扩容（用户口径「除了技术还要结合新闻回答我」）：个股消息面进个股分析预取——
+  // 教训是「只开放不自取」不够：R10 实测模型面对 tdx 清单一次都没自己调，
+  // 该到的数据必须系统先替它到齐，缺了再让它补。逐只展开与快照/日K/资金流同组。
+  {
+    name: "stock_news",
+    desc: "个股新闻与公告（东财搜索+披露列表），个股研判的必读消息面",
+    plan: [{ scene: "stock_analysis", spread: "per_symbol", args: "symbol", reason: "stock_news", required: true }],
+  },
   // factor_screener：P10 择优轮起进自动调度（用户裁定改口径，参考 aiwuchuan 的「候选池→择优」链路）。
   // P7 旧拍板「条件由模型抽、系统不替猜」拆成两半保住：抽得到的照抽（确定性正则），
   // 抽不到用默认活跃池但必须如实标注「系统默认口径」——把猜的条件当用户要求仍是事故。
@@ -136,7 +144,7 @@ export const SCENE_PREFERS: Record<Scene, string[]> = {
   screener: ["factor_screener", "historical_probability"],
   quote: ["stock_snapshot"],
   watchlist: ["watchlist_overview", "market_sentiment"],
-  stock_analysis: ["stock_snapshot", "stock_kline_summary", "stock_fund_flow", "market_news"],
+  stock_analysis: ["stock_snapshot", "stock_kline_summary", "stock_fund_flow", "stock_news", "market_news"],
   qimen: [],
   general: [],
 };
@@ -183,7 +191,7 @@ export function createSkillRegistry(initial: Skill[] = [], config?: Partial<Reco
   };
 }
 
-/** 进程内默认注册表：内置 12 项技能；registerSkill 是给扩展方（含测试）的唯一注入口 */
+/** 进程内默认注册表：内置 13 项技能；registerSkill 是给扩展方（含测试）的唯一注入口 */
 export const SKILLS = createSkillRegistry(BUILTIN_SKILLS);
 
 export function registerSkill(skill: Skill): { ok: boolean; error?: string } {

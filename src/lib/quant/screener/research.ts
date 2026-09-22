@@ -3,7 +3,7 @@
 //
 // 这一层的立场（任务书 §十一/§十二/§三十二）：
 // - **不重算**：MA/MACD/RSI/IC/回测/条件概率一律由已有 Quant Engine 产出，这里只是把它们读出来；
-//   所以每个采集器调的都是页面同源的那一个函数（computeSentiment / discoverThemes / fetchBoardReal / 库表），
+//   所以每个采集器调的都是页面同源的那一个函数（computeSentiment / discoverThemes / fetchBoardRowsRescued / 库表），
 //   本文件里没有任何一个指标公式。
 // - **优先已有结果**：能读库就不打上游（radar/events/factor_test/三张留档表都是读库），
 //   上游取数全部走 em.ts 里已有的短时缓存；同一次组装里同一个读数只调一次
@@ -14,7 +14,7 @@
 // 口径：这一层产出的只有 FACTS / SIGNALS / HISTORICAL_EVIDENCE 三层（服务端所有）。
 // AI 的四层（解释/风险/未知/下一步）必须经过 research-core 的复校验才进库，见 storeResearchReport。
 import { db } from "@/lib/db";
-import { fetchBoardReal } from "@/lib/desk/em";
+import { fetchBoardRowsRescued } from "@/lib/desk/board-rescue";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import { verifiedLedgerMeta } from "@/lib/quant/factors/fields.ts";
 import { computeSentiment } from "./sentiment";
@@ -161,41 +161,52 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
         return { lines, missing, as_of: th.as_of || as_of };
       },
     ),
-    // ---- 板块资金榜（东财板块榜，em.ts 短时缓存；这就是能力表里的 sector_rank / 板块主力资金流） ----
+    // ---- 板块资金榜（东财板块榜，em.ts 短时缓存；断源日整榜换同花顺净额榜 —— R8 收口，
+    //      这就是能力表里的 sector_rank / 板块主力资金流） ----
     collect(
       { capability: "sector_rank", title: "板块资金/涨幅榜", source: "东财 clist 行业板块榜（流入+流出两侧合并）", data_status: "REAL" },
       async () => {
-        const [inRows, outRows] = await Promise.all([
-          fetchBoardReal("industry", "in", 60),
-          fetchBoardReal("industry", "out", 60),
+        const [inR, outR] = await Promise.all([
+          fetchBoardRowsRescued("industry", "in", 60),
+          fetchBoardRowsRescued("industry", "out", 60),
         ]);
+        const fromThs = inR.fromThs || outR.fromThs;
+        const inRows = inR.rows;
+        const outRows = outR.rows;
+        const rowSource = fromThs ? "同花顺行业资金流榜（东财断源兜底，本机直连）" : "东财板块榜（本机直连）";
+        const status = fromThs ? "DEGRADED" : "REAL";
         if (inRows === null && outRows === null) {
-          return { lines: [], status: "empty", missing: ["东财板块榜本次无返回（in/out 两侧都为 null）：台账里没有板块资金读数"] };
+          return { lines: [], status: "empty", missing: ["东财板块榜本次无返回（in/out 两侧都为 null，同花顺兜底亦无返回）：台账里没有板块资金读数"] };
         }
-        const merged = new Map<string, { name: string; changePct: number; main: number }>();
+        // 占位 0（腾讯兜底行）不进资金排序：merged 里 main 记 null，行文案显「资金读数缺」而不是「0.0亿」
+        const merged = new Map<string, { name: string; changePct: number; main: number | null }>();
         for (const r of [...(inRows ?? []), ...(outRows ?? [])]) {
           if (!r.code || merged.has(r.code)) continue;
-          merged.set(r.code, { name: r.name, changePct: r.changePct, main: r.main });
+          merged.set(r.code, { name: r.name, changePct: r.changePct, main: r.fundsMissing ? null : r.main });
         }
         const all = [...merged.values()];
-        const byMain = [...all].sort((a, b) => b.main - a.main).slice(0, 4);
+        const withMain = all.filter((b) => b.main !== null) as { name: string; changePct: number; main: number }[];
+        const byMain = [...withMain].sort((a, b) => b.main - a.main).slice(0, 4);
         const byPct = [...all].sort((a, b) => b.changePct - a.changePct).slice(0, 4);
-        const byOut = [...all].sort((a, b) => a.main - b.main).slice(0, 3);
+        const byOut = [...withMain].sort((a, b) => a.main - b.main).slice(0, 3);
         const stamp = shanghaiStamp();
+        const mainText = (b: { name: string; changePct: number; main: number | null }) =>
+          `${b.name} ${b.main === null ? "资金读数缺（兜底榜无主力资金）" : `${signed(b.main)}亿`}/${signed(b.changePct)}%`;
         const lines: NewLine[] = [
           line("FACTS", "sector_rank",
-            `行业板块 ${all.length} 个参与统计（榜单口径：东财行业板块，非证监会分类）。主力净流入前 4：${byMain.map((b) => `${b.name} ${signed(b.main)}亿/${signed(b.changePct)}%`).join("；")}`,
-            "东财板块榜（本机直连）", stamp, "REAL"),
+            `行业板块 ${all.length} 个参与统计（榜单口径：${fromThs ? "同花顺行业资金流榜（净额=流入−流出），非证监会分类" : "东财行业板块，非证监会分类"}）。${fromThs ? "净流入" : "主力净流入"}前 4：${byMain.map(mainText).join("；") || "本榜没有任何资金读数，不排"}`,
+            rowSource, stamp, status),
           line("FACTS", "sector_rank",
-            `涨幅前 4：${byPct.map((b) => `${b.name} ${signed(b.changePct)}%（主力 ${signed(b.main)}亿）`).join("；")}`,
-            "东财板块榜（本机直连）", stamp, "REAL"),
+            `涨幅前 4：${byPct.map(mainText).join("；")}`,
+            rowSource, stamp, status),
         ];
         if (byOut.length && byOut[0].main < 0) {
           lines.push(line("FACTS", "sector_rank",
-            `主力净流出前 3：${byOut.map((b) => `${b.name} ${signed(b.main)}亿/${signed(b.changePct)}%`).join("；")}`,
-            "东财板块榜（本机直连）", stamp, "REAL"));
+            `${fromThs ? "净流出" : "主力净流出"}前 3：${byOut.map(mainText).join("；")}`,
+            rowSource, stamp, status));
         }
         const missing: string[] = [];
+        if (fromThs) missing.push("本批板块资金为同花顺净额榜（东财断源）：只有流入−流出净额，无东财主力/超大单/大单拆分，且榜按涨幅排序取，深跌净流出的板块可能不在榜");
         if (inRows === null || outRows === null) missing.push("板块榜只取到一侧（in/out 有一侧为 null）：榜单为部分数据，已按 DEGRADED 口径提示");
         missing.push("个股主力资金流（fund_flow_stock）与北向净流入未进本批台账：前者需要明确代码，后者无可靠来源 ⇒ 见 HISTORICAL_EVIDENCE 的 MISSING 行");
         return { lines, missing, as_of: stamp };

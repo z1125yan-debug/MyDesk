@@ -254,11 +254,12 @@ test("行情查询：逐个代码取快照，超过上限要说明只取了前�
   assert.ok(r.skipped.some((s) => s.includes(`只取前 ${DISPATCH_MAX_SYMBOLS} 个`)), "超限必须留痕");
 });
 
-test("个股分析：快照 + 技术状态 + 资金流三件套，且深度上限内不静默截断", () => {
+test("个股分析：快照 + 技术状态 + 资金流 + 新闻公告四件套，且深度上限内不静默截断", () => {
+  // R10 扩容：三件套升四件套——用户口径「除了技术还要结合新闻回答我」，消息面进 per_symbol 预取
   const r = planDispatch({ intent: intent("stock_analysis", { question: "688256 和 600519 怎么看", symbols: ["688256.SH", "600519.SH"] }) });
   assert.deepEqual(r.calls.map((c) => c.tool), [
-    "stock_snapshot", "stock_kline_summary", "stock_fund_flow",
-    "stock_snapshot", "stock_kline_summary", "stock_fund_flow",
+    "stock_snapshot", "stock_kline_summary", "stock_fund_flow", "stock_news",
+    "stock_snapshot", "stock_kline_summary", "stock_fund_flow", "stock_news",
   ]);
   assert.ok(r.calls.every((c) => typeof c.reason === "string" && c.reason.length > 0), "每个预取都要说清为什么");
   const many = planDispatch({ intent: intent("stock_analysis", { question: "a", symbols: ["1.SH", "2.SH", "3.SH", "4.SH", "5.SH"] }) });
@@ -270,7 +271,7 @@ test("客户端快照已带该品种时不重复取数，并把原因留在 skip
     intent: intent("stock_analysis", { question: "688256 怎么看", symbol: "688256.SH", symbols: ["688256.SH"] }),
     snapshotSymbols: ["688256.SH"],
   });
-  assert.deepEqual(r.calls.map((c) => c.tool), ["stock_kline_summary", "stock_fund_flow"], "快照已实时，只补 K 线与资金");
+  assert.deepEqual(r.calls.map((c) => c.tool), ["stock_kline_summary", "stock_fund_flow", "stock_news"], "快照已实时，只补 K 线、资金与这只票的消息面（dedupe 只抵快照本体）");
   assert.ok(r.skipped.some((s) => s.includes("未重复取数")));
 
   // 纯行情查询这一轮确实不需要再取：抵完之后没有别的工具要跑，skipped 要把「为什么没步骤」说清楚

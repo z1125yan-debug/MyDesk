@@ -5,7 +5,8 @@ import { quantBootstrap, } from "@/lib/quant/bootstrap";
 import { getProvider } from "@/lib/quant/data/index";
 import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
 import { tdxQuotes, tdxDepth, tdxTradesMoney } from "@/lib/desk/tdx";
-import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, fetchBoardReal, symbolToSecid } from "@/lib/desk/em";
+import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, symbolToSecid } from "@/lib/desk/em";
+import { fetchBoardRowsRescued } from "@/lib/desk/board-rescue";
 import { marketSession, shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import { computeSentiment, evalLimitSnapshot } from "@/lib/quant/screener/sentiment";
 import { buildFieldPanel, lastValues, type BarsLike } from "@/lib/quant/factors/fields";
@@ -103,11 +104,19 @@ export async function GET(request: Request) {
   if (!detail) missing.push("主力资金流（东财 fflow 与新浪备胎两条源都没通）");
 
   // 6) 板块：行业 + 板块涨幅榜排名
-  let sector: { name: string; changePct: number; rank: number; mainYi: number; count: number } | null = null;
+  //    R8：走带同花顺兜底的入口——东财断源日也有净额真数可标；注意同花顺行业名与
+  //    成分股表 f100 的行业名不保证对得上，匹不上就如实记「行业未匹配到榜单」，不硬攀。
+  let sector: { name: string; changePct: number; rank: number; mainYi: number | null; count: number; source: string } | null = null;
+  let sectorFromThs = false;
   if (meta?.industry) {
-    const boards = await fetchBoardReal("industry", "in", 90).catch(() => null);
+    const { rows: boards, fromThs } = await fetchBoardRowsRescued("industry", "in", 90).catch(() => ({ rows: null, fromThs: false }));
+    sectorFromThs = fromThs;
     const row = boards?.find((b) => b.name === meta?.industry);
-    if (row && boards) sector = { name: row.name, changePct: row.changePct, rank: boards.indexOf(row) + 1, mainYi: row.main, count: boards.length };
+    if (row && boards) sector = {
+      name: row.name, changePct: row.changePct, rank: boards.indexOf(row) + 1,
+      mainYi: row.fundsMissing ? null : row.main, count: boards.length,
+      source: fromThs ? "同花顺行业资金流榜（东财断源兜底，净额口径）" : "东财行业资金榜",
+    };
   }
   if (!sector) missing.push("板块强度（行业未匹配到榜单）");
 
@@ -163,7 +172,7 @@ export async function GET(request: Request) {
       } : null,
       tech: bars.length >= 60 ? { data: tech, source: "腾讯日K · 本机指标计算（未验证因子）", status: "HISTORICAL" } : null,
       probability: winProb ? { data: winProb, source: "腾讯日K · 历史条件概率引擎", note: "条件：站上MA20 且 站上20日成本线（K线口径）", status: "HISTORICAL" } : null,
-      sector: sector ? { data: sector, source: "东财 · 行业资金榜", status: "LIVE" } : null,
+      sector: sector ? { data: sector, source: sector.source, status: "LIVE" } : null,
       news: news ? { data: news.slice(0, 6), source: "东财7x24/新浪 · 宏观快讯", status: "LIVE" } : null,
       risk: risk ? { data: risk, source: "全A快照风险引擎", status: "LIVE" } : null,
     },

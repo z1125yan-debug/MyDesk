@@ -47,6 +47,12 @@ export interface RunPlanOpts {
   calls: DispatchCall[];
   /** 真正的取数动作（服务层给的是 chat-tools 的注册表实现）；抛错＝这一步失败 */
   execute: (call: DispatchCall) => Promise<unknown>;
+  /**
+   * R10 扩容：步骤标签的服务层覆写。chat-stream-core 的 TOOL_STEP_LABELS 在不动清单里，
+   * 新工具（stock_news）的人话标签进不去，就在注入侧补——返回 null 仍走 stepLabelFor 兜底，
+   * 旧工具一字不变。
+   */
+  labelFor?: (call: DispatchCall) => string | null;
   /** 逐步吐给前端的步骤事件（SSE 下接 emit，非流式下传同一个函数收集，两边判定一致） */
   onStep?: (step: StepInfo) => void;
   /** 步骤起始序号：预取占了前几号，模型自己的工具调用要接着编号，不能两边都从 1 开始 */
@@ -75,7 +81,8 @@ export async function runDispatchPlan(opts: RunPlanOpts): Promise<RunPlanResult>
 
   const todo: { call: DispatchCall; step: StepInfo }[] = [];
   (calls ?? []).forEach((call, i) => {
-    const step: StepInfo = { step: start + i + 1, label: stepLabelFor(call.tool, call.args), status: "running", tool: call.tool, source: "prefetch", reason: call.reason };
+    const label = opts.labelFor?.(call) ?? stepLabelFor(call.tool, call.args);
+    const step: StepInfo = { step: start + i + 1, label, status: "running", tool: call.tool, source: "prefetch", reason: call.reason };
     todo.push({ call, step });
   });
   // 已经取消就别再取数：留痕是「没执行」，不是「失败」，更不是「取到了」

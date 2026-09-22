@@ -20,8 +20,14 @@ import { getProvider } from "@/lib/quant/data/index";
 import { db } from "@/lib/db";
 import { fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
 import { tdxQuotes, tdxDepth, tdxTradesMoney } from "./tdx";
+// R10 通达信开放给对话：走工作台 MCP 层的 stdio 通道（tdx-mcp 已在 data/mcp-config.json 登记、trusted），
+// 本层只做「惰性拉起 + 解包成人话字段」，不自建第二个行情客户端。
+import { callTool as mcpCallTool, listServers, startServer } from "./mcp-manager";
 import { suffixOf } from "./intent-core";
-import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, fetchBoardReal, symbolToSecid } from "./em";
+import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, symbolToSecid } from "./em";
+// R10 扩容：个股新闻/公告 + 公司名解析（em.ts 在不动清单里，本模块内部复用它的 searchReal，不改它一行）
+import { resolveStockName, fetchStockNews, fetchStockAnnouncements } from "./stock-news";
+import { fetchBoardRowsRescued } from "./board-rescue";
 import { shanghaiDate } from "./session";
 import {
   BACKTEST_MIN_TRADING_DAYS, BACKTEST_POLL_INTERVAL_MS, TEXT_NOT_IN_WHITELIST, TEXT_POLL_TIMEOUT,
@@ -58,6 +64,31 @@ export function normalizeSymbol(raw: string): string | null {
   return null;
 }
 
+/**
+ * R10 扩容：工具入参「代码或公司名」的统一入口。normalizeSymbol 只认代码形状，
+ * 而用户说话用的是名字（「中国电影卖的怎么样」）——名字到这里、只有东财搜索精确命中才算代码，
+ * 不中回 null 由工具体回 missing，绝不凭印象猜代码（纯层只猜形状，这层查了才算事实）。
+ * 解析成功带回名字，调用方必须在返回值里自报「按公司简称解析」（出身如实）。
+ */
+async function resolveSymbolArg(raw: string): Promise<{ symbol: string; resolvedName: string | null; resolvedFrom: string; matchKind: "exact" | "prefix" | "suffix" } | null> {
+  const s = (raw ?? "").trim();
+  const direct = normalizeSymbol(s);
+  if (direct) return { symbol: direct, resolvedName: null, resolvedFrom: s, matchKind: "exact" };
+  const hit = await resolveStockName(s);
+  return hit ? { symbol: hit.symbol, resolvedName: hit.name, resolvedFrom: s, matchKind: hit.matchKind } : null;
+}
+
+/** 名称解析自报行：只有真按名字解析过才出现，代码直查的返回不多余挂一行；前缀/砍尾缀命中要自报是怎么命中的（R10c） */
+function resolvedNote(r: { resolvedName: string | null; resolvedFrom: string; matchKind: "exact" | "prefix" | "suffix" }): Record<string, string> {
+  if (!r.resolvedName) return {};
+  const text = r.matchKind === "exact"
+    ? `按公司简称「${r.resolvedName}」经东财搜索解析（不是用户直接给的代码）`
+    : r.matchKind === "prefix"
+      ? `按简称「${r.resolvedFrom}」经东财搜索唯一命中全称「${r.resolvedName}」（不是用户直接给的代码；全称是搜索接口给的，不是联想的）`
+      : `按「${r.resolvedFrom}」砍掉组织形式词尾缀后经东财搜索唯一命中「${r.resolvedName}」（不是用户直接给的代码；全称是搜索接口给的，不是联想的）`;
+  return { 代码解析: text };
+}
+
 // P11 情绪温度：0-100 综合分（缺读数缩权、绝不把缺失当 0 分），工具与仪表盘消费同一份纯核
 import { computeTemperature, temperatureSummary } from "@/lib/quant/screener/sentiment-temperature-core";
 
@@ -88,17 +119,26 @@ async function toolMarketSentiment(): Promise<unknown> {
 
 async function toolSectorRank(args: { kind?: string; size?: number }): Promise<unknown> {
   const kind = args.kind === "concept" ? "concept" : "industry";
-  const rows = await fetchBoardReal(kind, "in", Math.min(30, Math.max(5, args.size ?? 15)));
-  if (!rows) return { missing: `${kind}板块资金榜暂无数据（东财接口失败）` };
+  // R8：断源日不再整块「暂无数据」——东财/腾讯拿不到资金读数时换同花顺净额榜，数据源行跟着换口径
+  const { rows, fromThs } = await fetchBoardRowsRescued(kind, "in", Math.min(30, Math.max(5, args.size ?? 15)));
+  if (!rows || !rows.length) return { missing: `${kind}板块资金榜暂无数据（东财接口失败，同花顺兜底亦无返回）` };
   return {
-    数据源: "东财板块资金榜（主力净流入排序）",
-    板块: rows.map((r, i) => ({ 排名: i + 1, 名称: r.name, 涨跌幅: r.changePct, 主力净额亿: r.main, 领涨股: r.leader })),
+    数据源: fromThs
+      ? "同花顺板块资金流榜（东财断源兜底：净额=流入−流出，非东财主力拆分口径）"
+      : "东财板块资金榜（主力净流入排序）",
+    板块: rows.map((r, i) => ({
+      排名: i + 1, 名称: r.name, 涨跌幅: r.changePct,
+      // 腾讯兜底榜行 main 是占位 0：报 null（缺读数），不拿 0.00 亿冒充「主力持平」；同花顺行是真净额，照常报
+      主力净额亿: r.fundsMissing ? null : r.main,
+      领涨股: r.leader,
+    })),
   };
 }
 
 async function toolStockSnapshot(args: { symbol: string }): Promise<unknown> {
-  const symbol = normalizeSymbol(args.symbol ?? "");
-  if (!symbol) return { missing: `无法识别代码：${args.symbol}（应为 688256 或 688256.SH）` };
+  const r = await resolveSymbolArg(args.symbol ?? "");
+  if (!r) return { missing: `无法识别标的：${args.symbol}（应为 688256 / 688256.SH 形态，或东财搜索可命中的公司简称）` };
+  const symbol = r.symbol;
   const provider = await getProvider("em");
   const tradeDate = shanghaiDate();
   const meta = (await provider.listUniverse({ kind: "custom", symbols: [symbol] }, tradeDate).catch(() => []))[0];
@@ -107,6 +147,7 @@ async function toolStockSnapshot(args: { symbol: string }): Promise<unknown> {
   if (!q && !meta) return { missing: `${symbol} 快照暂无数据` };
   return {
     symbol,
+    ...resolvedNote(r),
     名称: meta?.name ?? null,
     现价: q?.price ?? meta?.price ?? null,
     涨跌幅: q?.changePct ?? meta?.changePct ?? null,
@@ -121,13 +162,14 @@ async function toolStockSnapshot(args: { symbol: string }): Promise<unknown> {
 }
 
 async function toolStockDepth(args: { symbol: string }): Promise<unknown> {
-  const symbol = normalizeSymbol(args.symbol ?? "");
-  if (!symbol) return { missing: `无法识别代码：${args.symbol}` };
+  const r = await resolveSymbolArg(args.symbol ?? "");
+  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  const symbol = r.symbol;
   const d = (await tdxDepth([symbol]).catch(() => null))?.get(symbol);
   if (!d) return { missing: "五档盘口暂无数据（eltdx 网关未运行）" };
   const sum = (arr: { volume: number }[]) => arr.reduce((s, l) => s + l.volume, 0);
   return {
-    symbol, 数据源: "eltdx · quotes.get_depth",
+    symbol, ...resolvedNote(r), 数据源: "eltdx · quotes.get_depth",
     买五档: d.bids, 卖五档: d.asks,
     委买总量手: sum(d.bids), 委卖总量手: sum(d.asks),
     委买卖比: sum(d.asks) > 0 ? +(sum(d.bids) / sum(d.asks)).toFixed(2) : null,
@@ -136,12 +178,13 @@ async function toolStockDepth(args: { symbol: string }): Promise<unknown> {
 }
 
 async function toolStockTrades(args: { symbol: string }): Promise<unknown> {
-  const symbol = normalizeSymbol(args.symbol ?? "");
-  if (!symbol) return { missing: `无法识别代码：${args.symbol}` };
+  const r = await resolveSymbolArg(args.symbol ?? "");
+  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  const symbol = r.symbol;
   const t = await tdxTradesMoney(symbol).catch(() => null);
   if (!t) return { missing: "主动买卖数据暂无（eltdx 网关未运行）" };
   return {
-    symbol, 数据源: "eltdx 快照内外盘（全日累计，代理指标）",
+    symbol, ...resolvedNote(r), 数据源: "eltdx 快照内外盘（全日累计，代理指标）",
     口径: t.basis,
     主动买入亿: +t.buyAmountYi.toFixed(2), 主动卖出亿: +t.sellAmountYi.toFixed(2),
     主动净额亿: +t.netYi.toFixed(2),
@@ -150,8 +193,9 @@ async function toolStockTrades(args: { symbol: string }): Promise<unknown> {
 }
 
 async function toolStockKline(args: { symbol: string }): Promise<unknown> {
-  const symbol = normalizeSymbol(args.symbol ?? "");
-  if (!symbol) return { missing: `无法识别代码：${args.symbol}` };
+  const r = await resolveSymbolArg(args.symbol ?? "");
+  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  const symbol = r.symbol;
   const provider = await getProvider("em");
   const tradeDate = shanghaiDate();
   const meta = (await provider.listUniverse({ kind: "custom", symbols: [symbol] }, tradeDate).catch(() => []))[0];
@@ -172,6 +216,7 @@ async function toolStockKline(args: { symbol: string }): Promise<unknown> {
   });
   return {
     symbol,
+    ...resolvedNote(r),
     数据源: barsRes.outcomes[0]?.channel === "tdx"
       ? "eltdx 日K（本机直连网关）+ 本机指标计算（未验证因子）"
       : "腾讯日K（eltdx 未取到，本条为兜底口径）+ 本机指标计算（未验证因子）",
@@ -187,13 +232,15 @@ async function toolStockKline(args: { symbol: string }): Promise<unknown> {
 }
 
 async function toolStockFundFlow(args: { symbol: string }): Promise<unknown> {
-  const symbol = normalizeSymbol(args.symbol ?? "");
-  if (!symbol) return { missing: `无法识别代码：${args.symbol}` };
+  const r = await resolveSymbolArg(args.symbol ?? "");
+  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  const symbol = r.symbol;
   const secid = symbolToSecid(symbol);
   const detail = secid ? await fetchDetailReal(secid).catch(() => null) : null;
   if (!detail) return { missing: "主力资金流暂无数据（东财 fflow 与新浪备胎两条源都没通）" };
   return {
     symbol,
+    ...resolvedNote(r),
     数据源: detail.source === "sina"
       ? "新浪 MoneyFlow 日度净额（东财 fflow 断源时的备胎；口径≈主力净流入，与东财 f62 主力净额不完全等价，转述时须注明是新浪口径）"
       : "东财 · push2his 主力净额",
@@ -206,6 +253,210 @@ async function toolMarketNews(args: { limit?: number }): Promise<unknown> {
   const rows = await fetchNewsReal(Math.min(15, Math.max(5, args.limit ?? 10))).catch(() => null);
   if (!rows) return { missing: "宏观快讯暂无数据" };
   return { 数据源: "东财7x24/新浪快讯", 快讯: rows };
+}
+
+/**
+ * R10 扩容（用户口径）：「除了技术还要结合新闻回答我」——谈个股必须有这只票自己的
+ * 新闻（东财站内搜索按时间倒序）与公告（披露列表），宏观快讯替代不了。
+ * 两条源全失败才回 missing；只挂一条另一条照出，失败与没消息在返回里分开写，
+ * 模型不许把「断源」转述成「这只票没新闻」，也不许反过来。
+ */
+async function toolStockNews(args: { symbol?: string; limit?: number }): Promise<unknown> {
+  const r = await resolveSymbolArg(String(args.symbol ?? ""));
+  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态，或东财搜索可命中的公司简称；不命中不猜代码）` };
+  const code6 = r.symbol.slice(0, 6);
+  const n = Math.min(10, Math.max(3, args.limit ?? 6));
+  const [news, ann] = await Promise.all([
+    fetchStockNews(r.resolvedName ?? code6, n),
+    fetchStockAnnouncements(code6, n),
+  ]);
+  if (!news && !ann) {
+    return { missing: `${r.symbol} 新闻与公告都没取到（东财搜索/披露接口均无响应）——这是取数失败，不是「这只票没有消息」` };
+  }
+  return {
+    symbol: r.symbol,
+    ...resolvedNote(r),
+    数据源: "东财个股新闻搜索（按时间倒序）+ 东财公告披露列表",
+    取数时刻: shanghaiDate(),
+    ...(news
+      ? {
+          新闻: news.map((x) => ({ 标题: x.title, 时间: x.date, 媒体: x.media, 链接: x.url })),
+          ...(news.length ? {} : { 新闻说明: "时间窗内没搜到相关报道（是没搜到，不是取数失败）" }),
+        }
+      : { 新闻: { missing: "个股新闻取数失败（搜索接口无响应），不代表这只票没有消息" } }),
+    ...(ann
+      ? {
+          公告: ann.map((x) => ({ 标题: x.title, 时间: x.time, 栏目: x.column })),
+          ...(ann.length ? {} : { 公告说明: "近期无披露记录（是没公告，不是取数失败）" }),
+        }
+      : { 公告: { missing: "公告取数失败（披露接口无响应），不代表这只票没公告" } }),
+  };
+}
+
+// ---------- R10 通达信 MCP 工具（tdx-mcp：交易所直连的行情服务器快照口径） ----------
+// 为什么单独一家：东财(push2)断源时腾讯/同花顺兜的是板块资金，个股盘口/五档这条
+// eltdx 网关之外没有第二家；tdx-mcp 走的通达信行情服务器就是这一家。快照字段（server_time/盘口/现量）
+// 都是服务器实时推送形态，盘后拿到的就是收盘定格——所以话术是「快照」，不吹「逐笔实时」。
+// 边界（诚实口径）：symbol_zjlx（个股资金流向）上游有 bug（返回 dict 但输出声明 list，校验必炸），
+// 不登记不冒充——资金口径仍然只认东财/同花顺那套。
+
+/** 6 位代码 → 通达信市场号（1=沪 0=深 2=北）。先过 normalizeSymbol，认不出不回 market。 */
+function tdxMarketOf(symbol: string): number {
+  const code = symbol.slice(0, 6);
+  if (/^(6|9|5)/.test(code)) return 1;
+  if (/^(4|8)/.test(code)) return 2;
+  return 0;
+}
+
+/** stdio 返回是 content:[{type:"text",text:"<json或错误串>"}...]——解包成对象数组 */
+function unwrapMcpContent(res: unknown): Record<string, unknown>[] {
+  const content = (res as { content?: { type?: string; text?: string }[] })?.content ?? [];
+  const out: Record<string, unknown>[] = [];
+  for (const c of content) {
+    if (c?.type !== "text" || !c.text) continue;
+    if (c.text.startsWith("Error executing tool")) { out.push({ _error: c.text.slice(0, 200) }); continue; }
+    try {
+      const p = JSON.parse(c.text);
+      if (p && typeof p === "object") out.push(p as Record<string, unknown>);
+    } catch { /* 非 JSON 文本块忽略 */ }
+  }
+  return out;
+}
+
+// 惰性拉起：模型第一次调 tdx_* 时若服务器还没起，就用登记配置现场 start（一次只放一个启动在途，
+// 并行工具调用撞进来也不能互相 kill）。起不来就如实回 missing，不拿空数组冒充「没有数据」。
+let tdxBooting: Promise<string | null> | null = null;
+async function ensureTdxMcp(): Promise<string | null> {
+  const probe = async (): Promise<string | null> => {
+    const srv = listServers().find((s) => s.id === "tdx-mcp");
+    if (!srv) return "通达信 MCP 未登记（设置 → MCP 服务器里没有 tdx-mcp）";
+    if (srv.status === "ready") return null;
+    if (!srv.config) return "通达信 MCP 缺配置，无法启动";
+    try {
+      await startServer(srv.config);
+      return null;
+    } catch (e) {
+      return `通达信 MCP 启动失败：${(e as Error).message}`;
+    }
+  };
+  tdxBooting ??= probe().finally(() => { tdxBooting = null; });
+  return tdxBooting;
+}
+
+const INDEX_NAMES: Record<string, string> = {
+  "999999": "上证指数", "399001": "深证成指", "399006": "创业板指", "000688": "科创50", "899050": "北证50",
+};
+
+async function toolTdxMarketOverview(): Promise<unknown> {
+  const err = await ensureTdxMcp();
+  if (err) return { missing: err };
+  try {
+    const res = await mcpCallTool("tdx-mcp", "get_index_overview", {});
+    const rows = unwrapMcpContent(res);
+    if (!rows.length) return { missing: "通达信指数概况无返回（行情服务器未响应）" };
+    const pct = (n: number) => Math.round(n * 10000) / 100;
+    return {
+      数据源: "通达信行情服务器（tdx-mcp，快照口径；盘后为收盘定格）",
+      指数: rows.map((r) => {
+        const close = Number(r.close ?? 0);
+        const pre = Number(r.pre_close ?? 0);
+        return {
+          指数: INDEX_NAMES[String(r.code ?? "")] ?? String(r.code ?? "?"),
+          最新: close,
+          昨收: pre,
+          涨跌幅: pre ? `${pct((close - pre) / pre)}%` : "—",
+          成交额亿: Math.round(Number(r.amount ?? 0) / 1e7) / 10,
+          涨家数: r.up_count ?? null,
+          跌家数: r.down_count ?? null,
+        };
+      }),
+    };
+  } catch (e) {
+    return { missing: `通达信指数概况取数失败：${(e as Error).message}` };
+  }
+}
+
+async function toolTdxQuotes(args: { symbols?: string[] }): Promise<unknown> {
+  const raw = (args.symbols ?? []).slice(0, 20);
+  const resolved = await Promise.all(raw.map((x) => resolveSymbolArg(String(x))));
+  const symbols = resolved.map((x) => x?.symbol).filter((x): x is string => !!x);
+  const dropped = raw.filter((_, i) => !resolved[i]);
+  if (!symbols.length) return { missing: `没有可用标的（收到 ${JSON.stringify(raw)}）：应为代码形态，或东财搜索可命中的公司简称` };
+  const err = await ensureTdxMcp();
+  if (err) return { missing: err };
+  try {
+    const res = await mcpCallTool("tdx-mcp", "stock_quotes", {
+      code_list: symbols.map((s) => [tdxMarketOf(s), s.slice(0, 6)]),
+    });
+    const rows = unwrapMcpContent(res);
+    const bad = rows.find((r) => r._error);
+    if (bad) return { missing: `通达信行情取数失败（上游工具报错）：${String(bad._error).slice(0, 120)}` };
+    if (!rows.length) return { missing: "通达信行情无返回（行情服务器未响应）" };
+    const pct = (n: number) => Math.round(n * 10000) / 100;
+    return {
+      数据源: "通达信行情服务器（tdx-mcp，快照口径，含盘口；与东财快照并报时各报各的出身，不混算）",
+      ...(dropped.length ? { 未识别提示: `${dropped.length} 个标的既不是代码也没被东财搜索命中，本轮未取数：${dropped.join("、")}` } : {}),
+      行情: rows.map((r) => {
+        const close = Number(r.close ?? 0);
+        const pre = Number(r.pre_close ?? 0);
+        const hc = (r.handicap ?? {}) as { bid?: { price: number; vol: number }[]; ask?: { price: number; vol: number }[] };
+        return {
+          代码: String(r.code ?? ""),
+          现价: close,
+          昨收: pre,
+          今开: r.open ?? null,
+          最高: r.high ?? null,
+          最低: r.low ?? null,
+          涨跌幅: pre ? `${pct((close - pre) / pre)}%` : "—",
+          成交额亿: Math.round(Number(r.amount ?? 0) / 1e7) / 10,
+          成交量万手: Math.round(Number(r.vol ?? 0) / 1e4),
+          买一: hc.bid?.[0] ? `${hc.bid[0].price}×${hc.bid[0].vol}手` : null,
+          卖一: hc.ask?.[0] ? `${hc.ask[0].price}×${hc.ask[0].vol}手` : null,
+          内盘万手: Math.round(Number(r.in_vol ?? 0) / 1e6 * 100) / 100,
+          外盘万手: Math.round(Number(r.out_vol ?? 0) / 1e6 * 100) / 100,
+          服务器时间: r.server_time ?? null,
+        };
+      }),
+    };
+  } catch (e) {
+    return { missing: `通达信行情取数失败：${(e as Error).message}` };
+  }
+}
+
+async function toolTdxKline(args: { symbol?: string; days?: number }): Promise<unknown> {
+  const r = await resolveSymbolArg(String(args.symbol ?? ""));
+  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  const symbol = r.symbol;
+  const days = Math.min(60, Math.max(5, args.days ?? 20));
+  const err = await ensureTdxMcp();
+  if (err) return { missing: err };
+  try {
+    const res = await mcpCallTool("tdx-mcp", "stock_kline", {
+      market: tdxMarketOf(symbol), code: symbol.slice(0, 6), period: 4, count: days,
+    });
+    const rows = unwrapMcpContent(res);
+    const bad = rows.find((r) => r._error);
+    if (bad) return { missing: `通达信日K取数失败（上游工具报错）：${String(bad._error).slice(0, 120)}` };
+    if (!rows.length) return { missing: "通达信日K无返回（行情服务器未响应）" };
+    const bars = rows.map((r) => ({
+      日期: String(r.datetime ?? "").slice(0, 10),
+      开: r.open ?? null, 高: r.high ?? null, 低: r.low ?? null, 收: r.close ?? null,
+      成交量万手: Math.round(Number(r.vol ?? 0) / 1e4 * 10) / 10,
+      成交额亿: Math.round(Number(r.amount ?? 0) / 1e7) / 10,
+    }));
+    const first = bars[0]?.收 != null ? Number(bars[0].收) : null;
+    const last = bars[bars.length - 1]?.收 != null ? Number(bars[bars.length - 1].收) : null;
+    return {
+      数据源: "通达信行情服务器（tdx-mcp，日线，不复权）",
+      标的: symbol,
+      ...resolvedNote(r),
+      区间: `${bars[0]?.日期 ?? "?"} ~ ${bars[bars.length - 1]?.日期 ?? "?"}（${bars.length} 根）`,
+      ...(first != null && last != null ? { 区间涨跌幅: `${Math.round((last / first - 1) * 10000) / 100}%` } : {}),
+      K线: bars,
+    };
+  } catch (e) {
+    return { missing: `通达信日K取数失败：${(e as Error).message}` };
+  }
 }
 
 /**
@@ -288,8 +539,9 @@ async function toolFactorScreener(args: {
 }
 
 async function toolHistoricalProbability(args: { symbol: string; conditions: ScreenerCond[] }): Promise<unknown> {
-  const symbol = normalizeSymbol(args.symbol ?? "");
-  if (!symbol) return { missing: `无法识别代码：${args.symbol}` };
+  const r = await resolveSymbolArg(args.symbol ?? "");
+  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  const symbol = r.symbol;
   const conds = Array.isArray(args.conditions) ? args.conditions : [];
   if (!conds.length) return { missing: "conditions 为空" };
   const provider = await getProvider("em");
@@ -305,7 +557,7 @@ async function toolHistoricalProbability(args: { symbol: string; conditions: Scr
   const stats = historicalWinProbability({ symbol, bars, meta, conditions: conds });
   if (!stats) return { missing: "条件无法识别（字段不在因子目录内）" };
   return {
-    symbol, 条件: conds, 统计: stats.horizons.map((h) => ({
+    symbol, ...resolvedNote(r), 条件: conds, 统计: stats.horizons.map((h) => ({
       持有日: h.h, 胜率: h.win_rate?.toFixed(1) + "%", 样本: h.sample_size,
       平均收益: h.avg_return?.toFixed(2) + "%", 最差收益: h.worst_return?.toFixed(2) + "%",
     })),
@@ -581,12 +833,20 @@ export interface ChatTool {
 export const TOOLS: ChatTool[] = [
   { name: "market_sentiment", desc: "大盘情绪：情绪温度(0-100)/涨跌家数/涨停/跌停/成交额/主力净额/风险等级", fn: toolMarketSentiment, params: { type: "object", properties: {} } },
   { name: "sector_rank", desc: "行业/概念板块资金榜（按主力净流入排序）", fn: toolSectorRank, params: { type: "object", properties: { kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number" } } } },
-  { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
+  { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业；symbol 可传代码或公司简称（简称经东财搜索解析，解析结果如实标注）", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "stock_depth", desc: "个股五档盘口（eltdx）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标）", fn: toolStockTrades, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "stock_kline_summary", desc: "个股技术状态：均线/MACD/KDJ/RSI/VWAP/RPS + 历史条件概率", fn: toolStockKline, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "stock_fund_flow", desc: "个股近14日主力资金净额（东财）", fn: toolStockFundFlow, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "market_news", desc: "最新宏观/市场快讯", fn: toolMarketNews, params: { type: "object", properties: { limit: { type: "number" } } } },
+  // R10 扩容：个股自己的消息面。谈个股结论必须引它，宏观快讯（market_news）替代不了——
+  // 3014 实测「问中国海油答美国地产商」就是拿宏观快讯冒充个股消息面的事故现场。
+  { name: "stock_news", desc: "个股新闻+公告（这只票自己的消息面）：symbol 可传代码或公司简称（简称自动经东财搜索解析并如实标注）；新闻按时间倒序、公告含栏目标签", fn: toolStockNews, params: { type: "object", properties: { symbol: { type: "string" }, limit: { type: "number" } }, required: ["symbol"] } },
+  // R10 通达信三件：只进模型自取清单，不进自动调度预取表（同 P13 candidate_pool 先例）——
+  // tdx-mcp 冷启动要拉起 Python 进程（首调 ~4s），预取环里每轮都等它不值；模型要核对盘口/量能再调。
+  { name: "tdx_market_overview", desc: "通达信指数概况：上证/深证/创业板/科创50/北证50 最新点位+成交额+涨跌家数（交易所直连快照，与东财口径互为交叉核对；无资金流读数）", fn: toolTdxMarketOverview, params: { type: "object", properties: {} } },
+  { name: "tdx_quotes", desc: "通达信个股实时快照（最多20只）：现价/涨跌幅/成交额/内外盘/买一卖一盘口/服务器时间；看盘口挂单与量能用它，资金流向仍用 stock_fund_flow", fn: toolTdxQuotes, params: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } }, required: ["symbols"] } },
+  { name: "tdx_kline", desc: "通达信日K（不复权，5~60根）：开高低收+量额+区间涨跌幅，用于核对东财K线或看近期走势", fn: toolTdxKline, params: { type: "object", properties: { symbol: { type: "string" }, days: { type: "number" } }, required: ["symbol"] } },
   { name: "factor_screener", desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录；不给 conditions 时按系统默认活跃池跑（返回里会如实标注是默认口径）", fn: toolFactorScreener, params: { type: "object", properties: { conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string", enum: ["=", ">=", ">", "<=", "<", "!="] }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } }, limit: { type: "number" } } } },
   { name: "candidate_pool", desc: "读取已冻结候选池（择优素材，池序不是推荐）：pool_id 形如 2026-09-22-全A-001（AI 选股页冻结后给的池号）；不带 pool_id 会列出最近的池", fn: toolCandidatePool, params: { type: "object", properties: { pool_id: { type: "string" } } } },
   { name: "historical_probability", desc: "个股历史条件概率：conditions 中的 field 必须来自因子目录", fn: toolHistoricalProbability, params: { type: "object", properties: { symbol: { type: "string" }, conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string" }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } } }, required: ["symbol", "conditions"] } },

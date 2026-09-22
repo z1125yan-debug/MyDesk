@@ -21,7 +21,7 @@ function sceneName(scene: string): string {
  * 标的来源的说法来自判定层（symbolSourceText），这里只做两件界外事：
  * 认不出的来源写「来源未标注」而不是硬套一个说法 —— 徽章是从服务端解出来的，键可能整段没有。
  */
-const KNOWN_SOURCES = ["question", "session", "focus", "none"] as const;
+const KNOWN_SOURCES = ["question", "session", "focus", "name", "none"] as const;
 
 function sourceNote(source: string): string {
   return (KNOWN_SOURCES as readonly string[]).includes(source)

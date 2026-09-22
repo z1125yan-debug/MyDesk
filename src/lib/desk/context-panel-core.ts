@@ -96,7 +96,7 @@ export function pickPanelSymbol(src: {
  * 认不出的值原样带出来并说明「不在已知口径里」——把未知翻成任何一个已知说法都是猜。
  */
 export function symbolSourceNote(source: string | null | undefined): string {
-  const known: Intent["symbolSource"][] = ["question", "session", "focus", "none"];
+  const known: Intent["symbolSource"][] = ["question", "session", "focus", "name", "none"];
   const s = (source ?? "").trim();
   if (!s) return "服务端本轮没标标的来源";
   if (!known.includes(s as Intent["symbolSource"])) return `来源标记「${s}」不在已知口径里（不翻译、不猜）`;

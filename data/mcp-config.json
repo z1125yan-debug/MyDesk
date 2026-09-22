@@ -8,6 +8,22 @@
         "scripts/mcp/demo_market.py"
       ],
       "trusted": false
+    },
+    {
+      "id": "tdx-mcp",
+      "name": "通达信行情（tdx-mcp）",
+      "command": "C:\\Users\\Lenovo\\.local\\bin\\uvx.exe",
+      "args": [
+        "--from",
+        "tdx-mcp",
+        "--with",
+        "mcp<2",
+        "tdx-mcp"
+      ],
+      "env": {
+        "UV_CACHE_DIR": "D:\\Zai\\uv-cache"
+      },
+      "trusted": true
     }
   ]
 }

@@ -17,6 +17,7 @@ import {
   guardPriceOf, provenanceOfQuote, provenanceOfTechSnapshot, renderMarketContext, type CtxRow,
 } from "@/lib/desk/ai-context-core";
 import { isFollowUp, type ChatMessage, type ChatSession } from "@/lib/desk/chat-core";
+import { nameCandidates } from "@/lib/desk/intent-core";
 import { useChatSend, type SnapshotResult } from "@/lib/desk/use-chat";
 import { useServerLlm } from "@/lib/desk/use-server-llm";
 import { useDeskLinks } from "@/lib/desk/use-desk-links";
@@ -95,16 +96,21 @@ async function marketBlockFor(symbol: string): Promise<{ rows: CtxRow[]; block: 
 }
 
 // 从自然语言问题中提取品种搜索词（整句搜索接口是不认的）
+// R10b：候选切法与服务端 intent-core.nameCandidates 同一份口径（停用词表就在纯核里）。
+// 3014 实测教训：问「中国电影卖的怎么样」时旧切法只产出「整句/中国电影卖」两种形状，
+// 搜索接口全不认 → 客户端快照落回关注品种、价位校验锚错票；服务端却能把「中国电影」解析成 600977。
+// 两边各切一套，就会出现「答的是这只票、注入的是那只票」的口径分裂。
 export function questionCandidates(q: string): string[] {
   const out = new Set<string>();
   out.add(q.trim());
   const code = q.match(/\d{6}/);
   if (code) out.add(code[0]);
+  for (const n of nameCandidates(q)) out.add(n);
   const stripped = q
     .replace(/^(帮我|请你|请|麻烦|帮忙|看看|看下|看一下|分析一下|分析下|分析|聊聊|说说|讲讲|查一下|查下|查查|对比一下|对比)+/g, "")
     .replace(/(的?结构|的?走势|的?行情|的?基本面|怎么样|怎么看待|怎么看|如何看|如何|现在|当前|最新|的情况|情况|支撑|阻力|关键位|价位|价格|在哪|哪里|吗|呢|？|\?)+$/g, "");
   if (stripped.length >= 2) out.add(stripped);
-  return [...out].filter((s) => s.length >= 2).slice(0, 3);
+  return [...out].filter((s) => s.length >= 2).slice(0, 5);
 }
 
 export default function AssistantPage() {
@@ -152,11 +158,15 @@ export default function AssistantPage() {
       ? `[行情快照·逐条标注来源分层]\n${renderMarketContext(allRows, { takenAt: shanghaiStamp() })}`
       : "";
     const newsBlock = await fetchNewsBlock().catch(() => "");
+    const gi = blocks.findIndex((b) => b.price != null);
     return {
       // 快照为空时返回空串：提示词会写「状态 MISSING」，比塞一段假装有数据的文本诚实
       snapshot: [marketBlock, newsBlock].filter(Boolean).join("\n\n"),
       // 校验锚点只认真实报价：演示品种/缺失品种的 price 已经是 null，不会再拿假价判模型幻觉
-      guardPrice: blocks.map((b) => b.price).find((p) => p != null) ?? null,
+      guardPrice: gi >= 0 ? blocks[gi].price : null,
+      // R10b：这份价来自哪个标的要一起交出去——use-chat 拿它和本轮场景徽章的真实标的对账，
+      // 锚定的不是同一只票就没有资格判「价位幻觉」（详见 use-chat 的 anchorMismatch 注释）
+      anchorSymbol: gi >= 0 ? targets[gi] : null,
       stock: hit,
     };
   }, [focusSymbol]);
