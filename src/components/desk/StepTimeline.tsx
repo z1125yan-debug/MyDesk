@@ -76,7 +76,11 @@ export default function StepTimeline({
             ? <Loader2 size={11} className="animate-spin text-sky-400" />
             : <CircleDashed size={11} />}
           <span>
-            工作过程 · {steps?.length ?? 0} 步
+            {/* P15 对齐稳智措辞：跑完就说「AI 已完成分析 · N 步」，没跑完如实是进行时；
+                缺数据/失败照样挂在标题上——收口是收口，瞒是另一回事 */}
+            {streaming && steps?.some((s) => s.status === "running")
+              ? `正在分析 · 已走完 ${steps?.length ?? 0} 步`
+              : `AI 已完成分析 · 共 ${steps?.length ?? 0} 步`}
             {missing ? ` · ${missing} 步缺数据` : ""}
             {failed ? ` · ${failed} 步失败` : ""}
           </span>
