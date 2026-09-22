@@ -1996,3 +1996,57 @@ R3b/R3c 把情绪/板块/选股/因子/自选收成卡后，Research / Agent / H
 ### 未收口边界
 - SectorsPage/AiScan 仍只走东财+腾讯两级，同花顺推广待拍板；概念榜深跌净流出概念可能不在前 150；东财恢复后需回看一次「正常链路零变化」实机样本。
 - DB 当日变更、P1P2_任务书.md 删除、用户未入库 .md 未碰；3010 未动；_3014.log 临时文件不入库。
+
+## P15-R7 同花顺兜底推广到 sectors/board 两路（R6 拍板过的「推广待拍板」由用户验收时点头）
+
+### 背景与口径
+R6 只把同花顺资金流榜挂进 themes.ts（主题血缘），SectorsPage/AiScan 两路仍东财+腾讯两级、断源日整页空榜。「板块页也别再瞎」——兜底逻辑收进 ths.ts 的 thsToRankRow 共用行映射（R6 是 themes.ts 私有，这次升格两路共用），触发口径与 R6 一致：东财+腾讯都拿不到资金读数才整榜换同花顺，东财正常零变化。
+
+### 落点
+- /api/market/sectors 与 /api/market/board 两路接 thsToRankRow；types.ts 新增 breakdownMissing 标记一路带到页面。
+- 同花顺榜只有真净额：净占比/超大单/大单无该拆分（0 是占位）——SectorsPage/BoardPage 这些列显「—」不画 0；页面出身行/徽标自报「同花顺资金流」跟来源走。
+- THS 前缀码 + secid 留空防串源（同 R6 纪律）：东财资金明细/成分池递棒自然禁掉。
+- 新钉 p15-r7-ths-sectors-board.test.ts（行映射对位、触发口径、breakdownMissing 诚实、出身显示）。
+
+## P15-R8 板块榜消费方收口：五处散调用并成一个带兜底单点入口
+
+### 背景与口径
+R7 只收口了页面两路；仓库里直接调 em.fetchBoardReal 的还有五处（/api/market/board 路由内部、/api/stock/profile 个股所属行业、screener/events 资金验证、screener/research 采集器、agent-tools 工具层）——断源日这些地方各瞎各的，尤以 events「每条事件都记无资金验证」最疼。收口成一个单点入口 fetchBoardRowsRescued（东财→腾讯→同花顺三级 + 触发/出身判定放纯核），五处消费方一律改走它，em.ts 不动清单未解冻。
+
+### 落点
+- 新纯核 quant/screener/board-rescue-core.ts（何时升级兜底、出身文案、缺拆分标记）+ 服务层 desk/board-rescue.ts 单点入口。
+- 五处消费方换 fetchBoardRowsRescued；research 注释同步改口径（断源日整榜换同花顺净额榜）。
+- 新钉 p15-r8-board-rescue.test.ts；旧 p8-tc-fallback 钉随单点收口改对接（腾讯兜底行为零回归）。
+
+### 验收数字与实测证据（R7+R8 合并门禁）
+- 门禁 966/957/0/9（R6 942 基线 + R7/R8 新钉），tsc 0、build 过、依赖 diff 空；3014 断源演练两路与五处消费方出身行/「—」列/不串源逐项核过。
+
+## P15-R9 通达信 tdx-mcp 接入工作台 MCP 层（第二家行情口径）
+
+### 背景与口径
+用户拍板把通达信行情接进来当第二家真实口径。走 PyPI tdx-mcp（公开行情服务器，非本地 vipdoc 文件），经工作台既有 MCP stdio 通道，不自建第二个行情客户端。
+
+### 落点
+- data/mcp-config.json 登记 tdx-mcp（uvx 绝对路径 + --with "mcp<2" 硬约束——mcp 2.x 改了 FastMCP 导出名，不加必崩；trusted:true 是用户授权项）；store.ts 默认服务器表同步登记注记。
+- 33 个工具里 symbol_zjlx 上游有 bug（声明 list 返回 dict，输出校验必炸）——登记为禁入口，不当第二家资金口径。
+- SettingsPage 工具列表过滤修正：原来拿 t.server===s.name 比，tdx 的 30 个工具在管理面板不显——改按 s.id。
+- 新钉 p15-r9-tdx-mcp.test.ts；预检走查脚本 scripts/mcp/_preflight_tdx_mcp.mjs 自注「不入库」，留在工作区未提交。
+
+## P15-R10 AI 真知道数据：通达信三工具开对话 + 公司名落标 + 个股消息面必读 + 长鑫断链修复（v1 / 扩容 R10b / R10c）
+
+### v1 口径与落点
+「开放给 AI 啊，不开放她怎么知道数据」——stock_quotes/stock_kline/stock_trades 三工具挂进对话 TOOLS（走 R9 的 MCP 层，惰性拉起+解包成人话字段），对话提示词加纪律 6（通达信与东财数字分开各报来源时间、禁止平均混算；通达信无资金口径；missing 不编数）。
+
+### R10 扩容（R10b）口径与落点
+用户口径原话：「不光是开放数据，她要知道数据才行；选股除了技术还要结合新闻；问'这个T卖的怎么样'要答得像人话、数据都是真实的」。落点四件：① intent-core nameCandidates 纯层只提议候选名（停用词切段，上限 5）；服务层新模块 desk/stock-news.ts 拿东财搜索验证，出处如实标 symbolSource="name"。② 个股新闻/公告两接口（search-api-web 带 cb 按时间倒序 + np-anotice-stock 披露列表），注册成 stock_news 工具进个股分析 per_symbol required——消息面从可选论据升为必读，宏观快讯不许冒充个股消息（3014 实测事故钉死）。③ 提示词纪律 7 同步（结论必须挂这只票自己的带时间新闻，没消息自报「纯行情数据判断」）。④ 走查当场抓到并修掉两个真 bug：客户端 questionCandidates 切不出公司名→快照锚错 focusSymbol 触发「1121 元假幻觉拦截」（客户端并入服务端同一份 nameCandidates + SnapshotResult 交出 anchorSymbol + use-chat anchorMismatch 整体跳过校验）；Debug 意图行把原始键「name」直接上屏（intent-core 落 symbolSourceLabel 单一出处，debug-core 引用）。
+
+### R10c 长鑫断链（用户实机质疑「长鑫居然说没上市」）
+查实：长鑫科技 688825.SH 已于 2026-07 登陆科创板，searchReal("长鑫") 当场能搜到——断在 resolveStockName 只认全等把查证结果丢弃，模型再拿「没查到」编出「未上市」。修复三道安全闸：全等优先零回归 → 唯一前缀命中才认（「平安」一对多义照样不认）→ 再不行砍一个组织形式词尾缀（存储/科技/集团…）只试一次且仍过唯一闸（「长鑫存储」→长鑫→长鑫科技）。命中方式 matchKind 全程如实自报（工具返回自报行/徽章出处/递棒三处留痕），并加话术闸：解析失败只许说「没能匹配到可交易的代码」，禁止反推「该公司未上市」——没搜到不等于不存在（chat 路由纪律 3 与场景提示词同一句）。
+
+### 验收数字与实测证据（R10b+R10c 终态门禁）
+- 986/977/0/9（R10b 984 之上 +2 全为 R10c 新钉），tsc 0、build 过、eslint 0 警告、依赖 diff 空。
+- 3014 实机：代理路径「中国电影卖的怎么样」7 步全绿四件套真数；「长鑫存储怎么样」「那长鑫呢」（中国电影会话内追问）均落 688825.SH、600977 正确让位；UI 工具环路径回答带 9-22 存储板块突破/9-20 五代工艺量产公告真新闻织人话，不再出现「未上市」断言。长鑫日 K 仅 42 根（上市未满三月）如实报缺不硬算。
+- 走查副作用已处理：误发「undefined」两条经 localStorage 手术精准删除并复验；写落的用户会话数据未入库。
+
+### 未收口边界
+- 模型偶发数字口误（资金流明细不在契约锁死范围）——扩契约面等拍板；tdx 交易时段实时复测仍挂账（非交易时段只验过盘后口径）；东财恢复后回看「正常链路零变化」样本；AiScan 次日验证；candidate_pool 中文标签；选股 leftovers。
