@@ -112,8 +112,11 @@ test("对话页不再挂载即开新会话：切换页面/刷新都续着原会�
   assert.match(store, /persist\(/);
   assert.match(store, /sessions:/);
   // 另一半病灶：侧栏「AI 决策」按钮旧实现点击即 newSession()（实机走查抓到：切回来变 Hello）——
-  // 导航不许再碰会话，新会话只认页内「新对话」按钮
+  // 导航不许再碰会话，新会话只认页内「新对话」按钮。
+  // P15-R3a 口径迁移：工作台按钮没了（菜单收成一级平铺），「点 AI 对话 = go(copilot) 且只 go」
+  // 改钉在 nav-core 登记表上——一级项 copilot 直达，Sidebar 只会 go(entryTarget)。
   const sidebar = readSrc("src/components/desk/Sidebar.tsx");
-  assert.ok(!/s\.newSession/.test(sidebar), "Sidebar 不再订阅 newSession（点导航不清会话）");
-  assert.match(sidebar, /if \(wb\.key === "ai"\) \{ go\("copilot"\); \}/);
+  assert.ok(!/s\.newSession|newSession\(/.test(sidebar), "Sidebar 不再订阅 newSession（点导航不清会话）");
+  const nav = readSrc("src/lib/desk/nav-core.ts");
+  assert.match(nav, /label: "AI 对话", key: "copilot"/, "AI 对话一级项必须直达 copilot（旧 wb.key===\"ai\" 分支的同义）");
 });
