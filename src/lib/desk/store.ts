@@ -167,6 +167,21 @@ export function watchlistPayload(): { symbol: string; name: string | null }[] {
 
 const FIRST_SESSION = emptySession();
 
+// R9 通达信接入：tdx-mcp（PyPI，走通达信公开行情服务器，非本地 vipdoc 文件）。
+// 命令是绝对路径 ⇒ spawn 无 shell 不会查 PATH；--with "mcp<2" 是硬约束（mcp 2.x 把
+// FastMCP 改名成 MCPServer，tdx-mcp 0.2.4 仍在 import mcp.server.fastmcp，不加就会崩在启动）。
+// trusted:true 是用户拍板「把通达信接进去」的授权项——不信任时 callTool 会 TRUST_REQUIRED 拦截。
+// 33 个工具里 symbol_zjlx（个股资金流向）上游有 bug（返回 dict 但声明 list ⇒ 输出校验必炸），
+// 不能当第二家资金口径。
+const TDX_MCP_SERVER: McpServerConfig = {
+  id: "tdx-mcp",
+  name: "通达信行情（tdx-mcp）",
+  command: "C:\\Users\\Lenovo\\.local\\bin\\uvx.exe",
+  args: ["--from", "tdx-mcp", "--with", "mcp<2", "tdx-mcp"],
+  env: { UV_CACHE_DIR: "D:\\Zai\\uv-cache" },
+  trusted: true,
+};
+
 /** 会话上限：只留最近 30 个（老会话不静默丢，按更新时间淘汰最旧的） */
 const MAX_SESSIONS = 30;
 
@@ -201,6 +216,7 @@ export const useDesk = create<DeskState>()(
           args: ["scripts/mcp/demo_market.py"],
           trusted: false,
         },
+        TDX_MCP_SERVER,
       ],
       refreshInterval: 60,
       extensionKey: randKey(),
@@ -317,9 +333,17 @@ export const useDesk = create<DeskState>()(
       // v0/v1 的会话长这样：chats: ChatMsg[][]（下标即会话）+ activeChat: number。
       // v2 起换成带 id/标题/关联标的的 ChatSession[]。迁移必须无损且幂等：
       // 老浏览器里的历史会话升级后不能消失，也不能第二次刷新再迁一遍。
-      version: 2,
+      // v3（R9）：MCP 列表补上通达信登记项——只按 id 判缺补种一次，用户之后在设置页删掉不会再回来。
+      version: 3,
       migrate: (persisted: unknown, version: number) => {
-        const state = (persisted ?? {}) as { chats?: ChatMsg[][]; activeChat?: number; sessions?: ChatSession[]; activeSessionId?: string };
+        const state = (persisted ?? {}) as {
+          chats?: ChatMsg[][]; activeChat?: number; sessions?: ChatSession[];
+          activeSessionId?: string; mcpServers?: McpServerConfig[];
+        };
+        // 旧存档带着 MCP 列表却没有 tdx-mcp ⇒ 补种；存档压根没有该键时不动（走 store 默认值，别把 demo 挤丢）
+        const seedTdx = Array.isArray(state.mcpServers) && !state.mcpServers.some((m) => m.id === "tdx-mcp")
+          ? { mcpServers: [...state.mcpServers, TDX_MCP_SERVER] }
+          : {};
         if (version < 2 && !state.sessions) {
           const sessions = migrateLegacyChats(state.chats);
           const activeIndex = Math.min(Math.max(0, state.activeChat ?? 0), sessions.length - 1);
@@ -327,6 +351,7 @@ export const useDesk = create<DeskState>()(
           // 迁移出的会话按更新时间排序后，活动会话取原来那一条（下标语义不能悄悄换人）
           return {
             ...state,
+            ...seedTdx,
             sessions: sessions.slice().sort(byUpdatedDesc),
             activeSessionId: active?.id ?? sessions[0].id,
           };
@@ -334,6 +359,7 @@ export const useDesk = create<DeskState>()(
         const sessions = state.sessions?.length ? state.sessions : [emptySession()];
         return {
           ...state,
+          ...seedTdx,
           sessions,
           activeSessionId: sessions.some((x) => x.id === state.activeSessionId) ? state.activeSessionId! : sessions[0].id,
         };

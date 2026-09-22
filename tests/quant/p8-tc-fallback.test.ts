@@ -151,11 +151,16 @@ test("上层 source 文案跟着真实来源走：sentiment/limitup/全A/主线�
 
 test("页面不拿占位 0 装真数：资金列「—」、明细不落演示数据、流向图拒绝作画", () => {
   const sec = readSrc("src/components/desk/pages/SectorsPage.tsx");
-  assert.equal((sec.match(/board\.fundsMissing \? <span className="text-muted-foreground">—<\/span>/g) ?? []).length, 4,
-    "主力净额/净占比/超大单/大单 四列都要走「—」分支");
+  // R7 同花顺兜底后口径：主力净额列只查 fundsMissing（腾讯占位 0 显「—」；同花顺该列是真数不能遮），
+  // 净占比/超大单/大单三列查 fundsMissing||breakdownMissing（两家兜底都没有拆分读数）。
+  // 四列的「—」分支一个不能少——只是遮的理由分了两类。
+  assert.equal((sec.match(/board\.fundsMissing \? <span className="text-muted-foreground">—<\/span>/g) ?? []).length, 1,
+    "主力净额列：腾讯占位 0 显「—」（同花顺是真数，不遮）");
+  assert.equal((sec.match(/board\.fundsMissing \|\| board\.breakdownMissing \? <span className="text-muted-foreground">—<\/span>/g) ?? []).length, 3,
+    "净占比/超大单/大单 三列：两家兜底都无拆分读数，全走「—」分支");
   assert.match(sec, /腾讯板块兜底榜（东财板块榜断源：涨幅口径，无主力资金读数）/);
   const board = readSrc("src/components/desk/pages/BoardPage.tsx");
-  assert.match(board, /if \(selected\.fundsMissing\) \{ setDetail\(null\); return; \}/, "点兜底榜行绝不落回演示明细");
+  assert.match(board, /if \(selected\.fundsMissing(?: \|\| selected\.breakdownMissing)?\) \{ setDetail\(null\); return; \}/, "点兜底榜行绝不落回演示明细（R7 起同花顺行同样不落演示明细）");
   assert.match(board, /不拿占位 0 画流向、不编造线宽/);
   assert.match(board, /腾讯板块兜底榜：涨幅口径，无主力资金读数/);
 });

@@ -74,9 +74,25 @@ async function fetchThsPage(url: string): Promise<ThsBoardRow[]> {
   return parseThsRows(new TextDecoder("gbk").decode(await res.arrayBuffer()));
 }
 
-const cache = new Map<ThsKind, { at: number; rows: ThsBoardRow[] }>();
+/** 同花顺行 → 板块榜行形状（sectors/board 两路共用，R7）：main 是真净额，
+ *  但净占比/超大单/大单同花顺榜没有该拆分 → breakdownMissing，页面这些列必须显「—」不画 0；
+ *  secid 留空 + THS 前缀码：东财资金明细/成分池递棒自然禁掉，不跨系错接。 */
+export function thsToRankRow(r: ThsBoardRow) {
+  return {
+    code: r.code,
+    secid: "",
+    name: r.name,
+    changePct: r.changePct,
+    main: r.netYi,
+    ratio: 0,
+    superBig: 0,
+    big: 0,
+    leader: r.leader,
+    breakdownMissing: true as const,
+  };
+}
 
-/** 抓一整个榜单（分页顺序拼接，最多 MAX_PAGES 页）。全部失败返回 []，由调用方决定回退话术；
+const cache = new Map<ThsKind, { at: number; rows: ThsBoardRow[] }>();/** 抓一整个榜单（分页顺序拼接，最多 MAX_PAGES 页）。全部失败返回 []，由调用方决定回退话术；
  *  中途某页失败则带回已取到的部分（缺口按「榜按涨幅取前 N」如实登记，不谎称全量）。 */
 export async function fetchThsBoards(kind: ThsKind): Promise<ThsBoardRow[]> {
   const hit = cache.get(kind);

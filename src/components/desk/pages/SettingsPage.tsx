@@ -277,9 +277,9 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 {rt?.error && <div className="mt-1.5 text-[11.5px] text-rose-400">{rt.error}</div>}
-                {tools.filter((t) => t.server === s.name).length > 0 && (
+                {tools.filter((t) => t.server === s.id).length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    {tools.filter((t) => t.server === s.name).map((t) => (
+                    {tools.filter((t) => t.server === s.id).map((t) => (
                       <span key={t.name} title={t.description}
                         className="rounded bg-sky-500/10 px-2 py-0.5 font-mono text-[11px] text-sky-300">{t.name}</span>
                     ))}

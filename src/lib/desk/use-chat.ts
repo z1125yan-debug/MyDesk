@@ -22,6 +22,13 @@ export interface SnapshotResult {
   snapshot: string;
   /** 数量级校验锚点：只有真实报价才允许传（见 ai-context-core.guardPriceOf） */
   guardPrice: number | null;
+  /**
+   * R10b：guardPrice 是从哪只票的快照来的。价位校验只有在「本轮答的就是这只票」时才成立——
+   * 3014 实测（中国电影卖的怎么样）：客户端候选名切不出「中国电影」，快照落到了分析页
+   * 关注品种（另一只千元票）上，拿 1121 元的锚去判 13.55 元的回答＝假幻觉拦截。
+   * 没有锚定标的（价是 null）时留空，校验自然不会跑。
+   */
+  anchorSymbol?: string | null;
   /** 本轮识别到的标的，会写进会话，供后续追问沿用 */
   stock?: string;
 }
@@ -449,7 +456,13 @@ export function useChatSend(cfg: ChatEndpointCfg) {
     }
 
     // ---------- 价格数量级校验（沿用 P6-A 的锚点口径：只有真实报价能当锚点） ----------
-    const guard = snap?.guardPrice ?? null;
+    // R10b 的适用性闸：锚点必须是「本轮回答的那只票」的报价。服务端场景徽章带着本轮真实标的
+    // （intent.symbol，含公司名解析出的），若它和客户端快照锚定的标的（anchorSymbol）对不上——
+    // 说明快照锚错了对象（3014 实测：问中国电影、快照落在分析页关注品种上），这时校验没有资格
+    // 判幻觉：跳过，而不是拿别人家的价格逼模型重答一遍。intent 没有标的时维持原判定。
+    const code6 = (s: string | null | undefined) => (s ?? "").match(/\d{6}/)?.[0] ?? null;
+    const anchorMismatch = !!cur.intent?.symbol && !!snap?.anchorSymbol && code6(cur.intent.symbol) !== code6(snap.anchorSymbol);
+    const guard = anchorMismatch ? null : snap?.guardPrice ?? null;
     if (!ctrl.signal.aborted && guard && cur.content && !priceBandOk(cur.content, guard)) {
       const correctiveMsg = `警告：你上一次回答中的价位与实时行情快照严重不符（最新价应为 ${guard.toFixed(2)} 元），属于幻觉，已被系统拦截。重新回答：所有价位只允许来自快照，数量级必须与最新价一致。`;
       onEvent({ type: "warning", data: { text: `价位校验未通过（应为 ${guard.toFixed(2)} 元量级），已带警告重新生成一次。` } });

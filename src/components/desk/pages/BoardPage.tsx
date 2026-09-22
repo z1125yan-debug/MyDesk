@@ -64,8 +64,9 @@ export default function BoardPage() {
 
   useEffect(() => {
     if (!selected) { setDetail(null); return; }
-    // 腾讯兜底榜行：没有东财 secid，也就没有资金明细可读——直接空着，绝不落回演示数据
-    if (selected.fundsMissing) { setDetail(null); return; }
+    // 腾讯兜底榜行（无资金读数）与同花顺兜底榜行（无东财 secid）：都没有东财资金明细可读——
+    // 直接空着，绝不落回演示数据
+    if (selected.fundsMissing || selected.breakdownMissing) { setDetail(null); return; }
     let dead = false;
     fetchDetailFor(selected.secid || "", selected.name, selected.code)
       .then((r) => { if (!dead) { setDetail(r.detail); setDetailSource(r.source); } })
@@ -83,6 +84,7 @@ export default function BoardPage() {
           <p className="mt-1 text-[12.5px] text-muted-foreground">
             板块/个股资金流向榜与流向图 —— {sourceLabel}
             {rows.length > 0 && rows.every((r) => r.fundsMissing) && "（当前为腾讯板块兜底榜：涨幅口径，无主力资金读数）"}
+            {rows.length > 0 && rows.every((r) => r.breakdownMissing && !r.fundsMissing) && "（当前为同花顺板块资金流榜：东财断源时的独立兜底，净额=流入−流出，无净占比/超大单拆分）"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -152,7 +154,7 @@ export default function BoardPage() {
                     <td className={"px-2 py-2.5 text-right font-mono tabular-nums " + (r.main >= 0 ? "text-rose-400" : "text-emerald-400")}>
                       {r.fundsMissing ? <span className="text-muted-foreground">—</span> : `${r.main >= 0 ? "+" : ""}${r.main.toFixed(2)}`}
                     </td>
-                    <td className="px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r.fundsMissing ? "—" : r.ratio.toFixed(1)}</td>
+                    <td className="px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r.fundsMissing || r.breakdownMissing ? "—" : r.ratio.toFixed(1)}</td>
                     <td className="hidden px-4 py-2.5 text-right text-muted-foreground md:table-cell">{r.leader}</td>
                   </tr>
                 ))}
@@ -176,7 +178,7 @@ export default function BoardPage() {
                   </span>
                 </div>
                 <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                  {selected.code} · {selected.fundsMissing ? "腾讯兜底榜（涨幅口径，无资金明细读数）" : detailSource === "real" ? "真实资金数据" : "演示数据"}
+                  {selected.code} · {selected.fundsMissing ? "腾讯兜底榜（涨幅口径，无资金明细读数）" : selected.breakdownMissing ? "同花顺兜底榜（净额口径，无东财资金明细）" : detailSource === "real" ? "真实资金数据" : "演示数据"}
                 </div>
 
                 {detail && detail.spark.length > 1 && (

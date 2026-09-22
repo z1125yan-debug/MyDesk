@@ -79,7 +79,9 @@ const SCENE_RULES: { scene: Scene; words: string[] }[] = [
   { scene: "sector", words: ["板块", "行业", "概念", "题材", "赛道", "资金榜", "领涨", "龙头"] },
   { scene: "sentiment", words: ["大盘", "情绪", "涨停", "跌停", "炸板", "赚钱效应", "风险等级", "市场", "指数", "成交额", "北向", "今天行情"] },
   { scene: "qimen", words: ["奇门", "遁甲", "九宫", "排盘", "占卜", "卦", "吉时", "方位", "风水", "命理"] },
-  { scene: "stock_analysis", words: ["怎么看", "分析", "研报", "值不值", "能不能买", "该不该卖", "买点", "卖点", "目标价", "仓位", "止损", "止盈", "技术面", "基本面", "估值", "趋势", "支撑", "阻力", "压力", "破位", "关键位", "进场", "风控", "回测", "对比", "交易计划"] },
+  // 「怎么样」是 R10 扩容补的：3014 实测「中国电影卖的怎么样」一个词都不命中、判成通用问答不取数——
+  // 用户嘴里的研判就是这么说的。抢不走前排场景：「我的自选怎么样」仍归自选、「大盘怎么样」仍归情绪（优先级在前）。
+  { scene: "stock_analysis", words: ["怎么看", "怎么样", "分析", "研报", "值不值", "能不能买", "该不该卖", "买点", "卖点", "目标价", "仓位", "止损", "止盈", "技术面", "基本面", "估值", "趋势", "支撑", "阻力", "压力", "破位", "关键位", "进场", "风控", "回测", "对比", "交易计划"] },
   { scene: "quote", words: ["现价", "报价", "最新价", "多少钱", "什么价", "价格", "股价", "行情", "买一", "卖一", "盘口"] },
 ];
 
@@ -149,6 +151,25 @@ export function extractSymbols(text: string): string[] {
   return out;
 }
 
+/**
+ * R10 扩容：从提问里露出「可能是公司名」的候选片段（纯函数：只提议，不断言）。
+ * 用户说票说的是名字（「中国电影卖的怎么样」），代码形状识别拿不到标的——
+ * 这里把疑问词/功能词/场景词剔掉，剩下的 2~6 字连续中文段就是候选，交给服务层
+ * 拿东财搜索验证；只有命中的才算标的，并且出处如实标成「按公司名匹配」（见 nameHits）。
+ * 候选表不自己认定任何名字：纯层猜名字仍是把猜测当事实，这层连「像名字」都不算数。
+ */
+const NAME_STOPWORDS =
+  "请问|帮我|给我|我想|我要|有没有|是不是|能不能|可不可以|值不值|值不值得|行不行|怎么样|怎样|怎么|咋样|如何|为什么|为何|什么|现在|今天|昨天|明天|最近|近期|短期|后市|整体|这|那|它|他|她|们|的|了|吗|呢|吧|啊|呀|和|与|跟|或|是|就|都|还|也|再|把|被|给|在|个|只|买|卖|加仓|减仓|建仓|清仓|补仓|持有|持仓|自选|关注|走势|行情|表现|情况|消息|新闻|公告|政策|基本面|技术面|分析|研究|看看|介绍|对比|评价|预测|目标|仓位|止损|止盈|买点|卖点|一下|股|票|大盘|指数|板块|行业|概念|题材|龙头|资金|涨停|跌停|放量|缩量|突破|支撑|压力|破位|反弹|回调|进场|出场|风控|操作";
+
+export function nameCandidates(question: string): string[] {
+  const cut = (question ?? "").replace(new RegExp(NAME_STOPWORDS, "g"), " ");
+  const out: string[] = [];
+  for (const m of cut.matchAll(/[\u4e00-\u9fa5]{2,6}/g)) {
+    if (!out.includes(m[0])) out.push(m[0]);
+  }
+  return out.slice(0, 5);
+}
+
 // ---------- 判定 ----------
 
 export interface IntentInput {
@@ -160,6 +181,13 @@ export interface IntentInput {
   sessionSymbol?: string | null;
   /** 上一轮判到的场景（追问时沿用） */
   prevScene?: Scene | null;
+  /**
+   * R10 扩容：调用方拿公司名候选（nameCandidates）经东财搜索验证后的命中结果。
+   * 纯层不做 IO 也不猜名字——名字只有在这里（被外部查证过）才能升格为标的；
+   * 带代码提问时代码优先，nameHits 不参与（用户直接写的代码比名字搜索更可信）。
+   * matchKind 如实记录命中方式（R10c）：exact=全等，prefix=简称唯一命中全称，suffix=砍组织形式词尾缀后唯一命中。
+   */
+  nameHits?: { name: string; symbol: string; matchKind?: "exact" | "prefix" | "suffix" }[];
 }
 
 export interface Intent {
@@ -172,7 +200,7 @@ export interface Intent {
   /** 本轮实际使用的标的；null 表示这个场景不需要标的（大盘 / 板块 / 选股） */
   symbol: string | null;
   /** 标的从哪来：必须在提示词里如实说明，不能让用户以为系统认出了股票名字 */
-  symbolSource: "question" | "session" | "focus" | "none";
+  symbolSource: "question" | "session" | "focus" | "name" | "none";
   /** 是否沿用上一轮场景（追问） */
   inherited: boolean;
   /** 是否按追问处理（省略主语的短句） */
@@ -200,12 +228,22 @@ const SYMBOL_SOURCE_TEXT: Record<Intent["symbolSource"], string> = {
   question: "从你的提问里识别出的代码",
   session: "沿用本会话前面问的那只",
   focus: "分析页当前品种",
+  name: "按提问里的公司名经东财搜索匹配（全等或简称唯一命中全称，不是用户直接给的代码）",
   none: "未识别到标的",
 };
 
 /** 标的来源的一句话说明（提示词与界面共用，两边措辞不会各自漂移） */
 export function symbolSourceText(source: Intent["symbolSource"]): string {
   return SYMBOL_SOURCE_TEXT[source];
+}
+
+/**
+ * 任意输入的来源取词（R10b）：认得的原始键给人话，认不出的原样透传。
+ * 给 Debug 意图行这类「值可能来自历史留底」的场合——旧档里这一格存的本来就是人话（如「提问内代码」），
+ * 不许改写成「来源未标注」，也不许把 question/name 这种原始键漏给用户看。
+ */
+export function symbolSourceLabel(source: string): string {
+  return (SYMBOL_SOURCE_TEXT as Record<string, string | undefined>)[source] ?? source;
 }
 
 /**
@@ -216,7 +254,12 @@ export function symbolSourceText(source: Intent["symbolSource"]): string {
  */
 export function classifyIntent(input: IntentInput): Intent {
   const question = input.question ?? "";
-  const symbols = extractSymbols(question);
+  const codeSyms = extractSymbols(question);
+  // R10 扩容：带代码时代码优先（用户写的比搜出来的可信）；没代码才用服务层查证过的 nameHits，
+  // 且出处标成 name 而不是 question——徽章与提示词都要能看出「这个代码是系统按名字搜到的，不是你报的」。
+  const nameSyms = (input.nameHits ?? []).map((h) => h.symbol).filter((s) => !codeSyms.includes(s));
+  const symbols = codeSyms.length ? codeSyms : nameSyms;
+  const fromName = !codeSyms.length && nameSyms.length > 0;
   const followUp = isFollowUp(question);
   const matched = sceneHits(question);
   // P10 择优轮：条件句式选股（「帮我找成交额大于5亿、站上20日线的股票」这类）词表没覆盖到，
@@ -245,7 +288,7 @@ export function classifyIntent(input: IntentInput): Intent {
     let symbol: string | null = null;
     let symbolSource: Intent["symbolSource"] = "none";
     if (needsSymbol(scene)) {
-      if (symbols.length) { symbol = symbols[0]; symbolSource = "question"; }
+      if (symbols.length) { symbol = symbols[0]; symbolSource = fromName ? "name" : "question"; }
       else if (input.sessionSymbol) { symbol = input.sessionSymbol; symbolSource = "session"; }
       else if (input.focusSymbol) { symbol = input.focusSymbol; symbolSource = "focus"; }
     }
@@ -298,7 +341,9 @@ export function scenePrompt(scene: Scene, ctx: ScenePromptCtx): string {
   const symbolNote = intent.symbol
     ? `本轮标的：${intent.symbol}（${symbolSourceText(intent.symbolSource)}）。`
     : needsSymbol(scene)
-      ? "本轮没有可用的标的：先问清是哪只，不要自己挑一个来答。"
+      ? "本轮没有可用的标的：先问清是哪只，不要自己挑一个来答。" +
+        "用户点了公司名而系统没解析出代码时，只说「没能匹配到可交易的代码」；" +
+        "禁止反过来断言「该公司未上市/没有上市代码」这类市场事实——没搜到不等于不存在（查得到才算事实，查不到只是没查到）。"
       : "";
   const lines: string[] = [head];
   switch (scene) {
@@ -344,7 +389,11 @@ export function scenePrompt(scene: Scene, ctx: ScenePromptCtx): string {
       break;
     case "stock_analysis":
       lines.push(
-        "个股分析：先取数（快照 + 日 K 技术状态 + 资金流），再按「事实 -> 推断 -> 建议」三段回答。",
+        // R10 扩容（用户口径「除了技术还要结合新闻回答我」）：消息面从「可选论据」升为「事实段必读」——
+        // 系统已把这只票自己的新闻/公告随预取送到，引用它是回答义务，不是加分项。
+        "个股分析：先取数（快照 + 日 K 技术状态 + 资金流 + 这只票自己的新闻/公告），再按「事实 -> 推断 -> 建议」三段回答。",
+        "事实段必须至少挂一条该票自身的消息面（注入块 stock_news 里带时间的新闻/公告原文）；宏观快讯不能替代个股消息面；",
+        "stock_news 为空或 missing 时明写「该股时间窗内没有可引报道，本轮是纯行情数据判断」，不把数据推断包装成有消息面佐证。",
         "推断必须挂在取到的数上，取不到的维度直接说没取到；建议要给失效条件（什么价位或信号说明判断错了）。",
         "不得把 AI 推测写成市场事实，不得给「必涨」「稳赚」这类结论。",
       );
@@ -463,6 +512,7 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
       case "news_why": return "同时问了消息面/为什么";
       case "watchlist": return `按「${SCENE_LABELS.watchlist}」取全部自选的实时行情`;
       case "screener_pool": return "按「量化选股」现跑候选池（条件从提问抽取，抽不到按系统默认活跃池并如实标注）";
+      case "stock_news": return "取这只票自己的新闻/公告（结论须结合消息面）";
     }
   };
   const argsOf = (a: SkillArgs, symbol: string): Record<string, unknown> => {

@@ -22,12 +22,14 @@ import {
   asScene,
   classifyIntent,
   extractSymbols,
+  nameCandidates,
   planDispatch,
   renderDispatchBlock,
   scenePrompt,
   type DispatchCall,
   type Intent,
 } from "./intent-core";
+import { resolveStockName } from "./stock-news";
 import { runDispatchPlan, type DispatchTrace } from "./dispatch-core";
 import { SKILLS } from "./skills-core";
 import { completenessVerdict, findRequiredGaps, mergeSupplement, planSupplementRound, stillMissingNote } from "./agent-loop-core";
@@ -49,6 +51,20 @@ import {
 const CONTRACT_BUILD_TIMEOUT_MS = 30_000;
 /** 交易日历回溯根数：够覆盖长假断档判定，40 根与结论卡同批取数不超一个量级 */
 const CALENDAR_LOOKBACK = 40;
+
+/**
+ * R10 扩容：预取步骤标签的服务层覆写（chat-stream-core 在不动清单里进不去）。
+ * 带上标的后缀与 stepLabelFor 的习惯一致——时间线里两只票的新闻要分得开。
+ */
+const PREFETCH_STEP_LABELS: Record<string, string> = {
+  stock_news: "取个股新闻与公告（这只票自己的消息面）",
+};
+function prefetchLabel(call: DispatchCall): string | null {
+  const base = PREFETCH_STEP_LABELS[call.tool];
+  if (!base) return null;
+  const sym = typeof call.args.symbol === "string" ? call.args.symbol : "";
+  return sym ? `${base} · ${sym}` : base;
+}
 
 export interface PrefetchResult {
   /** 注入模型的取数块（含「本轮未取到」清单）；一条都没取到时是空串，调用方据此不注入 */
@@ -107,6 +123,7 @@ export async function prefetchForScene(opts: {
     isCancelled: opts.isCancelled,
     onStep: (s) => opts.emit?.({ type: "step", data: s }),
     execute,
+    labelFor: prefetchLabel,
   });
 
   // ---------- P8-④：校验数据完整性 -> 不足则补一轮（判定全在 agent-loop-core，这里只接线） ----------
@@ -138,6 +155,7 @@ export async function prefetchForScene(opts: {
         isCancelled: opts.isCancelled,
         onStep: (s) => opts.emit?.({ type: "step", data: s }),
         execute,
+        labelFor: prefetchLabel,
       });
       stepNo += r2.steps.length;
       steps.push(...r2.steps);
@@ -249,11 +267,25 @@ export async function prepareSceneTurn(opts: {
   // 客户端会把当前图表的实时快照拼在提问后面（带 SNAPSHOT_MARK）。
   // 判场景只看用户原话：快照里的「涨停」「成交额」这些字眼会把一句闲聊判成大盘情绪。
   const { question, snapshot } = splitSnapshotMessage(opts.userContent);
+  // R10 扩容：用户用公司名说票（「中国电影卖的怎么样」）时，代码形状识别拿不到标的，
+  // 整轮会退化成不取数的闲聊。纯层只出候选片段（nameCandidates），这里拿东财搜索逐个验证——
+  // 全等或唯一前缀命中（「长鑫」→688825 长鑫科技）、砍组织形式词尾缀后唯一命中（「长鑫存储」同理，R10c）的才升格为标的，
+  // 出处如实标「按公司名匹配」；搜不到/多义就维持无标的，绝不猜代码。
+  let nameHits: { name: string; symbol: string; matchKind?: "exact" | "prefix" | "suffix" }[] = [];
+  if (!extractSymbols(question).length) {
+    const cands = nameCandidates(question);
+    const hits = await Promise.all(cands.map((c) => resolveStockName(c)));
+    const seen = new Set<string>();
+    hits.forEach((h, i) => {
+      if (h && !seen.has(h.symbol)) { seen.add(h.symbol); nameHits.push({ name: cands[i], symbol: h.symbol, matchKind: h.matchKind }); }
+    });
+  }
   const intent = classifyIntent({
     question,
     focusSymbol: opts.focusSymbol ?? null,
     sessionSymbol: opts.sessionSymbol ?? null,
     prevScene: asScene(opts.prevScene),
+    nameHits,
   });
   const backtestReady = opts.backtestReady ?? BACKTEST_READY;
   // 白名单只在这句话真的提到「回测」时才查：因子表是「每个 factorKey 一次查询」，

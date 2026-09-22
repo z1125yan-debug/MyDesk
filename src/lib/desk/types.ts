@@ -41,6 +41,7 @@ export interface SectorRow {
   big: number;        // 大单(亿)
   leader: string;     // 板块=领涨股；个股=所属行业
   fundsMissing?: boolean; // 腾讯板块兜底榜：main/ratio/superBig/big 是占位 0，页面须显示「—」
+  breakdownMissing?: boolean; // P15-R7 同花顺兜底榜：main 是真净额，但净占比/超大单/大单无该拆分（0 是占位），这些列须显示「—」
 }
 
 export interface DetailDay {
