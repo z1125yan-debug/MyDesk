@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { PctText } from "../SourceBadge";
-import { fetchSentiment, fetchLimitUp, type SentimentClient, type LimitUpClient } from "@/lib/desk/quant-api";
+import { fetchSentiment, fetchLimitUp, fetchTrend, type SentimentClient, type LimitUpClient, type TrendClient, type TrendDayPoint } from "@/lib/desk/quant-api";
 // P11 情绪温度：仪表盘与对话工具吃同一份纯核（零 IO，浏览器端直接 import），
 // 三态切换只换权重、不重取数——分量各算一次，牛/熊/震荡是同一批读数的三种加权。
 import { computeTemperature, REGIMES, type MarketRegime } from "@/lib/quant/screener/sentiment-temperature-core";
@@ -22,6 +22,25 @@ export default function MarketPage() {
   const [tiersBusy, setTiersBusy] = useState(false);
   // 行情类型（牛/熊/震荡）只影响温度权重，是本机视图状态、不进 store 也不发请求
   const [regime, setRegime] = useState<MarketRegime>("range");
+  // P15-R2a 复盘统计：两市成交额趋势/指数累计涨跌来自 /api/market/trend（东财指数日 K 实数）。
+  // 日期范围是本机视图参数（默认近 90 天），点「加载复盘数据统计」才按新范围重取——与稳智同纪律。
+  const [trend, setTrend] = useState<TrendClient | null>(null);
+  const [trendBusy, setTrendBusy] = useState(false);
+  const [trendFrom, setTrendFrom] = useState("");
+  const [trendTo, setTrendTo] = useState("");
+  const [trendError, setTrendError] = useState("");
+
+  const loadTrend = useCallback(async (from = "", to = "") => {
+    setTrendBusy(true); setTrendError("");
+    try {
+      setTrend(await fetchTrend(from, to));
+    } catch (e) {
+      setTrend(null);
+      setTrendError(String((e as Error).message || e));
+    } finally {
+      setTrendBusy(false);
+    }
+  }, []);
 
   const loadTiers = useCallback(async () => {
     setTiersBusy(true);
@@ -42,12 +61,13 @@ export default function MarketPage() {
       const j = await r.json();
       setBoards(Array.isArray(j.rows) && j.rows.length ? (j.rows as SectorRow[]) : null);
       void loadTiers();
+      void loadTrend(); // 顶部成交额监控卡第一屏就要有数，不等用户点按钮
     } catch (e) {
       setError(String((e as Error).message || e));
     } finally {
       setBusy(false);
     }
-  }, [loadTiers]);
+  }, [loadTiers, loadTrend]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -59,6 +79,21 @@ export default function MarketPage() {
 
   const total = sent ? sent.advancers + sent.decliners + sent.flat : 0;
   const advPct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
+
+  // —— 顶部监控卡的派生量（全部由已回传字段推得，不产生新事实）——
+  const temp = sent ? computeTemperature({
+    advancers: sent.advancers, decliners: sent.decliners, median_pct: sent.median_pct,
+    limit_up: sent.limit_up, limit_down: sent.limit_down, break_rate: sent.break_rate,
+    main_net_sum_yi: sent.main_net_sum_yi, main_net_known: sent.main_net_known,
+  }, regime) : null;
+  // 三/四/五板+ 分档：从「3连板+」名单实数推（capped 20+ 计入五板+），监控卡与梯队卡共用这一份
+  const p3 = tiers?.tiers.find((t) => t.label === "3连板+")?.stocks ?? [];
+  const n3 = p3.filter((s) => s.boards === 3).length;
+  const n4 = p3.filter((s) => s.boards === 4).length;
+  const n5 = p3.filter((s) => s.boards >= 5).length;
+  // 成交额卡：取最近一个「两市齐有读数」的日子；缺就是缺，不拿单边合计
+  const tLatest = trend ? [...trend.days].reverse().find((d) => d.totalYi !== null) ?? null : null;
+  const fmtYi = (yi: number) => (yi >= 10000 ? `${(yi / 1e4).toFixed(2)} 万亿` : `${yi.toFixed(0)} 亿`);
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 px-6 py-6">
@@ -87,6 +122,132 @@ export default function MarketPage() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* P15-R2a 顶部监控四卡（稳智「市场情绪分析」同款布局）：温度 / 成交额 / 连板高度 / 涨跌比。
+              下面的原详细卡一个不删——监控卡管「3 秒看懂」，详细卡管「点开看口径」。 */}
+          <div className="apple-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {/* ① 情绪温度：小表盘 + 分数 + 行情三态（与下方详卡同一份 temp/regime，切哪边都同步） */}
+            <div className="apple-card px-4 py-3.5">
+              <div className="text-[12px] text-muted-foreground">情绪温度</div>
+              <div className="mt-1 flex items-center gap-2.5">
+                <TempGauge value={temp?.temperature ?? null} label={temp?.label ?? ""} compact />
+                <div className="min-w-0">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[26px] font-semibold tracking-tight">{temp?.temperature ?? "—"}</span>
+                    <span className="text-[11px] text-muted-foreground">{temp?.label ?? "无读数"}</span>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-1">
+                    {REGIMES.map((rg) => (
+                      <button key={rg.key} onClick={() => setRegime(rg.key)}
+                        title={`${rg.label}：分量权重不同，温度是同一批读数的另一种看法`}
+                        className={
+                          "rounded-full px-2 py-0.5 text-[11px] transition-colors " +
+                          (regime === rg.key ? "bg-sky-400/15 font-medium text-sky-200" : "text-muted-foreground hover:text-foreground")
+                        }>{rg.label}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* ② 成交额（两市指数口径，与下方「全A快照合计」是两个口径各说各话——tooltip 写明出身） */}
+            <div className="apple-card px-4 py-3.5">
+              <div className="text-[12px] text-muted-foreground">成交额</div>
+              <div className="mt-1 text-[26px] font-semibold tracking-tight"
+                title={`沪深两市指数日成交额合计（东财 kline，含当天截至刷新时刻的累计）· ${trend?.range.from ?? ""} 至 ${trend?.range.to ?? ""} 窗口内最近一个两市齐有读数的日子。全A快照口径的成交额在下方「涨跌结构」卡，两者口径不同不互训`}>
+                {trendBusy && !tLatest ? <span className="text-[13px] font-normal text-muted-foreground">取数中…</span>
+                  : tLatest ? fmtYi(tLatest.totalYi as number)
+                  : <span className="text-[13px] font-normal text-muted-foreground" title={trend?.missing.join("；") || "趋势数据未取到（点「加载复盘数据统计」重试）"}>暂无数据</span>}
+              </div>
+              <div className="mt-1 text-[11.5px] text-muted-foreground">
+                {tLatest && trend?.delta.yi != null ? (
+                  <span className={trend.delta.yi >= 0 ? "text-red-400" : "text-emerald-400"}>
+                    {trend.delta.yi >= 0 ? "↑" : "↓"} {Math.abs(trend.delta.yi).toFixed(0)} 亿 <span className="text-muted-foreground">vs {trend.delta.prev_date} 两市合计</span>
+                  </span>
+                ) : tLatest ? <span>vs 昨日：上一配对日缺读数，不硬凑</span> : <span>—</span>}
+              </div>
+            </div>
+            {/* ③ 连板高度：max_boards + 五档 chips（与下方梯队卡同一份推导） */}
+            <div className="apple-card px-4 py-3.5">
+              <div className="text-[12px] text-muted-foreground">连板高度</div>
+              <div className="mt-1 text-[26px] font-semibold tracking-tight"
+                title={tiers ? `最高连板 ${tiers.max_boards} 板（涨停梯队实数）· 触板 ${tiers.touched_count}` : "涨停梯队还没取到读数"}>
+                {tiers ? <>{tiers.max_boards}<span className="text-[14px] font-normal text-muted-foreground">板</span></>
+                  : <span className="text-[13px] font-normal text-muted-foreground">{tiersBusy ? "取数中…" : "暂无数据"}</span>}
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1 text-[10.5px] text-muted-foreground">
+                <span className="rounded bg-white/[0.05] px-1.5 py-0.5">涨停 <b className="text-red-400">{sent.limit_up}</b></span>
+                <span className="rounded bg-white/[0.05] px-1.5 py-0.5">跌停 <b className="text-emerald-400">{sent.limit_down}</b></span>
+                {tiers && <><span className="rounded bg-white/[0.05] px-1.5 py-0.5">三板 {n3}</span>
+                  <span className="rounded bg-white/[0.05] px-1.5 py-0.5">四板 {n4}</span>
+                  <span className="rounded bg-orange-400/10 px-1.5 py-0.5 text-orange-300">五板+ {n5}</span></>}
+              </div>
+            </div>
+            {/* ④ 涨跌比：涨/跌家数即时推；低5日/低3日要逐日历史沉淀，管线未建就明说没有 */}
+            <div className="apple-card px-4 py-3.5">
+              <div className="text-[12px] text-muted-foreground">涨跌比</div>
+              <div className="mt-1 text-[26px] font-semibold tracking-tight"
+                title={`涨 ${sent.advancers} / 跌 ${sent.decliners}（全A快照）；无跌幅票时按 99 封顶显示`}>
+                <span className={sent.advancers >= sent.decliners ? "text-red-400" : "text-emerald-400"}>
+                  {(sent.decliners > 0 ? sent.advancers / sent.decliners : 99).toFixed(2)}
+                </span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1 text-[10.5px] text-muted-foreground">
+                <span className="rounded bg-white/[0.05] px-1.5 py-0.5">涨 <b className="text-red-400">{sent.advancers}</b></span>
+                <span className="rounded bg-white/[0.05] px-1.5 py-0.5">跌 <b className="text-emerald-400">{sent.decliners}</b></span>
+                <span className="rounded bg-white/[0.05] px-1.5 py-0.5 text-muted-foreground/70"
+                  title="创5日新低家数：要逐日历史沉淀才有的读数，本库还没有这条管线——不做「拿今天快照猜新低」这种假数">低5日 暂无数据</span>
+                <span className="rounded bg-white/[0.05] px-1.5 py-0.5 text-muted-foreground/70"
+                  title="创3日新低家数：同上，逐日统计管线未建，缺就明说">低3日 暂无数据</span>
+              </div>
+            </div>
+          </div>
+
+          {/* P15-R2a 复盘统计：日期范围 + 加载按钮 + 三张图（成交额趋势/情绪5日线占比趋势/指数累计涨跌）。
+              5日线占比那条要逐日积累，管线未建前这张图永远如实空着——不画假趋势。 */}
+          <div className="apple-card apple-fade-in p-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[14px] font-medium">大盘复盘统计</div>
+              <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                <input type="date" value={trendFrom} max={trendTo || undefined} onChange={(e) => setTrendFrom(e.target.value)}
+                  className="rounded-md border border-border/70 bg-white/[0.03] px-2 py-1 text-[12px] text-foreground [color-scheme:dark]" title="开始日期（不设=近 90 天）" />
+                <span className="text-muted-foreground">至</span>
+                <input type="date" value={trendTo} min={trendFrom || undefined} onChange={(e) => setTrendTo(e.target.value)}
+                  className="rounded-md border border-border/70 bg-white/[0.03] px-2 py-1 text-[12px] text-foreground [color-scheme:dark]" title="结束日期（不设=至今）" />
+                <button onClick={() => void loadTrend(trendFrom, trendTo)} disabled={trendBusy}
+                  className="flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1.5 text-[12px] text-sky-200 transition-colors hover:bg-sky-400/15 disabled:opacity-50">
+                  {trendBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 加载复盘数据统计
+                </button>
+              </div>
+            </div>
+            {trendError && <div className="mb-2 rounded-lg border border-red-400/25 bg-red-400/10 px-3 py-2 text-[12.5px] text-red-300">{trendError}</div>}
+            {trend && !!trend.missing.length && (
+              <div className="mb-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-200/90">
+                {trend.missing.map((m, i) => <div key={i}>· {m}</div>)}
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <div className="rounded-xl border border-border/60 bg-white/[0.02] p-3">
+                <div className="mb-1.5 text-[12.5px] font-medium">大盘成交额趋势</div>
+                <TurnoverBars days={trend?.days ?? []} />
+                <div className="mt-1 text-[10.5px] text-muted-foreground/70" title={trend?.source ?? ""}>
+                  {trend ? `沪+深指数日成交额合计 · ${trend.range.from} ~ ${trend.range.to}（${trend.days.length} 个交易日）` : "未取数"}
+                </div>
+                {trend?.notes.map((n, i) => <div key={i} className="text-[10.5px] text-amber-200/70">· {n}</div>)}
+              </div>
+              <div className="rounded-xl border border-dashed border-border/60 bg-white/[0.01] p-3">
+                <div className="mb-1.5 text-[12.5px] font-medium">大盘情绪（5日线占比）趋势</div>
+                <div className="flex h-[150px] flex-col items-center justify-center gap-1 text-center text-[11.5px] text-muted-foreground">
+                  <span>暂无数据</span>
+                  <span className="max-w-[220px] text-[10.5px] leading-4">「高于5日线占比」要逐日沉淀全A收盘对 5 日线的关系，这条统计管线还没有：图画出来那天起才是真数，不拿别的东西冒充趋势。</span>
+                </div>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-white/[0.02] p-3">
+                <div className="mb-1.5 text-[12.5px] font-medium">指数区间累计涨跌</div>
+                <IndexCumLines cum={trend?.cum ?? null} />
+                <div className="mt-1 text-[10.5px] text-muted-foreground/70">{trend ? `按区间首日收盘归一（首日=0%）· ${trend.range.from} ~ ${trend.range.to}` : "未取数"}</div>
+              </div>
+            </div>
           </div>
 
           {/* 涨跌结构 */}
@@ -118,15 +279,9 @@ export default function MarketPage() {
             </div>
           </div>
 
-          {/* 情绪温度（P11 对齐稳智表达层）：四分量加权成一个 0-100 的分 + 半环仪表，权重随行情类型切 */}
-          {(() => {
-            const temp = computeTemperature({
-              advancers: sent.advancers, decliners: sent.decliners, median_pct: sent.median_pct,
-              limit_up: sent.limit_up, limit_down: sent.limit_down, break_rate: sent.break_rate,
-              main_net_sum_yi: sent.main_net_sum_yi, main_net_known: sent.main_net_known,
-            }, regime);
-            return (
-              <div className="apple-card apple-fade-in p-5">
+          {/* 情绪温度详情（P11）：四分量加权与监控卡同一份 temp/regime——上面切三态，这里分量权重同步变 */}
+          {temp && (
+            <div className="apple-card apple-fade-in p-5">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-[14px] font-medium">情绪温度</div>
                   <div className="flex items-center gap-1">
@@ -162,8 +317,7 @@ export default function MarketPage() {
                   </div>
                 </div>
               </div>
-            );
-          })()}
+          )}
 
           {/* 风险等级 */}
           <div className={`apple-card apple-fade-in border p-5 ${riskColor(sent.risk.level)}`}>
@@ -177,23 +331,18 @@ export default function MarketPage() {
           <div className="apple-card apple-fade-in p-5">
             <div className="mb-3 flex items-center justify-between">
               <div className="text-[14px] font-medium">涨停梯队{tiers && <span className="ml-2 text-[12px] font-normal text-muted-foreground">最高 {tiers.max_boards} 板</span>}</div>
-              {/* P14 对齐稳智连板分档：三/四/五板+ 计数从「3连板+」名单实数推（capped 20+ 计入五板+），不是新读数 */}
-              {tiers && tiers.tiers.some((t) => t.stocks.length > 0) && (() => {
-                const p3 = tiers.tiers.find((t) => t.label === "3连板+")?.stocks ?? [];
-                const n3 = p3.filter((s) => s.boards === 3).length;
-                const n4 = p3.filter((s) => s.boards === 4).length;
-                const n5 = p3.filter((s) => s.boards >= 5).length;
-                return (
-                  <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground"
-                    title={`涨停 ${tiers.limit_up_count}（触板 ${tiers.touched_count}）· 跌停 ${sent.limit_down} · 三板 ${n3} · 四板 ${n4} · 五板+ ${n5}——分档按连板数实数归档（20+ 计入五板+）`}>
+              {/* P14 对齐稳智连板分档：三/四/五板+ 计数从「3连板+」名单实数推（capped 20+ 计入五板+），不是新读数；
+                  P15-R2a 起分档推导上移到组件顶部，监控卡与这里同一份 */}
+              {tiers && tiers.tiers.some((t) => t.stocks.length > 0) && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground"
+                  title={`涨停 ${tiers.limit_up_count}（触板 ${tiers.touched_count}）· 跌停 ${sent.limit_down} · 三板 ${n3} · 四板 ${n4} · 五板+ ${n5}——分档按连板数实数归档（20+ 计入五板+）`}>
                     <span className="rounded-full bg-white/[0.05] px-2 py-0.5">涨停 <b className="text-red-400">{tiers.limit_up_count}</b></span>
                     <span className="rounded-full bg-white/[0.05] px-2 py-0.5">跌停 <b className="text-emerald-400">{sent.limit_down}</b></span>
                     <span className="rounded-full bg-white/[0.05] px-2 py-0.5">三板 <b>{n3}</b></span>
                     <span className="rounded-full bg-white/[0.05] px-2 py-0.5">四板 <b>{n4}</b></span>
                     <span className="rounded-full bg-orange-400/10 px-2 py-0.5 text-orange-300">五板+ <b>{n5}</b></span>
-                  </div>
-                );
-              })()}
+                </div>
+              )}
               <button onClick={loadTiers} className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-sky-200">
                 {tiersBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
               </button>
@@ -263,8 +412,12 @@ function Card({ label, value }: { label: string; value: React.ReactNode }) {
 // 半环温度计表盘：0-100 五段色带（冰点/偏冷/中性/偏热/过热），指针指当前分。
 // 色带分段与 sentiment-temperature-core 的 temperatureLabel 档位同线（25/45/60/80）；
 // 没有真实读数时画灰盘 + 「—」，不画一根指向编造位置的针。
-function TempGauge({ value, label }: { value: number | null; label: string }) {
-  const cx = 100, cy = 96, r = 74;
+// compact=true 是监控卡里的迷你版（P15-R2a 用户口径：同款灰卡+顶部四卡，表盘要缩得进窄卡）。
+function TempGauge({ value, label, compact = false }: { value: number | null; label: string; compact?: boolean }) {
+  const w = compact ? 96 : 200;
+  const h = compact ? 60 : 118;
+  // 完整版几何与 P11 一字不动（cy=96 给下方数字行留位）；compact 是等比缩到 96×60
+  const cx = w / 2, cy = compact ? 56 : 96, r = compact ? 38 : 74;
   const pt = (pct: number) => {
     const a = Math.PI * (1 - Math.min(100, Math.max(0, pct)) / 100);
     return { x: cx + r * Math.cos(a), y: cy - r * Math.sin(a) };
@@ -283,21 +436,103 @@ function TempGauge({ value, label }: { value: number | null; label: string }) {
   const active = bands.find((b) => (value ?? -1) >= b.from && (value ?? -1) < b.to)?.color ?? "#94a3b8";
   const needle = value === null ? null : pt(value);
   return (
-    <div className="relative shrink-0" style={{ width: 200 }}>
-      <svg width="200" height="118" viewBox="0 0 200 118" role="img" aria-label={`情绪温度 ${value ?? "无读数"}`}>
+    <div className="relative shrink-0" style={{ width: w }}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`情绪温度 ${value ?? "无读数"}`}>
         {bands.map((b) => (
           <path key={b.from} d={arc(b.from + 0.8, b.to - 0.8)} stroke={b.color}
             strokeOpacity={value === null ? 0.2 : b.color === active ? 0.95 : 0.3}
-            strokeWidth="10" fill="none" strokeLinecap="round" />
+            strokeWidth={compact ? 6 : 10} fill="none" strokeLinecap="round" />
         ))}
-        {needle && <line x1={cx} y1={cy} x2={needle.x} y2={needle.y} stroke={active} strokeWidth="3" strokeLinecap="round" />}
-        {needle && <circle cx={cx} cy={cy} r="4.5" fill={active} />}
+        {needle && <line x1={cx} y1={cy} x2={needle.x} y2={needle.y} stroke={active} strokeWidth={compact ? 2.5 : 3} strokeLinecap="round" />}
+        {needle && <circle cx={cx} cy={cy} r={compact ? 3 : 4.5} fill={active} />}
       </svg>
-      <div className="absolute inset-x-0 bottom-0 text-center">
-        <span className="text-[30px] font-semibold tracking-tight" style={{ color: value === null ? undefined : active }}>
-          {value === null ? "—" : value}
-        </span>
-        <span className="ml-1 text-[12px] text-muted-foreground">{value === null ? "无读数" : `/ 100 · ${label}`}</span>
+      {!compact && (
+        <div className="absolute inset-x-0 bottom-0 text-center">
+          <span className="text-[30px] font-semibold tracking-tight" style={{ color: value === null ? undefined : active }}>
+            {value === null ? "—" : value}
+          </span>
+          <span className="ml-1 text-[12px] text-muted-foreground">{value === null ? "无读数" : `/ 100 · ${label}`}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- P15-R2a 图表：手绘 SVG（不引图表库，项目零新依赖口径） ----------
+// 画法对齐稳智那两张图的意思，但守本页纪律：缺读数的日子留缝不画柱（不拉平到 0），
+// 每根柱子 hover 出「日期 · 沪/深/合计」三个数，图注自报窗口与来源。
+
+const CHART_W = 600, CHART_H = 150, CHART_PAD = 6;
+
+/** 大盘成交额趋势：柱=两市合计（亿），线=合计的 5 日均线（稳智同款「柱+线」语汇） */
+function TurnoverBars({ days }: { days: TrendDayPoint[] }) {
+  const pts = days.filter((d) => d.totalYi !== null);
+  if (!pts.length) {
+    return <div className="flex h-[150px] items-center justify-center text-[11.5px] text-muted-foreground" title="趋势数据未取到或两市没配齐过一天">暂无数据</div>;
+  }
+  const max = Math.max(...pts.map((d) => d.totalYi as number)) * 1.08;
+  const band = (CHART_W - CHART_PAD * 2) / days.length;
+  const idxOf = new Map(days.map((d, i) => [d.date, i]));
+  // 5 日均线只在窗口内能凑满 5 个配对日的点上画——窗口头部少于 5 根不硬画半截线
+  const ma = pts.map((d, i) => {
+    const win = pts.slice(Math.max(0, i - 4), i + 1);
+    return { date: d.date, v: win.reduce((s, p) => s + (p.totalYi as number), 0) / win.length, ok: i >= 4 };
+  }).filter((p) => p.ok);
+  const x = (date: string) => CHART_PAD + (idxOf.get(date) ?? 0) * band + band / 2;
+  const y = (v: number) => CHART_H - 18 - (v / max) * (CHART_H - 30);
+  return (
+    <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full" role="img" aria-label="大盘成交额趋势">
+      <line x1={CHART_PAD} y1={CHART_H - 18} x2={CHART_W - CHART_PAD} y2={CHART_H - 18} stroke="currentColor" strokeOpacity={0.2} />
+      {days.map((d) => (d.totalYi === null ? null : (
+        <rect key={d.date} x={x(d.date) - Math.max(1.5, band * 0.32)} y={y(d.totalYi)}
+          width={Math.max(3, band * 0.64)} height={CHART_H - 18 - y(d.totalYi)} rx={1.5}
+          className="fill-sky-400/70">
+          <title>{`${d.date} 合计 ${(d.totalYi / 1e4).toFixed(2)} 万亿（沪 ${d.shYi === null ? "缺" : (d.shYi / 1e4).toFixed(2)} / 深 ${d.szYi === null ? "缺" : (d.szYi / 1e4).toFixed(2)} 万亿）`}</title>
+        </rect>
+      )))}
+      {ma.length > 1 && (
+        <polyline fill="none" stroke="#fb923c" strokeOpacity={0.9} strokeWidth={1.6}
+          points={ma.map((p) => `${x(p.date).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ")} />
+      )}
+      <text x={CHART_PAD} y={11} className="fill-current text-[9px]" fill="#fb923c" opacity={0.85}>— 5 日均线</text>
+      <text x={CHART_PAD} y={CHART_H - 5} className="fill-current" fontSize={9} opacity={0.55}>{pts[0].date}</text>
+      <text x={CHART_W - CHART_PAD} y={CHART_H - 5} textAnchor="end" fontSize={9} opacity={0.55}>{pts[pts.length - 1].date}</text>
+    </svg>
+  );
+}
+
+/** 指数区间累计涨跌：三条线按区间首日归一（首日=0%），图例带区间末实数 */
+function IndexCumLines({ cum }: { cum: TrendClient["cum"] | null }) {
+  const series = cum ? [
+    { name: "上证", color: "#f87171", pts: cum.sh },
+    { name: "深成", color: "#38bdf8", pts: cum.sz },
+    { name: "创业板", color: "#fbbf24", pts: cum.cyb },
+  ].filter((s) => s.pts.length > 1) : [];
+  if (!series.length) {
+    return <div className="flex h-[150px] items-center justify-center text-[11.5px] text-muted-foreground" title="至少一条指数的区间读数都没取到时画空图没有意义">暂无数据</div>;
+  }
+  const dates = [...new Set(series.flatMap((s) => s.pts.map((p) => p.date)))].sort();
+  const vals = series.flatMap((s) => s.pts.map((p) => p.pct));
+  const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+  const span = hi - lo || 1;
+  const x = (d: string) => CHART_PAD + (dates.indexOf(d) / Math.max(1, dates.length - 1)) * (CHART_W - CHART_PAD * 2);
+  const y = (v: number) => 14 + (1 - (v - lo) / span) * (CHART_H - 34);
+  return (
+    <div>
+      <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full" role="img" aria-label="指数区间累计涨跌">
+        <line x1={CHART_PAD} y1={y(0)} x2={CHART_W - CHART_PAD} y2={y(0)} stroke="currentColor" strokeOpacity={0.25} strokeDasharray="3 3" />
+        {series.map((s) => (
+          <polyline key={s.name} fill="none" stroke={s.color} strokeWidth={1.6} strokeOpacity={0.95}
+            points={s.pts.map((p) => `${x(p.date).toFixed(1)},${y(p.pct).toFixed(1)}`).join(" ")} />
+        ))}
+        <text x={CHART_PAD} y={CHART_H - 5} fontSize={9} opacity={0.55}>{dates[0]}</text>
+        <text x={CHART_W - CHART_PAD} y={CHART_H - 5} textAnchor="end" fontSize={9} opacity={0.55}>{dates[dates.length - 1]}</text>
+      </svg>
+      <div className="mt-1 flex flex-wrap gap-3 text-[10.5px] text-muted-foreground">
+        {series.map((s) => (
+          <span key={s.name}><i className="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={{ background: s.color }} />
+            {s.name} <b style={{ color: s.color }}>{s.pts[s.pts.length - 1].pct >= 0 ? "+" : ""}{s.pts[s.pts.length - 1].pct.toFixed(2)}%</b></span>
+        ))}
       </div>
     </div>
   );

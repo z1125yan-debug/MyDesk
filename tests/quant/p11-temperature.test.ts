@@ -204,7 +204,9 @@ test("MarketPage：温度吃纯核、切行情不重取数、无读数不画假�
   assert.match(mk, /useState<MarketRegime>\("range"\)/, "行情类型是纯前端态：切换只换权重、零重取数");
   assert.match(mk, /main_net_known: sent\.main_net_known/, "资金流缺读判据要一路带到纯核");
   assert.match(mk, /<TempGauge value=\{temp\.temperature\} label=\{temp\.label\} \/>/);
-  assert.match(mk, /function TempGauge\(\{ value, label \}: \{ value: number \| null/, "gauge 签名收 null：无读数画「—」不画表针");
+  // P15-R2a 口径迁移：顶部监控四卡要同款迷你表盘，TempGauge 加了带默认值的 compact 形参——
+  // 钉的不变量不变（签名收 null：无读数画「—」不画表针），只是允许多一个可选参数。
+  assert.match(mk, /function TempGauge\(\{ value, label, compact = false \}: \{ value: number \| null/, "gauge 签名收 null：无读数画「—」不画表针");
   assert.match(mk, /无读数/);
 });
 
