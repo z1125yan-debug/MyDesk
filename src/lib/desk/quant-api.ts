@@ -472,6 +472,8 @@ export interface ThemeRowClient {
   code: string; name: string; changePct: number; mainYi: number; rps: number;
   diffusion: number | null; streakPct: number | null; streakInflow: number | null;
   score: number; role: string; reasons: string[];
+  /** P15-R4：行业/概念归属，供主题总览「去选股」递棒（服务端 ThemeScored 原样带下） */
+  kind?: "industry" | "concept";
 }
 export interface ThemeDiscoveryClient {
   as_of: string; trade_date: string;

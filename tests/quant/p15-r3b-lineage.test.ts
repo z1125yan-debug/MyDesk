@@ -37,11 +37,13 @@ test("页面不许再 local 定义同名卡组件：全仓库只认 ui/LineageCa
   // R3c 起清单加进 FactorLabPage（local Metric 小卡已退役换 StatCard）与 WatchlistPage；
   // R3d 再收进 Research/Agent/History/Profile 四页——Profile 原本 local `function Section` 是卡的重定义，
   // 从这一刻起禁止名单加了 Section，任何页面再抄一张壳 = 漂移。
+  // R4：主题血缘总览页同样只准 import，不许 local 重定义。
   for (const rel of [
     MARKET, SECTORS, SCREENER,
     "src/components/desk/pages/FactorLabPage.tsx", "src/components/desk/pages/WatchlistPage.tsx",
     "src/components/desk/pages/ResearchPage.tsx", "src/components/desk/pages/AgentPage.tsx",
     "src/components/desk/pages/HistoryPage.tsx", "src/components/desk/pages/ProfilePage.tsx",
+    "src/components/desk/pages/ThemeOverviewPage.tsx",
   ]) {
     const src = readSrc(rel);
     assert.match(src, /from "\.\.\/ui\/LineageCard"/, `${rel} 应引用统一组件`);
