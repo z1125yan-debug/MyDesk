@@ -1,10 +1,14 @@
 "use client";
-// 行业板块排行（P1-2，需求文档 三十四）：板块榜 + 点击展开成分股 + 跳个股画像
+// 板块排行（P1-2 起家，P12-① 升级为「行业/概念」双 Tab）：板块榜 + 点击展开成分股 + 跳个股画像
+// + P12-②「去选股」出口：板块是选股的入口不是看板终点（对齐稳智 Sectors 页核心设计）。
 // REAL_DATA_ONLY：现有封装取不到的列显式「暂无数据」，不做演示兜底。
 import { useState, useEffect, useCallback, useRef } from "react";
-import { LayoutGrid, Loader2, RefreshCw, X } from "lucide-react";
+import { LayoutGrid, Loader2, RefreshCw, X, Filter } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
 import { useDesk } from "@/lib/desk/store";
+import { aggregateSectors } from "@/lib/quant/screener/sector-stats-core";
+
+type BoardKind = "industry" | "concept";
 
 interface SectorRow {
   code: string;
@@ -32,6 +36,11 @@ export default function SectorsPage() {
   const go = useDesk((s) => s.go);
   const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
   const takeFocusSector = useDesk((s) => s.takeFocusSector);
+  const setScanBoard = useDesk((s) => s.setScanBoard);
+
+  /** P12-①：榜单种类——行业与概念是两张榜（fs=m:90+t:2 / t:3），切换即换数据源，文案同步 */
+  const [kind, setKind] = useState<BoardKind>("industry");
+  const noun = kind === "concept" ? "概念" : "板块";
 
   const [list, setList] = useState<SectorRow[] | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
@@ -61,10 +70,11 @@ export default function SectorsPage() {
   useEffect(() => { openBoardRef.current = openBoard; }, [openBoard]);
 
   // 展开某个板块的成分股（只负责「开」，「关」由行点击走 closeBoard：这样跳转侧不必知道现在开着谁）
+  // P12-①：成分股接口按 kind 认榜（行业/概念是两套 b:BKxxxx 成分），必须带上当前 Tab 的种类。
   const openMembers = useCallback(async (code: string) => {
     setOpenBoard(code); setMembers(null); setMembersError(""); setMembersBusy(true);
     try {
-      const res = await fetch(`/api/market/sectors/${encodeURIComponent(code)}`);
+      const res = await fetch(`/api/market/sectors/${encodeURIComponent(code)}?kind=${kind}`);
       const j = await res.json();
       if (!res.ok || !j.ok) throw new Error(j.error || "成分股获取失败");
       setMembers(j.list ?? []);
@@ -74,7 +84,7 @@ export default function SectorsPage() {
     } finally {
       setMembersBusy(false);
     }
-  }, []);
+  }, [kind]);
   const closeBoard = useCallback(() => { setOpenBoard(null); setMembers(null); }, []);
 
   /**
@@ -96,9 +106,9 @@ export default function SectorsPage() {
   const load = useCallback(async () => {
     setBusy(true); setError("");
     try {
-      const res = await fetch("/api/market/sectors");
+      const res = await fetch(`/api/market/sectors?kind=${kind}`);
       const j = await res.json();
-      if (!res.ok || !j.ok) throw new Error(j.error || "板块榜获取失败");
+      if (!res.ok || !j.ok) throw new Error(j.error || `${noun}榜获取失败`);
       const rows = (j.list ?? []) as SectorRow[];
       setList(rows);
       setMissing(j.missing ?? []);
@@ -114,7 +124,7 @@ export default function SectorsPage() {
     } finally {
       setBusy(false);
     }
-  }, [settleJump]);
+  }, [settleJump, kind, noun]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -123,12 +133,26 @@ export default function SectorsPage() {
   // 挂载必然带上一次 load()，交接就在那里结算。哪天板块页改成常驻渲染、或本页上出现了对话面，
   // 这里才需要补一个订阅；现在写订阅就是给不存在的场景写代码。
   const openProfile = (symbol: string) => { setFocusSymbol(symbol); go("profile"); };
-  const boardName = list?.find((b) => b.code === openBoard)?.name ?? openBoard;
+  /**
+   * P12-②「去选股」出口：把这一棒递给 AI 选股页（store 一次性交接，页面挂载后自动跑一轮池筛选）。
+   * 板块代码必须是东财 BKxxxx 才能解析成分池——腾讯兜底榜的代码不是这个口径，
+   * 递过去只会在选股页炸出一句「板块代码非法」，所以这里直接不出按钮（宁缺不假）。
+   */
+  const canScreen = (code: string) => /^BK\d{4}$/i.test(code);
+  const screenBoard = (b: SectorRow) => {
+    setScanBoard({ code: b.code, name: b.name, kind });
+    go("aiscan");
+  };
+  /** P12-①：切 Tab = 换数据源，上一张榜的展开态/跳转结算态必须一起清掉（留着就是把 A 榜成分挂到 B 榜行下） */
+  const switchKind = (k: BoardKind) => {
+    if (k === kind) return;
+    setKind(k); closeBoard(); setJump(null); setList(null);
+  };
 
   // 四种结算结果各说一句实话，写在页面上而不是只留在 console
   const jumpNotice = !jump ? ""
-    : jump.outcome === "no-list" ? `想定位「${jump.code}」，但板块榜这次没取到${jump.reason ? `（${jump.reason}）` : ""}，未展开任何成分股`
-    : jump.outcome === "absent" ? `「${jump.code}」不在当前板块榜（共 ${jump.total ?? 0} 个板块）里，未展开成分股`
+    : jump.outcome === "no-list" ? `想定位「${jump.code}」，但${noun}榜这次没取到${jump.reason ? `（${jump.reason}）` : ""}，未展开任何成分股`
+    : jump.outcome === "absent" ? `「${jump.code}」不在当前${noun}榜（共 ${jump.total ?? 0} 个${noun}）里，未展开成分股`
     : jump.outcome === "already" ? `已定位到「${jump.name}」（${jump.code}）：该行本来就已展开，未重复开合`
     : `已按对话里的链接展开「${jump.name}」（${jump.code}）的成分股`;
 
@@ -136,7 +160,7 @@ export default function SectorsPage() {
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2 text-lg font-bold"><LayoutGrid size={18} className="text-sky-400" /> 行业板块排行</div>
+          <div className="flex items-center gap-2 text-lg font-bold"><LayoutGrid size={18} className="text-sky-400" /> {kind === "concept" ? "概念板块排行" : "行业板块排行"}</div>
           <div className="text-[11px] text-muted-foreground">
             {list?.length && list.every((r) => r.fundsMissing)
               ? "腾讯板块兜底榜（东财板块榜断源：涨幅口径，无主力资金读数）"
@@ -144,10 +168,21 @@ export default function SectorsPage() {
             {" · 点板块行展开成分股 · 点个股跳画像 · "}{asOf ? `更新 ${asOf}` : ""}
           </div>
         </div>
-        <button onClick={load} disabled={busy}
-          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
-        </button>
+        <div className="flex items-center gap-2">
+          {/* P12-①：行业 / 概念 双 Tab（对齐稳智 control-tabs）——换榜即换数据源，标题/空态文案同步 */}
+          <div className="flex rounded-lg border border-border p-0.5 text-xs">
+            {([["industry", "行业"], ["concept", "概念"]] as const).map(([k, label]) => (
+              <button key={k} onClick={() => switchKind(k)}
+                className={"rounded-md px-3 py-1.5 transition-colors " + (kind === k ? "bg-sky-500/20 font-medium text-sky-300" : "text-muted-foreground hover:text-foreground")}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <button onClick={load} disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
+          </button>
+        </div>
       </div>
 
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}（数据源失败时不展示任何假数据）</div>}
@@ -166,12 +201,35 @@ export default function SectorsPage() {
         </div>
       )}
 
+      {/* P12-①统计行：5 张聚合卡（对齐稳智 stats-row）。数字只从当前榜真实读数聚合，
+          缺的不补 0——主力合计遇腾讯兜底榜占位 0 时整体显「—」，口径见 sector-stats-core。 */}
+      {list && list.length > 0 && (() => {
+        const st = aggregateSectors(list);
+        const cards: { label: string; value: string; tone: string; title: string }[] = [
+          { label: `总${noun}数`, value: String(st.count), tone: "text-sky-300", title: "当前榜内去重后的条数（资金口径榜，非全市场板块总数）" },
+          { label: "平均涨跌幅", value: st.avgChangePct === null ? "—" : `${st.avgChangePct > 0 ? "+" : ""}${st.avgChangePct}%`, tone: (st.avgChangePct ?? 0) >= 0 ? "text-red-400" : "text-emerald-400", title: "榜内涨跌幅截面均值" },
+          { label: `上涨${noun}数`, value: String(st.upBoards), tone: "text-red-400", title: `涨幅为正${kind === "concept" ? "的概念" : "的行业板块"}条数（${noun}口径，非个股上涨家数——现有数据源不含板块内个股广度字段）` },
+          { label: `下跌${noun}数`, value: String(st.downBoards), tone: "text-emerald-400", title: "跌幅为负的条数（同为板块口径）" },
+          { label: "主力净额合计", value: st.mainSumYi === null ? "—" : `${st.mainSumYi > 0 ? "+" : ""}${st.mainSumYi}亿`, tone: (st.mainSumYi ?? 0) >= 0 ? "text-red-400" : "text-emerald-400", title: st.mainSumYi === null ? st.mainMissingNote : "榜内主力净额求和（亿）" },
+        ];
+        return (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            {cards.map((c, i) => (
+              <div key={i} title={c.title} className="apple-card px-3.5 py-3">
+                <div className="text-[11px] text-muted-foreground">{c.label}</div>
+                <div className={`mt-1 font-mono text-lg font-semibold ${c.tone}`}>{c.value}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {list && (
         <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground">
-                {["#", "板块", "涨幅%", "主力净额(亿)", "净占比%", "超大单(亿)", "大单(亿)", "RPS(榜内)", "领涨股", "成交额", "上涨/涨停家数", "持续天数", ""].map((h) => (
+                {["#", noun, "涨幅%", "主力净额(亿)", "净占比%", "超大单(亿)", "大单(亿)", "RPS(榜内)", "领涨股", "成交额", "上涨/涨停家数", "持续天数", "去选股", ""].map((h) => (
                   <th key={h} className="px-3 py-2">{h}</th>
                 ))}
               </tr>
@@ -181,23 +239,26 @@ export default function SectorsPage() {
                 <SectorBlock key={b.code} rank={i + 1} board={b}
                   expanded={openBoard === b.code}
                   busy={membersBusy} error={membersError} members={members}
-                  onToggle={() => (openBoard === b.code ? closeBoard() : void openMembers(b.code))} onOpenProfile={openProfile} />
+                  canScreen={canScreen(b.code)}
+                  onToggle={() => (openBoard === b.code ? closeBoard() : void openMembers(b.code))} onOpenProfile={openProfile}
+                  onScreen={() => screenBoard(b)} />
               ))}
             </tbody>
           </table>
         </div>
       )}
       {!list && !busy && !error && (
-        <div className="rounded-xl border border-border bg-card px-6 py-12 text-center text-sm text-muted-foreground">暂无数据</div>
+        <div className="rounded-xl border border-border bg-card px-6 py-12 text-center text-sm text-muted-foreground">暂无{noun}数据</div>
       )}
     </div>
   );
 }
 
-function SectorBlock({ rank, board, expanded, busy, error, members, onToggle, onOpenProfile }: {
+function SectorBlock({ rank, board, expanded, busy, error, members, canScreen, onToggle, onOpenProfile, onScreen }: {
   rank: number; board: SectorRow; expanded: boolean;
   busy: boolean; error: string; members: MemberRow[] | null;
-  onToggle: () => void; onOpenProfile: (s: string) => void;
+  canScreen: boolean;
+  onToggle: () => void; onOpenProfile: (s: string) => void; onScreen: () => void;
 }) {
   return (
     <>
@@ -214,11 +275,23 @@ function SectorBlock({ rank, board, expanded, busy, error, members, onToggle, on
         <td className="px-3 py-1.5 text-center text-[10px] text-muted-foreground">暂无数据</td>
         <td className="px-3 py-1.5 text-center text-[10px] text-muted-foreground">暂无数据</td>
         <td className="px-3 py-1.5 text-center text-[10px] text-muted-foreground">暂无数据</td>
+        <td className="px-3 py-1.5 text-center">
+          {/* P12-②：板块→选股的出口。stopPropagation 是底线——点按钮不该顺手把成分股展开面板开了。
+              非 BK 口径代码（腾讯兜底榜）给不了成分池，按钮如实缺席而不是点了再报错。 */}
+          {canScreen ? (
+            <button onClick={(e) => { e.stopPropagation(); onScreen(); }} title={`以「${board.name}」成分为股票池去 AI 选股`}
+              className="flex items-center gap-1 rounded-md border border-sky-500/40 px-2 py-0.5 text-[10.5px] text-sky-300 hover:bg-sky-500/10">
+              <Filter size={10} /> 去选股
+            </button>
+          ) : (
+            <span title="该榜行代码非东财 BK 口径（腾讯兜底榜），无法解析成分池" className="text-[10px] text-muted-foreground">—</span>
+          )}
+        </td>
         <td className="px-3 py-1.5 text-right text-sky-400">{expanded ? <X size={12} /> : "▸"}</td>
       </tr>
       {expanded && (
         <tr className="border-b border-border/40 bg-background/50">
-          <td colSpan={13} className="px-4 py-3">
+          <td colSpan={14} className="px-4 py-3">
             {busy && <div className="flex items-center gap-2 py-4 text-xs text-sky-400"><Loader2 size={12} className="animate-spin" /> 拉取成分股…</div>}
             {!busy && error && <div className="py-4 text-xs text-red-300">{error}</div>}
             {!busy && !error && members && (
