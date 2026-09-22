@@ -1703,3 +1703,32 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 3. **旧池 `2026-09-11-all_a-901` universe 是英文旧口径**：与新池「全A」并存属历史数据非本轮产出，PoolPage 直存直显不洗史。
 4. **回测 Tab 的 pill 分组仅经代码钉与选股页实机代表**：同一 FactorPillGrid 两处消费，未逐 Tab 实机点开（截图取证只走了选股引擎）。
 5. **3010 仍未重启**（用户指令：四文档做完统一重启）；P12 遗留「板块池真数端到端」照旧待东财恢复复测。
+
+## P14 量化收口轮（2026-09-22）
+
+### 背景与口径
+- 四文档收口轮：量化板块改造方案.md §P14 + 大盘情绪页 ☆P2/☆P3 leftovers + 稳智汇总方案 §四/§五/§七 P2-P3。P11–P13 已各自提交，本轮做完即触发「四文档全部做完才有的唯一一次 3010 重启」。
+- 分组定为**本机视图概念**：自选是浏览器存档（mydesk-state），没有也不该为它新建服务端表/接口——文档里那些分组端点描述的是稳智侧。组只存 id 不存名字，删组只销组不丢票（成员回未分组），旧存档条目无 groupId 字段天然＝未分组，零迁移。
+- 行内展开**诚实口径**：报价接口随带的是分时线，就写「分时口径」，日K看完整分析页——不拿分时冒充日K；无分时线的票显示「暂无数据…不以直线冒充」，不画一条直线糊弄。
+- 奇门多色卡是**已解析三段的换色**，不是新内容层：qimen-core 的解析、prompt、整段回退分支、「不是市场事实/不构成投资建议」免责全部不动；「技术补充·盘面要项」全部取本次真实盘面字段，是给解盘文本看的输入底账，不是第二套排盘。
+- 连板分档 chips（三板/四板/五板+，20+ 归入五板+）纯从既有 tiers 实数**归档**，不是新读数；万亿换算先过 amount_known 闸——合计 0 是「没抓到」不是「成交 0 亿」；数据源没有「昨日全市场成交额」字段就不演 vs 昨日（缺就是缺）。
+
+### 落点
+- 纯核 `src/lib/desk/watchlist-group-core.ts`（新）：addGroupCore（空名拒/同名幂等回既有 id/trim）、removeGroupCore（只销组映射成员回 null）、moveWatchCore、filterWatchlist（all/none/组id，未知组回空不冒充）。
+- `store.ts`：watchlistGroups 状态 + addWatchGroup/removeWatchGroup/moveWatch 三 action，partialize 收录；`types.ts` WatchItem.groupId?；`quant-api.ts` SentimentClient.amount_known。
+- `WatchlistPage.tsx`：分组工具条（过滤下拉带计数、建组后自动切进新组、选中组才出删组按钮、超 30 只截断如实自报）+ 行首 chevron 展开行（Sparkline 260×44 + 现价/涨跌/昨收/今高/今低/成交额 + 分时口径标注 + 完整分析出口）+ 行右侧移入下拉。
+- `QimenPanel.tsx`：FriendlyCard 蓝/绿/橙三段卡 + FriendlyTechCard 灰色折叠技术补充；旧 Seg 撤下。
+- `MarketPage.tsx`：成交额卡 amount_known 三态（暂无数据/n 亿/x.xx 万亿）+ title 口径全文；涨停梯队头部连板 chips。
+- `tests/quant/p14-final.test.ts`（新 9 条）：纯核行为 3 + store 接线钉（含 `watchlistGroups: r.groups` 回归钉）+ 页面口径钉 5。
+
+### 验收数字与实测证据
+- tsc 0；`node --test tests/quant/*.test.ts` 879/870/0/9（P13 基线 870 上 +9 全为新文件，零回归）；next build ✓ Compiled successfully；触碰 7 文件 eslint 仅 2 错为先存 set-state-in-effect（WatchlistPage:92←HEAD:70、MarketPage:52，HEAD 副本对照证过非新增）；package*.json diff 空。
+- **实机走查抓到并修掉真 bug**：removeWatchGroup 初版直塞纯核返回值，键名错位（groups vs watchlistGroups）→ zustand 塞了个没用的 groups 键、组实际删不掉（成员关系倒是清了）。3014 浏览器上「删组后 localStorage 仍留着测试组」暴露。修复＝store 侧键名映射 + 回归钉测。教训口径：纯核返回键名与 store 字段名对不上是直塞写法的暗坑，接线必须显式映射并钉住。
+- 3014 复验全链（修复后构建）：建组「测试组B」→过滤自动切新组且空组文案distinct→移入寒武纪→计数「测试组B（1）」→行展开见 000300.SH 3965.69/+0.40% 与分时口径标注→删组→组消失、三票全回未分组、存档干净。大盘页：成交额 7418 亿不换算万亿、title 写明 5554 只有读数+不做 vs 昨日；chips 三板3/四板1/五板+2（最高 6 板华瓷股份归入五板+）与梯队实数一致。奇门：起局→真模型解盘→蓝/绿/橙三卡齐+技术补充在+免责保住，未触发不硬切回退。
+- 走查坑补记：路由 hash 是 store PageKey（自选页＝#/tracker，非 #/watchlist）；存档键 mydesk-state；evaluate_script 里 select 换值要原生 setter+change 事件，React 受控才认。
+
+### 未收口边界
+- 低5日/低3日占比、above_ma5_pct、万亿 vs 昨日对比：数据源无字段，按缺就是缺处理，本轮不做（要做需先找到可信源，属数据层不是UI层）。
+- amount_known===0 的「暂无数据」分支有钉测，当日快照 5554 只有读数，实机未能当场触发该分支。
+- 分组不做跨设备同步、不做组内排序/改名——改名当前=删旧建新，够用于本机视图；等真需要再谈。
+- 东财 push2 断源窗口未关：P12 端到端真数、概念榜备胎继续等恢复（与前几轮同口径，非本轮引入）。
