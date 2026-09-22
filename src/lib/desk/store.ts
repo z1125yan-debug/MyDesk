@@ -84,6 +84,11 @@ interface DeskState {
    * 一次性交接、不进 partialize：和 pendingAsk 同理，刷新后还替用户展开一块会莫名其妙。
    */
   focusSector: string | null;
+  /**
+   * P12-②：板块/概念页点「去选股」递过来的一棒——AI 选股页挂载后据此把股票池切成该板块成分。
+   * 与 focusSector 同类：一次性交接、读完即清、不进 partialize（刷新后还自动开一轮板块选股会莫名其妙）。
+   */
+  scanBoard: { code: string; name: string; kind: "industry" | "concept" } | null;
 
   go: (p: PageKey) => void;
   toggleSidebar: () => void;
@@ -91,6 +96,9 @@ interface DeskState {
   /** 请板块榜页展开某个板块（跳页联动用），读完即清 */
   setFocusSector: (code: string | null) => void;
   takeFocusSector: () => string | null;
+  /** 请 AI 选股页把股票池切到该板块成分（跳页联动用），读完即清 */
+  setScanBoard: (b: { code: string; name: string; kind: "industry" | "concept" } | null) => void;
+  takeScanBoard: () => { code: string; name: string; kind: "industry" | "concept" } | null;
   setAssistantMode: (m: ChatMode) => void;
   setAssistantHorizon: (h: ChatHorizon | null) => void;
   setDeskMode: (m: DeskMode) => void;
@@ -186,6 +194,7 @@ export const useDesk = create<DeskState>()(
       debugPanel: false,
       pendingAsk: null,
       focusSector: null,
+      scanBoard: null,
 
       go: (p) => set({ page: p }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
@@ -195,6 +204,12 @@ export const useDesk = create<DeskState>()(
         const code = get().focusSector;
         if (code) set({ focusSector: null });
         return code;
+      },
+      setScanBoard: (b) => set({ scanBoard: b }),
+      takeScanBoard: () => {
+        const b = get().scanBoard;
+        if (b) set({ scanBoard: null });
+        return b;
       },
       setAssistantMode: (m) => set({ assistantMode: m }),
       setAssistantHorizon: (h) => set({ assistantHorizon: h }),

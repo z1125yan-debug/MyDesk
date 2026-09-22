@@ -18,7 +18,9 @@ import { cmpWithOp, historicalWinProbability, type ScreenerCond, type WinProbSta
 import { partitionUnavailableSnapConds } from "./snapshot-avail-core.ts";
 import type { AssetMeta } from "../types.ts";
 
-export type UniverseSpec = "all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] } | { kind: "industry"; boardCode: string };
+// P12-②：概念板与行业板同为 b:BKxxxx 成分口径（provider.listUniverse 两边都走 fetchBoardMembers），
+// 板块页「去选股」带 kind+boardCode 过来就能把股票池切成该板块成分。
+export type UniverseSpec = "all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] } | { kind: "industry" | "concept"; boardCode: string };
 
 export interface ScreenerRequestBody {
   universe?: UniverseSpec;
@@ -157,7 +159,7 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
   } else if (spec.kind === "watchlist") {
     metas = await provider.listUniverse({ kind: "custom", symbols: spec.symbols }, asOf);
   } else {
-    metas = await provider.listUniverse({ kind: "industry", boardCode: spec.boardCode }, asOf);
+    metas = await provider.listUniverse({ kind: spec.kind, boardCode: spec.boardCode }, asOf);
   }
   const universeCount = metas.length;
   if (!metas.length) throw new Error("股票池为空（数据源无返回）");

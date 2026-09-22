@@ -63,7 +63,8 @@ export interface ScreenerRespClient {
 }
 
 export async function runScreenerApi(body: {
-  universe?: "all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] };
+  // P12-②：行业/概念板成分池（板块页「去选股」带过来；与 screener run.ts 的 UniverseSpec 同形）
+  universe?: "all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] } | { kind: "industry" | "concept"; boardCode: string };
   conditions: ScreenerCond[];
   fields?: string[];
   sort?: { order_by?: string; order_dir?: "asc" | "desc" };

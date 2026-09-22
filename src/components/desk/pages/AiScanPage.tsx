@@ -1,6 +1,6 @@
 "use client";
 // AI 实时选股（需求文档 十六/十七/二十八）：扫描全A一级入口 + 自然语言→条件 + 漏斗 + 冻结候选池
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Radar, Loader2, Snowflake, Bot, ListFilter, Globe2, BookmarkCheck } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
 import { useDesk, type FrozenPool } from "@/lib/desk/store";
@@ -47,9 +47,15 @@ const VALID_FIELDS = new Set([
   "breakout_high_20", "breakout_high_60",
 ]);
 
+// P12-②：股票池多一种「板块成分」形态——行业/概念页点「去选股」递过来 {kind, boardCode}，
+// 与 screener run.ts 的 UniverseSpec 同形（客户端不另造一套形状，两端口径漂移过一次就够了）。
+type UniSpec = "all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] } | { kind: "industry" | "concept"; boardCode: string };
+const boardLabel = (kind: "industry" | "concept", name: string) => `${kind === "concept" ? "概念" : "行业"}·${name}`;
+
 export default function AiScanPage() {
   const go = useDesk((s) => s.go);
   const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
+  const takeScanBoard = useDesk((s) => s.takeScanBoard);
   const ai = useDesk((s) => s.ai);
   const watchlist = useDesk((s) => s.watchlist);
   const frozenPools = useDesk((s) => s.frozenPools);
@@ -58,7 +64,7 @@ export default function AiScanPage() {
   const [nl, setNl] = useState("");
   const [conds, setConds] = useState<ScreenerCond[]>([]);
   const [condSource, setCondSource] = useState("");
-  const [universe, setUniverse] = useState<"all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] }>("all_a");
+  const [universe, setUniverse] = useState<UniSpec>("all_a");
   const [universeLabel, setUniverseLabel] = useState("全A");
   const [result, setResult] = useState<ScreenerRespClient | null>(null);
   const [busy, setBusy] = useState(false);
@@ -102,7 +108,7 @@ export default function AiScanPage() {
     setCondSource(mapped.length ? "关键词映射（未配置AI或AI解析失败，确定性规则）" : "未识别出条件（试：放量上涨+主力流入+换手率大于3）");
   };
 
-  const scan = async (u?: "all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] }, label?: string) => {
+  const scan = async (u?: UniSpec, label?: string) => {
     const uni = u ?? universe;
     const lab = label ?? universeLabel;
     if (u) { setUniverse(u); setUniverseLabel(label ?? ""); }
@@ -129,6 +135,19 @@ export default function AiScanPage() {
       setStage("");
     }
   };
+
+  // P12-②：接住板块页「去选股」递过来的一棒——带票进场就自动跑一轮「股票池=该板块成分」的筛选
+  // （空条件＝只圈池，不替用户猜任何量价条件）。延后一个微任务再取：effect 体内不同步 setState
+  // 是本页的 lint 红线；take 读完即清，StrictMode 双挂载/重渲染都只会真正跑到第二次拿空。
+  const boardTakeOnce = useRef(false);
+  useEffect(() => {
+    if (boardTakeOnce.current) return;
+    boardTakeOnce.current = true;
+    void Promise.resolve().then(() => {
+      const b = takeScanBoard();
+      if (b) void scan({ kind: b.kind, boardCode: b.code }, boardLabel(b.kind, b.name));
+    });
+  }, [takeScanBoard, scan]);
 
   const freeze = async () => {
     if (!result?.list.length) return;
@@ -211,6 +230,13 @@ export default function AiScanPage() {
           className="flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
           <ListFilter size={14} /> 扫描自选股（{watchlist.length}）
         </button>
+        {/* P12-②：股票池是当前池的明示——从板块页「去选股」进来时不加说明，用户会以为筛的是全A */}
+        {typeof universe !== "string" && universe.kind !== "watchlist" && (
+          <span className="flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-[12px] text-sky-300">
+            当前股票池：{universeLabel} 板块成分
+            <button onClick={() => void scan("all_a", "全A")} className="text-[11px] text-muted-foreground hover:text-sky-300">× 回全A</button>
+          </span>
+        )}
       </div>
 
       {/* 自然语言选股 */}
