@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { PctText } from "../SourceBadge";
+import { LineageCard, LineageSection } from "../ui/LineageCard";
 import { fetchSentiment, fetchLimitUp, fetchTrend, fetchBreadth, type SentimentClient, type LimitUpClient, type TrendClient, type TrendDayPoint, type BreadthClient } from "@/lib/desk/quant-api";
 // P11 情绪温度：仪表盘与对话工具吃同一份纯核（零 IO，浏览器端直接 import），
 // 三态切换只换权重、不重取数——分量各算一次，牛/熊/震荡是同一批读数的三种加权。
@@ -83,11 +84,9 @@ export default function MarketPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const riskColor = (level: string): string =>
-    level === "高风险" ? "border-red-400/25 bg-red-400/[0.07]"
-      : level === "偏高" ? "border-orange-400/25 bg-orange-400/[0.07]"
-      : level === "注意" ? "border-amber-400/25 bg-amber-400/[0.07]"
-      : "border-emerald-400/25 bg-emerald-400/[0.07]";
+  // 风险档位 → 小节 tone 色点（原 riskColor 整卡底色退役为色点，档位词表一字没改：高风险/偏高/注意/其余）
+  const riskTone = (level: string): "danger" | "warning" | "success" =>
+    level === "高风险" ? "danger" : level === "偏高" || level === "注意" ? "warning" : "success";
 
   const total = sent ? sent.advancers + sent.decliners + sent.flat : 0;
   const advPct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
@@ -298,8 +297,15 @@ export default function MarketPage() {
             </div>
           </div>
 
-          {/* 涨跌结构 */}
-          <div className="apple-card apple-fade-in p-5">
+          {/* P15-R3b 页面血缘卡制：涨跌结构/情绪温度/风险/涨停梯队/板块资金榜原来一块一张卡竖着散开，
+              收成一张「盘面详情」卡按血缘分节（对方 analysis-section 结构同款）。
+              每节内容、口径、tooltip 一个字没动——监控四卡管「3 秒看懂」，这里管「点开看口径」。 */}
+          <LineageCard
+            title="盘面详情（逐项口径）"
+            note="下面每节的数据来源和口径各自独立，互不冒充：温度是快照推导、梯队是收盘实数、资金榜是板块口径。"
+          >
+          <LineageSection title="涨跌结构" divided={false}>
+            <div className="apple-fade-in">
             <div className="mb-3 flex items-center justify-between text-[12.5px] text-muted-foreground">
               <span>涨跌家数（共 {sent.total} 只）</span>
               <span>涨停 <b className="text-red-400">{sent.limit_up}</b> · 跌停 <b className="text-emerald-400">{sent.limit_down}</b></span>
@@ -325,13 +331,14 @@ export default function MarketPage() {
               <Card label="涨跌比" value={(sent.decliners > 0 ? sent.advancers / sent.decliners : 99).toFixed(2)} />
               <Card label="炸板率" value={<>{sent.break_rate === null ? "—" : `${sent.break_rate.toFixed(0)}%`}<span className="ml-1.5 text-[11px] font-normal text-muted-foreground">炸 {sent.limit_up_broken}</span></>} />
             </div>
-          </div>
+            </div>
+          </LineageSection>
 
           {/* 情绪温度详情（P11）：四分量加权与监控卡同一份 temp/regime——上面切三态，这里分量权重同步变 */}
           {temp && (
-            <div className="apple-card apple-fade-in p-5">
+            <LineageSection title="情绪温度 · 分量加权" hint="与顶部监控卡同一份读数，切三态两边同步">
+              <div className="apple-fade-in">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-[14px] font-medium">情绪温度</div>
                   <div className="flex items-center gap-1">
                     {REGIMES.map((rg) => (
                       <button key={rg.key} onClick={() => setRegime(rg.key)}
@@ -365,20 +372,21 @@ export default function MarketPage() {
                   </div>
                 </div>
               </div>
+            </LineageSection>
           )}
 
-          {/* 风险等级 */}
-          <div className={`apple-card apple-fade-in border p-5 ${riskColor(sent.risk.level)}`}>
-            <div className="flex items-center gap-2 text-[16px] font-semibold">市场风险：{sent.risk.level}</div>
-            <div className="mt-2 space-y-1 text-[13px] text-foreground/80">
+          {/* 风险等级：原来整卡带色散在中间，现在收进详情卡——tone 点按等级着色，触发项照旧逐条。
+              档位词表与 riskTone 一致（高风险/偏高/注意/其他），缺档不猜成绿色。 */}
+          <LineageSection title={`市场风险：${sent.risk.level}`} tone={riskTone(sent.risk.level)}>
+            <div className="apple-fade-in mt-2 space-y-1 text-[13px] text-foreground/80">
               {sent.risk.triggers.map((t, i) => <div key={i}>· {t}</div>)}
             </div>
-          </div>
+          </LineageSection>
 
           {/* 涨停梯队 */}
-          <div className="apple-card apple-fade-in p-5">
+          <LineageSection title="涨停梯队" tone="warning" hint={tiers ? `最高 ${tiers.max_boards} 板` : undefined}>
+            <div className="apple-fade-in">
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-[14px] font-medium">涨停梯队{tiers && <span className="ml-2 text-[12px] font-normal text-muted-foreground">最高 {tiers.max_boards} 板</span>}</div>
               {/* P14 对齐稳智连板分档：三/四/五板+ 计数从「3连板+」名单实数推（capped 20+ 计入五板+），不是新读数；
                   P15-R2a 起分档推导上移到组件顶部，监控卡与这里同一份 */}
               {tiers && tiers.tiers.some((t) => t.stocks.length > 0) && (
@@ -421,14 +429,15 @@ export default function MarketPage() {
                 ))}
               </div>
             )}
-          </div>
+            </div>
+          </LineageSection>
 
           {/* 板块资金榜 */}
-          <div className="apple-card apple-fade-in p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-[14px] font-medium">行业资金流入榜</div>
-              <button onClick={() => go("board")} className="text-[12.5px] text-sky-300 hover:underline">更多 →</button>
-            </div>
+          <LineageSection
+            title="行业资金流入榜"
+            actions={<button onClick={() => go("board")} className="text-[12.5px] text-sky-300 hover:underline">更多 →</button>}
+          >
+            <div className="apple-fade-in">
             {boards ? (
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                 {boards.map((b, i) => (
@@ -441,7 +450,9 @@ export default function MarketPage() {
                 ))}
               </div>
             ) : <div className="text-[12.5px] text-muted-foreground/80">资金榜数据稍后再看。</div>}
-          </div>
+            </div>
+          </LineageSection>
+          </LineageCard>
         </>
       )}
     </div>
