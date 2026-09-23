@@ -17,6 +17,8 @@ export interface LivePoll {
   /** 当前是否处于 A 股交易时段（休市时轮询暂停） */
   open: boolean;
   sessionLabel: string;
+  /** 用户设定的刷新周期（秒）：页面要把它写进「每 Ns 与榜单同步」这类说明句里，别再去 store 单独读一遍 */
+  interval: number;
 }
 
 export function useLivePoll(): LivePoll {
@@ -34,5 +36,5 @@ export function useLivePoll(): LivePoll {
     return () => clearInterval(t);
   }, [open, interval]);
 
-  return { tick: poll.tick, left: open ? poll.left : interval, open, sessionLabel: session.label };
+  return { tick: poll.tick, left: open ? poll.left : interval, open, sessionLabel: session.label, interval };
 }

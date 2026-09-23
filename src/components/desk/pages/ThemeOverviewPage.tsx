@@ -18,6 +18,8 @@ import { LineageCard, LineageSection, StatCard, type SectionTone } from "../ui/L
 import { DeskCollapse } from "../ui/DeskCollapse";
 import { PctText, NumText, SourceBadge } from "../SourceBadge";
 import { SnapshotBar } from "../SnapshotBar";
+import LiveStamp from "../LiveStamp";
+import { useLivePoll } from "@/hooks/use-live-poll";
 import { useDesk } from "@/lib/desk/store";
 import { enrichThemes, type ThemeMetrics } from "@/lib/quant/screener/theme-rules";
 import {
@@ -70,18 +72,24 @@ export default function ThemeOverviewPage() {
 
   const [query, setQuery] = useState("");
   const [selectedCode, setSelectedCode] = useState("");
+  // R17b：这页的关键数字就是板块当日涨幅与主力净额，接全站轮询钩子跟看板同拍刷新（休市暂停）
+  const poll = useLivePoll();
 
   const load = useCallback(async (force = false) => {
     setBusy(true);
     // 三路并进，任一路挂都不拖累其它两路：主题榜是主角，环境/新闻是配角，配角缺了照样读主线。
     const [t, r, ev] = await Promise.allSettled([fetchThemes(force), fetchRisk(), fetchEvents()]);
     if (t.status === "fulfilled") { setData(t.value); setError(""); }
-    else { setData(null); setError(String((t.reason as Error).message || t.reason)); }
+    else {
+      setError(String((t.reason as Error).message || t.reason));
+      // 轮询那一拍失败不清空画面：屏上仍是上一批真实读数，as_of 时刻照实挂着；只有手动「立即重算」失败才清空
+      if (force) setData(null);
+    }
     setRisk(r.status === "fulfilled" ? r.value : null);
     setEvents(ev.status === "fulfilled" ? ev.value.items : []);
     setBusy(false);
   }, []);
-  useEffect(() => { void load(false); }, [load]);
+  useEffect(() => { void load(false); }, [load, poll.tick]);
 
   // 合并四组 → 去重 → 按 score 倒序（score 是 theme-rules 规则版分数，不是稳智热度分，页面照实标「规则分」）
   const allThemes = useMemo(() => {
@@ -155,15 +163,18 @@ export default function ThemeOverviewPage() {
           <div className="flex items-center gap-2 text-lg font-bold"><Layers size={18} className="text-sky-400" /> 主题血缘总览</div>
           <div className="text-[11px] text-muted-foreground">左边选主题，右边按血缘读完整一条：市场环境 → 主题入口 → 关键数字 → 理由 → 新闻 → 分层结论 · 规则版不接大模型</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <LiveStamp poll={poll} iso={data?.as_of ?? ""} />
           {data && <SourceBadge status="LIVE" source={boardSource} time={data.as_of.slice(11, 19)} />}
           <button onClick={() => load(true)} className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent">
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 立即重算
           </button>
         </div>
       </div>
 
-      {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">主线发现数据获取失败：{error}（下方环境/新闻若已取到仍会照实显示）</div>}
+      {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        主线发现本轮没取到：{error}。{data && <span>画面停在上一批真实读数上（截至 {data.as_of.slice(11, 19)}），不是这一轮的。</span>}下方环境/新闻若已取到仍会照实显示。
+      </div>}
 
       <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
         {/* 左：真实主题榜（按规则分排序 + 关键词过滤）。不摆行业/概念 Tab、不摆日期选择器——数据口径不支持，摆了就是假控件 */}
@@ -208,7 +219,7 @@ export default function ThemeOverviewPage() {
                   </div>
                   <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10.5px] text-muted-foreground">
                     <span>主力 <NumText value={fundsMissing ? null : t.mainYi} digits={1} suffix="亿" /></span>
-                    <span>涨幅 <PctText value={t.changePct} /></span>
+                    <span>当日涨幅 <PctText value={t.changePct} /></span>
                     <span>流入 {t.streakInflow ?? "—"}日</span>
                   </div>
                 </button>

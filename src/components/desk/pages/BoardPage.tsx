@@ -4,6 +4,7 @@ import { fetchBoardRows, fetchDetailFor, type BoardKind } from "@/lib/desk/marke
 import { useLivePoll } from "@/hooks/use-live-poll";
 import LiveStamp from "@/components/desk/LiveStamp";
 import { MAIN_FLOW_BASIS } from "@/lib/quant/screener/tdx-flow-core";
+import { clockZh } from "@/lib/desk/plain-core";
 import type { SectorDetail, SectorRow } from "@/lib/desk/types";
 import BubbleFlow from "../BubbleFlow";
 
@@ -74,6 +75,12 @@ export default function BoardPage() {
 
   const sourceLabel = origin ? ORIGIN_LABEL[origin] : "没取到：当前榜单无可用数据源";
   const truncatedCount = rows.filter((r) => r.flowSampleTruncated).length;
+  // 看板 tab 决定图上文案的单位：实时榜摆的是个股，行业/概念/地域榜摆的是板块，写死一个就是口径错。
+  const unit = kind === "stock" ? "个股" : "板块";
+  const asOfStamp = clockZh(asOf);
+  const syncNote = poll.open
+    ? `与上方榜单同步：每 ${poll.interval}s 换一批（第 ${poll.tick} 轮）`
+    : `A股${poll.sessionLabel}，自动刷新已暂停——画面停在最后一次取到的时刻`;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-5">
@@ -82,6 +89,7 @@ export default function BoardPage() {
           <h1 className="text-xl font-bold">数据看板</h1>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
             板块/个股资金流向榜与流向图 —— {sourceLabel}
+            {asOfStamp && <span className="font-mono"> · 涨幅为当日（{asOfStamp.slice(0, 5)}）盘中读数</span>}
             {quoteTime && <span className="font-mono"> · 行情时刻 {quoteTime}</span>}
             {rows.length > 0 && rows.every((r) => r.fundsMissing) && "（当前为腾讯板块兜底榜：涨幅口径，无主力资金读数）"}
             {rows.length > 0 && rows.every((r) => r.breakdownMissing && !r.fundsMissing) && "（当前为同花顺板块资金流榜：东财断源时的独立兜底，净额=流入−流出，无净占比/超大单拆分）"}
@@ -125,7 +133,7 @@ export default function BoardPage() {
                 <tr className="border-b border-border text-left">
                   <th className="px-4 py-2.5 font-normal">排名</th>
                   <th className="px-2 py-2.5 font-normal">{kind === "stock" ? "股票" : "板块"}</th>
-                  <th className="px-2 py-2.5 text-right font-normal">涨跌%</th>
+                  <th className="px-2 py-2.5 text-right font-normal">当日涨幅%</th>
                   <th className="px-2 py-2.5 text-right font-normal">
                     主力净额(亿){rows.some((r) => r.mainSelfComputed) && <span className="ml-1 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] text-amber-300">自算</span>}
                   </th>
@@ -238,24 +246,37 @@ export default function BoardPage() {
         </div>
       </div>
 
-      {showBubble && (flowIn.length === 0 && flowOut.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-4 text-[12px] text-muted-foreground">
-          资金流向图暂不可用：流入/流出两个方向都没取到榜单读数——不拿演示数据画流向。
-        </div>
-      ) : flowIn.length > 0 && flowIn.every((r) => r.fundsMissing) && flowOut.every((r) => r.fundsMissing) ? (
-        <div className="rounded-xl border border-border bg-card p-4 text-[12px] text-muted-foreground">
-          资金流向图暂不可用：当前榜单来自腾讯板块兜底榜（涨幅口径），不含主力净额读数——不拿占位 0 画流向、不编造线宽。
-        </div>
-      ) : (
+      {showBubble && (
         <div className="rounded-xl border border-border bg-card p-4">
-          <div className="mb-1 text-[13.5px] font-semibold">资金流向图 · 主力净额前 8 名</div>
-          <div className="mb-2 text-[12px] text-muted-foreground">
-            粒子流向 = 资金去向：红 = 主力净流入个股，绿 = 主力净流出个股；线宽与条长 = 净额大小。悬停查看明细，点击联动右侧资金明细。
-            {flowIn.some((r) => r.mainSelfComputed) && `本图为${ORIGIN_LABEL.tdx}。`}
+          {/* 标题右侧常驻一行「同步状态」：这块图跟上面榜单同一个轮次刷新，休市就明说停在最后取到的时刻 */}
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[13.5px] font-semibold">资金去向 · 主力净额前 8 名{unit}</div>
+            <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11.5px] text-muted-foreground">
+              <span className={"inline-block h-1.5 w-1.5 rounded-full " + (poll.open ? "bg-emerald-400" : "bg-amber-400")} />
+              <span>{syncNote}</span>
+              {asOfStamp && <span>· 数据截至 {asOfStamp}</span>}
+              {quoteTime && <span>· 行情时刻 {quoteTime}</span>}
+            </div>
           </div>
-          <BubbleFlow inRows={flowIn} outRows={flowOut} onSelect={setSelected} />
+          {flowIn.length === 0 && flowOut.length === 0 ? (
+            <div className="py-3 text-[12px] text-muted-foreground">
+              暂不可用：流入/流出两个方向都没取到榜单读数——不拿演示数据画流向。
+            </div>
+          ) : flowIn.length > 0 && flowIn.every((r) => r.fundsMissing) && flowOut.every((r) => r.fundsMissing) ? (
+            <div className="py-3 text-[12px] text-muted-foreground">
+              暂不可用：当前榜单来自腾讯板块兜底榜（涨幅口径），不含主力净额读数——不拿占位 0 画流向、不编造线宽。
+            </div>
+          ) : (
+            <>
+              <div className="mb-2 text-[12px] text-muted-foreground">
+                粒子流向 = 资金去向：红 = 主力净流入{unit}（钱在进来），绿 = 主力净流出{unit}（钱在离开）；线宽与条长 = 净额大小，百分比 = 当日涨幅。悬停看全名明细，点击联动右侧资金明细。
+                {flowIn.some((r) => r.mainSelfComputed) && `本图为${ORIGIN_LABEL.tdx}。`}
+              </div>
+              <BubbleFlow inRows={flowIn} outRows={flowOut} unitLabel={unit} onSelect={setSelected} />
+            </>
+          )}
         </div>
-      ))}
+      )}
     </div>
   );
 }

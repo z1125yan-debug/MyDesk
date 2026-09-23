@@ -223,6 +223,10 @@ test("R16c 轮询收口：一个钩子一个戳，凡摆着股票实时数字的
     ["src/components/desk/pages/SectorsPage.tsx", "板块排行"],
     ["src/components/desk/pages/MarketPage.tsx", "大盘情绪"],
     ["src/components/desk/pages/ProfilePage.tsx", "个股画像"],
+    // R17b 补的三页：这两页摆的就是板块当日涨幅/主力净额，原来只有手动刷新按钮，放着不动会挂一整天
+    ["src/components/desk/pages/ThemesPage.tsx", "主线发现"],
+    ["src/components/desk/pages/ThemeOverviewPage.tsx", "主题血缘总览"],
+    ["src/components/desk/pages/OverviewPage.tsx", "总览自选卡片"],
   ] as const) {
     const src = read(f);
     assert.match(src, /useLivePoll\(\)/, `${why}必须接全站轮询钩子`);
