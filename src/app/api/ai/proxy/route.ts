@@ -4,11 +4,18 @@ import {
   injectSceneContext, type ChatRequestMessage, type ContextMsg, type StepInfo,
 } from "@/lib/desk/chat-core";
 import { contractWarningOf, prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
-import type { ToolCtx } from "@/lib/desk/chat-tools";
+import { TOOLS, findTool, type ToolCtx } from "@/lib/desk/chat-tools";
+// R14 网关文本协议工具环：协议解析/结果拼装住纯核，本层只做接线与执行
+import {
+  createFetchStreamFilter, GATEWAY_LOOP_STEP_LABELS, GATEWAY_LOOP_STEP_REASON, gatewayFetchLoopBrief, isBlockedTool,
+  MAX_FETCH_ROUNDS, parseFetchRequests, renderFetchResultsBlock, renderToolCatalog, splitRequests,
+  type FetchResult, type FetchStreamFilter, type ParsedFetch,
+} from "@/lib/desk/gateway-loop-core";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { shanghaiDate } from "@/lib/desk/session";
 import {
   createSseScanner, encodeStreamEvent, isEventStream, notStreamedWarning, parseUpstreamFrame,
+  stepDetailOf, stepLabelFor,
   type StreamEvent, type StreamStep,
 } from "@/lib/desk/chat-stream-core";
 import { RUNS } from "@/lib/desk/run-bus";
@@ -401,12 +408,18 @@ export async function POST(req: NextRequest) {
     let runId: string | null = wantStream && typeof body?.run === "string" && body.run ? body.run : null;
     if (runId && !RUNS.start(runId).ok) runId = null;
     const debugOn = body?.debug === true;
+    // P8-⑥：仅带 run 的轮次换 cancel 源（grace=跑到自然结束或显式停止，细则 §5-3 拍板项）；
+    // 不带 run 的请求保持 req.signal.aborted 逐字不变——断连即 notRun 的旧语义原样。
+    // R14：网关文本协议环的每轮之间也查同一把刀——客户端已断连就不该再代取一条数据。
+    const isCancelled = () => (runId ? RUNS.cancelled(runId) : req.signal.aborted);
 
     /**
      * 判场景 + 按场景预取真实数据（emit 只在流式下给，非流式靠返回值带出去）。
      * 没带 scene 就是「一次一问的转发请求」（研究页、事件理解、Agent 循环、连通性自检都算），
      * 它们要的是一句原文回答，给它们注入交易场景提示词只会污染口径 —— 所以这里按调用方显式声明才做。
      */
+    // R14：工具执行上下文整轮一份（自选清单口径与 /api/ai/chat 相同：服务端不读浏览器存档，只认请求体）。
+    const toolCtx = { watchlist: Array.isArray(body?.watchlist) ? body.watchlist : [] } as ToolCtx;
     const prepare = async (emit?: (ev: StreamEvent) => void): Promise<SceneTurn | null> => {
       if (!body?.scene) return null;
       // 取数工具和 /api/ai/chat 是同一份注册表，量化引擎那套初始化也必须在这里做一次（幂等）
@@ -414,12 +427,12 @@ export async function POST(req: NextRequest) {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       return prepareSceneTurn({
         userContent: typeof lastUser?.content === "string" ? lastUser.content : "",
-        ctx: { watchlist: Array.isArray(body.watchlist) ? body.watchlist : [] } as ToolCtx,
+        ctx: toolCtx,
         focusSymbol: body.scene.focusSymbol ?? null,
         sessionSymbol: body.scene.sessionSymbol ?? null,
         prevScene: body.scene.prevScene ?? null,
         today: shanghaiDate(),
-        // 回测工具在这条路上真的没有：这一路连工具调用环都不走（数据全靠系统预取），
+        // 回测工具在这条路上真的没有：预取环不带它，R14 文本环也把它拉进黑名单（gateway-loop-core）——
         // 所以必须显式按「未接入」说，否则提示词会让模型去调一个它根本调不动的工具。
         backtestReady: false,
         emit,
@@ -428,21 +441,79 @@ export async function POST(req: NextRequest) {
         isCancelled: () => (runId ? RUNS.cancelled(runId) : req.signal.aborted),
       });
     };
-    // 这一路没有工具调用环（Anthropic/Gemini 原生协议更是连 tools 字段都不认），
-    // 所以预取就是本轮唯一的取数途径：数据由系统取好、随提示词一起给模型，模型不再自己调接口。
-    // 网关模式在注入之后才折叠（顺序不能反）：doubao2API 实测只取最后一条 user 消息
-    // （README 6.5），先折叠会把注入的 system 件丢在折叠范围外，模型就拿不到本轮场景数据了。
-    // 折叠层把 system + 既往轮次 + 本轮问题拼成一条 user，理由与形状见 foldHistoryForGateway。
-    // 回答风格：纯对话这一路的消费方就是这条 system 件（工具环那路在 /api/ai/chat 的 systemPrompt 里，
-    // 两处查的是 modes.ts 同一份 MODE_NOTES，不会出现「chip 同名、两端口径不同」）。
-    // 只对带 scene 的对话轮生效——研究页/事件理解/自检那些一次一问的调用要的是原口径，
-    // 给它们塞交易风格句和给它们塞场景提示词是同一类污染（见 prepare 上方的注释）。
+    // 官方口径注：Anthropic/Gemini 原生协议这一路仍是「预取唯一取数」（连 tools 字段都不认）；
+    // OpenAI 兼容的网关对话轮自 R14 起多一条文本协议环（见下方 gatewayLoop），
+    // 除此之外数据仍由系统取好、随提示词一起给模型。
     const modeNote = body?.scene ? MODE_NOTES[asChatMode(body.mode)] : "";
     // P11 持仓周期：与风格件同一消费路（只认带 scene 的对话轮）、同一张表（modes.ts）、同一道白名单门。
     // 没选就是一个字都不加——「未选」不能被解释成任何周期口径。
     const horizon = body?.scene ? asHorizon(body.horizon) : null;
     const styleNote = [modeNote, horizon ? HORIZON_NOTES[horizon] : ""].filter(Boolean).join("\n");
-    const withScene = (turn: SceneTurn | null): MsgIn[] => {
+    // ---------- R14 网关文本协议工具环（开关口径与身份卡同门：gateway + 带 scene 的对话轮） ----------
+    // 官方 API 模式在 /api/ai/chat 有真 function-call 环，不需要也不该再套一层文本环；
+    // 一次一问的转发调用（研究页/自检）不吃协议卡，自然也没有请求块。
+    const gatewayLoop = serverChannel?.mode === "gateway" && !!body?.scene && openaiCompat;
+    // 协议卡的工具目录直接由注册表渲染（黑名单除外）——卡上清单和能执行的清单永远一张表
+    const fetchCatalog = renderToolCatalog(TOOLS);
+    // 每一轮「请求→执行→回料」的累加器：步骤号接在场景预取之后，两套步骤不能都从 1 开始
+    interface LoopState { stepNo: number; steps: StepInfo[]; trace: { name: string; args: Record<string, unknown>; ms: number; status: "ok" | "error"; summary: string }[]; roundsUsed: number }
+    const makeLoop = (turn: SceneTurn | null): LoopState => ({ stepNo: turn?.nextStep ?? 0, steps: [], trace: [], roundsUsed: 0 });
+    /**
+     * 执行一轮取数请求，返回要拼回对话的续答消息（assistant 前文 + user 结果块）。
+     * 与工具调用环同一份 findTool 注册表执行——不开第二条数据管道；
+     * 未知工具/黑名单工具不抛错，回「未开放」并如实进时间线（缺数据不是失败，两者在界面上必须分开）。
+     */
+    const runFetchRound = async (
+      loop: LoopState, parsed: ParsedFetch, emitEv?: (ev: StreamEvent) => void,
+    ): Promise<MsgIn[]> => {
+      loop.roundsUsed++;
+      const { executed, skipped } = splitRequests(parsed.requests);
+      const results: FetchResult[] = [];
+      for (const r of executed) {
+        const step = ++loop.stepNo;
+        const label = GATEWAY_LOOP_STEP_LABELS[r.tool] ?? stepLabelFor(r.tool, r.args);
+        emitEv?.({ type: "step", data: { step, label, status: "running", tool: r.tool, source: "model", reason: GATEWAY_LOOP_STEP_REASON } });
+        const started = Date.now();
+        let out: unknown;
+        let status: "ok" | "error" = "ok";
+        try {
+          const blocked = isBlockedTool(r.tool);
+          const fn = blocked ? undefined : findTool(r.tool);
+          if (blocked) out = { missing: "该工具未开放给网关文本协议（回测请走 AI 交易员页或量化门户）" };
+          else if (!fn) out = { missing: `未知工具 ${r.tool}：不在文本协议开放清单内，未执行` };
+          else out = await (fn.fn as (args: Record<string, unknown>, c: ToolCtx) => Promise<unknown>)(r.args, toolCtx);
+        } catch (e) {
+          out = { missing: `工具执行失败：${(e as Error).message}` };
+          status = "error";
+        }
+        const ms = Date.now() - started;
+        const text = JSON.stringify(out);
+        loop.trace.push({ name: r.tool, args: r.args, ms, status, summary: text.length > 120 ? text.slice(0, 120) + "…" : text });
+        const judged = stepDetailOf(out);
+        const finalStatus: StepInfo["status"] = status === "error" ? "error" : judged.status;
+        loop.steps.push({ step, label, tool: r.tool, ms, status: finalStatus, detail: judged.detail, source: "model", reason: GATEWAY_LOOP_STEP_REASON });
+        emitEv?.({ type: "step", data: { step, label, tool: r.tool, ms, status: finalStatus as StreamStep["status"], detail: judged.detail, source: "model", reason: GATEWAY_LOOP_STEP_REASON } });
+        results.push({ tool: r.tool, args: r.args, status: finalStatus === "running" ? "ok" : finalStatus, ms, text: text.slice(0, 6000), reason: r.reason });
+      }
+      for (const s of skipped) {
+        results.push({ tool: s.tool, args: s.args, status: "refused", ms: null, text: `本轮请求数超过上限，未执行这条；确有必要请留到下一次机会或如实告知缺口。`, reason: s.reason });
+      }
+      const block = renderFetchResultsBlock(results, loop.roundsUsed, parsed.malformed);
+      return [
+        { role: "assistant", content: parsed.preText || "（本轮只发出了取数请求，未输出正文。）" },
+        { role: "user", content: block },
+      ];
+    };
+    // 折叠在注入之后（顺序不能反）：doubao2API 实测只取最后一条 user 消息（README 6.5），
+    // 先折叠会把注入的 system 件丢在折叠范围外，模型就拿不到本轮场景数据了。
+    // 折叠层把 system + 既往轮次 + 本轮问题拼成一条 user，理由与形状见 foldHistoryForGateway。
+    // 回答风格：纯对话这一路的消费方就是这条 system 件（工具环那路在 /api/ai/chat 的 systemPrompt 里，
+    // 两处查的是 modes.ts 同一份 MODE_NOTES，不会出现「chip 同名、两端口径不同」）。
+    // 只对带 scene 的对话轮生效——研究页/事件理解/自检那些一次一问的调用要的是原口径，
+    // 给它们塞交易风格句和给它们塞场景提示词是同一类污染（见 prepare 上方的注释）。
+    const foldForSend = (raw: MsgIn[]): MsgIn[] =>
+      serverChannel?.mode === "gateway" ? (foldHistoryForGateway(raw) as MsgIn[]) : raw;
+    const withSceneRaw = (turn: SceneTurn | null): MsgIn[] => {
       const merged = injectSceneContext(messages, turn ? { prompt: turn.prompt, block: turn.block } : {}, (role, content) => ({ role, content }));
       // 风格件放整份消息的最前：场景提示词由 injectSceneContext 接在「开头 system 串」之后，两者顺序稳定；
       // 无 scene 时 styleNote 为空串，一个 system 件都不多插（p7 钉测：原消息一条不改）；
@@ -452,8 +523,11 @@ export async function POST(req: NextRequest) {
       // 不吃场景提示词，也不该被交易纪律污染（与上面 styleNote 同口径）。
       const brief: MsgIn[] = serverChannel?.mode === "gateway" && body?.scene ? [{ role: "system", content: GATEWAY_BRAIN_BRIEF }] : [];
       const out: MsgIn[] = [...brief, ...(styleNote ? [{ role: "system" as const, content: styleNote }] : []), ...merged];
-      return serverChannel?.mode === "gateway" ? (foldHistoryForGateway(out) as MsgIn[]) : out;
+      // R14 协议卡紧跟身份卡：先立「你没有工具」的身份，再讲唯一例外怎么走——
+      // 只在文本环开着的轮次附加，环没接线的轮次一个字都不多插（那张卡说了也不成立）。
+      return gatewayLoop ? [out[0], { role: "system" as const, content: gatewayFetchLoopBrief(fetchCatalog) }, ...out.slice(1)] : out;
     };
+    const withScene = (turn: SceneTurn | null): MsgIn[] => foldForSend(withSceneRaw(turn));
 
     // 流式：只有 OpenAI 兼容协议有逐字能力。其余服务商走整体返回，
     // 客户端会因为拿不到 event-stream 而如实登记「本机节奏」。
@@ -469,13 +543,17 @@ export async function POST(req: NextRequest) {
         // P8-⑤：轮末把带上了 args/summary 的终态帧按同序号重发一遍。
         // applyEvent 按步骤号字段合并（B 轮前就有的语义），所以富化不会产生第二条步骤、不撞步骤号断言——
         // 这是「scene-dispatch / dispatch-core 零改动」的落点：它们一个字都不用认识 debug。
+        // R14：富化范围并入文本环步骤（同一条拼接口径），预取/环两侧零改动。
+        const loop = gatewayLoop ? makeLoop(turn) : null;
+        const allSteps = (): StepInfo[] => [...(turn?.steps ?? []), ...(loop?.steps ?? [])];
+        const allTrace = () => [...(turn?.trace ?? []), ...(loop?.trace ?? [])];
         const emitDebugSteps = () => {
-          if (!debugOn || !turn || !turn.steps.length) return;
-          for (const f of debugFramesFromSteps(turn.steps, turn.trace)) {
+          if (!debugOn || !allSteps().length) return;
+          for (const f of debugFramesFromSteps(allSteps(), allTrace())) {
             if (f.args || f.summary) emit({ type: "step", data: { ...f, status: f.status as StreamStep["status"], ms: f.ms ?? null } });
           }
         };
-        const sentMessages = withScene(turn);
+        const baseRaw = withSceneRaw(turn);
         let emittedDelta = false;
         const emitCounted = (ev: StreamEvent) => {
           if (ev.type === "delta") emittedDelta = true;
@@ -484,9 +562,45 @@ export async function POST(req: NextRequest) {
         const modelStart = Date.now();
         // done 的结论留底只给 debug=true 的请求发（细则 §1.3）；transport 如实记本轮走的传输
         const doneDebug = () => (debugOn ? { debug: { modelMs: Date.now() - modelStart, transport: "stream" as const } } : {});
+        // 一轮模型调用：流式逐帧外发；文本环开着时过一道过滤器（协议块不上屏）。
+        // 返回值是整轮原文（含块）——解析一律用原文，过滤器只管展示。
+        const callRoundStream = async (raw: MsgIn[], filter: FetchStreamFilter | null): Promise<string> =>
+          await callOpenAIStream(baseUrl, apiKey, model, foldForSend(raw), agent, (ev) => {
+            if (ev.type === "delta" && filter) {
+              const piece = filter.push(ev.data.content ?? "");
+              if (piece) emitCounted({ type: "delta", data: { content: piece } });
+            } else {
+              emitCounted(ev);
+            }
+          }, runId ? undefined : req.signal);
+        /**
+         * R14 流式多轮驱动：回答→（若发请求）执行→回料→续答，最多 MAX_FETCH_ROUNDS 轮。
+         * 返回用户看到的全部正文（各轮请求块之前文字的拼接）；超上限的新请求不执行、如实 warning。
+         */
+        const runStreamTurn = async (): Promise<string> => {
+          let raw = baseRaw;
+          let outAll = "";
+          for (;;) {
+            const filter = loop ? createFetchStreamFilter() : null;
+            const roundText = await callRoundStream(raw, filter);
+            const tail = filter ? filter.flush() : "";
+            if (tail) emitCounted({ type: "delta", data: { content: tail } });
+            if (!loop) return roundText;
+            const parsed = parseFetchRequests(roundText);
+            outAll += parsed.preText;
+            if (!parsed.markerFound) return outAll;
+            if (loop.roundsUsed >= MAX_FETCH_ROUNDS) {
+              emit({ type: "warning", data: { text: `补数轮次已达上限（${MAX_FETCH_ROUNDS} 轮），这条新请求未执行，按已取到的数据作答。` } });
+              return outAll;
+            }
+            if (isCancelled()) return outAll;
+            const cont = await runFetchRound(loop, parsed, emit);
+            raw = [...raw, ...cont];
+          }
+        };
         try {
           // P8-⑥：带 run 的轮次不再把客户端断连接进上游 fetch（grace=跑完或停止键）；无 run 逐字不变
-          const content = await callOpenAIStream(baseUrl, apiKey, model, sentMessages, agent, emitCounted, runId ? undefined : req.signal);
+          const content = await runStreamTurn();
           if (!content) {
             emit({ type: "error", data: { message: `上游未返回内容${via}` } });
             return;
@@ -502,11 +616,19 @@ export async function POST(req: NextRequest) {
           // 任务书「网关不支持 SSE 自动切轮询，不直接报错」的落地形态：对同一上游补发一次
           // **非流式**请求（一次性取全量）。两条铁理由纯函数判定：吐过 delta 不重发（会看到
           // 半截答案被重答）、鉴权类错误不重发（只会多等一次失败）。降级也失败就落回原文报错。
-          if (shouldRetryNonStream(raw, emittedDelta)) {
+          // R14 加一条：文本环已经执行过取数的轮次不整轮重来——降级补发只走一次、不跑环
+          //（屏幕没字但工具已跑过的事实 filter 反映不出来，看 steps 才准）。
+          if (shouldRetryNonStream(raw, emittedDelta || (loop?.steps.length ?? 0) > 0)) {
             try {
-              const c2 = await callOpenAI(baseUrl, apiKey, model, sentMessages, agent);
+              const c2raw = await callOpenAI(baseUrl, apiKey, model, foldForSend(baseRaw), agent);
+              const c2Parsed = parseFetchRequests(String(c2raw ?? ""));
+              const c2 = c2Parsed.preText;
               if (c2) {
                 emit({ type: "warning", data: { text: "流式未走通，已自动降级为一次性非流式请求取回全文；本轮回答整体到达，不是上游逐字流。" } });
+                // 降级这一发不走文本环：模型若又发了请求块，块被剥下、缺口如实说，不给第二轮
+                if (c2Parsed.markerFound) {
+                  emit({ type: "warning", data: { text: "降级为一次性请求后不再走补数：回答里若有按请求待补的维度，是那轮没取到，不是取错。" } });
+                }
                 // 降级路径同样要核契约：两条传输不能一个查一个不查
                 const cw2 = turn ? contractWarningOf(turn, c2) : null;
                 if (cw2) emit({ type: "warning", data: { text: cw2 } });
@@ -540,20 +662,42 @@ export async function POST(req: NextRequest) {
     const upstreamMessages = withScene(turn);
 
     let content = "";
+    const loopSteps: StepInfo[] = [];
+    let cappedWarn = "";
     if (provider === "anthropic") {
       content = await callAnthropic(baseUrl, apiKey, model, upstreamMessages, agent);
     } else if (provider === "gemini") {
       content = await callGemini(baseUrl, apiKey, model, upstreamMessages, agent);
+    } else if (gatewayLoop) {
+      // R14 非流式 JSON 路：同一个文本环（展示无逐字节奏，取数判定与流式一字不差）
+      const loop = makeLoop(turn);
+      let raw = withSceneRaw(turn);
+      let outAll = "";
+      for (;;) {
+        const roundText = String(await callOpenAI(baseUrl, apiKey, model, foldForSend(raw), agent) ?? "");
+        const parsed = parseFetchRequests(roundText);
+        outAll += parsed.preText;
+        if (!parsed.markerFound) break;
+        if (loop.roundsUsed >= MAX_FETCH_ROUNDS) {
+          cappedWarn = `补数轮次已达上限（${MAX_FETCH_ROUNDS} 轮），最后一条新请求未执行，回答按已取到的数据作答。`;
+          break;
+        }
+        const cont = await runFetchRound(loop, parsed);
+        loopSteps.push(...loop.steps.slice(loopSteps.length));
+        raw = [...raw, ...cont];
+      }
+      loopSteps.push(...loop.steps.slice(loopSteps.length));
+      content = outAll;
     } else {
       // openai / deepseek / moonshot / openrouter / ollama / custom 全部 OpenAI 兼容
       content = await callOpenAI(baseUrl, apiKey, model, upstreamMessages, agent);
     }
 
     if (!content) return NextResponse.json({ error: `上游未返回内容${via}` }, { status: 502 });
-    const steps: StepInfo[] = turn?.steps ?? [];
+    const steps: StepInfo[] = [...(turn?.steps ?? []), ...loopSteps];
     // P8-②：非流式同样核一遍契约引用；只并进 warning 字段，content 一个字符都不动（风险点 4）
     const contractWarn = turn ? contractWarningOf(turn, content) : null;
-    const warn = [sceneFailure ? `本轮未做场景自动取数：${sceneFailure}` : "", contractWarn ?? ""].filter(Boolean).join("；");
+    const warn = [sceneFailure ? `本轮未做场景自动取数：${sceneFailure}` : "", cappedWarn, contractWarn ?? ""].filter(Boolean).join("；");
     return NextResponse.json({
       content,
       // 非流式没有 step 事件可走，徽章与步骤只能随 JSON 一起回（客户端把它们并成同一种时间线）
