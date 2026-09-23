@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, LineChart, BarChart3, MessageSquareText, Info, Loader2 } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { fetchQuoteCards, searchSymbols, type QuoteCardsResult } from "@/lib/desk/market";
-import { useMarketSession } from "@/hooks/use-market-session";
+import { useLivePoll } from "@/hooks/use-live-poll";
+import LiveStamp from "@/components/desk/LiveStamp";
 import Sparkline from "../Sparkline";
 
 export default function OverviewPage() {
@@ -11,46 +12,40 @@ export default function OverviewPage() {
   const addWatch = useDesk((s) => s.addWatch);
   const removeWatch = useDesk((s) => s.removeWatch);
   const go = useDesk((s) => s.go);
-  const refreshInterval = useDesk((s) => s.refreshInterval);
-  const session = useMarketSession();
-  const openRef = useRef(session.open);
-  openRef.current = session.open;
-  const [tick, setTick] = useState(0);
+  // R17b：原来这页自带一套 setInterval + 写 ref 的倒计时（休市暂停的口径各页一份，还漏了「数据截至」）。
+  // 换成全站共用的轮询钩子 + 活体戳：开盘才刷、休市暂停、屏幕上写明这批数是几点取的。
+  const poll = useLivePoll();
   const [sym, setSym] = useState("");
   const [addError, setAddError] = useState("");
-  const [left, setLeft] = useState(refreshInterval);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      // 非交易时段上游不会有新数据：暂停倒计时与自动刷新
-      if (!openRef.current) return;
-      setLeft((v) => {
-        if (v <= 1) { setTick((n) => n + 1); return refreshInterval; }
-        return v - 1;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, [refreshInterval]);
 
   const watchKey = watchlist.map((w) => w.symbol).join(",");
   const [data, setData] = useState<QuoteCardsResult>({ cards: [], source: "demo" });
   const [loading, setLoading] = useState(true);
+  const [fetchedAt, setFetchedAt] = useState("");
 
   useEffect(() => {
     let dead = false;
     const symbols = watchKey ? watchKey.split(",") : [];
     setLoading(true);
     fetchQuoteCards(symbols)
-      .then((r) => { if (!dead) setData(r); })
-      .catch(() => { if (!dead) setData({ cards: [], source: "demo" }); })
+      .then((r) => {
+        if (dead) return;
+        setData(r);
+        // 时刻＝本轮取数完成的本机时刻（跟看板 asOf 同一口径）：一张卡片取到真报价才算真取到
+        setFetchedAt(r.cards.some((c) => !c.missing) ? new Date().toISOString() : "");
+      })
+      .catch(() => {
+        if (dead) return;
+        setData({ cards: [], source: "demo" });
+        setFetchedAt("");
+      })
       .finally(() => { if (!dead) setLoading(false); });
     return () => { dead = true; };
-  }, [watchKey, tick]);
+  }, [watchKey, poll.tick]);
 
   const nameOf = useMemo(() => new Map(watchlist.map((w) => [w.symbol, w.name])), [watchlist]);
-  const mmss = `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`;
   const sourceLabel =
-    data.source === "real" ? "本地实时数据源" : data.source === "mixed" ? "实时 + 演示混合" : "演示数据";
+    data.source === "real" ? "本地实时数据源" : data.source === "mixed" ? "实时 + 演示混合（演示品种不是实时行情）" : "演示数据（非实时行情）";
 
   const submit = async () => {
     const kw = sym.trim();
@@ -73,19 +68,10 @@ export default function OverviewPage() {
         <div>
           <h1 className="text-xl font-bold">总览</h1>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
-            自选行情卡片 · {sourceLabel} · 按设定周期自动刷新
+            自选行情卡片 · {sourceLabel} · 涨跌幅为当日 · {poll.open ? `交易时段每 ${poll.interval}s 自动刷新` : `A股${poll.sessionLabel}，自动刷新已暂停`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {!session.open && (
-            <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[12px] text-amber-300">
-              A股{session.label} · 自动刷新已暂停
-            </span>
-          )}
-          <span className="rounded-md border border-border px-2.5 py-1 font-mono text-[12px] text-muted-foreground">
-            下次刷新 {mmss}
-          </span>
-        </div>
+        <LiveStamp poll={poll} iso={fetchedAt} />
       </div>
 
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -130,8 +116,11 @@ export default function OverviewPage() {
                 <div>
                   <div className="font-mono text-[22px] font-bold leading-6 tabular-nums">{quote.price.toFixed(2)}</div>
                   <div className={"mt-0.5 font-mono text-[12.5px] " + (up ? "text-rose-400" : "text-emerald-400")}>
-                    {up ? "+" : ""}{quote.changePct.toFixed(2)}%
+                    {up ? "+" : ""}{quote.changePct.toFixed(2)}%<span className="ml-1 text-[10.5px] text-muted-foreground">当日</span>
                   </div>
+                  {quote.data_status === "DEMO" && (
+                    <div className="mt-0.5 text-[10.5px] text-amber-300">演示品种 · 不是实时行情</div>
+                  )}
                 </div>
                 {quote.series.length > 1 && <Sparkline data={quote.series} up={up} width={110} height={38} />}
               </div>
@@ -162,7 +151,7 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 gap-3.5 md:grid-cols-3">
         {[
           { icon: LineChart, title: "AI 图表分析", desc: "真实K线 + 支撑/阻力 + 结构化解读", to: "analysis" as const },
-          { icon: BarChart3, title: "数据看板", desc: "板块/个股资金榜与气泡图（本地实时）", to: "board" as const },
+          { icon: BarChart3, title: "数据看板", desc: "板块/个股资金榜与资金去向图（交易时段实时）", to: "board" as const },
           { icon: MessageSquareText, title: "智能助手", desc: "多会话 AI 对话，随问随答", to: "copilot" as const },
         ].map((c) => {
           const Icon = c.icon;

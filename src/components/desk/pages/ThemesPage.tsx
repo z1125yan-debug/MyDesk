@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Compass, Loader2, RefreshCw } from "lucide-react";
 import { PctText, NumText, SourceBadge } from "../SourceBadge";
 import { SnapshotBar } from "../SnapshotBar";
+import LiveStamp from "../LiveStamp";
+import { useLivePoll } from "@/hooks/use-live-poll";
 import { fetchThemes, type ThemeDiscoveryClient, type ThemeRowClient } from "@/lib/desk/quant-api";
 import { useDesk } from "@/lib/desk/store";
 
@@ -25,7 +27,7 @@ function Block({ title, rows, tone }: { title: string; rows: ThemeRowClient[]; t
               <span className="text-[11px] text-muted-foreground">{r.code}</span>
             </div>
             <div className="mt-1 flex flex-wrap gap-3 text-[11px]">
-              <span>涨幅 <PctText value={r.changePct} /></span>
+              <span>当日涨幅 <PctText value={r.changePct} /></span>
               <span>主力 <NumText value={r.mainYi} digits={1} suffix=" 亿" /></span>
               <span>扩散 {r.diffusion == null ? "—" : `${(r.diffusion * 100).toFixed(0)}%`}</span>
               <span>连续强势 {r.streakPct ?? "—"} 日</span>
@@ -43,26 +45,34 @@ export default function ThemesPage() {
   const [data, setData] = useState<ThemeDiscoveryClient | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // R17b：这一页摆的是板块当日涨幅与主力净额，接全站轮询钩子（休市暂停、开盘自恢复）。
+  const poll = useLivePoll();
 
   const load = useCallback(async (force = false) => {
     setBusy(true); setError("");
     try { setData(await fetchThemes(force)); }
-    catch (e) { setError(String((e as Error).message || e)); setData(null); }
+    catch (e) {
+      setError(String((e as Error).message || e));
+      // 轮询那一拍失败不清空画面：屏幕上仍是上一批真实读数，as_of 时刻照实挂着（旧数标旧时，不冒充刚取到）；
+      // 只有用户亲手点「刷新」失败才清空，免得按了按钮页面什么都不动。
+      if (force) setData(null);
+    }
     finally { setBusy(false); }
   }, []);
-  useEffect(() => { void load(false); }, [load]);
+  useEffect(() => { void load(false); }, [load, poll.tick]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-6 py-4">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Compass size={18} className="text-sky-400" /> 主线发现</div>
-          <div className="text-[11px] text-muted-foreground">规则版：涨幅/RPS/扩散/资金同步/连续强势 · 不接 LLM</div>
+          <div className="text-[11px] text-muted-foreground">规则版：当日涨幅/RPS/扩散/资金同步/连续强势 · 不接 LLM · 交易时段自动换一批</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <LiveStamp poll={poll} iso={data?.as_of ?? ""} />
           {data && <SourceBadge status="LIVE" source="东财板块" time={data.as_of.slice(11, 19)} />}
           <button onClick={() => load(true)} className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent">
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 立即重算
           </button>
         </div>
       </div>

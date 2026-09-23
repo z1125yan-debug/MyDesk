@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { clockZh } from "@/lib/desk/plain-core";
 import { FactorsTab } from "./quant/FactorsTab";
 import { MiningTab } from "./quant/MiningTab";
 import { BacktestTab, SelectionTab, ExperimentsTab, KnowledgeTab, ResearchTab } from "./quant/LabTabs";
@@ -90,6 +91,9 @@ export default function QuantPage() {
   const [health, setHealth] = useState<Health | null>(null);
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [universe, setUniverse] = useState<UniverseRow[]>([]);
+  // 探测出来的一口价是「按一次按钮」取的一次快照，不接全站轮询（这一路要拉整个股票池，每 30s 打一次是白烧上游）——
+  // 那就必须把它是何时探的写清楚，别让人当成实时现价（R17b）。
+  const [universeAsOf, setUniverseAsOf] = useState("");
   const [source, setSource] = useState<"em" | "demo">("em");
   const [busy, setBusy] = useState(false);
 
@@ -120,12 +124,15 @@ export default function QuantPage() {
       if (j.error) {
         toast({ title: `${source} 数据源探测失败`, description: j.error });
         setUniverse([]);
+        setUniverseAsOf("");
       } else {
         setUniverse(j.rows ?? []);
+        setUniverseAsOf(new Date().toISOString()); // 表上摆的现价就是这一刻的一口价，超过一分钟前就别叫「实时」
         toast({ title: `${source} 数据源正常`, description: `股票池 ${j.total} 只，过滤后 ${j.kept} 只` });
       }
     } catch (e) {
       toast({ title: "探测失败", description: (e as Error).message });
+      // 探测这一路挂了不动画面：表里还是上一次探到的快照，时刻戳本来就是那一次的，不抹也不刷新
     } finally {
       setBusy(false);
     }
@@ -233,6 +240,12 @@ export default function QuantPage() {
                 <span className="text-[11.5px] text-muted-foreground">验证 DataProvider → API → UI 全链路</span>
               </div>
               {universe.length > 0 && (
+                <div className="text-[11px] text-muted-foreground">
+                  现价＝{clockZh(universeAsOf) ? `${clockZh(universeAsOf)} 探测那一刻的一口价` : "探测时刻未记录（本轮没记上，别当实时价读）"}
+                  ——点「探测股票池」才重取，本表不自动刷：这一路要拉整个股票池，按 30 秒轮询是白烧上游。
+                </div>
+              )}
+              {universe.length > 0 && (
                 <div className="max-h-56 overflow-y-auto rounded-md border border-border">
                   <table className="w-full text-[12px]">
                     <thead className="sticky top-0 bg-card text-muted-foreground">
@@ -240,7 +253,7 @@ export default function QuantPage() {
                         <th className="px-2 py-1.5 text-left font-normal">代码</th>
                         <th className="px-2 py-1.5 text-left font-normal">名称</th>
                         <th className="px-2 py-1.5 text-left font-normal">行业</th>
-                        <th className="px-2 py-1.5 text-right font-normal">现价</th>
+                        <th className="px-2 py-1.5 text-right font-normal">现价（探测时一口价）</th>
                         <th className="px-2 py-1.5 text-right font-normal">总市值(亿)</th>
                         <th className="px-2 py-1.5 text-left font-normal">上市</th>
                       </tr>

@@ -4,8 +4,9 @@ import type { SectorRow } from "@/lib/desk/types";
 
 // 资金流向图（替代旧静态气泡图）：
 // 左侧「主力流入/流出」枢纽，右侧 TOP8 流入与 TOP8 流出榜单；
-// 曲线上的粒子持续流动表示资金去向——红=主力净流入个股（流向个股），
-// 绿=主力净流出个股（离开个股回到主力）；线宽与条长=净额大小。数据随看板周期刷新。
+// 曲线上的粒子持续流动表示资金去向——红=主力净流入（流向个股/板块），
+// 绿=主力净流出（离开个股/板块回到主力）；线宽与条长=净额大小。数据随看板周期刷新。
+// unitLabel 必须跟着看板的 tab 走：行业/概念/地域榜摆的是板块，写死「个股」就是口径错。
 const W = 900;
 const H = 456;
 const ROW_H = 24;
@@ -14,6 +15,7 @@ const IN_Y0 = 40;
 const OUT_Y0 = 262;
 const HUB_X = 118;
 const X_NAME = 320;
+const X_PCT = 466; // 当日涨幅紧跟在名称后面：用户原话「我要能看到是否是当天的涨幅」，不能只藏在悬停里
 const X_BAR = 470;
 const BAR_W = 300;
 const X_VAL = 888;
@@ -37,10 +39,12 @@ function flowPath(y0: number, y1: number, out: boolean) {
 }
 
 export default function BubbleFlow({
-  inRows, outRows, onSelect,
+  inRows, outRows, unitLabel, onSelect,
 }: {
   inRows: SectorRow[];
   outRows: SectorRow[];
+  /** 「个股」还是「板块」：由看板当前 tab 决定，图里的文案必须跟着走，不许写死 */
+  unitLabel: string;
   onSelect?: (r: SectorRow) => void;
 }) {
   const [tip, setTip] = useState<SectorRow | null>(null);
@@ -49,7 +53,11 @@ export default function BubbleFlow({
   const ins = inRows.filter((r) => r.main > 0).slice(0, TOP);
   const outs = outRows.filter((r) => r.main < 0).slice(0, TOP);
   if (!ins.length && !outs.length) {
-    return <div className="flex h-40 items-center justify-center text-[12.5px] text-muted-foreground">暂无资金流数据</div>;
+    return (
+      <div className="flex h-40 items-center justify-center text-center text-[12.5px] text-muted-foreground">
+        资金流向暂无读数：{unitLabel}榜里流入/流出两侧都没拿到主力净额——不拿占位 0 画流向、不编造线宽。
+      </div>
+    );
   }
   const maxIn = Math.max(...ins.map((r) => r.main), 1);
   const maxOut = Math.max(...outs.map((r) => Math.abs(r.main)), 1);
@@ -89,8 +97,18 @@ export default function BubbleFlow({
               <animateMotion path={d} dur={`${dur}s`} begin={`-${(k * dur) / 2}s`} repeatCount="indefinite" />
             </circle>
           ))}
-          {/* 名称 */}
-          <text x={X_NAME} y={y + 3.5} fontSize="11.5" className="fill-foreground">{row.name}</text>
+          {/* 名称（过长截断，全名在悬停与上方榜单里） */}
+          <text x={X_NAME} y={y + 3.5} fontSize="11.5" className="fill-foreground">
+            {row.name.length > 7 ? `${row.name.slice(0, 7)}…` : row.name}
+          </text>
+          {/* 当日涨幅：不用悬停就能看出这是今天盘中的涨/跌，取不到读数显「—」不显 NaN */}
+          <text x={X_PCT} y={y + 3.5} fontSize="11" textAnchor="end" fontFamily="ui-monospace, monospace"
+            fill={Number.isFinite(row.changePct) ? (row.changePct >= 0 ? RED : GREEN) : undefined}
+            className={Number.isFinite(row.changePct) ? undefined : "fill-muted-foreground"}>
+            {Number.isFinite(row.changePct)
+              ? `${row.changePct >= 0 ? "+" : ""}${row.changePct.toFixed(2)}%`
+              : "—"}
+          </text>
           {/* 净额条 */}
           <rect x={X_BAR} y={y - 6.5} width={BAR_W} height={9} rx={3} className="fill-foreground" opacity="0.06" />
           <rect x={X_BAR} y={y - 6.5} width={bw} height={9} rx={3} fill={color} opacity={isHot ? 0.95 : 0.72} />
@@ -108,15 +126,15 @@ export default function BubbleFlow({
       {/* 汇总条（对齐「资金流向」面板风格） */}
       <div className="mb-3 grid grid-cols-3 gap-3">
         <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2.5">
-          <div className="text-[11px] text-muted-foreground">主力净流入合计（流入榜）</div>
+          <div className="text-[11px] text-muted-foreground">主力净流入合计（流入榜前 {ins.length} 名{unitLabel}）</div>
           <div className="mt-0.5 font-mono text-[19px] font-bold text-rose-400">+{totalIn.toFixed(1)}亿</div>
         </div>
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
-          <div className="text-[11px] text-muted-foreground">主力净流出合计（流出榜）</div>
+          <div className="text-[11px] text-muted-foreground">主力净流出合计（流出榜前 {outs.length} 名{unitLabel}）</div>
           <div className="mt-0.5 font-mono text-[19px] font-bold text-emerald-400">{totalOut.toFixed(1)}亿</div>
         </div>
         <div className="rounded-lg border border-border bg-background/40 px-3 py-2.5">
-          <div className="text-[11px] text-muted-foreground">流入 / 流出 家数（榜内）</div>
+          <div className="text-[11px] text-muted-foreground">流入 / 流出 {unitLabel}数（榜内）</div>
           <div className="mt-0.5 font-mono text-[19px] font-bold">
             <span className="text-rose-400">{ins.length}</span>
             <span className="mx-1.5 text-[13px] font-normal text-muted-foreground">/</span>
@@ -132,10 +150,12 @@ export default function BubbleFlow({
         {renderSide(ins, IN_Y0, RED, false, maxIn)}
         {renderSide(outs, OUT_Y0, GREEN, true, maxOut)}
 
+        <text x={X_NAME} y={24} fontSize="10.5" className="fill-muted-foreground">{unitLabel}榜 · 前 {TOP} 名</text>
+        <text x={X_PCT} y={24} fontSize="10.5" className="fill-muted-foreground" textAnchor="end">当日涨幅</text>
         <text x={X_BAR} y={24} fontSize="10.5" className="fill-muted-foreground">净额条长 = 主力净额大小</text>
         <text x={X_VAL} y={24} fontSize="10.5" className="fill-muted-foreground" textAnchor="end">单位：亿元</text>
         <text x={24} y={H - 10} fontSize="10.5" className="fill-muted-foreground">
-          粒子流向 = 资金去向：红·流入个股 / 绿·流出个股。悬停查看明细，点击联动右侧资金明细。
+          粒子流向 = 资金去向：红 = 主力净流入{unitLabel}（资金流入） / 绿 = 主力净流出{unitLabel}（资金流出）。百分比为当日涨幅，悬停看全名与明细，点击联动右侧资金明细。
         </text>
       </svg>
 
@@ -143,9 +163,12 @@ export default function BubbleFlow({
         <div className="pointer-events-none absolute right-3 top-2 rounded-md border border-border bg-popover/95 px-3 py-2 text-[12px] shadow-lg">
           <div className="font-medium">{tip.name} <span className="ml-1 font-mono text-[11px] text-muted-foreground">{tip.code}</span></div>
           <div className="mt-1 font-mono">
-            涨跌 <span className={tip.changePct >= 0 ? "text-rose-400" : "text-emerald-400"}>{tip.changePct.toFixed(2)}%</span>
+            当日涨幅 <span className={tip.changePct >= 0 ? "text-rose-400" : "text-emerald-400"}>
+              {Number.isFinite(tip.changePct) ? `${tip.changePct >= 0 ? "+" : ""}${tip.changePct.toFixed(2)}%` : "—"}
+            </span>
             <span className="ml-3">主力</span>
             <span className={tip.main >= 0 ? "text-rose-400" : "text-emerald-400"}> {tip.main.toFixed(2)}亿</span>
+            {tip.mainSelfComputed && <span className="ml-2 text-[10px] text-amber-300">自算</span>}
           </div>
           <div className="mt-0.5 text-muted-foreground">{tip.leader ? `所属/领涨：${tip.leader}` : ""}</div>
         </div>
