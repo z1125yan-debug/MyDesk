@@ -16,7 +16,7 @@ import { debugFramesFromSteps } from "@/lib/desk/debug-core";
 import { asChatMode, asHorizon, HORIZON_NOTES, MODE_NOTES } from "@/lib/desk/modes";
 import {
   foldHistoryForGateway, gatewayUnreachableText, isLanBaseUrl, shouldRetryNonStream,
-  type ServerLlmChannel,
+  GATEWAY_BRAIN_BRIEF, type ServerLlmChannel,
 } from "@/lib/llm/model-config-core";
 import { getServerLlm } from "@/lib/llm/model-config";
 
@@ -447,7 +447,11 @@ export async function POST(req: NextRequest) {
       // 风格件放整份消息的最前：场景提示词由 injectSceneContext 接在「开头 system 串」之后，两者顺序稳定；
       // 无 scene 时 styleNote 为空串，一个 system 件都不多插（p7 钉测：原消息一条不改）；
       // 带 scene 但没选周期时 styleNote 只有风格句——与 P10 之前的请求体逐字节一致。
-      const out: MsgIn[] = styleNote ? [{ role: "system", content: styleNote }, ...merged] : merged;
+      // R12 网关身份卡：排最前（先立身份再谈风格），且只在「网关模式 + 对话轮」出现——
+      // 官方 API 模式有真工具环，对它说「你没有工具」就是谎话；一次一问的转发调用（研究页/自检）
+      // 不吃场景提示词，也不该被交易纪律污染（与上面 styleNote 同口径）。
+      const brief: MsgIn[] = serverChannel?.mode === "gateway" && body?.scene ? [{ role: "system", content: GATEWAY_BRAIN_BRIEF }] : [];
+      const out: MsgIn[] = [...brief, ...(styleNote ? [{ role: "system" as const, content: styleNote }] : []), ...merged];
       return serverChannel?.mode === "gateway" ? (foldHistoryForGateway(out) as MsgIn[]) : out;
     };
 

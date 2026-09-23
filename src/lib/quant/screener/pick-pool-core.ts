@@ -62,6 +62,44 @@ export function pickCondText(c: ScreenerCond): string {
   return `${zh}${op}${c.value}`;
 }
 
+/* ---------------- R11：候选池读出侧人话化（只换读法，不改冻结原数据） ---------------- */
+
+/**
+ * 冻结池行键的中文读法（candidate_pool 工具读出侧用）。
+ * 口径与 pickCondText 同源：这是「读法」不是「改写」——池子 rows 是冻结时点的原始数据，
+ * 落库后永不覆盖（见 /api/pool/freeze），本函数只在读出时换键名显示；
+ * 认不出的键原样保留、值一律不动，避免中文化顺手改数。
+ */
+export const POOL_ROW_KEY_ZH: Record<string, string> = {
+  symbol: "代码",
+  name: "名称",
+  close: "收盘价",
+  changePct: "涨跌幅%",
+  reason: "入池时条件",
+};
+
+export function poolRowZh(row: unknown): unknown {
+  if (row === null || typeof row !== "object" || Array.isArray(row)) return row;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row as Record<string, unknown>)) {
+    out[POOL_ROW_KEY_ZH[k] ?? k] = v;
+  }
+  return out;
+}
+
+/** 条件读出人话化：带 field 形状的条件走 pickCondText，其余（坏形状/旧格式）原样透传 */
+export function poolCondZh(c: unknown): unknown {
+  if (c !== null && typeof c === "object" && !Array.isArray(c) && "field" in c) {
+    const x = c as Record<string, unknown>;
+    return pickCondText({
+      field: String(x.field),
+      op: String(x.op ?? "") as ScreenerCond["op"],
+      value: x.value as number | string,
+    });
+  }
+  return c;
+}
+
 export interface PickExtract {
   conds: ScreenerCond[];
   /** 每条抽中条件的原话片段（让「抽到了什么」可被用户核对，不是黑箱） */
