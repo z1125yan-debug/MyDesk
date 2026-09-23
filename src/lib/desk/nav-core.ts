@@ -9,7 +9,8 @@
 //
 // 兼容口径（P7-⑪ 原意图逐字保住）：
 // - PageKey 一个不删、不改名：`#/agent` 这类旧 hash 全部照常能进（AppShell 分支钉在测试里）；
-// - 「并入对话」的 5 个旧页（AI 首页/分析/事件/研究/Agent）继续不占菜单位，走 legacyPages + 横幅指回。
+// - 「并入对话」的 4 个旧页（AI 首页/分析/研究/Agent）继续不占菜单位，走 legacyPages + 横幅指回；
+//   「全球事件雷达」P15-R18 按用户指示挖回一级菜单（它每天要读，不是一页归档兼容路由）。
 //
 // 为什么留子项：对方「量化因子选股」一级页内部也是选股器/因子/池多块并列；
 // 我们把它们提成指端子项是为了「点了就到、不玩两栏捉迷藏」，而不是再造一层工作台。
@@ -76,7 +77,10 @@ export const MENU: MenuEntry[] = [
   },
   // 对方把「自选」单列一级（第 5 位），照做——它不是行情的子集，是每天打开的那一页
   { id: "watch", label: "自选", key: "tracker" },
-  { id: "ai", label: "AI 对话", key: "copilot", legacyPages: ["aihome", "analysis", "events", "research", "agent"] },
+  // P15-R18 用户指示「把全球雷达事件找出来塞进去」：事件雷达每天要读，不该藏在 legacy 横幅后面，
+  // 提回一级项摆在选择之后（和「自选」同一档：都是打开就读的页），不再走 legacyPages。
+  { id: "events", label: "全球事件雷达", key: "events" },
+  { id: "ai", label: "AI 对话", key: "copilot", legacyPages: ["aihome", "analysis", "research", "agent"] },
   { id: "qimen", label: "奇门遁甲", key: "qimen" },
 ];
 
