@@ -472,6 +472,18 @@ export function wantsNews(question: string): boolean {
   return NEWS_WORDS.some((w) => q.includes(w));
 }
 
+/**
+ * R12 网关大脑：提问里点到的冻结池号（形如 2026-09-22-全A-101 / 2026-09-11-all_a-901）。
+ * 形状照 /api/pool/freeze 的 poolId 生成口径（日期-universe-三位序号）；
+ * 只认完整池号——光提日期（「2026-09-22 复盘」）不算，宁可不读也不猜池（与 P13「不带池号不猜池」同源）。
+ */
+const POOL_ID_RE = /\d{4}-\d{2}-\d{2}-[0-9A-Za-z_\u4e00-\u9fa5]+-\d{3}/g;
+
+export function extractPoolIds(question: string): string[] {
+  const found = String(question ?? "").match(POOL_ID_RE) ?? [];
+  return [...new Set(found)].slice(0, 2); // 一轮最多两个池：更多就是刷屏不是提问
+}
+
 /** 两个标的上限常量住在 skills-core（注册表与上限同源），文件头已按原名 re-export，旧 import 路径不变。 */
 
 /**
@@ -569,6 +581,20 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
     if (entry.spread !== "once") continue;
     if (!gateOk(entry)) continue;
     calls.push({ tool, args: argsOf(entry.args, ""), reason: reasonOf(entry.reason) });
+  }
+
+  // R12 网关大脑：提问里点了完整池号 → 系统直接读那个冻结池。
+  // 为什么走预取而不是等模型自取：网关通道（doubao2API）根本没有 function call，
+  // candidate_pool 那类「模型自己要调」的工具在豆包网关这条路上永远不会发生——
+  // 想让它真有池数据，就得在供数侧把池送到它面前（稳智同款做法：数据由系统装好）。
+  // 奇门场景不掺：那条 skip 口径是「本轮不取任何行情数」，为一个池号破例等于自己拆自己的纪律。
+  if (cfg.skip !== "qimen") {
+    for (const pid of extractPoolIds(intent.question)) {
+      calls.push({
+        tool: "candidate_pool", args: { pool_id: pid },
+        reason: "提问里点了池号，系统直接读这个冻结池（条件与名单随数据块给全）",
+      });
+    }
   }
 
   // P10：screener 的「未预取」留痕随候选池上线一起退场（旧文案钉在 p10 测试的口径迁移注释里）

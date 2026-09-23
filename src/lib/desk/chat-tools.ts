@@ -12,7 +12,8 @@
 import { computeSentiment } from "@/lib/quant/screener/sentiment";
 import { runScreener } from "@/lib/quant/screener/run";
 // P10 择优轮：默认活跃池条件、条件中文读法、出身文案与五条择优纪律（一份定义多处消费，纯核零 IO）
-import { DEFAULT_PICK_CONDS, pickCondText, poolOriginText, PICK_DISCIPLINE } from "@/lib/quant/screener/pick-pool-core";
+// R11：池子行/条件读出人话化（poolRowZh/poolCondZh 只换读法，冻结原数据一字不动）
+import { DEFAULT_PICK_CONDS, pickCondText, poolOriginText, PICK_DISCIPLINE, poolRowZh, poolCondZh } from "@/lib/quant/screener/pick-pool-core";
 import { buildFieldPanel, lastValues, type BarsLike } from "@/lib/quant/factors/fields";
 import { historicalWinProbability, type ScreenerCond } from "@/lib/quant/factors/probability";
 import { getProvider } from "@/lib/quant/data/index";
@@ -485,11 +486,15 @@ async function toolCandidatePool(args: { pool_id?: string }): Promise<unknown> {
   try { conditions = JSON.parse(pool.conditions); } catch { /* 同上 */ }
   const CAP = 40;
   return {
-    池号: pool.poolId, 交易日: pool.asOf, 股票池: pool.universe, 条件: conditions,
+    池号: pool.poolId, 交易日: pool.asOf, 股票池: pool.universe,
+    // R11：条件与名单读出侧人话化（P13 因子中文化只改了页面，工具侧曾原样吐
+    // field:"amount_yi"/symbol 这类英文键）。只换读法：conditions/rows 的库内原文不改，
+    // 认不出的形状（坏条件、自定义列）经 poolCondZh/poolRowZh 原样透传。
+    条件: Array.isArray(conditions) ? conditions.map(poolCondZh) : poolCondZh(conditions),
     来源: pool.source || "未标注", 数据源: pool.dataSource || "未记录（旧池）",
     排序提示: "池内行序是冻结时点的页面排序，不是推荐结果；评价维度与权重由你自主决定",
     择优纪律: PICK_DISCIPLINE,
-    名单: rows.slice(0, CAP),
+    名单: rows.slice(0, CAP).map(poolRowZh),
     ...(rows.length > CAP ? { 截断说明: `池内共 ${rows.length} 只，这里只给前 ${CAP} 只——其余未读，别当成整池都看过` } : {}),
     次日验证: pool.verify ? "已回填（逐只 signal→next_close 见候选池页）" : "尚未验证（下一交易日可核对）",
   };

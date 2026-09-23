@@ -55,15 +55,19 @@ const CALENDAR_LOOKBACK = 40;
 /**
  * R10 扩容：预取步骤标签的服务层覆写（chat-stream-core 在不动清单里进不去）。
  * 带上标的后缀与 stepLabelFor 的习惯一致——时间线里两只票的新闻要分得开。
+ * R12：candidate_pool 走预取后也要有人话标签（时间线里说清读的是哪个池，不是裸工具名）。
  */
 const PREFETCH_STEP_LABELS: Record<string, string> = {
   stock_news: "取个股新闻与公告（这只票自己的消息面）",
+  candidate_pool: "读取已冻结候选池（择优素材，池序不是推荐）",
 };
 function prefetchLabel(call: DispatchCall): string | null {
   const base = PREFETCH_STEP_LABELS[call.tool];
   if (!base) return null;
   const sym = typeof call.args.symbol === "string" ? call.args.symbol : "";
-  return sym ? `${base} · ${sym}` : base;
+  if (sym) return `${base} · ${sym}`;
+  const pid = typeof call.args.pool_id === "string" ? call.args.pool_id : "";
+  return pid ? `${base} · ${pid}` : base;
 }
 
 export interface PrefetchResult {

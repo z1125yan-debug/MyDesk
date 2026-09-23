@@ -600,3 +600,23 @@ export function removeSession(sessions: ChatSession[], id: string): ChatSession[
   const out = sessions.filter((s) => s.id !== id);
   return out.length ? out : [emptySession()];
 }
+
+/**
+ * R13（用户拍板）：一条对话整 7 天没再动过就自动清出存档——「不然太长了挤死了」。
+ * 与 MAX_SESSIONS（按条数挤最旧）互补：条数闸管「别太多」，这管「别躺太久」。
+ */
+export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * 去掉超过 TTL 没动过的会话（判定看「最后活跃」updatedAt，不看创建日——
+ * 一周前开、今天还在用的对话不该被删）。
+ * updatedAt 坏了退回 createdAt；两个都读不出就留着：判不了不删，错删比漏删伤害大。
+ * 全被清时留一条新空会话（与 removeSession 同一条不变量：会话列表永不空）。
+ */
+export function pruneStaleSessions(sessions: ChatSession[], now: number = Date.now(), ttlMs: number = SESSION_TTL_MS): ChatSession[] {
+  const kept = (sessions ?? []).filter((s) => {
+    const touched = Number.isFinite(s?.updatedAt) ? s.updatedAt : Number.isFinite(s?.createdAt) ? s.createdAt : null;
+    return touched === null || now - touched <= ttlMs;
+  });
+  return kept.length ? kept : [emptySession(now)];
+}

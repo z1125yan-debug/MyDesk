@@ -69,6 +69,12 @@ export default function AppShell() {
     document.title = `${PAGE_TITLES[page]} · MyDesk`;
   }, [page, go]);
 
+  useEffect(() => {
+    // R13（用户拍板）：每次冷启动清一次「整 7 天没动过」的旧对话——开着页面不盯时钟，
+    // 当天还在用的会话 updatedAt 自然新，不会被误伤；判定口径全在 chat-core.pruneStaleSessions。
+    useDesk.getState().pruneStaleChats();
+  }, []);
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
       {!collapsed && <Sidebar />}

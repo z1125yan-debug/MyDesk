@@ -6,6 +6,7 @@ import type {
 } from "./types";
 import {
   appendMessage as appendToSession, emptySession, migrateLegacyChats,
+  pruneStaleSessions as pruneStaleCore,
   removeSession as dropSessionById, updateMessage as patchSessionMessage,
   upsertSession, type ChatMessage, type ChatSession,
 } from "./chat-core";
@@ -132,6 +133,8 @@ interface DeskState {
   newSession: () => string;
   switchSession: (id: string) => void;
   dropSession: (id: string) => void;
+  /** R13：整 7 天没动过的对话自动清出存档（冷启动挂一次，见 AppShell）；活动会话若被清则收口到最新一条 */
+  pruneStaleChats: () => void;
   renameSession: (id: string, title: string) => void;
   setSessionStock: (id: string, stock: Partial<Pick<ChatSession, "stock" | "costPrice" | "holdPeriod">>) => void;
   addChatMessage: (sessionId: string, msg: ChatMessage) => void;
@@ -296,6 +299,15 @@ export const useDesk = create<DeskState>()(
       dropSession: (id) => set((s) => {
         const sessions = dropSessionById(s.sessions, id);
         return { sessions, activeSessionId: s.activeSessionId === id ? sessions[0].id : s.activeSessionId };
+      }),
+      // R13（用户拍板）：整 7 天没动过的对话清出存档。判定与兜底全在 chat-core 纯核里，
+      // 这里只做两件事：调纯核、把 activeSessionId 收口（活动那条若被清就换最新留下的）。
+      // 没清掉任何东西时原样返回 {}——不给 persist 多写一次盘，也不惊动订阅者重渲染。
+      pruneStaleChats: () => set((s) => {
+        const sessions = pruneStaleCore(s.sessions);
+        if (sessions.length === s.sessions.length && sessions.every((x, i) => x.id === s.sessions[i].id)) return {};
+        const activeSessionId = sessions.some((x) => x.id === s.activeSessionId) ? s.activeSessionId : sessions[0].id;
+        return { sessions, activeSessionId };
       }),
       renameSession: (id, title) => set((s) => ({
         sessions: s.sessions.map((x) => (x.id === id ? { ...x, title: title.trim() || x.title, updatedAt: Date.now() } : x)),

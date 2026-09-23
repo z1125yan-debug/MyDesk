@@ -43,11 +43,11 @@ test("proxy 的风格件只给对话轮：不带 scene 的一次一问调用不�
   assert.match(proxyRoute, /const modeNote = body\?\.scene \? MODE_NOTES\[asChatMode\(body\.mode\)\] : "";/,
     "生效条件钉死为「带 scene 的对话轮」");
   // 2026-09-22 P11 口径迁移：风格件从「只有 modeNote」扩成 styleNote=[风格句, 周期句]（filter(Boolean) 拼接）。
-  // 原钉文本逐字保住：`const out: MsgIn[] = modeNote ? [{ role: "system", content: modeNote }, ...merged] : merged;`
-  // 原意图逐字不变——①风格件仍放消息数组最前；②「不带 scene 零注入」仍成立：
-  // 无 scene 时 modeNote="" 且 horizon=null ⇒ styleNote=""，一个 system 件都不多插。
-  assert.match(proxyRoute, /const out: MsgIn\[\] = styleNote \? \[\{ role: "system", content: styleNote \}, \.\.\.merged\] : merged;/,
-    "风格件（含周期句）放在消息数组最前，且空（无 scene）时一个 system 件都不多插");
+  // 2026-09-23 P15-R12 口径迁移：网关身份卡（brief）在风格件之前独立前置，out 拼装式改写。
+  // 原意图逐字不变——①风格件仍放消息数组最前（身份卡之外）；②「不带 scene 零注入」仍成立：
+  // 无 scene 时 body?.scene 为假 ⇒ brief=[]，且 modeNote="" 且 horizon=null ⇒ styleNote=""，一个 system 件都不多插。
+  assert.match(proxyRoute, /const out: MsgIn\[\] = \[\.\.\.brief, \.\.\.\(styleNote \? \[\{ role: "system" as const, content: styleNote \}\] : \[\]\), \.\.\.merged\];/,
+    "风格件（含周期句）放在消息数组最前，且空（无 scene）时 brief 与 styleNote 双双为 [] ⇒ 一个 system 件都不多插");
   assert.match(proxyRoute, /injectSceneContext\(messages,/, "无场景轮次仍走原消息（p7 钉测形状保住，风格件在其后单独前置）");
 });
 
