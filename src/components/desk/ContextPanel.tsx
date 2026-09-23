@@ -260,7 +260,7 @@ function DecisionReadout({ s }: { s: DecisionSummary }) {
         ))}
       </div>
       <div className="text-[9.5px] leading-4 text-muted-foreground/85">
-        结论参考日 {s.tradeDate}（取数时刻 {s.asOf}）{s.subjectName ? `｜标的名称来自当日全A快照：${s.subjectName}` : "｜标的名称本次未取到，不拿代码凑"}
+        结论参考日 {s.tradeDate}（取数时刻 {s.asOf}）{s.subjectName ? `｜股票名称来自当日全A快照：${s.subjectName}` : "｜股票名称本次未取到，不拿代码凑"}
         {s.excludedCount > 0 && `｜有 ${s.excludedCount} 个维度未计入加权（权重已从分母拿掉，不是按 0 平均）`}
       </div>
     </div>

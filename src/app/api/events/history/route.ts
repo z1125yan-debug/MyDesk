@@ -30,7 +30,7 @@ export async function GET(req: Request) {
       const parsed = parseQueryDate(rawDate, today);
       if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 });
       date = parsed.date;
-      dateBasis = `按请求参数 date=${date} 查询（历史查询只读 asOf 等于该日的库行）`;
+      dateBasis = `按请求参数 date=${date} 查询（历史查询只读留档日等于该日的库行）`;
     }
 
     if (!date) {
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
         state_filter: "all", state_filter_basis: stateFilterBasis("events", filter),
         counts: { rows: 0, live: 0, superseded: null },
         items: [], available_dates: buckets, runs: [], runs_total: 0,
-        missing: ["global_event 表里当前一行都没有：没有任何一天的事件留在库里（扫描跑过但落库 0 条、或当日行被全量重刷后为 0，都属于这种状态）；历史查询不重算、不补造"],
+        missing: ["全球事件留档库当前一行都没有：没有任何一天的事件留在库里（扫描跑过但落库 0 条、或当日行被全量重刷后为 0，都属于这种状态）；历史查询不重算、不补造"],
       });
     }
 

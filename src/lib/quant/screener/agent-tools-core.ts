@@ -176,7 +176,7 @@ const SPECS: Record<string, Spec> = {
   },
   stock_depth: {
     exec: UP("gateway.depth", 5000),
-    out: "bids[]/asks[]: price/volume + 内外盘手数（只有 eltdx 一条路，网关不在即失败）",
+    out: "bids[]/asks[]: price/volume + 内外盘手数（只有通达信网关一条路，网关不在即失败）",
     params: [
       { key: "symbol", type: "string", required: true, description: "代码（后缀必填）", pattern: SYMBOL },
     ],

@@ -125,8 +125,8 @@ export async function computeLimitUp(): Promise<LimitUpResult> {
     tiers,
     note: "当日涨停=快照精确口径（昨收×比例四舍五入到分）；历史连板回溯用涨幅阈值(比例−0.5pct)近似，腾讯兜底为前复权价；窗口20根，超出标 20+",
     source: {
-      provider: universeSource() === "tc" ? "腾讯批量快照兜底（东财 clist 断源；昨收/最高仍为真实读数）" : "em（东财 clist 全A快照）",
-      kline: "fetchBarsHybrid（eltdx 优先/腾讯兜底，仅涨停名单）",
+      provider: universeSource() === "tc" ? "腾讯批量快照兜底（东财榜单接口 断源；昨收/最高仍为真实读数）" : "em（东财榜单接口 全A快照）",
+      kline: "日K取数（通达信优先/腾讯兜底，仅涨停名单）",
     },
   };
 }

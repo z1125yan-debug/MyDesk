@@ -762,7 +762,7 @@ export function verifyAgentAnswer(input: {
   const gaps = (input.gaps ?? []).filter(Boolean);
   // 服务端已知缺口必须被承认：一条都没提，就把它们并进 gaps（不是替模型编，是标注它没答）
   const unacknowledged = input.state.missing.filter((m) => !gaps.some((g) => g.includes(m.slice(0, 12))));
-  if (!used.length) violations.push("结论没有引用任何台账行：无法回溯到工具与出处，按 REJECTED 处理（不覆盖已成立结果，页面保留原文与原因）");
+  if (!used.length) violations.push("结论没有引用任何台账行：无法回溯到工具与出处，判为「不可用」处理（不覆盖已成立结果，页面保留原文与原因）");
   const unused = records.map((r) => r.line.id).filter((id) => !used.some((u) => u.evidence_id === id));
   const status: AgentAnswerCheck["status"] = !used.length || !answer ? "REJECTED" : violations.length ? "PARTIAL" : "ACCEPTED";
   return {

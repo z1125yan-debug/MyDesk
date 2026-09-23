@@ -112,9 +112,9 @@ export interface DebugStepRow {
 }
 
 export const TRANSPORT_TEXT: Record<string, string> = {
-  stream: "流式",
+  stream: "逐字送达",
   fallback: "一次性返回",
-  settle: "断点收口",
+  settle: "断点续收",
 };
 
 export interface DebugConclusionSection {
@@ -222,11 +222,11 @@ function intentSectionOf(intent: DebugIntentLike | null | undefined): DebugInten
   const symbol = typeof intent.symbol === "string" && intent.symbol ? intent.symbol : null;
   const symbolSource = typeof intent.symbolSource === "string" && intent.symbolSource ? intent.symbolSource : null;
   const parts = [
-    `判为「${intent.label || intent.scene}」${hits.length ? `（命中词：${hits.join("、")}）` : ""}`,
+    `判定为「${intent.label || intent.scene}」${hits.length ? `（命中词：${hits.join("、")}）` : ""}`,
     alternates.length ? `同时问到：${alternates.join("、")}` : "",
-    `标的 ${symbol ?? "无"}${symbol && symbolSource ? `（来源：${symbolSourceLabel(symbolSource)}）` : ""}`,
+    `股票 ${symbol ?? "无"}${symbol && symbolSource ? `（来源：${symbolSourceLabel(symbolSource)}）` : ""}`,
     intent.inherited === true ? "沿用上一轮场景" : "",
-    typeof intent.prefetchChars === "number" ? `注入数据 ${Math.max(0, Math.trunc(intent.prefetchChars))} 字` : "本轮无注入数据",
+    typeof intent.prefetchChars === "number" ? `随附背景数据 ${Math.max(0, Math.trunc(intent.prefetchChars))} 字` : "本轮没有随附数据",
   ].filter(Boolean);
   return {
     present: true,

@@ -158,7 +158,7 @@ export default function ProbabilityPage() {
       </div>
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
       <SnapshotBar kind="probability" label="条件概率"
-        sideEffect="留档这一下会在服务端按上面那组条件真的重算一次（拉指数/自定义池 K 线 + 全A快照），并把条件一起存进 probability_snapshot。"
+        sideEffect="留档这一下会在服务端按上面那组条件真的重算一次（拉指数/自定义池 K 线 + 全A快照），并把这组条件与结果一起存进条件概率留档。"
         getRequest={() => lastReq} />
       {result && (
         <div className="space-y-3">

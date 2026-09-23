@@ -304,7 +304,7 @@ test("P6-B 一批解释的汇总口径带计数与分层原文（供 UI 与报�
   assert.equal(s.counts.missing, 3);
   assert.match(s.layering, /另有 3 条真实事件没有拿到解释/);
   assert.match(s.layering, /AI 不得发明事件/);
-  assert.match(s.layering, /AI_INTERPRETATION 层/);
+  assert.match(s.layering, /「AI 解释」层/, "分层纪律的字样不能丢（P15-R15 只把人话读法换了：解释不是事实）");
   assert.match(interpretLayeringNote({ interpreted: 0, partial: 0, rejected: 0, missing: 0, unknown_ids: 0 }), /都拿到了解释/);
 });
 

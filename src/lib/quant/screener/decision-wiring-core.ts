@@ -50,7 +50,7 @@ export const BASE_INDEX = { symbol: "000001.SH", label: "上证指数" } as cons
 /** 概率面口径说明：这一维衡量的是「上证相似环境下的历史后续」，不是本标的的条件概率 */
 export const PROBABILITY_SCOPE_NOTE =
   `概率面＝相似环境口径（在 ${BASE_INDEX.symbol} ${BASE_INDEX.label} 的历史日里按当日涨跌幅落在带宽内取样），` +
-  `描述的是大盘环境而非本标的的条件胜率：换标的不会改变这一维`;
+  `描述的是大盘环境而非这只股票的条件胜率：换股票不会改变这一维`;
 
 /** RSI 周期：任务书 §六 只写「RSI」没写周期，本层选定 14 并在分项 raw 里记账（TechnicalInput.rsi_period） */
 export const RSI_PERIOD_DEFAULT = 14;
@@ -81,7 +81,7 @@ export { VOLUME_AVG_WINDOW_DEFAULT, PRIOR_HIGH_WINDOW_DEFAULT };
  * 项目里唯一逐日留档的全 A 成交额就是 /api/market/risk 的响应落库（risk_snapshot.payload），
  * 它的 amount_total_yi 与今日这份 sentiment 是同一句 `amountSum += m.amount` ⇒ 同口径可比。
  */
-export const TURNOVER_SCOPE = "全 A（东财 clist 快照逐只成交额累加，与 risk_snapshot 留档同源）";
+export const TURNOVER_SCOPE = "全 A（东财榜单接口快照逐只成交额累加，与风险监控留档同源）";
 
 // ---------- 市场面：computeSentiment + discoverThemes → MarketInput ----------
 

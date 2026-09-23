@@ -170,9 +170,10 @@ test("留档条目整形与日期分组：payload 损坏要标出来，不静默
   const buckets = snapshotDateBuckets([{ tradeDate: "2026-09-18" }, { tradeDate: "2026-09-19" }, { tradeDate: "2026-09-18" }]);
   assert.deepEqual(buckets, [{ date: "2026-09-19", count: 1 }, { date: "2026-09-18", count: 2 }], "按日分组必须日期倒序，同日多条要合并计数");
   assert.equal(snapshotDateBuckets([]).length, 0);
-  assert.match(snapshotBasis("risk"), /服务端在点击「留档今天」那一刻重新调用页面同源的计算链路算出/, "口径没讲清「不是前端上传的数字」");
+  assert.match(snapshotBasis("risk"), /服务端在点击「留档今天」那一刻，用与页面同一套算法重新算出/, "口径没讲清「不是前端上传的数字」（P15-R15 只把人话读法换了，判定一字未动）");
+  assert.doesNotMatch(snapshotBasis("risk"), /risk_snapshot|计算链路/, "口径文案不再向用户抛表名/黑话（表名留在代码常量里给钉与库用）");
   assert.match(snapshotBasis("probability"), /同日多次留档会各自成行、互不覆盖/);
-  assert.match(noSnapshotNote("themes"), /主线发现（Themes） 目前一条留档都没有/);
+  assert.match(noSnapshotNote("themes"), /主线发现 目前一条留档都没有/);
   assert.match(emptyDaySnapshotNote("risk", "2026-09-10", 3), /2026-09-10 没有留档行/);
   assert.match(emptyDaySnapshotNote("risk", "2026-09-10", 3), /库里已有 3 个留档日/);
   assert.match(emptyDaySnapshotNote("risk", "2026-09-10", 0), /库里还没有任何留档日/);

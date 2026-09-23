@@ -231,7 +231,7 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     // P6-A：取数失败与「这只真的没K线」分开报数——否则一次限流会在漏斗里伪装成「不符合条件」
     const klineWarn = outcomeWarning(barsMap.outcomes);
     if (klineWarn) warnings.push(klineWarn);
-    if (barsMap.tdx_down) warnings.push("eltdx 网关本批已熔断（连续 8 只失败）：其余标的全部走腾讯日K，结果为 DEGRADED 口径");
+    if (barsMap.tdx_down) warnings.push("通达信行情网关本批已熔断（连续 8 只失败）：其余股票全部改走腾讯日K，结果按「降级」口径处理");
     const symbols: string[] = [];
     const barsList: BarsLike[][] = [];
     const metasOf: (AssetMeta | undefined)[] = [];
@@ -245,7 +245,7 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     if (!symbols.length) {
       const c = summarizeOutcomes(barsMap.outcomes);
       throw new Error(c.request_failed && c.request_failed + c.no_data === barsMap.outcomes.length
-        ? `K线子集 ${barsMap.outcomes.length} 只全部取数失败（eltdx 与腾讯都没成功返回，不是「没有符合的标的」）：${c.request_failed} 只请求失败，请稍后重试`
+        ? `K线子集 ${barsMap.outcomes.length} 只全部取数失败（通达信网关与腾讯都没成功返回，不是「没有符合条件的股票」）：${c.request_failed} 只请求失败，请稍后重试`
         : "K线子集全部无数据（数据源可能被限流，请稍后重试）");
     }
     const panel = buildFieldPanel(symbols, barsList, metasOf);
@@ -432,11 +432,11 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     source: {
       // P9-经验轮：与 sentiment/limitup 同纪律——兜底期不冒充东财出身（universeSource 三元）
       provider: universeSource() === "tc"
-        ? "腾讯批量快照兜底（东财 clist 断源；K线走 eltdx/腾讯日K）"
+        ? "腾讯批量快照兜底（东财榜单接口断源；K线走通达信网关/腾讯日K）"
         : "em（腾讯/东财公开接口，本机直连）",
-      note: "REAL_DATA_ONLY：数据失败时明确报错，不回退演示数据",
+      note: "数据失败时明确报错，不回退演示数据",
       // §四：价格口径显式标注（真实价 vs 前复权，禁止为对齐数字修改数据）
-      price_basis: "close/涨跌幅/快照字段=真实未复权实时价；K线因子字段=日线序列（eltdx 实测为原始价、腾讯兜底为前复权qfq，同一序列内口径一致）；胜率/收益均在同一K线序列内计算，除权除息日附近真实价与复权价不相等属正常，不是数据错误",
+      price_basis: "close/涨跌幅/快照字段=真实未复权实时价；K线因子字段=日线序列（通达信网关实测为原始价、腾讯兜底为前复权qfq，同一序列内口径一致）；胜率/收益均在同一K线序列内计算，除权除息日附近真实价与复权价不相等属正常，不是数据错误",
     },
     factors_verified: involvedFactors.length > 0 && unverifiedN === 0,
     factor_verify: { total: catalogFields.length, enabled: involvedFactors.length, verified: verifiedN, unverified: unverifiedN },

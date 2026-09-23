@@ -56,7 +56,7 @@ export default function AllStocksPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-lg font-bold">全A市场列表</div>
-          <div className="text-[11px] text-muted-foreground">东财 clist 全A快照 · 交易日 {tradeDate} · 快照口径</div>
+          <div className="text-[11px] text-muted-foreground">东财榜单接口（全A快照） · 交易日 {tradeDate} · 快照口径</div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <div className="relative">

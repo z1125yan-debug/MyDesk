@@ -45,7 +45,7 @@ export async function GET(req: Request) {
   }
   if (!list.length) {
     return NextResponse.json(
-      { ok: false, error: "板块数据源暂不可用（东财 clist、腾讯板块兜底与同花顺资金流榜均无返回）" },
+      { ok: false, error: "板块数据源暂不可用（东财榜单接口、腾讯板块兜底与同花顺资金流榜均无返回）" },
       { status: 502 },
     );
   }

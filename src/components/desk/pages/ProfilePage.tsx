@@ -167,7 +167,7 @@ export default function ProfilePage() {
                   <Cell label="主动净额" value={`${data.blocks.trades.data.netYi >= 0 ? "+" : ""}${data.blocks.trades.data.netYi.toFixed(2)} 亿`} cls={data.blocks.trades.data.netYi >= 0 ? "text-red-500" : "text-emerald-500"} />
                   <Cell label="外盘 / 内盘" value={`${(data.blocks.trades.data.outerHand / 10000).toFixed(1)}万 / ${(data.blocks.trades.data.insideHand / 10000).toFixed(1)}万手`} />
                 </>
-              ) : <Empty span={4} text="逐笔主动买卖：暂无数据（eltdx 网关未运行）" />}
+              ) : <Empty span={4} text="逐笔主动买卖：暂无数据（本机通达信行情网关未开启）" />}
             </div>
             {data.blocks.trades?.note && <div className="mt-1.5 text-[10px] text-muted-foreground/70">口径说明：{data.blocks.trades.note}</div>}
             {data.blocks.fundflow ? (
@@ -231,10 +231,10 @@ export default function ProfilePage() {
                   ))}
                 </div>
                 <div className="col-span-2 text-[10px] text-muted-foreground/70">
-                  内盘 {data.blocks.depth.data.insideHand} 手 · 外盘 {data.blocks.depth.data.outerHand} 手 · 现手 {data.blocks.depth.data.activeHand} 手（eltdx · quotes.get_depth）
+                  内盘 {data.blocks.depth.data.insideHand} 手 · 外盘 {data.blocks.depth.data.outerHand} 手 · 现手 {data.blocks.depth.data.activeHand} 手（通达信五档盘口）
                 </div>
               </div>
-            ) : <Empty text="五档盘口：暂无数据（eltdx 网关未运行）" />}
+            ) : <Empty text="五档盘口：暂无数据（本机通达信行情网关未开启）" />}
           </LineageSection>
 
           {/* 技术面 */}

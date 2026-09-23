@@ -67,9 +67,9 @@ export async function POST(request: Request) {
         : null;
       const oc = outcomeOf.get(t.symbol);
       const skipReason = oc?.kind === "request_failed"
-        ? "K线取数失败（eltdx 与腾讯都没成功返回）：本次不纳入统计，不是样本不足"
+        ? "K线取数失败（通达信网关与腾讯都没成功返回）：本次不纳入统计，不是样本不足"
         : oc?.kind === "no_data"
-          ? "K线无返回（请求成功但上游没有该标的的日K，例如代码不存在）：本次不纳入统计"
+          ? "K线无返回（请求成功但上游没有这只股票的日K，例如代码不存在）：本次不纳入统计"
           : bars.length < 40 ? "K线不足，跳过" : null;
       return {
         symbol: t.symbol,

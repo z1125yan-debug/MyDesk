@@ -509,6 +509,14 @@ export type AppliedEvent =
   | { type: "done"; data?: { fullText?: string; intent?: IntentBadge; debug?: { modelMs?: number; transport?: string } } }
   | { type: "error"; data: { message: string } };
 
+/** 把多条警告拼成一句：每段先去掉结尾的「。」/「；」，再用「；」连接，避免出现「。；」这种断句 */
+export function joinWarnings(parts: (string | undefined | null)[]): string {
+  return parts
+    .map((p) => (p ?? "").replace(/[。；;]+$/, "").trim())
+    .filter(Boolean)
+    .join("；");
+}
+
 /** 把一条流事件并入助手消息草稿；同一 step 序号的重复事件按「后到的覆盖状态」处理 */
 export function applyEvent(msg: ChatMessage, ev: AppliedEvent): ChatMessage {
   switch (ev.type) {
@@ -522,7 +530,7 @@ export function applyEvent(msg: ChatMessage, ev: AppliedEvent): ChatMessage {
       return { ...msg, steps };
     }
     case "warning":
-      return { ...msg, warning: [msg.warning, ev.data?.text].filter(Boolean).join("；") };
+      return { ...msg, warning: joinWarnings([msg.warning, ev.data?.text]) };
     case "done":
       return {
         ...msg,
@@ -538,7 +546,7 @@ export function applyEvent(msg: ChatMessage, ev: AppliedEvent): ChatMessage {
         ...msg,
         streaming: false,
         content: msg.content || `请求出错：${ev.data?.message ?? "未知错误"}`,
-        warning: [msg.warning, ev.data?.message ? `已中断：${ev.data.message}` : ""].filter(Boolean).join("；") || msg.warning,
+        warning: joinWarnings([msg.warning, ev.data?.message ? `已中断：${ev.data.message}` : ""]) || msg.warning,
       };
     default:
       return msg;

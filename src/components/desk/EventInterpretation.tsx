@@ -10,6 +10,8 @@ import {
 } from "@/lib/quant/screener/event-interpret-core";
 import type { InterpretationViewClient } from "@/lib/desk/quant-api";
 import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
+// P15-R15：提示词版本号是显示读法，原文常量不动（p6-b-* 钉在字段值上，不是页面文本）。
+import { promptVerZh } from "@/lib/desk/plain-core";
 
 const TONE: Record<string, string> = {
   利好: "border-red-500/40 text-red-300",
@@ -48,7 +50,7 @@ export function InterpretationCard({ itp }: { itp: EventInterpretation & Partial
         <span className={`${chip} border-border text-muted-foreground`}>重要性 {itp.importance}</span>
         {itp.stale && <span className={`${chip} border-amber-500/40 text-amber-300`}>事件已更新：解释过时</span>}
         {itp.orphan && <span className={`${chip} border-amber-500/40 text-amber-300`}>原事件行已不在当天库中：只剩解释快照</span>}
-        <span className="ml-auto text-[10px] text-muted-foreground">{itp.model || "模型未记录"} · {itp.prompt_version}</span>
+        <span className="ml-auto text-[10px] text-muted-foreground">{itp.model || "模型未记录"} · {promptVerZh(itp.prompt_version)}</span>
       </div>
 
       <div className="mt-1.5 text-[11.5px] leading-relaxed">{itp.summary || "（模型未给出摘要，本条已被判为无摘要）"}</div>
@@ -60,7 +62,7 @@ export function InterpretationCard({ itp }: { itp: EventInterpretation & Partial
       {!!itp.hypothesized_symbols?.length && (
         <div className="mt-1 text-[11px] text-amber-300/90">
           <b>AI 假设标的（无出处，未验证）：</b>{itp.hypothesized_symbols.join("、")}
-          <span className="text-muted-foreground"> —— 属于 AI_HYPOTHESIS，不是「已确认相关」</span>
+          <span className="text-muted-foreground"> —— 这是 AI 猜的（假设层），不是「已确认相关」</span>
         </div>
       )}
       <Kv label="仍需验证" value={itp.unknowns.join("；")} />

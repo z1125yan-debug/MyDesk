@@ -28,7 +28,8 @@ test("ResearchPage：四块读数 + 报告 + 采集器观测 + 台账 + 缺失�
   assert.match(src, /<LineageSection title="研究问题"/);
   assert.match(src, /<LineageSection title="研究报告" tone=\{repTone\}/);
   assert.match(src, /<LineageSection title="七分区明细"/);
-  assert.match(src, /<LineageSection title="Tool Calls · 采集器观测" tone=\{collectorTone\}/);
+  // P15-R15：小节标题里的「Tool Calls」是黑话，换成「采集器观测 · 本次取数留痕」（tone 与结构一字未动）
+  assert.match(src, /<LineageSection title="采集器观测 · 本次取数留痕" tone=\{collectorTone\}/);
   assert.match(src, /<LineageSection title=\{`台账目录/);
   assert.match(src, /<LineageSection title=\{`缺失口径/);
   // tone 是从真实状态推导的：REJECTED=danger、INTERPRETED=success，不是恒色
@@ -98,7 +99,7 @@ test("ProfilePage：本地 Section 卡退役，画像七块 + AI 解读合成一
   assert.match(src, /<DecisionCard symbol=\{data\.symbol\} \/>/);
   // 诚实缺失字符串原样活过重构
   assert.match(src, /以下数据块暂缺（不参与结论，不冒充实数）/);
-  assert.match(src, /逐笔主动买卖：暂无数据（eltdx 网关未运行）/);
+  assert.match(src, /逐笔主动买卖：暂无数据（本机通达信行情网关未开启）/);
   assert.match(src, /技术指标：日K历史不足/);
   assert.match(src, /板块强度：行业未匹配到榜单/);
   assert.match(src, /无可用模型通道（浏览器未配置，且服务端 \.env 通道不可用）/);

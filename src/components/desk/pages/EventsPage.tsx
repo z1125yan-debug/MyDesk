@@ -145,13 +145,13 @@ export default function EventsPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Globe2 size={18} className="text-sky-400" /> 全球事件雷达</div>
-          <div className="text-[11px] text-muted-foreground">快讯关键词映射 → 板块资金验证 · 未命中映射的新闻不入库 · 交易日收盘后由服务进程内的调度器自动扫描一次，也可点「扫描今日」· 历史按 asOf 只读回看<br />列表是事件事实（global_event 库行）；「AI 理解」只对这些已入库事件做分类/摘要/映射/影响解释，属 AI_INTERPRETATION 层，不发现新事件、不产概率</div>
+          <div className="text-[11px] text-muted-foreground">快讯关键词映射 → 板块资金验证 · 未命中映射的新闻不入库 · 交易日收盘后由服务进程内的调度器自动扫描一次，也可点「扫描今日」· 历史按留档日只读回看<br />列表是事件事实（库里当日行）；「AI 理解」只对这些已入库事件做分类/摘要/映射/影响解释，属「AI 解释」层，不发现新事件、不产概率</div>
         </div>
         <div className="flex items-center gap-2">
           {view === "today" && asOf && (
             <SourceBadge
               status="HISTORICAL"
-              source={origin === "scan" ? "本次扫描写入 global_event 后回读" : "global_event 当日库行"}
+              source={origin === "scan" ? "本次扫描写入事件库后回读" : "全球事件当日留档行"}
               time={asOf.slice(0, 10)}
             />
           )}
@@ -192,21 +192,21 @@ export default function EventsPage() {
       <div className="rounded-xl border border-fuchsia-500/25 bg-card/40 px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
           <SourceBadge
-            status={!aiReady(ai) ? "AI_NOT_CONFIGURED 缺失" : "AI_INTERPRETATION"}
+            status={!aiReady(ai) ? "本次未取到" : "AI_INTERPRETATION"}
             source={
               !aiReady(ai)
                 ? "本机未配置模型凭据：解释层未运行（事件事实不受影响）"
-                : `event_interpretation${interpDate ? ` · ${interpDate}` : " · 当日"}（解释不是事实）`
+                : `解释留档${interpDate ? ` · ${interpDate}` : " · 当日"}（解释不是事实）`
             }
             time={interp?.probed_at?.slice(0, 16)}
           />
           {interp && (
             <span className="text-[10.5px] text-muted-foreground">
-              已落库 {interp.counts.rows} 条：INTERPRETED {interp.counts.interpreted} · PARTIAL {interp.counts.partial} · REJECTED {interp.counts.rejected}
+              已落库 {interp.counts.rows} 条：已解释 {interp.counts.interpreted} · 部分可用 {interp.counts.partial} · 不可用 {interp.counts.rejected}
               {interp.counts.stale > 0 && <span className="text-amber-300"> · 过时 {interp.counts.stale}</span>}
               {interp.counts.orphan > 0 && <span className="text-amber-300"> · 原事件行已不在 {interp.counts.orphan}</span>}
               {interp.counts.violations > 0 && <span className="text-amber-300"> · 校验违规 {interp.counts.violations}</span>}
-              {interp.counts.hypothesis_symbols > 0 && <span className="text-amber-300"> · 假设标的 {interp.counts.hypothesis_symbols}</span>}
+              {interp.counts.hypothesis_symbols > 0 && <span className="text-amber-300"> · 假设提及的股票 {interp.counts.hypothesis_symbols}</span>}
               {interpBusy && <Loader2 size={10} className="ml-1 inline animate-spin" />}
             </span>
           )}
@@ -271,11 +271,11 @@ export default function EventsPage() {
                 <div className="shrink-0 text-[10.5px]">{ev.time || "时间未记录"} · {ev.level || "级别未记录"}</div>
               </div>
               <div className="mt-1 text-[10.5px] text-muted-foreground">
-                事件类型 {ev.category || "未记录"} · asOf {ev.as_of} · 来源 {ev.source || "未记录（库内该行 source 列为空）"}
+                事件类型 {ev.category || "未记录"} · 留档日 {ev.as_of} · 来源 {ev.source || "未记录（库里该行没有来源）"}
               </div>
               <div className="mt-1 text-[11px] text-muted-foreground">
                 产业链映射：{ev.mapped_sectors.length ? ev.mapped_sectors.join("、") : "未命中映射表（入库时即为空，未编造板块）"}
-                {ev.related_stocks.length > 0 && <> · 关联标的 {ev.related_stocks.join("、")}</>}
+                {ev.related_stocks.length > 0 && <> · 关联股票 {ev.related_stocks.join("、")}</>}
               </div>
               <div className="mt-1 text-[11px]">
                 资金验证阶段 <b>{ev.stage || ev.fund_check?.stage || "未记录"}</b> · {String(ev.fund_check?.note ?? "该行未存资金验证说明")}

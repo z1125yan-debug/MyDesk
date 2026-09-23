@@ -110,7 +110,7 @@ export default function WatchlistPage() {
         title={<span className="flex items-center gap-2"><Target size={17} className="text-sky-400" />自选股行情</span>}
         note={
           <>
-            真实报价（eltdx/腾讯优先）· 取不到显示暂无数据 · {updatedAt ? `更新 ${updatedAt}` : ""}
+            真实报价（通达信/腾讯优先）· 取不到显示暂无数据 · {updatedAt ? `更新 ${updatedAt}` : ""}
             {visible.length > BATCH ? ` · 当前视图 ${visible.length} 只，仅取前 ${BATCH} 只报价（接口单次上限，其余未取）` : ""}
           </>
         }

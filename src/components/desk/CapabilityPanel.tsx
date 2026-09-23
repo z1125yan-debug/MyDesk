@@ -12,6 +12,9 @@ import { Boxes, Globe2, Loader2, RefreshCw, Search, TriangleAlert } from "lucide
 import { SourceBadge } from "./SourceBadge";
 import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import { freshnessChip } from "@/lib/quant/screener/datastatus-core";
+// P15-R15：layeringNote 的原文要同时喂 AI 上下文（英文枚举是它的锚点），所以只在这里换读法——
+// 纯核与钉测继续验原句，页面上看到「真实 3 / 历史 2 / AI解释…」。
+import { plainify, statusShortZh, statusZh } from "@/lib/desk/plain-core";
 import {
   fetchCapabilitiesRegistry, fetchCapabilitiesForNeed, fetchCapabilityProbe,
   type CapabilitiesProbeClient, type CapabilitiesRegistryClient, type CapabilityProbeClient,
@@ -53,11 +56,11 @@ function Row({ p, def }: { p: CapabilityProbeClient; def?: CapabilityDef }) {
         <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium ${k.cls}`}>{k.label}</span>
         <span className="text-[12.5px] font-semibold">{p.title}</span>
         <span className="font-mono text-[10.5px] text-muted-foreground">{p.name}</span>
-        <span className="text-[10.5px] text-muted-foreground">状态分层 {p.status}</span>
+        <span className="text-[10.5px] text-muted-foreground">状态分层 {statusZh(p.status)}</span>
         {p.degraded_from && <span className="text-[10.5px] text-amber-300">兜底自 {p.degraded_from}</span>}
         {p.probed && p.usable && (() => {
           // 措辞全部来自内核：只有服务端判了「超上限」才说不算实时；没有时刻时说未知，不显示「（? 秒）」
-          const chip = freshnessChip(p.fresh, p.freshness, p.freshness_s);
+          const chip = plainify(freshnessChip(p.fresh, p.freshness, p.freshness_s));
           if (!chip) return null;
           return <span className={`text-[10.5px] ${p.fresh === false ? "text-amber-300" : "text-muted-foreground"}`}>{chip}</span>;
         })()}
@@ -81,7 +84,7 @@ function Row({ p, def }: { p: CapabilityProbeClient; def?: CapabilityDef }) {
           contentClassName="text-[11px] text-muted-foreground"
         >
           <ul className="space-y-0.5">
-            {p.limitations.map((l) => <li key={l}>· {l}</li>)}
+            {p.limitations.map((l) => <li key={l}>· {plainify(l)}</li>)}
           </ul>
         </DeskCollapse>
       )}
@@ -188,9 +191,9 @@ export function CapabilityPanel() {
             </div>
 
             <div className="rounded-md border border-border/70 bg-accent/20 px-2.5 py-2 text-[11.5px] leading-4 text-muted-foreground">
-              <div>{probe.layering}</div>
-              <div className="mt-1">{probe.gateway_note}</div>
-              <div className="mt-1">口径：{probe.basis}</div>
+              <div>{statusShortZh(probe.layering)}</div>
+              <div className="mt-1">{plainify(probe.gateway_note)}</div>
+              <div className="mt-1">口径：{plainify(probe.basis)}</div>
               {!!probe.self_check.violations.length && (
                 <div className="mt-1 flex items-start gap-1 text-rose-300">
                   <TriangleAlert size={12} className="mt-0.5 shrink-0" />

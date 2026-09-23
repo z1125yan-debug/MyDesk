@@ -55,7 +55,7 @@ export async function runEventInterpretation(
     return {
       ...base,
       message: "尚未配置 AI 服务商（Base URL / 模型 / Key）：这一步只能由本机浏览器带着凭据去调模型，服务端没有 Key 也不会替你编解释。",
-      missing: ["事件理解层本次未运行：AI_NOT_CONFIGURED。事件事实仍然完整可读（global_event 库行），缺的只是解释层"],
+      missing: ["事件理解层本次未运行：模型未配置（AI 通道没接好）。事件事实仍然完整可读（全球事件留档行），缺的只是解释层"],
     };
   }
 

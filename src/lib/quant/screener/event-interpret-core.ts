@@ -604,10 +604,10 @@ export function layerSplitOf(itp: EventInterpretation): { facts: string[]; ai: s
 
 export function interpretLayeringNote(counts: { interpreted: number; partial: number; rejected: number; missing: number; unknown_ids: number }): string {
   return [
-    `本批 AI 理解：INTERPRETED ${counts.interpreted} 条 / PARTIAL ${counts.partial} 条 / REJECTED ${counts.rejected} 条`,
+    `本批 AI 理解：已解释 ${counts.interpreted} 条 / 部分可用 ${counts.partial} 条 / 不可用 ${counts.rejected} 条`,
     counts.missing ? `另有 ${counts.missing} 条真实事件没有拿到解释（按缺失处理，不补默认解释）` : "本批事件都拿到了解释",
     counts.unknown_ids ? `模型引用了 ${counts.unknown_ids} 个本批不存在的事件 id，已全部拒收（AI 不得发明事件）` : "模型没有引用本批之外的事件",
-    "以上全部属于 AI_INTERPRETATION 层：事件本身是库里的事实，解释不是。",
+    "以上全部属于「AI 解释」层：事件本身是库里的事实，解释不是。",
   ].join("；");
 }
 

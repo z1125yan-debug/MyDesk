@@ -139,7 +139,7 @@ export default function QimenPanel() {
           </button>
         </div>
         <p className="mt-2 text-[11px] leading-5 text-muted-foreground/85">
-          日期或时间留空＝按服务端当前北京时间起局（不接受浏览器伪造的「现在」）。晚子时口径固定为「当日起日柱」（same-day）。
+          日期或时间留空＝按服务端当前北京时间起局（不接受浏览器伪造的「现在」）。晚子时口径固定按当日起日柱。
         </p>
       </section>
 

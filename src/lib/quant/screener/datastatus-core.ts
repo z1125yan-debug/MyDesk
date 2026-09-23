@@ -132,7 +132,7 @@ export type SourceType = (typeof SOURCE_TYPES)[number];
 
 export const SOURCE_TYPE_TEXT: Record<SourceType, string> = {
   http_direct: "本机直连公开 HTTP 接口",
-  local_gateway: "本机自建网关（eltdx 等）",
+  local_gateway: "本机自建网关（如通达信行情网关）",
   database: "本地 SQLite（Prisma）",
   derived_engine: "对已有数据做计算的本机引擎",
   llm: "用户自配的大模型接口",

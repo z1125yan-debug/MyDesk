@@ -9,7 +9,7 @@
 // 纪律（用户拍板「能真算的真算，算不出显暂无数据不造」）：
 // - 数据只来自既有真实接口：fetchThemes（主线发现·规则版）、fetchRisk（大盘情绪快照）、fetchEvents（事件雷达）；
 // - 稳智图里有、我们数据源里没有的维度（3日资金 / 3日涨跌 / 站上MA20占比 / 人气集中度 / 置信度 /
-//   rising·avoid·nextday_risk_score 那种分层标签）——一律显式标「暂无数据」，绝不拿相近字段冒充、绝不为凑图造数；
+//   rising/avoid/nextday_risk_score 那种分层标签）——一律显式标「暂无数据」，绝不拿相近字段冒充、绝不为凑图造数；
 // - 不做行业/概念 Tab、不做日期选择器：fetchThemes 是行业+概念合并榜、且按当下快照重算不吃日期，
 //   硬塞这两个控件就是给用户两个点了没反应的假开关（宁缺不假）。
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -153,7 +153,7 @@ export default function ThemeOverviewPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Layers size={18} className="text-sky-400" /> 主题血缘总览</div>
-          <div className="text-[11px] text-muted-foreground">左边选主题，右边按血缘读完整一条：市场环境 → 主题入口 → 关键数字 → 理由 → 新闻 → 分层结论 · 规则版不接 LLM</div>
+          <div className="text-[11px] text-muted-foreground">左边选主题，右边按血缘读完整一条：市场环境 → 主题入口 → 关键数字 → 理由 → 新闻 → 分层结论 · 规则版不接大模型</div>
         </div>
         <div className="flex items-center gap-2">
           {data && <SourceBadge status="LIVE" source={boardSource} time={data.as_of.slice(11, 19)} />}
@@ -282,7 +282,7 @@ export default function ThemeOverviewPage() {
                 <StatCard label="主题热度" value={`${selected.heat}`} toneClass={selected.heat >= 65 ? "text-red-400" : selected.heat >= 45 ? "text-amber-400" : "text-muted-foreground"} title="P15-R5 规则合成分：RPS/扩散/资金/涨幅/连涨 各转榜内分位后加权，缺项剔除重归一。是仿稳智「热度」的透明算法，非稳智黑箱分。悬停看计入项。" />
                 <StatCard label="证据置信" value={`${selected.confidence}（${selected.confidenceLabel}）`} toneClass={selected.confidence >= 70 ? "text-emerald-400" : selected.confidence >= 40 ? "text-sky-300" : "text-muted-foreground"} title={`P15-R5 置信 = 证据一致度×数据齐全度（${selected.confidenceNote}）。缺源越多、信号越反相，分越低——把断源变成看得见的扣分，不是预测准确率。`} />
                 <StatCard label="次日过热/背离" value={`${selected.risk}（${selected.riskLabel}）`} toneClass={selected.risk >= 60 ? "text-red-400" : selected.risk >= 35 ? "text-amber-400" : "text-emerald-400"} title="P15-R5 规则读数：涨幅过陡/连涨高位/涨价但主力流出/全市场炸板率/涨幅高扩散弱 加权。只是「追高风险有多大」的透明读数，不等于明日涨跌概率。" />
-                <StatCard label="规则分" value={selected.score.toFixed(1)} title="theme-rules 加权分：RPS/扩散/资金连续/价量同向；用于主线/次主线分层判定" />
+                <StatCard label="规则分" value={selected.score.toFixed(1)} title="规则引擎加权分：RPS/扩散/资金连续/价量同向；用于主线/次主线分层判定" />
                 <StatCard label="今日主力净额" value={fundsMissing ? "暂无数据" : numOr(selected.mainYi, (n) => `${n.toFixed(1)} 亿`)} toneClass={fundsMissing ? "text-muted-foreground" : selected.mainYi > 0 ? "text-red-400" : selected.mainYi < 0 ? "text-emerald-400" : ""} title={fundsMissing ? "东财板块榜断源、腾讯兜底榜不含资金读数：主力是占位 0 不是实数，显暂无" : "板块主力净流入(亿)"} />
                 <StatCard label="今日涨幅" value={numOr(selected.changePct, (n) => `${n.toFixed(2)}%`)} toneClass={selected.changePct > 0 ? "text-red-400" : selected.changePct < 0 ? "text-emerald-400" : ""} title="板块当日涨跌幅" />
                 <StatCard label="榜内 RPS" value={numOr(selected.rps, (n) => n.toFixed(0))} title="行业+概念合并榜内涨幅百分位（非全市场）" />
@@ -357,7 +357,7 @@ export default function ThemeOverviewPage() {
                       </div>
                     </div>
                   ))}
-                  <div className="text-[10.5px] text-muted-foreground/80">命中方式：事件 mappedSectors / 标题 包含「{selected.name}」，属关键词反查，非该主题专属新闻流。</div>
+                  <div className="text-[10.5px] text-muted-foreground/80">命中方式：事件的板块标签 / 标题 包含「{selected.name}」，属关键词反查，非该主题专属新闻流。</div>
                 </div>
               ) : (
                 <div className="text-xs text-muted-foreground">本次事件雷达里没有关键词命中「{selected.name}」的记录（不代表没有消息，只代表当前抓取窗口内无匹配）。</div>
@@ -383,12 +383,12 @@ export default function ThemeOverviewPage() {
               </div>
               <div className="mt-2 text-[11px] leading-5 text-muted-foreground">
                 口径：这里的「可关注/回避/观察」和热度/置信/次日风险，全是本页
-                <span className="text-foreground/80"> theme-rules 的透明规则读数</span>
-                （阈值 + 榜内分位加权，每项可回溯，非投资建议）。它是对稳智 rising/avoid/nextday 那套黑箱分的
+                <span className="text-foreground/80"> 透明规则引擎的读数</span>
+                （阈值 + 榜内分位加权，每项可回溯，非投资建议）。它是对稳智「可追/回避/次日风险」那套不公开算法的
                 <span className="text-foreground/80"> 自主模仿</span>
                 ，算法明码，但
                 <span className="text-foreground/80">不等于</span>
-                稳智后端/LLM 的原版结果，更不是明日涨跌概率。
+                稳智后端/大模型 的原版结果，更不是明日涨跌概率。
               </div>
             </LineageSection>
           </LineageCard>

@@ -66,7 +66,7 @@ export async function fetchBarsHybridTracked(
         out.set(sym, []);
         const attempt: BarAttempt = {
           symbol: sym, channel: "tencent", ok: false, count: 0,
-          error: `eltdx 与腾讯两条K线通道均未取到：${(e as Error)?.message ?? "请求失败"}`,
+          error: `通达信与腾讯两条K线通道均未取到：${(e as Error)?.message ?? "请求失败"}`,
         };
         outcomes.push(classifyBarOutcome(attempt));
         continue;

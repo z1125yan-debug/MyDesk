@@ -19,6 +19,7 @@ import { fetchDecisionView } from "@/lib/desk/quant-api";
 import { DIMENSION_LABEL, decisionSections, type Decision, type DimensionResult, type ScoreItem } from "@/lib/quant/screener/decision-core";
 import { DATA_STATUS_TEXT } from "@/lib/quant/screener/datastatus-core";
 import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
+import { plainify, statusShortZh, verTail, verZh } from "@/lib/desk/plain-core";
 import type { DecisionView } from "@/lib/quant/screener/decision-wiring-core";
 
 /**
@@ -64,7 +65,7 @@ export default function DecisionCard({ symbol }: { symbol: string }) {
           {view && (
             <SourceBadge
               status={view.decision.excluded.length > 0 ? "DEGRADED 部分维度未计入" : "DERIVED"}
-              source={`协议 ${view.decision.protocol_version}`}
+              source={`结论口径 ${verTail(view.decision.protocol_version)}`}
               time={view.as_of.slice(11, 19)}
             />
           )}
@@ -83,7 +84,7 @@ export default function DecisionCard({ symbol }: { symbol: string }) {
       {error && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11.5px] text-amber-300">
           本次未取到决策结论：{error}
-          <div className="mt-0.5 text-[10.5px] text-muted-foreground">这一块不留假数据也不给默认结论；重取或换标的再试。</div>
+          <div className="mt-0.5 text-[10.5px] text-muted-foreground">这一块不留假数据也不给默认结论；重取或换一只股票再试。</div>
         </div>
       )}
       {view && <CardBody view={view} />}
@@ -122,13 +123,13 @@ function CardBody({ view }: { view: DecisionView }) {
         <div className="rounded-lg border border-border/70 bg-accent/20 px-3 py-2">
           <div className="text-[11px] font-medium text-muted-foreground">② 主要判断依据（参与加权的分项与折算记账）</div>
           <ul className="mt-1 space-y-0.5 text-[11.5px]">
-            {sec.basis.map((b, i) => <li key={i}>· {b}</li>)}
+            {sec.basis.map((b, i) => <li key={i}>· {plainify(b)}</li>)}
           </ul>
         </div>
         <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2">
           <div className="text-[11px] font-medium text-amber-300/90">③ 核心风险点（反向分项、缺口与未计入的维度）</div>
           <ul className="mt-1 space-y-0.5 text-[11.5px]">
-            {sec.risk.map((r, i) => <li key={i}>· {r}</li>)}
+            {sec.risk.map((r, i) => <li key={i}>· {plainify(r)}</li>)}
           </ul>
         </div>
       </div>
@@ -148,7 +149,7 @@ function CardBody({ view }: { view: DecisionView }) {
         <div className="rounded-lg border border-border/70 bg-accent/20 px-3 py-2">
           <div className="text-[11px] font-medium text-muted-foreground">没有计入加权的部分（缺的那一维权重已从分母拿掉，不是按 0 分平均）</div>
           <ul className="mt-1 space-y-0.5 text-[11px]">
-            {d.excluded.map((e) => <li key={e.key}>· <b>{DIMENSION_LABEL[e.key]}</b>：{e.reason}</li>)}
+            {d.excluded.map((e) => <li key={e.key}>· <b>{DIMENSION_LABEL[e.key]}</b>：{plainify(e.reason)}</li>)}
           </ul>
         </div>
       )}
@@ -165,19 +166,19 @@ function CardBody({ view }: { view: DecisionView }) {
           {view.sources.map((s) => (
             <li key={s.id} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
               <SourceBadge status={s.used ? "REAL 已取到" : "MISSING 本次未取到"} source={s.label} time={s.as_of ?? undefined} />
-              <span className="text-muted-foreground/80">{s.detail}</span>
+              <span className="text-muted-foreground/80">{plainify(s.detail)}</span>
             </li>
           ))}
         </ul>
         <div className="mt-1.5 grid gap-0.5 text-[10.5px] text-muted-foreground/80 sm:grid-cols-2">
-          <span>接线版本 {w.wiring_version}｜基准指数 {w.base_index.label}（{w.base_index.symbol}）</span>
+          <span title={`接线版本 ${w.wiring_version}`}>接线口径 {verTail(w.wiring_version)}｜基准指数 {w.base_index.label}（{w.base_index.symbol}）</span>
           <span>技术面日K {w.technical_bars} 根，最后一根 {w.technical_bar_date ?? "无"}｜RSI 周期 {w.rsi_period}</span>
           <span>概率面打分周期 {w.probability_horizon ?? "未声明"} 日｜成交额基线 {w.turnover_baseline_days ?? 0} 个可信用留档日</span>
           <span>技术面窗口：均量 {w.volume_window ?? "无有效读数"} 根／压力位 {w.prior_high_window ?? "无有效读数"} 根</span>
           <span>事件窗口 {w.event_window.start} → {w.event_window.end}（{w.event_window.stale_after_days} 天内），取到 {w.event_window.rows} 行{w.event_window.payload_broken ? `，${w.event_window.payload_broken} 行不可解析` : ""}</span>
           <span>决策参考日 {view.trade_date}（取数时刻 {view.as_of}）</span>
         </div>
-        {w.probability_scope && <div className="mt-1 text-[10.5px] text-amber-300/90">口径：{w.probability_scope}</div>}
+        {w.probability_scope && <div className="mt-1 text-[10.5px] text-amber-300/90">口径：{plainify(w.probability_scope)}</div>}
       </div>
 
       {w.notes.length > 0 && (
@@ -197,12 +198,12 @@ function CardBody({ view }: { view: DecisionView }) {
         title="这份结论的完整文字口径（与 AI 上下文共用同一份）"
         contentClassName="text-[11px] text-muted-foreground"
       >
-        <pre className="whitespace-pre-wrap break-words leading-relaxed">{view.text}</pre>
+        <pre className="whitespace-pre-wrap break-words leading-relaxed">{plainify(view.text)}</pre>
       </DeskCollapse>
 
       <div className="text-[10.5px] leading-relaxed text-muted-foreground/80">
         免责声明：综合得分是上面四张打分表在本次生效权重下的加权结果，用于把「哪些读数在支持、哪些在反对」写成同一量纲，
-        不是明日涨跌的概率，不构成投资建议。分层口径：{d.layers.map((l) => `${l}（${DATA_STATUS_TEXT[l]}）`).join("、")}。
+        不是明日涨跌的概率，不构成投资建议。分层口径：{d.layers.map((l) => DATA_STATUS_TEXT[l as keyof typeof DATA_STATUS_TEXT] ?? l).join("、")}。
         {d.layers.includes("AI_INTERPRETATION") && " 其中事件面来自 AI 对已落库消息的解释，是解释而非事实本身。"}
         {d.weights.renormalized && " 本次有权重被重新归一（有维度未计入），得分不能与四维齐全时直接比较。"}
       </div>
@@ -228,7 +229,7 @@ function DimHeader({ dim }: { dim: DimensionResult }) {
         </span>
       </div>
       <div className="mt-0.5 truncate text-[10px] text-muted-foreground/80" title={dim.rule_version ?? "无规则读数"}>
-        {scoredItems.filter((i) => i.points !== null).length}/{scoredItems.length} 项有分（另有 {dim.items.length - scoredItems.length} 项只作依据）｜{dim.rule_version ?? "本次没有规则读数"}
+        {scoredItems.filter((i) => i.points !== null).length}/{scoredItems.length} 项有分（另有 {dim.items.length - scoredItems.length} 项只作依据）｜{dim.rule_version ? verZh(dim.rule_version) : "本次没有规则读数"}
       </div>
     </div>
   );
@@ -250,7 +251,7 @@ function DimDetail({ dim }: { dim: DimensionResult }) {
             {dim.norm_score === null
               ? (dim.raw_score === null ? "本次不计分" : `字面 ${fmtSigned(dim.raw_score)}，但${dim.excluded_reason ? "未参与加权" : "无法折算"}`)
               : `字面 ${dim.raw_score === null ? "—" : fmtSigned(dim.raw_score)} → 折算 ${fmtSigned(dim.norm_score)}（生效权重 ${pct(dim.weight_applied)}）`}
-            ｜本维极值 {dim.bounds ? `${dim.bounds.min}~${dim.bounds.max}` : "未声明"}｜{dim.status}
+            ｜本维极值 {dim.bounds ? `${dim.bounds.min}~${dim.bounds.max}` : "未声明"}｜{statusShortZh(dim.status ?? "")}
           </span>
         </>
       }
@@ -258,7 +259,7 @@ function DimDetail({ dim }: { dim: DimensionResult }) {
       <ul className="space-y-1.5">
         {dim.items.map((it, i) => <ItemRow key={`${it.rule}-${i}`} it={it} dimVersion={dim.rule_version} />)}
         {dim.missing.map((m, i) => (
-          <li key={`m-${i}`} className="text-[11px] text-amber-300/90">⚠ {m}</li>
+          <li key={`m-${i}`} className="text-[11px] text-amber-300/90">⚠ {plainify(m)}</li>
         ))}
       </ul>
     </DeskCollapse>
@@ -274,12 +275,11 @@ function ItemRow({ it, dimVersion }: { it: ScoreItem; dimVersion: string | null 
         <span className={`text-[12px] font-medium ${basis ? "text-muted-foreground" : scoreTone(it.points)}`}>
           {basis ? "依据" : nullish ? "算不出" : `${fmtSigned(it.points as number)} 分`}
         </span>
-        <span className="text-[12px]">{it.label}</span>
-        <span className="font-mono text-[10px] text-muted-foreground/70">{it.rule}</span>
-        <span className="text-[10px] text-muted-foreground/70">{it.status}</span>
-        <span className="text-[10px] text-muted-foreground/60">表 {it.rule_version ?? dimVersion ?? "无"}</span>
+        <span className="text-[12px]" title={it.rule}>{it.label}</span>
+        <span className="text-[10px] text-muted-foreground/70">{statusShortZh(it.status)}</span>
+        <span className="text-[10px] text-muted-foreground/60" title={it.rule_version ?? dimVersion ?? ""}>{it.rule_version ? verZh(it.rule_version) : dimVersion ? verZh(dimVersion) : "无版本登记"}</span>
       </div>
-      <div className="mt-0.5 text-[11px] text-muted-foreground">{it.raw}</div>
+      <div className="mt-0.5 text-[11px] text-muted-foreground">{plainify(it.raw)}</div>
       {basis && (
         <div className="mt-0.5 text-[10.5px] text-muted-foreground/80">
           这条是判定依据，不进本维求和（新表已有同一指标，重复计权等于把同一个读数算两遍）
@@ -288,7 +288,7 @@ function ItemRow({ it, dimVersion }: { it: ScoreItem; dimVersion: string | null 
       )}
       {it.note && (
         <div className={`mt-0.5 text-[10.5px] ${nullish && !basis ? "text-amber-300/80" : "text-muted-foreground/80"}`}>
-          {nullish && !basis && <b>【缺读数，不是 0 分】</b>}{it.note}
+          {nullish && !basis && <b>【缺读数，不是 0 分】</b>}{plainify(it.note)}
         </div>
       )}
     </li>

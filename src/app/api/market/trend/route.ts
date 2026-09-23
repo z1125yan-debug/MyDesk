@@ -37,7 +37,7 @@ export async function GET(req: Request) {
     const pts = mergeTurnover(sh, sz);
     const { deltaYi, prevDate } = turnoverDeltaVsPrev(pts);
     const missing: string[] = [];
-    if (!sh.length) missing.push("上证指数：数据源没给读数（push2his/push2delay 双试均空），成交额合计与沪深线缺这条");
+    if (!sh.length) missing.push("上证指数：数据源没给读数（东财历史站/延时站都空），成交额合计与沪深线缺这条");
     if (!sz.length) missing.push("深证成指：数据源没给读数，成交额合计与深市线缺这条");
     return NextResponse.json({
       ok: true,
@@ -47,7 +47,7 @@ export async function GET(req: Request) {
       cum: { sh: cumReturnSeries(sh), sz: cumReturnSeries(sz), cyb: cumReturnSeries(cyb) },
       notes: trendNotes(sh.length, sz.length, cyb.length),
       missing,
-      source: "eastmoney kline（push2his 优先、push2delay 次之）· 成交额=指数日成交额字段合计沪+深，含当天截至刷新时刻的累计",
+      source: "东财日K明细（历史站优先、延时站次之）· 成交额=指数日成交额字段合计沪+深，含当天截至刷新时刻的累计",
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: `趋势数据获取失败：${(e as Error).message}` }, { status: 502 });

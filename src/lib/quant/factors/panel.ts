@@ -63,7 +63,7 @@ export async function buildPanel(provider: DataProvider, req: PanelRequest): Pro
     }
   }
   if (symbolsWithData === 0) {
-    throw new Error("数据源不可用：全部股票K线拉取失败（大概率被数据源限流），已中止；请稍后重试或改用 demo 数据源");
+    throw new Error("数据源不可用：全部股票K线拉取失败（大概率被数据源限流），已中止；请稍后重试，或在数据源里改选「演示数据」");
   }
 
   // 快照字段按日填充（东财 clist 快照：换手/市值/PE/PB；历史快照不可得 → 标注降级）

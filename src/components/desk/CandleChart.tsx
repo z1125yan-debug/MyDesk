@@ -92,11 +92,13 @@ export default function CandleChart({
     });
   };
 
-  // 滚轮缩放（需要非 passive 监听才能 preventDefault）
+  // P15-R15 滚轮修复：不按住 Ctrl 时滚轮交还给页面滚动（之前无条件 preventDefault，
+  // 鼠标只要掠过 K 线就"吞"掉滚动，页面往上滑很费劲）；Ctrl+滚轮 = 缩放，图上有提示。
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       if (!view) return;
       const rect = el.getBoundingClientRect();
@@ -136,7 +138,7 @@ export default function CandleChart({
   return (
     <div className="relative">
       <div className="pointer-events-none absolute right-16 top-1 z-10 text-[10.5px] text-muted-foreground/70">
-        滚轮/双指缩放 · 拖动平移 · 双击复位
+        Ctrl+滚轮缩放 · 拖动平移 · 双击复位（不按 Ctrl 时滚轮照常滚页面）
       </div>
       <svg
         ref={svgRef}

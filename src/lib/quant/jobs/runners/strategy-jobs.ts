@@ -187,7 +187,7 @@ export function registerStrategyRunners(): void {
     const provider = await getProvider(p.source ?? "em");
     const request = await resolveSelectionRequest(p);
 
-    ctx.progress(20, "选股", `执行${p.replay ? "历史回放" : "选股"}（asOf=${request.asOf}）…`);
+    ctx.progress(20, "选股", `执行${p.replay ? "历史回放" : "选股"}（留档日=${request.asOf}）…`);
     if (p.replay) {
       const outcome = await runSelectionReplay(provider, request, p.horizon ?? 5);
       // 回放实验记录
@@ -349,7 +349,7 @@ export function registerStrategyRunners(): void {
       scoring: { method: "rank" as const, topN: 10 },
     };
     const replay = await runSelectionReplay(provider, replayRequest, 5);
-    await step(11, "历史回放", `asOf=${replayAsOf}，选中 ${replay.picks.length} 只，${replay.horizon} 日胜率 ${((replay.stats.winRate ?? 0) * 100).toFixed(0)}%`, 66);
+    await step(11, "历史回放", `留档日=${replayAsOf}，选中 ${replay.picks.length} 只，${replay.horizon} 日胜率 ${((replay.stats.winRate ?? 0) * 100).toFixed(0)}%`, 66);
 
     // 12-15 回测 + Walk-forward + OOS + 稳定性
     ctx.progress(68, "回测", "组合回测…");

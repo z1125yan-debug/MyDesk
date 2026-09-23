@@ -139,7 +139,7 @@ export async function buildInterpretPrompt(opts: { date?: string; ids?: string[]
     system: INTERPRET_SYSTEM_PROMPT,
     prompt: bundle.facts.length ? buildEventInterpretPrompt(bundle.facts) : "",
     prompt_version: INTERPRET_PROMPT_VERSION,
-    basis: `事实来自 global_event(asOf=${bundle.date}) 的 ${bundle.facts.length} 行真实事件；提示词版本 ${INTERPRET_PROMPT_VERSION}`,
+    basis: `事实来自全球事件明细（留档日=${bundle.date}）的 ${bundle.facts.length} 行真实事件；解释口径版本 ${INTERPRET_PROMPT_VERSION}`,
     missing,
     error: null,
   };
@@ -217,7 +217,7 @@ export async function storeInterpretations(input: {
     error: parsed.error,
     counts: sum.counts,
     layering: sum.layering,
-    basis: `服务端按 global_event(asOf=${bundle.date}) 的 ${bundle.facts.length} 行真实事件复校验后落库 ${parsed.items.length} 条；事件 id 用自然键 dedupeKey，重扫后仍可对应`,
+    basis: `服务端按全球事件明细（留档日=${bundle.date}）的 ${bundle.facts.length} 行真实事件复校验后落库 ${parsed.items.length} 条；事件按自然键对应，重扫后仍可逐条对上`,
   };
 }
 
@@ -315,12 +315,12 @@ export async function loadInterpretations(opts: { date?: string } = {}): Promise
       .sort((a, b) => (a.date < b.date ? 1 : -1)),
     counts,
     layering:
-      `已落库解释 ${counts.rows} 条（INTERPRETED ${counts.interpreted} / PARTIAL ${counts.partial} / REJECTED ${counts.rejected}）；` +
-      `全部属于 AI_INTERPRETATION 层：事件事实只有 global_event 一份，解释不构成事实；` +
-      `confidence 是解释置信度、不是上涨概率`,
+      `已落库解释 ${counts.rows} 条（完整解释 ${counts.interpreted} / 部分可用 ${counts.partial} / 不可用 ${counts.rejected}）；` +
+      `全部属于「AI 解释」层：事件事实只有库里的事件明细一份，解释不构成事实；` +
+      `置信度是解释的可信程度，不是上涨概率`,
     missing,
     self_check: { broken_payload, missing_fields },
-    basis: `读 event_interpretation(asOf=${date})，并与 global_event 当日行按自然键 dedupeKey 对照 stale/orphan；只读，不重算、不改写`,
+    basis: `读取留档日=${date} 的解释结果，并与当日事件明细按自然键逐条对照「过期/孤儿」；只读，不重算、不改写`,
     probed_at: shanghaiStamp(),
   };
 }

@@ -78,7 +78,7 @@ export const BUILTIN_SKILLS: Skill[] = [
   },
   // stock_depth / stock_trades 不进自动调度：盘口与主动买卖是对话里模型自取的深水区读数，
   // 预取它们只会让每轮行情查询多打两次 eltdx（旧 switch 也没取，行为一字不变）。
-  { name: "stock_depth", desc: "个股五档盘口（eltdx）" },
+  { name: "stock_depth", desc: "个股五档盘口（通达信网关）" },
   { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标）" },
   {
     name: "stock_kline_summary",

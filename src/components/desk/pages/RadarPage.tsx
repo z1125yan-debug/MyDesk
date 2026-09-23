@@ -13,6 +13,13 @@ import {
   type RadarHistoryItemClient, type RadarItemClient, type HistoryRespClient,
 } from "@/lib/desk/quant-api";
 import { useDesk } from "@/lib/desk/store";
+// P15-R15：kind 与来源推导里的引擎函数名（computeSentiment/discoverThemes）是工程记号，
+// 库行与纯核原文不动（p4 钉在 radarSourceOf 上），页面上只换读法。
+import { plainify } from "@/lib/desk/plain-core";
+
+const KIND_ZH: Record<string, string> = {
+  risk: "风险", anomaly: "异动", theme: "主线", fund: "资金", news: "消息",
+};
 
 const KIND_GO: Record<string, "risk" | "themes" | "events" | "market"> = {
   risk: "risk", anomaly: "risk", theme: "themes", fund: "themes", news: "events",
@@ -123,7 +130,7 @@ export default function RadarPage() {
           {items.map((it) => (
             <button key={it.id ?? it.title} onClick={() => go(KIND_GO[it.kind] ?? "market")}
               className="block w-full rounded-xl border border-border bg-card px-4 py-3 text-left hover:border-sky-500/40">
-              <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">{it.kind}</div>
+              <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">{KIND_ZH[it.kind] ?? it.kind}</div>
               <div className="text-sm font-medium">{it.title}</div>
               <div className="mt-1 text-[11px] text-muted-foreground">{it.detail}</div>
             </button>
@@ -140,16 +147,16 @@ export default function RadarPage() {
             <div key={it.id} className={`rounded-xl border px-4 py-3 ${it.superseded ? "border-dashed border-border bg-card/40" : "border-border bg-card"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
-                  类型 {it.kind || "—"} · asOf {it.as_of}
+                  类型 {KIND_ZH[it.kind] ?? it.kind} · 留档日 {it.as_of}
                 </div>
                 <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${it.superseded ? "border-amber-500/40 text-amber-300" : "border-emerald-500/40 text-emerald-300"}`}>
                   {it.state_label}
                 </span>
               </div>
               <div className={`text-sm font-medium ${it.superseded ? "text-muted-foreground line-through decoration-amber-500/40" : ""}`}>{it.title}</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">{it.detail || "（该行未存 detail 内容）"}</div>
-              <div className="mt-1.5 text-[10px] text-muted-foreground/80" title={it.source_basis}>
-                来源：{it.source} · 首次入库 {bjTime(it.created_at)}（北京）
+              <div className="mt-1 text-[11px] text-muted-foreground">{it.detail || "（这条没有存正文）"}</div>
+              <div className="mt-1.5 text-[10px] text-muted-foreground/80" title={plainify(it.source_basis)}>
+                来源：{plainify(it.source)} · 首次入库 {bjTime(it.created_at)}（北京）
                 {it.evidence_broken && <span className="ml-1 text-amber-300">证据字段无法解析（库内原文损坏，未当作空值）</span>}
               </div>
               {!it.superseded && (

@@ -129,7 +129,7 @@ export default function FactorLabPage() {
           <div className="min-w-0">
             {busy && (
               <div className="rounded-lg border border-sky-500/25 bg-sky-500/5 px-3 py-2 text-[11px] text-sky-300">
-                正在拉取 {maxStocks} 只 × 500 根真实日K并计算（eltdx优先，腾讯兜底）—— 约需 1~3 分钟，请勿离开页面…
+                正在拉取 {maxStocks} 只 × 500 根真实日K并计算（通达信优先，腾讯兜底）—— 约需 1~3 分钟，请勿离开页面…
               </div>
             )}
             {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}

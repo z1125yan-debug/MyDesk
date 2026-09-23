@@ -67,7 +67,7 @@ test("可查日期清单：按日期倒序、负数计数夹到 0、格式错的
 test("口径文案：历史视图不得出现「实时/LIVE」字样，今日视图必须说明会被扫描改写", () => {
   const hist = viewBasis("radar", "2026-09-17", false, "all");
   assert.match(hist, /历史归档（只读）/);
-  assert.match(hist, /asOf=2026-09-17/);
+  assert.match(hist, /留档日=2026-09-17/);
   assert.doesNotMatch(hist, /实时|LIVE/i, "把历史归档说成实时数据就是撒谎");
   assert.doesNotMatch(hist, /随每次扫描/, "历史视图的内容不会被后续扫描改写（P3 只写当日）");
   const today = viewBasis("events", TODAY, true, "all");
@@ -83,7 +83,7 @@ test("空结果说明：区分「筛掉了」「今天当前为 0」「有运行
   assert.match(filtered, /共有 5 行/);
   assert.match(filtered, /不代表这天没有记录/);
   const none = emptyDayNote("events", "2026-09-17", "all", 0);
-  assert.match(none, /库里没有 asOf=2026-09-17/);
+  assert.match(none, /库里没有留档日=2026-09-17/);
   assert.match(none, /这一天没有被扫描过/);
   assert.match(none, /不会用别的数据顶上/);
   assert.match(none, /不会重新计算/);
@@ -242,7 +242,7 @@ test("隔离库副本：跨日不串、live/superseded 过滤正确、无数据�
     assert.equal(empty.length, 0);
     const emptyCounts = await dayCounts(client, "radar", "2020-01-03");
     assert.deepEqual(emptyCounts, { rows: 0, live: 0, superseded: 0 });
-    assert.match(emptyDayNote("radar", "2020-01-03", "all", emptyCounts.rows), /库里没有 asOf=2020-01-03/);
+    assert.match(emptyDayNote("radar", "2020-01-03", "all", emptyCounts.rows), /库里没有留档日=2020-01-03/);
 
     // 4) 事件按日期读取：D2 有、D1 没有；且事件没有 state 列 ⇒ 计数里 superseded 恒为 0、清单里为 null
     const ev = await readEventDay(client, D2);

@@ -264,7 +264,7 @@ export const FACTOR_FIELD_DEFS: FactorFieldDef[] = [
     key: "vwap30", zh: "VWAP30(成本价)", category: "VWAP体系", source: "kline", verified: false, unit: "元",
     description: "30日累计成交额/累计成交量；无量额K线整段 null（宁缺勿假，与 vwap20 同口径）",
     formula: "VWAP30:=SUM(AMOUNT,30)/SUM(VOL,30);", dependencies: ["amount", "vol"],
-    data_requirements: "需成交额K线（eltdx 有；腾讯日K无 amount → null）",
+    data_requirements: "需成交额K线（通达信有；腾讯日K无 amount → null）",
   },
   {
     key: "vwap_full", zh: "VWAP全周期", category: "VWAP体系", source: "kline", verified: false, unit: "元",

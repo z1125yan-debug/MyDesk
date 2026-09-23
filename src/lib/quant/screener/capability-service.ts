@@ -154,7 +154,7 @@ async function upstreamSignals(live: boolean): Promise<Upstream> {
     return { gateway: NOT_RUN, quotes: NOT_RUN, kline: NOT_RUN, board: NOT_RUN, fflow: NOT_RUN, news: NOT_RUN, search: NOT_RUN };
   }
   const [gw, q, k, b, f, n, s] = await Promise.all([
-    guarded(5000, tdxQuotes(["000001.SH"]), "eltdx 网关报价探测无返回"),
+    guarded(5000, tdxQuotes(["000001.SH"]), "通达信网关报价探测无返回"),
     guarded(5000, fetchQuotesReal(["000001.SH"]), "腾讯指数报价探测超时"),
     guarded(5000, fetchKlinesReal("000001.SH", "day", 30), "腾讯日K探测超时"),
     guarded(6000, fetchBoardReal("industry", "in", 5), "东财板块榜探测超时"),
@@ -165,15 +165,15 @@ async function upstreamSignals(live: boolean): Promise<Upstream> {
   const stamp = shanghaiStamp();
   const gateway: Sig = (() => {
     const m = gw.value;
-    if (m && m.size > 0) return okSig("direct", { gateway: "eltdx", rows: m.size }, stamp, "eltdx 本机网关在线，报价通道可用");
-    return failSig("local", `eltdx 网关未取得数据（${gw.error ?? "本机网关未运行"}）：五档/内外盘只有这一条路，不用别的口径冒充`, { gateway: "eltdx" });
+    if (m && m.size > 0) return okSig("direct", { gateway: "通达信网关", rows: m.size }, stamp, "通达信网关 本机网关在线，报价通道可用");
+    return failSig("local", `通达信网关未取得数据（${gw.error ?? "本机网关未运行"}）：五档/内外盘只有这一条路，不用别的口径冒充`, { gateway: "通达信网关" });
   })();
   const quotes: Sig = (() => {
     const row = q.value?.[0];
     if (row && typeof row.price === "number" && isFinite(row.price)) {
       return okSig("direct", { symbol: "000001.SH", price: row.price, change_pct: row.changePct ?? null }, stamp, "腾讯报价通道可用（真实指数价）");
     }
-    return failSig("direct", nullMeansFailure("腾讯报价", "qt.gtimg.cn"), { symbol: "000001.SH" });
+    return failSig("direct", nullMeansFailure("腾讯报价", "腾讯行情"), { symbol: "000001.SH" });
   })();
   const kline: Sig = (() => {
     const bars = k.value;
@@ -181,14 +181,14 @@ async function upstreamSignals(live: boolean): Promise<Upstream> {
       const last = String(bars[bars.length - 1].date ?? "").slice(0, 10);
       return okSig("direct", { symbol: "000001.SH", bars: bars.length, last_date: last }, stamp, `真实日K ${bars.length} 根，最后一根 ${last}`);
     }
-    return failSig("direct", nullMeansFailure("腾讯日K", "ifzq.gtimg.cn / fqkline"), { symbol: "000001.SH" });
+    return failSig("direct", nullMeansFailure("腾讯日K", "腾讯行情（前复权）"), { symbol: "000001.SH" });
   })();
   const board: Sig = (() => {
     const rows = b.value;
     if (rows && rows.length) {
       return okSig("direct", { boards: rows.length, top: rows[0].name, top_main_yi: rows[0].main }, stamp);
     }
-    return failSig("channel", nullMeansFailure("东财板块榜", "push2 clist"), {});
+    return failSig("channel", nullMeansFailure("东财板块榜", "东财榜单接口"), {});
   })();
   const fflow: Sig = (() => {
     const detail = f.value;
@@ -196,7 +196,7 @@ async function upstreamSignals(live: boolean): Promise<Upstream> {
     if (days && days.length && detail) {
       return okSig("direct", { symbol: "688256.SH", days: days.length, source: detail.source, last_date: days[days.length - 1].date }, stamp);
     }
-    return failSig("direct", nullMeansFailure("个股主力资金日K", "东财 push2his fflow/daykline（新浪 MoneyFlow 备胎同窗未返回）"), { symbol: "688256.SH" });
+    return failSig("direct", nullMeansFailure("个股主力资金日K", "东财主力资金日明细（新浪资金流向 备胎同窗未返回）"), { symbol: "688256.SH" });
   })();
   const news: Sig = (() => {
     const items = n.value;
@@ -246,8 +246,8 @@ function probeOne(cap: CapabilityDef, ctx: Ctx): Sig {
       if (!isUsable(ctx.quotes.kind)) return ctx.quotes;
       return {
         ...ctx.quotes,
-        degraded_from: ctx.gateway.ran ? "eltdx 网关" : null,
-        reason: "eltdx 网关本次不可用，走腾讯报价兜底（值是真的，来源已降级）",
+        degraded_from: ctx.gateway.ran ? "通达信网关" : null,
+        reason: "通达信网关本次不可用，走腾讯报价兜底（值是真的，来源已降级）",
       };
     }
     case "index_benchmark": return ctx.quotes;
@@ -255,18 +255,18 @@ function probeOne(cap: CapabilityDef, ctx: Ctx): Sig {
     case "market_snapshot":
     case "screener":
       return ctx.board.ran
-        ? channelOf(ctx.board, "东财 push2 clist 通道可达（与全A快照同接口族）。本次未拉全量名单：全量取数请调用对应接口，这里不谎称拉过")
+        ? channelOf(ctx.board, "东财榜单接口通道可达（与全A快照同接口族）。本次未拉全量名单：全量取数请调用对应接口，这里不谎称拉过")
         : NOT_RUN;
     case "sector_rank": return ctx.board;
     case "sector_members":
-      return ctx.board.ran ? channelOf(ctx.board, "板块榜 clist 通道可达；成分名单需带板块代码另行取数") : NOT_RUN;
+      return ctx.board.ran ? channelOf(ctx.board, "板块榜通道可达；成分名单需带板块代码另行取数") : NOT_RUN;
     case "fund_flow_stock": return ctx.fflow;
     case "stock_depth":
     case "stock_trades_money":
     case "stock_trades_proxy":
       if (!ctx.gateway.ran) return NOT_RUN;
       return isUsable(ctx.gateway.kind)
-        ? channelOf(ctx.gateway, "eltdx 网关在线（报价字段实测）；本能力的具体字段（五档/逐笔）需按代码另行取数")
+        ? channelOf(ctx.gateway, "通达信网关在线（报价字段实测）；本能力的具体字段（五档/逐笔）需按代码另行取数")
         : ctx.gateway;
     case "market_news": return ctx.news;
     case "symbol_search": return ctx.search;
@@ -315,7 +315,7 @@ function probeOne(cap: CapabilityDef, ctx: Ctx): Sig {
       if (!d) return dbFail();
       return d.factorTestRows > 0
         ? okSig("db", { rows: d.factorTestRows, keys: d.factorTestKeys }, null, `IC 测试记录 ${d.factorTestRows} 条，覆盖 ${d.factorTestKeys} 个信号键`)
-        : emptySig("db", "factor_test 表 0 行：还没有跑过批量 IC 验证 ⇒ 任何因子有效性结论只能是 UNVERIFIED，不是「无效」也不是「有效」", { rows: 0 });
+        : emptySig("db", "因子验证留档 0 行：还没有跑过批量 IC 验证 ⇒ 任何因子有效性结论只能是「未验证」，不是「无效」也不是「有效」", { rows: 0 });
     case "task_status":
       if (!d) return dbFail();
       return d.taskRows > 0
@@ -565,7 +565,7 @@ export async function probeCapabilities(opts: { live?: boolean; force?: boolean 
     cache_age_s: 0,
     basis: registryBasis(),
     gateway_note: live
-      ? (isUsable(ctx.gateway.kind) ? "eltdx 本机网关：在线" : "eltdx 本机网关：不可用（依赖它的能力已按取数失败处理，不用别的口径冒充五档/内外盘）")
+      ? (isUsable(ctx.gateway.kind) ? "通达信网关 本机网关：在线" : "通达信网关 本机网关：不可用（依赖它的能力已按取数失败处理，不用别的口径冒充五档/内外盘）")
       : "本次未做上游探测：只读了本地库/账本/MCP 运行态；行情类上游能力标 probed:false，不是「没数据」",
     upstream_calls: live ? [ctx.gateway, ctx.quotes, ctx.kline, ctx.board, ctx.fflow, ctx.news, ctx.search].filter((s) => s.ran).length : 0,
     probes,

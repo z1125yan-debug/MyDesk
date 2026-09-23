@@ -37,7 +37,7 @@ export async function GET(request: Request) {
   if (tq?.get(symbol)) {
     const q = tq.get(symbol)!;
     quote = { price: q.price, changePct: q.changePct, high: q.high, low: q.low, prevClose: q.prevClose, amountYi: q.amountYi };
-    quoteSource = "eltdx · quotes.get_snapshots";
+    quoteSource = "通达信网关快照";
   } else {
     const qs = await fetchQuotesReal([symbol]).catch(() => null);
     const q = qs?.[0];
@@ -50,11 +50,11 @@ export async function GET(request: Request) {
 
   // 2) 五档盘口（仅 eltdx）
   const depth = (await tdxDepth([symbol]).catch(() => null))?.get(symbol) ?? null;
-  if (!depth) missing.push("五档盘口（eltdx 网关未运行或不可用）");
+  if (!depth) missing.push("五档盘口（本机通达信行情网关未开启或不可用）");
 
   // 3) 逐笔主动买卖（仅 eltdx，近2页近似口径）
   const trades = await tdxTradesMoney(symbol).catch(() => null);
-  if (!trades) missing.push("逐笔主动买卖（eltdx 网关未运行或不可用）");
+  if (!trades) missing.push("逐笔主动买卖（本机通达信行情网关未开启或不可用）");
 
   // 4) 日K（腾讯带成交量）→ 技术指标 + 历史条件概率
   const provider = await getProvider("em");
@@ -101,7 +101,7 @@ export async function GET(request: Request) {
   // 5) 资金流：东财 14 日主力净额（断源时新浪日度净额备胎，source 三元如实分标）
   const secid = symbolToSecid(symbol);
   const detail = secid ? await fetchDetailReal(secid).catch(() => null) : null;
-  if (!detail) missing.push("主力资金流（东财 fflow 与新浪备胎两条源都没通）");
+  if (!detail) missing.push("主力资金流（东财主力资金明细与新浪备胎两条源都没通）");
 
   // 6) 板块：行业 + 板块涨幅榜排名
   //    R8：走带同花顺兜底的入口——东财断源日也有净额真数可标；注意同花顺行业名与
@@ -151,7 +151,7 @@ export async function GET(request: Request) {
           askTotalHand: depth.asks.reduce((s, l) => s + l.volume, 0),
           insideHand: depth.insideHand, outerHand: depth.outerHand, activeHand: depth.activeHand,
         },
-        source: "eltdx · quotes.get_depth", status: statusLive,
+        source: "通达信五档盘口", status: statusLive,
       } : null,
       trades: trades ? {
         data: {
@@ -159,7 +159,7 @@ export async function GET(request: Request) {
           netYi: trades.netYi, outerHand: trades.outerHand, insideHand: trades.insideHand,
           avgPrice: trades.avgPrice, basis: trades.basis,
         },
-        source: "eltdx · quotes.get_snapshots（内外盘）",
+        source: "通达信快照·内外盘",
         note: "主动买卖金额为系统按内外盘×成交均价计算的代理指标，非交易所官方主力资金统计",
         status: statusLive,
       } : null,
@@ -168,7 +168,7 @@ export async function GET(request: Request) {
           todayYi: detail.days.at(-1)?.value ?? null,
           spark: detail.spark, days: detail.days,
         },
-        source: detail.source === "sina" ? "新浪 MoneyFlow 日度净额（东财断源备胎·口径≈主力净流入）" : "东财 · push2his 主力净额", status: "LIVE",
+        source: detail.source === "sina" ? "新浪资金流向日度净额（东财断源备胎·口径≈主力净流入）" : "东财主力资金日明细", status: "LIVE",
       } : null,
       tech: bars.length >= 60 ? { data: tech, source: "腾讯日K · 本机指标计算（未验证因子）", status: "HISTORICAL" } : null,
       probability: winProb ? { data: winProb, source: "腾讯日K · 历史条件概率引擎", note: "条件：站上MA20 且 站上20日成本线（K线口径）", status: "HISTORICAL" } : null,
@@ -177,6 +177,6 @@ export async function GET(request: Request) {
       risk: risk ? { data: risk, source: "全A快照风险引擎", status: "LIVE" } : null,
     },
     missing,
-    source_note: "REAL_DATA_ONLY=true：以上所有数据来自真实数据源，缺失块已显式列出",
+    source_note: "以上所有数据来自真实数据源，缺失块已显式列出（不冒充实数）",
   }, { headers: { "Cache-Control": "no-store" } });
 }
