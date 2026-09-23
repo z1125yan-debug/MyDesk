@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import { buildRadarFindings } from "./radar";
 import {
-  collectNews, fetchBoardContext, scanGlobalEvents, themeMapFingerprint, type EventScanItem, type NewsLite,
+  collectNewsWindow, fetchBoardContext, scanGlobalEvents, themeMapFingerprint, type EventScanItem, type NewsLite,
 } from "./events";
 import {
   advanceCursor, cursorCommitsNothing, decideMode, eventKeyOf, eventNaturalKey, freshUnmatched, modeBasisLabel,
@@ -199,7 +199,8 @@ export async function archiveEventScan(opts: ArchiveOpts = {}): Promise<ArchiveR
   const backfilled = await backfillEventKeys(tradeDate);
   const mode = decideMode({ force: opts.force, mode: opts.mode, cursor, tradeDate, cursorTradeDate });
   const rulesFp = themeMapFingerprint();
-  const news = await collectNews(); // 两种口径都要先取窗口：取不到就抛错，不静默当成「今天没有事件」
+  // 当日快讯全量窗口（P15-R18：翻页到跨出目标交易日为止）：取不到就抛错，不静默当成「今天没有事件」
+  const { news, capped: windowCapped, detail: windowDetail } = await collectNewsWindow(tradeDate);
   const watermark = newsWatermark(news);
   let delta: DeltaStats;
   let unmatched: number;
@@ -270,6 +271,11 @@ export async function archiveEventScan(opts: ArchiveOpts = {}): Promise<ArchiveR
       source = "增量：上游窗口无新增快讯（沿用上次成功入库结果）";
     }
   }
+
+  // 窗口自报（P15-R18）：这一轮到底看了当天多少条快讯、跨度多长，摆进 source 里，
+  // 页面就不用再猜「没事件」是源断了还是只翻了 20 分钟。翻到页数上限仍未跨日 → 如实挂一条「窗口可能不完整」。
+  source = `${source}；快讯窗口：${windowDetail}`;
+  if (windowCapped) missing = [...missing, "当日快讯翻到页数上限仍未跨出交易日：本窗口可能不完整（下一轮会继续往前翻）"];
 
   const rows = await db.globalEvent.findMany({ where: { asOf: tradeDate }, orderBy: { createdAt: "desc" } });
   const doneKeys = Object.fromEntries(rows.filter((r) => r.dedupeKey).map((r) => [r.dedupeKey, r.contentHash]));

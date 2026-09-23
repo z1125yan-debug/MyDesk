@@ -6,6 +6,10 @@ import { marketSession } from "./session";
 import { tdxQuotes, tdxKlines, tdxNameOf, type TdxQuote } from "./tdx";
 import { parseTcBoardRankList } from "@/lib/quant/data/tc-snapshot-core";
 import { parseSinaFundFlow, sinaFundFlowUrl } from "@/lib/quant/data/sina-flow-core";
+import {
+  NEWS_MAX_PAGES, NEWS_PAGE_SIZE, lastCursor, pickNewsWindow, shouldFetchMore,
+  type NewsLiteRow, type NewsRawRow,
+} from "@/lib/quant/screener/news-window-core";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -468,3 +472,109 @@ export async function fetchNewsReal(limit = 12): Promise<NewsItem[] | null> {
     return null;
   }
 }
+
+// ---------- 当日快讯全量窗口（P15-R18） ----------
+// 事件雷达以前只吃 fetchNewsReal(24)：东财 7x24 一小时就发几十条，一次日内扫描看得见的时间跨度
+// 只有约 20 分钟，一天下来库里只剩一两条事件。这里改成按 realSort 游标往前翻页，翻到跨出目标交易日为止，
+// 「翻到哪算完 / 同日过滤 / 跨页去重 / 坏行丢弃」全部由 news-window-core 判定，本层只发请求。
+// 取不到仍然如实返回 null（由 collectNews 抛错），不静默当成「今天没有事件」。
+
+export interface NewsWindow {
+  tradeDate: string;
+  items: NewsLiteRow[];
+  source: "东财7x24" | "新浪直播";
+  /** 翻页实际拉到的原始行数（含越界与丢弃），用于说明「这一轮看了多少条快讯」 */
+  fetchedRows: number;
+  offDay: number;
+  duplicated: number;
+  dropped: number;
+  /** 窗口覆盖的时间跨度（上游原样给的时分，新→旧）；空数组时为空串 */
+  spanFrom: string;
+  spanTo: string;
+  /** 是否翻到了上限还没跨日（真发生时要如实说明「当日窗口可能不完整」） */
+  capped: boolean;
+}
+
+type NewsPageFn = (cursor: string, pageNo: number) => Promise<NewsRawRow[]>;
+
+/** 通用的「按核的判定翻页」循环：核说停就停，游标不前进也停（防上游回同一页造成无限翻） */
+async function pageThrough(tradeDate: string, getPage: NewsPageFn): Promise<{ pages: NewsRawRow[][]; pagesFetched: number; capped: boolean }> {
+  const pages: NewsRawRow[][] = [];
+  let cursor = "";
+  let capped = false;
+  for (let i = 0; i < NEWS_MAX_PAGES; i++) {
+    const rows = await getPage(cursor, i + 1);
+    if (!rows.length) break;
+    pages.push(rows);
+    if (!shouldFetchMore(rows, tradeDate)) break;
+    const next = lastCursor(rows);
+    if (next && next === cursor) break;
+    cursor = next;
+    if (i === NEWS_MAX_PAGES - 1) capped = true; // 整页且末行仍是当天，却没页数可翻了
+  }
+  return { pages, pagesFetched: pages.length, capped };
+}
+
+async function emNewsPage(cursor: string): Promise<NewsRawRow[]> {
+  const url = `https://np-weblist.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102&sortEnd=${cursor}&pageSize=${NEWS_PAGE_SIZE}&req_trace=${Date.now()}`;
+  const j = await fetchJson<{
+    data?: { fastNewsList?: { code?: string; showTime?: string; realSort?: string; title?: string }[] };
+  }>(url);
+  return (j?.data?.fastNewsList ?? []).map((r) => ({
+    code: String(r.code ?? ""),
+    showTime: String(r.showTime ?? ""),
+    realSort: String(r.realSort ?? ""),
+    title: String(r.title ?? "").trim(),
+  }));
+}
+
+async function sinaNewsPage(_cursor: string, pageNo: number): Promise<NewsRawRow[]> {
+  const url = `https://zhibo.sina.com.cn/api/zhibo/feed?page=${pageNo}&page_size=${NEWS_PAGE_SIZE}&zhibo_id=152&tag_id=0&dire=f&dpc=1`;
+  const j = await fetchJson<{
+    result?: { data?: { feed?: { list?: { id?: number | string; create_time?: string; rich_text?: string }[] } } };
+  }>(url);
+  return (j?.result?.data?.feed?.list ?? []).map((r) => ({
+    code: String(r.id ?? ""),
+    showTime: String(r.create_time ?? ""),
+    realSort: "", // 新浪这条按 page 翻页，没有游标——空串让上层循环走 pageNo 分支
+    title: String(r.rich_text ?? "").trim(),
+  }));
+}
+
+/** 翻某一源到跨出目标日为止，收成窗口（不带缓存，由调用方 cached 包一层） */
+async function buildNewsWindow(tradeDate: string, getPage: NewsPageFn, source: NewsWindow["source"]): Promise<NewsWindow | null> {
+  const { pages, capped } = await pageThrough(tradeDate, getPage);
+  const w = pickNewsWindow(pages, tradeDate);
+  if (!w.items.length) return null;
+  return {
+    tradeDate,
+    items: w.items,
+    source,
+    fetchedRows: w.fetchedRows,
+    offDay: w.offDay,
+    duplicated: w.duplicated,
+    dropped: w.dropped,
+    spanFrom: w.items[0]?.time ?? "",
+    spanTo: w.items[w.items.length - 1]?.time ?? "",
+    capped,
+  };
+}
+
+/** 当日快讯全量窗口：东财 7x24 优先，失败/为空换新浪直播；两源都空返回 null（调用方据此报错，不当成「今天没事件」） */
+export async function fetchNewsWindowForDate(tradeDate: string): Promise<NewsWindow | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tradeDate)) return null;
+  return cached("news", `day:${tradeDate}`, async () => {
+    try {
+      const em = await buildNewsWindow(tradeDate, emNewsPage, "东财7x24");
+      if (em) return em;
+    } catch {
+      // 换新浪
+    }
+    try {
+      return await buildNewsWindow(tradeDate, sinaNewsPage, "新浪直播");
+    } catch {
+      return null;
+    }
+  });
+}
+

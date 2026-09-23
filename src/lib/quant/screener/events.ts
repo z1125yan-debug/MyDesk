@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fetchNewsReal, type BoardRow } from "@/lib/desk/em";
+import { fetchNewsWindowForDate, type BoardRow } from "@/lib/desk/em";
 import { fetchBoardRowsRescued } from "@/lib/desk/board-rescue";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import {
@@ -97,17 +97,37 @@ export function verifyNewsItems(
   return { items, unmatched };
 }
 
-/** 上游快讯窗口大小：全量与增量必须同源，故在此单点定义 */
-export const NEWS_WINDOW = 24;
+/**
+ * 上游快讯窗口口径（P15-R18 改）：不再是「最新 24 条」，而是「按游标翻到跨出目标交易日为止」。
+ * 旧值是 24 —— 东财 7x24 一小时就发几十条，一次日内扫描只看得见约 20 分钟的跨度，
+ * 一天下来库里只剩一两条事件。翻页判定与同日去重收在 news-window-core（纯核），这里只取数与抛错。
+ */
 
 /** 快讯的最小字段形状（上游只给这两个字段，没有 id） */
 export interface NewsLite { time: string; title: string }
 
-/** 取上游快讯窗口；取不到就抛错，不允许静默当成「今天没有事件」 */
-export async function collectNews(): Promise<NewsLite[]> {
-  const news = await fetchNewsReal(NEWS_WINDOW);
-  if (!news?.length) throw new Error("新闻源暂不可用（东财7x24/新浪均无返回）");
-  return news.map((n) => ({ time: n.time, title: n.title }));
+export interface NewsWindowBundle {
+  news: NewsLite[];
+  /** 实际翻了源并收成当日窗口后：是否撞到翻页上限还没跨日（当日窗口可能不完整，必须如实报） */
+  capped: boolean;
+  /** 源自报（东财7x24 / 新浪直播），窗口覆盖的时分跨度与原始行数：写进口径说明，不靠猜 */
+  detail: string;
+}
+
+/** 取当日快讯全量窗口；取不到就抛错，不允许静默当成「今天没有事件」 */
+export async function collectNewsWindow(tradeDate: string): Promise<NewsWindowBundle> {
+  const win = await fetchNewsWindowForDate(tradeDate);
+  if (!win || !win.items.length) throw new Error("新闻源暂不可用（东财7x24/新浪均无返回）");
+  return {
+    news: win.items,
+    capped: win.capped,
+    detail: `${win.source} ${win.items.length} 条（${win.spanFrom}~${win.spanTo}，翻了 ${win.fetchedRows} 条原始快讯，跨日剔除 ${win.offDay}、同键合并 ${win.duplicated}、认不出丢弃 ${win.dropped}）`,
+  };
+}
+
+/** 兼容旧签名：只要快讯数组。取不到仍抛错，不静默。 */
+export async function collectNews(tradeDate = shanghaiDate()): Promise<NewsLite[]> {
+  return (await collectNewsWindow(tradeDate)).news;
 }
 
 export interface BoardContext { boards: BoardRow[]; missing: string[] }
@@ -136,6 +156,6 @@ export async function scanGlobalEvents(opts?: { news?: NewsLite[]; boards?: Boar
       "事件分级为关键词规则（未配置 AI 时不走 LLM）",
       "产业链映射来自 data/theme-chain-map.json 起步表，未覆盖的新闻不入库",
     ],
-    source: "fetchNewsReal + theme-chain-map.json + fetchBoardReal",
+    source: "当日快讯全量窗口（东财7x24 优先，翻页到跨出目标交易日为止；断源时换新浪直播）+ 手工映射表 + 板块资金榜",
   };
 }

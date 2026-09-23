@@ -60,10 +60,11 @@ test("nav-core：一级菜单顺序文案钉死（稳智左栏顺序，用户要
       ["sectors", "行业板块"],
       ["quotes", "行情"],
       ["watch", "自选"],
+      ["events", "全球事件雷达"],
       ["ai", "AI 对话"],
       ["qimen", "奇门遁甲"],
     ],
-    "一级项必须是大盘情绪·量化选股·行业板块·行情·自选·AI 对话·奇门遁甲 这个顺序（对方菜单从左到右即此序；「LLM分析」是行业词，人话版叫 AI 对话）",
+    "一级项必须是大盘情绪·量化选股·行业板块·行情·自选·全球事件雷达·AI 对话·奇门遁甲 这个顺序（对方菜单从左到右即此序；「LLM分析」是行业词，人话版叫 AI 对话。事件雷达 P15-R18 按用户指示从 legacy 挖回一级，排在同为「每天打开就读」的自选之后）",
   );
   // 「自选」在对方菜单里是独立一级，不许再塞回「行情」组里
   assert.equal(MENU.find((e) => e.id === "watch")!.key, "tracker");
@@ -96,12 +97,23 @@ test("nav-core：每个一级项要么直达、要么有非空子项；点组必
 });
 
 test("nav-core：并入对话的旧页可 hash 直达但不上菜单；copilot 自己不算 legacy", () => {
-  for (const p of ["aihome", "analysis", "events", "research", "agent"] as const) {
+  for (const p of ["aihome", "analysis", "research", "agent"] as const) {
     assert.ok(isLegacyPage(p), `${p} 应登记为 legacy（横幅指回对话）`);
     assert.equal(legacyReturnTarget(p), "copilot", `${p} 的横幅出口应回对话本体`);
     assert.equal(menuGroupOf(p)?.id, "ai", `${p} 归属 AI 对话组`);
   }
   assert.equal(isLegacyPage("copilot"), false, "copilot 是对话本体，不是兼容路由");
+});
+
+test("P15-R18：全球事件雷达从 legacy 挖回一级菜单（用户：找出来塞进去）", () => {
+  assert.equal(isLegacyPage("events"), false, "events 不再是被横幅指回的旧页");
+  const entry = MENU.find((e) => e.id === "events");
+  assert.ok(entry, "菜单里必须有一级项「全球事件雷达」");
+  assert.equal(entry!.key, "events", "一级项直达 events 页，不藏子项");
+  assert.equal(menuGroupOf("events")?.id, "events", "自己的页归自己的组（高亮不落到对话上）");
+  // #/events 这条老 hash 一个不删：从 legacy 提回一级后仍要能进同一页（AppShell 分支未动）
+  const shell = read("src/components/desk/AppShell.tsx");
+  assert.match(shell, /case "events"|events[^\n]*EventsPage/, "events 的渲染分支必须还在");
 });
 
 test("R3c 双入口合并：菜单不再单列「全A 实时选股」，aiscan 收口到 quant 门户主 Tab", () => {
