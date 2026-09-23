@@ -141,19 +141,34 @@ export async function fetchCandlesFor(
   return { candles: buildCandles(symbol, tf), source: "demo" };
 }
 
-export async function fetchBoardRows(
-  kind: BoardKind,
-  dir: "in" | "out",
-): Promise<{ rows: SectorRow[]; source: "real" | "demo" }> {
+/**
+ * P15-R16 数据看板取榜：**演示回退拿掉了**。
+ * 原来这条链路在东财断源时静默落回 buildRanking 生成的演示榜（个股 tab 甚至套用「行业」那份），
+ * 页面上涨庎与净额看着都像真数、又没时间戳，读者根本分不清是哪天、是不是真的——正是本轮要修的病。
+ * 现在递棒顺序由服务端决定（东财 → 同花顺/通达信自算 → 都没有就是空榜），
+ * 页面按 rows.length===0 显式声明「没取到」，绝不拿演示数字顶包。
+ */
+export interface BoardFetch {
+  rows: SectorRow[];
+  origin: "em" | "ths" | "tdx" | null; // 出身：东财官方 / 同花顺兜底 / 通达信逐笔自算 / 没拿到
+  asOf: string;      // 本机取数完成时刻（ISO），回答「这是什么时候的数」
+  quoteTime: string | null; // 行情侧时刻 HH:MM:SS（通达信快照给的），拿不到为 null
+}
+
+export async function fetchBoardRows(kind: BoardKind, dir: "in" | "out"): Promise<BoardFetch> {
   try {
-    const r = await fetch(`/api/market/board?kind=${kind}&dir=${dir}`);
+    const r = await fetch(`/api/market/board?kind=${kind}&dir=${dir}`, { cache: "no-store" });
     const j = await r.json();
-    if (Array.isArray(j.rows) && j.rows.length) return { rows: j.rows, source: "real" };
+    const origin = j.source === "em" || j.source === "ths" || j.source === "tdx" ? (j.source as BoardFetch["origin"]) : null;
+    return {
+      rows: Array.isArray(j.rows) ? (j.rows as SectorRow[]) : [],
+      origin,
+      asOf: typeof j.asOf === "string" ? j.asOf : "",
+      quoteTime: typeof j.quoteTime === "string" && j.quoteTime ? j.quoteTime : null,
+    };
   } catch {
-    // 回退演示
+    return { rows: [], origin: null, asOf: "", quoteTime: null };
   }
-  const tab = kind === "region" ? "地域" : kind === "concept" ? "概念" : "行业";
-  return { rows: buildRanking(tab, dir, 0), source: "demo" };
 }
 
 /**
@@ -179,7 +194,7 @@ export async function fetchDetailFor(
   secid: string,
   name: string,
   code: string,
-): Promise<{ detail: SectorDetail; source: "real" | "demo" }> {
+): Promise<{ detail: SectorDetail | null; source: "real" | "missing" }> {
   if (secid.includes(".")) {
     try {
       const r = await fetch(`/api/market/board-detail?secid=${encodeURIComponent(secid)}`);
@@ -191,10 +206,12 @@ export async function fetchDetailFor(
         };
       }
     } catch {
-      // 回退演示
+      // 东财资金明细断源：下面返回 missing，页面显式说「没取到」
     }
   }
-  return { detail: buildDetail(code, name, 0), source: "demo" };
+  // P15-R16：这里也不再落回 buildDetail 演示曲线——近 14 日主力净额是东财专属读数，
+  // 断源时画一条编出来的曲线进「资金明细联动」，等于把整页最大的数字牌换成假的。
+  return { detail: null, source: "missing" as const };
 }
 
 // 最新财经快讯文本块（供助手上下文注入；空串表示暂不可用）

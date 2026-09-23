@@ -183,3 +183,17 @@ export function mcpStatusZh(status: string | null | undefined): string {
     default: return status ?? "未启动";
   }
 }
+
+/**
+ * 时刻的人话读法：ISO 串 ⇒「09-23 11:29:43」（P15-R16：页面上任何一块读数都得回答「这是哪天的数」）。
+ * 只接受 Date 认得的形状；空值/坏值一律返回空串——宁可不显示，也不把 Invalid Date 摆上页面。
+ * 时区按浏览器本地读（A股场景就是北京时间），不做时区换算、更不猜时区。
+ */
+export function clockZh(iso: string | null | undefined): string {
+  const s = (iso ?? "").trim();
+  if (!s) return "";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}

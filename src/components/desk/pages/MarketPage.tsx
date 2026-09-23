@@ -10,6 +10,9 @@ import { fetchSentiment, fetchLimitUp, fetchTrend, fetchBreadth, type SentimentC
 // 三态切换只换权重、不重取数——分量各算一次，牛/熊/震荡是同一批读数的三种加权。
 import { computeTemperature, REGIMES, type MarketRegime } from "@/lib/quant/screener/sentiment-temperature-core";
 import type { SectorRow } from "@/lib/desk/types";
+// P15-R16c：情绪盘也要「几点取的数」+ 开盘自动重取（原来只能手点刷新）
+import { useLivePoll } from "@/hooks/use-live-poll";
+import LiveStamp from "@/components/desk/LiveStamp";
 import { useDesk } from "@/lib/desk/store";
 
 export default function MarketPage() {
@@ -33,6 +36,7 @@ export default function MarketPage() {
   // P15-R2b 逐日宽度（站上5日线占比/创5日·3日新低）：来自 stock_daily_close 的收盘后沉淀。
   // 攒不够天数不是错误——chips 与图各按「攒中 N/x」如实显示进度，取数失败也只是没数。
   const [breadth, setBreadth] = useState<BreadthClient | null>(null);
+  const poll = useLivePoll();
 
   const loadBreadth = useCallback(async () => {
     try {
@@ -82,7 +86,7 @@ export default function MarketPage() {
     }
   }, [loadTiers, loadTrend, loadBreadth]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, poll.tick]);
 
   // 风险档位 → 小节 tone 色点（原 riskColor 整卡底色退役为色点，档位词表一字没改：高风险/偏高/注意/其余）
   const riskTone = (level: string): "danger" | "warning" | "success" =>
@@ -117,9 +121,12 @@ export default function MarketPage() {
           <h1 className="text-[22px] font-semibold tracking-tight">大盘情绪</h1>
           <p className="mt-1 text-[13px] text-muted-foreground">一眼看清今天市场的温度。</p>
         </div>
-        <button onClick={load} className="flex items-center gap-1.5 rounded-full border border-border/70 bg-white/[0.03] px-3.5 py-2 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground">
-          {busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} 刷新
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <LiveStamp poll={poll} iso={sent?.as_of ?? ""} />
+          <button onClick={load} className="flex items-center gap-1.5 rounded-full border border-border/70 bg-white/[0.03] px-3.5 py-2 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground">
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} 刷新
+          </button>
+        </div>
       </div>
 
       {error && <div className="apple-card border-red-400/25 px-4 py-3 text-[13px] text-red-300">{error}</div>}

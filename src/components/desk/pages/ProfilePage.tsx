@@ -9,6 +9,9 @@ import { useDesk } from "@/lib/desk/store";
 import { searchSymbols, normalizeTradingViewSymbol } from "@/lib/desk/market";
 import { fetchStockProfile, aiChatTools, type ProfileResp } from "@/lib/desk/quant-api";
 import { aiReady } from "@/lib/desk/ai";
+// P15-R16c：开盘自动重取走全站共用钩子；画像时刻的读法走显示核（只换读法，不改判定）
+import { useLivePoll } from "@/hooks/use-live-poll";
+import { clockZh } from "@/lib/desk/plain-core";
 // P15-R3d：画像区块散开的本地卡（原 `function Section`）退役，换统一血缘卡组件——
 // 头部收成卡标题，各区块收成卡内小节；Cell/Empty 是瓦片不是卡，保留。取数与口径逻辑一字未动。
 import { LineageCard, LineageSection } from "../ui/LineageCard";
@@ -34,19 +37,27 @@ export default function ProfilePage() {
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
 
-  const load = useCallback(async (sym: string) => {
-    setBusy(true); setError(""); setAiText(""); setData(null);
-    setFocusSymbol(sym);
+  // P15-R16c：keep=true 是轮询重取——只换数据，不清用户已经生成的 AI 解读、不闪加载态。
+  // （原来这页只能手点「生成画像」，开盘后价格停在打开页面那一刻，正是用户说的「分不清是哪天的数」）
+  const load = useCallback(async (sym: string, keep = false) => {
+    if (!keep) { setBusy(true); setError(""); setAiText(""); setData(null); setFocusSymbol(sym); }
     try {
-      setData(await fetchStockProfile(sym));
+      const fresh = await fetchStockProfile(sym);
+      setData(fresh);
+      if (!keep) setError("");
     } catch (e) {
-      setError(String((e as Error).message || e));
+      if (!keep) { setError(String((e as Error).message || e)); setData(null); }
     } finally {
-      setBusy(false);
+      if (!keep) setBusy(false);
     }
   }, [setFocusSymbol]);
 
   useEffect(() => { if (symbol) load(symbol); }, [symbol, load]);
+  const poll = useLivePoll();
+  useEffect(() => {
+    // 交易时段每轮自动重取（休市时钩子不 tick，数字就停在收盘那一刻，页面上的时刻会说出来）
+    if (symbol && poll.tick > 0) load(symbol, true);
+  }, [symbol, poll.tick, load]);
 
   // 搜索联想（真实搜索接口）
   useEffect(() => {
@@ -140,8 +151,10 @@ export default function ProfilePage() {
                 </>
               )}
               <span className="ml-auto flex flex-wrap items-center gap-2">
-                <SourceBadge status={data.blocks.quote ? data.blocks.quote.status : "OFFLINE"} source={data.blocks.quote?.source} time={data.as_of.slice(11, 19)} />
-                <span className="text-[10.5px] text-muted-foreground">{data.session.label}</span>
+                <SourceBadge status={data.blocks.quote ? data.blocks.quote.status : "OFFLINE"} source={data.blocks.quote?.source} time={clockZh(data.as_of)} />
+                <span className="text-[10.5px] text-muted-foreground">
+                  {data.session.label}{poll.open ? ` · 剩余 ${poll.left}s 自动重取` : " · 休市不刷新，数字停在收盘时刻"}
+                </span>
               </span>
             </div>
           }

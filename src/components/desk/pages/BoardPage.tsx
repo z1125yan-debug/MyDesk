@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { useDesk } from "@/lib/desk/store";
+import { useEffect, useState } from "react";
 import { fetchBoardRows, fetchDetailFor, type BoardKind } from "@/lib/desk/market";
-import { useMarketSession } from "@/hooks/use-market-session";
+import { useLivePoll } from "@/hooks/use-live-poll";
+import LiveStamp from "@/components/desk/LiveStamp";
+import { MAIN_FLOW_BASIS } from "@/lib/quant/screener/tdx-flow-core";
 import type { SectorDetail, SectorRow } from "@/lib/desk/types";
 import BubbleFlow from "../BubbleFlow";
 
@@ -13,46 +14,42 @@ const TABS: { key: BoardKind; label: string }[] = [
   { key: "region", label: "地域" },
 ];
 
+// 出身只认服务端给的真 source（P15-R16）：没有「演示数据」这一档了——没取到就说没取到。
+const ORIGIN_LABEL: Record<"em" | "ths" | "tdx", string> = {
+  em: "东财主力资金读数",
+  ths: "同花顺板块资金流兜底榜（东财断源时的独立上游）",
+  tdx: "通达信当日逐笔自算（东财断源时的替代口径）",
+};
+
 export default function BoardPage() {
-  const refreshInterval = useDesk((s) => s.refreshInterval);
-  const session = useMarketSession();
-  const openRef = useRef(session.open);
-  openRef.current = session.open;
+  // R16c：轮询与「数据截至」交给全站共用的钩子/组件（休市暂停、开盘自恢复）
+  const poll = useLivePoll();
   const [kind, setKind] = useState<BoardKind>("stock");
   const [dir, setDir] = useState<"in" | "out">("in");
-  const [tick, setTick] = useState(0);
-  const [left, setLeft] = useState(refreshInterval);
   const [selected, setSelected] = useState<SectorRow | null>(null);
   const [rows, setRows] = useState<SectorRow[]>([]);
-  const [source, setSource] = useState<"real" | "demo">("demo");
+  const [origin, setOrigin] = useState<"em" | "ths" | "tdx" | null>(null);
+  const [asOf, setAsOf] = useState("");
+  const [quoteTime, setQuoteTime] = useState<string | null>(null);
   const [rowsLoading, setRowsLoading] = useState(true);
   const [detail, setDetail] = useState<SectorDetail | null>(null);
-  const [detailSource, setDetailSource] = useState<"real" | "demo">("real");
+  const [detailSource, setDetailSource] = useState<"real" | "missing">("missing");
   const [showBubble, setShowBubble] = useState(true);
   const [flowIn, setFlowIn] = useState<SectorRow[]>([]);
   const [flowOut, setFlowOut] = useState<SectorRow[]>([]);
 
   useEffect(() => {
-    const t = setInterval(() => {
-      // 非交易时段上游不会有新数据：暂停倒计时与自动刷新
-      if (!openRef.current) return;
-      setLeft((v) => {
-        if (v <= 1) { setTick((n) => n + 1); return refreshInterval; }
-        return v - 1;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, [refreshInterval]);
-
-  useEffect(() => {
     let dead = false;
     setRowsLoading(true);
     fetchBoardRows(kind, dir)
-      .then((r) => { if (!dead) { setRows(r.rows); setSource(r.source); } })
+      .then((r) => {
+        if (dead) return;
+        setRows(r.rows); setOrigin(r.origin); setAsOf(r.asOf); setQuoteTime(r.quoteTime);
+      })
       .catch(() => { if (!dead) setRows([]); })
       .finally(() => { if (!dead) setRowsLoading(false); });
     return () => { dead = true; };
-  }, [kind, dir, tick]);
+  }, [kind, dir, poll.tick]);
 
   useEffect(() => {
     let dead = false;
@@ -60,43 +57,39 @@ export default function BoardPage() {
     fetchBoardRows(kind, "in").then((r) => { if (!dead) setFlowIn(r.rows); }).catch(() => {});
     fetchBoardRows(kind, "out").then((r) => { if (!dead) setFlowOut(r.rows); }).catch(() => {});
     return () => { dead = true; };
-  }, [kind, tick]);
+  }, [kind, poll.tick]);
 
   useEffect(() => {
     if (!selected) { setDetail(null); return; }
-    // 腾讯兜底榜行（无资金读数）与同花顺兜底榜行（无东财 secid）：都没有东财资金明细可读——
-    // 直接空着，绝不落回演示数据
-    if (selected.fundsMissing || selected.breakdownMissing) { setDetail(null); return; }
+    // 腾讯兜底榜行（无资金读数）、同花顺兜底榜行（无东财资金明细）：没有可读的明细——直接空着，绝不落回演示数据。
+    // 通达信自算行不一样：净额那一列是自算的，但东财的「近 14 日历史」这条接口还活着（实测 688825 拿得到 14 天真数），
+    // 有 secid 就照取——不能因为榜单换源，把本来取到的明细也一并砍掉；两端口径不同源，下面按不同文案分开标注出身。
+    if (selected.fundsMissing || selected.breakdownMissing || (selected.mainSelfComputed && !selected.secid)) { setDetail(null); return; }
     let dead = false;
     fetchDetailFor(selected.secid || "", selected.name, selected.code)
       .then((r) => { if (!dead) { setDetail(r.detail); setDetailSource(r.source); } })
       .catch(() => { if (!dead) setDetail(null); });
     return () => { dead = true; };
-  }, [selected, tick]);
+  }, [selected, poll.tick]);
 
-  const sourceLabel = source === "real" ? "本机直连公开接口" : "演示数据（数据源暂不可用）";
+  const sourceLabel = origin ? ORIGIN_LABEL[origin] : "没取到：当前榜单无可用数据源";
+  const truncatedCount = rows.filter((r) => r.flowSampleTruncated).length;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-5">
-      <div className="flex items-end justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">数据看板</h1>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
             板块/个股资金流向榜与流向图 —— {sourceLabel}
+            {quoteTime && <span className="font-mono"> · 行情时刻 {quoteTime}</span>}
             {rows.length > 0 && rows.every((r) => r.fundsMissing) && "（当前为腾讯板块兜底榜：涨幅口径，无主力资金读数）"}
             {rows.length > 0 && rows.every((r) => r.breakdownMissing && !r.fundsMissing) && "（当前为同花顺板块资金流榜：东财断源时的独立兜底，净额=流入−流出，无净占比/超大单拆分）"}
+            {rows.length > 0 && rows.some((r) => r.mainSelfComputed) && `（主力净额为${MAIN_FLOW_BASIS}；与东财官方口径不会逐分不差）`}
+            {truncatedCount > 0 && `（其中 ${truncatedCount} 行逐笔样本未取满，已标样本截断）`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {!session.open && (
-            <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[12px] text-amber-300">
-              A股{session.label} · 自动刷新已暂停
-            </span>
-          )}
-          <span className="rounded-md border border-border px-2.5 py-1 font-mono text-[12px] text-muted-foreground">
-            刷新 #{tick} · 剩余 {left}s
-          </span>
-        </div>
+        <LiveStamp poll={poll} iso={asOf} />
       </div>
 
       <div className="rounded-xl border border-border bg-card">
@@ -133,7 +126,9 @@ export default function BoardPage() {
                   <th className="px-4 py-2.5 font-normal">排名</th>
                   <th className="px-2 py-2.5 font-normal">{kind === "stock" ? "股票" : "板块"}</th>
                   <th className="px-2 py-2.5 text-right font-normal">涨跌%</th>
-                  <th className="px-2 py-2.5 text-right font-normal">主力净额(亿)</th>
+                  <th className="px-2 py-2.5 text-right font-normal">
+                    主力净额(亿){rows.some((r) => r.mainSelfComputed) && <span className="ml-1 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] text-amber-300">自算</span>}
+                  </th>
                   <th className="px-2 py-2.5 text-right font-normal">占比%</th>
                   <th className="hidden px-4 py-2.5 text-right font-normal md:table-cell">{kind === "stock" ? "所属行业" : "领涨股"}</th>
                 </tr>
@@ -152,14 +147,20 @@ export default function BoardPage() {
                       {r.changePct >= 0 ? "+" : ""}{r.changePct.toFixed(2)}
                     </td>
                     <td className={"px-2 py-2.5 text-right font-mono tabular-nums " + (r.main >= 0 ? "text-rose-400" : "text-emerald-400")}>
-                      {r.fundsMissing ? <span className="text-muted-foreground">—</span> : `${r.main >= 0 ? "+" : ""}${r.main.toFixed(2)}`}
+                      {r.fundsMissing || !Number.isFinite(r.main)
+                        ? <span className="text-muted-foreground">—</span>
+                        : <>{r.main >= 0 ? "+" : ""}{r.main.toFixed(2)}{r.flowSampleTruncated && <span className="ml-1 text-[10px] text-amber-300">截断</span>}</>}
                     </td>
-                    <td className="px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r.fundsMissing || r.breakdownMissing ? "—" : r.ratio.toFixed(1)}</td>
-                    <td className="hidden px-4 py-2.5 text-right text-muted-foreground md:table-cell">{r.leader}</td>
+                    <td className="px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                      {r.fundsMissing || r.breakdownMissing || !Number.isFinite(r.ratio) ? "—" : r.ratio.toFixed(1)}
+                    </td>
+                    <td className="hidden px-4 py-2.5 text-right text-muted-foreground md:table-cell">{r.leader || "—"}</td>
                   </tr>
                 ))}
                 {!rows.length && !rowsLoading && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-[12.5px] text-muted-foreground">暂无数据</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-[12.5px] text-muted-foreground">
+                    没取到：{TABS.find((t) => t.key === kind)?.label}榜当前无可用数据源（不显示演示数据）
+                  </td></tr>
                 )}
                 {rowsLoading && (
                   <tr><td colSpan={6} className="px-4 py-8 text-center text-[12.5px] text-muted-foreground">加载中…</td></tr>
@@ -178,7 +179,15 @@ export default function BoardPage() {
                   </span>
                 </div>
                 <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                  {selected.code} · {selected.fundsMissing ? "腾讯兜底榜（涨幅口径，无资金明细读数）" : selected.breakdownMissing ? "同花顺兜底榜（净额口径，无东财资金明细）" : detailSource === "real" ? "真实资金数据" : "演示数据"}
+                  {selected.code} · {selected.fundsMissing
+                    ? "腾讯兜底榜（涨幅口径，无资金明细读数）"
+                    : selected.breakdownMissing
+                      ? "同花顺兜底榜（净额口径，无东财资金明细）"
+                      : selected.mainSelfComputed
+                        ? detailSource === "real"
+                          ? "当日净额=通达信逐笔自算 · 近 14 日=东财历史（两端不同源，口径不逐分不差）"
+                          : "通达信逐笔自算行 · 近 14 日明细没取到（东财断源，不画演示曲线）"
+                        : detailSource === "real" ? "真实资金数据" : "近 14 日明细没取到（东财断源，不画演示曲线）"}
                 </div>
 
                 {detail && detail.spark.length > 1 && (
@@ -229,7 +238,11 @@ export default function BoardPage() {
         </div>
       </div>
 
-      {showBubble && (flowIn.length > 0 && flowIn.every((r) => r.fundsMissing) && flowOut.every((r) => r.fundsMissing) ? (
+      {showBubble && (flowIn.length === 0 && flowOut.length === 0 ? (
+        <div className="rounded-xl border border-border bg-card p-4 text-[12px] text-muted-foreground">
+          资金流向图暂不可用：流入/流出两个方向都没取到榜单读数——不拿演示数据画流向。
+        </div>
+      ) : flowIn.length > 0 && flowIn.every((r) => r.fundsMissing) && flowOut.every((r) => r.fundsMissing) ? (
         <div className="rounded-xl border border-border bg-card p-4 text-[12px] text-muted-foreground">
           资金流向图暂不可用：当前榜单来自腾讯板块兜底榜（涨幅口径），不含主力净额读数——不拿占位 0 画流向、不编造线宽。
         </div>
@@ -238,6 +251,7 @@ export default function BoardPage() {
           <div className="mb-1 text-[13.5px] font-semibold">资金流向图 · 主力净额前 8 名</div>
           <div className="mb-2 text-[12px] text-muted-foreground">
             粒子流向 = 资金去向：红 = 主力净流入个股，绿 = 主力净流出个股；线宽与条长 = 净额大小。悬停查看明细，点击联动右侧资金明细。
+            {flowIn.some((r) => r.mainSelfComputed) && `本图为${ORIGIN_LABEL.tdx}。`}
           </div>
           <BubbleFlow inRows={flowIn} outRows={flowOut} onSelect={setSelected} />
         </div>

@@ -62,8 +62,11 @@ test("SectorsPage：同花顺出身行自报口径，净占比/超大单/大单�
 
 test("BoardPage：同花顺横幅、占比列断拆分、明细联动禁用（不落演示数据）", () => {
   assert.match(BPG, /当前为同花顺板块资金流榜：东财断源时的独立兜底，净额=流入−流出，无净占比\/超大单拆分/);
-  assert.match(BPG, /r\.fundsMissing \|\| r\.breakdownMissing \? "—"/, "占比列不画占位 0");
-  assert.match(BPG, /selected\.fundsMissing \|\| selected\.breakdownMissing\) \{ setDetail\(null\)/, "无东财 secid 就不拉明细，绝不落回演示数据");
+  // P15-R16 起占比列多一道「NaN 也遮」（通达信自算行拿不到当日成交额时占比是 NaN，不 toFixed 出 NaN 上屏）
+  assert.match(BPG, /r\.fundsMissing \|\| r\.breakdownMissing \|\| !Number\.isFinite\(r\.ratio\) \? "—"/, "占比列不画占位 0、也不把 NaN 摆上屏");
+  // R16 又加一棒：自算行只有推不出东财 secid 时才断开联动（有 secid 时东财近 14 日历史仍取真数）。
+  // 条件从此是「兜底两类 + 自算无 secid」，任一条件被去掉 = 那类无源行会去拉明细。
+  assert.match(BPG, /selected\.fundsMissing \|\| selected\.breakdownMissing \|\| \(selected\.mainSelfComputed && !selected\.secid\)\) \{ setDetail\(null\)/, "无东财 secid 就不拉明细，绝不落回演示数据");
   assert.match(BPG, /同花顺兜底榜（净额口径，无东财资金明细）/);
 });
 

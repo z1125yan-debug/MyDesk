@@ -160,7 +160,10 @@ test("页面不拿占位 0 装真数：资金列「—」、明细不落演示�
     "净占比/超大单/大单 三列：两家兜底都无拆分读数，全走「—」分支");
   assert.match(sec, /腾讯板块兜底榜（东财板块榜断源：涨幅口径，无主力资金读数）/);
   const board = readSrc("src/components/desk/pages/BoardPage.tsx");
-  assert.match(board, /if \(selected\.fundsMissing(?: \|\| selected\.breakdownMissing)?\) \{ setDetail\(null\); return; \}/, "点兜底榜行绝不落回演示明细（R7 起同花顺行同样不落演示明细）");
+  // P15-R16 再往宽处改一档：通达信自算行（mainSelfComputed）只有推不出东财 secid 时才禁用联动——
+  // 实测东财「近 14 日历史」那条接口还活着，取到的真明细不能因为榜单换源被一并砍掉（砍的是演示数据，不是真数）。
+  // 这一钉从此带四个条件：兜底两类 + 自算且无 secid。少了任一条件 = 又有哪类无源行被放进演示明细。
+  assert.match(board, /if \(selected\.fundsMissing \|\| selected\.breakdownMissing \|\| \(selected\.mainSelfComputed && !selected\.secid\)\) \{ setDetail\(null\); return; \}/, "点兜底榜/无源自算行绝不落回演示明细（R7 同花顺 + R16 自算行同口径，自算行有 secid 时取真明细）");
   assert.match(board, /不拿占位 0 画流向、不编造线宽/);
   assert.match(board, /腾讯板块兜底榜：涨幅口径，无主力资金读数/);
 });
