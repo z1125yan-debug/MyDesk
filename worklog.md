@@ -2080,3 +2080,17 @@ R13 验收追问定下的补法落地：网关（doubao2API 只吃最后一条 u
 - 3014+真网关 7861 实机三验：非流式 JSON「大盘情绪+600977 资金流」模型自取 3 步（快照/资金流/新闻），**-0.15321301 亿与东财工具原值一字不差**、行业信息没取到如实说「仍未取到」；流式 SSE 993 delta 零协议字漏出、running/ok 成对、done.fullText 干净；#/copilot 浏览器 DOM 验步骤条「系统预取/模型自取」标签与人话步骤齐全。
 - 未实地踩到（单测钉死）：超 2 轮上限、坏 JSON 降级的实机触发——真模型不可稳定逼出，边界靠 21 钉覆盖，如实报备。
 - 中途口径坑：协议卡曾寄居 model-config-core 并 import gateway-loop-core，破坏「该内核零 import、钉测直跑」的既有口径，已搬回纯核尾部；node ESM 不吃 @/ 别名与无扩展名相对导入，纯核互引用一律保持零依赖。
+
+## P15-R15 显示层黑话清理：工程记号只在渲染那一刻换人话
+
+### 口径与落点（用户拍板「验收通过」）
+页面上大量只有工程侧才认识的记号（英文状态枚举 LIVE/DEGRADED/MISSING、打分表与提示词版本号 p7.s7.technical.v1 / p6c-1、引擎文件名 probability.ts、上游接口名 eltdx/clist/push2、留档表名 radar_finding/research_report）对使用者是纯噪音。本轮定的口径是**只换读法、不换判定**：数据与判定层继续说英文（那是血缘与钉测的锚点），中文只出现在渲染那一刻。落点两条腿：① 新增 `src/lib/desk/plain-core.ts` 零依赖纯核（STATUS_ZH / STATUS_SHORT_ZH 两张表 + statusZh / statusShortZh / verZh / verTail / plainify / promptVerZh / mcpStatusZh），11 个消费方收口（SourceBadge、DecisionCard、ResearchPage、AgentPage、RadarPage、SettingsPage、CapabilityPanel、EventInterpretation 与 agent-run / agent-tools / research）；② 其余 60+ 文件是写死字面量就地改人话——eltdx 79 处清零（→通达信）、clist 37 处清零（→东财榜单接口）、research_report/event_interpretation 表名与「live 行/superseded」这类行文说法全部换中文读法。字段名一律不动：`as_of` 23 处、`data_status` 21 处改动前后计数一致。
+
+### 数据纪律的钉法
+认不出的记号原样透传，绝不猜、绝不编一个好看的中文（宁可露一个旧记号，也不翻出错名字）——statusZh("FOO_BAR")、verZh("p9.s7.magic.v1")、mcpStatusZh("something_new") 三条钉死；plainify 对不含工程记号的正常句子必须一字不动（原句可 diff 回去）。颜色判定继续看原始枚举串（SourceBadge 的 /LIVE/i 正则不许改锚中文），台账行的 data_status 出现中文值即判越界。capability-core 的 limitations 原文保留英文记号，页面经 plainify 换读法——存的是口径，看的才是读法。
+
+### 验收数字与实测证据
+- 1055/1046/0/9（R14 基线 1037 之上 +18 全为本轮新钉 `tests/quant/p15-r15-plain-ui.test.ts`：两表键集一致/枚举读法/英文头中文尾只留尾/认不出原样/空值给空串/长词优先不被拆/五类版本号读法/整句清洗一次换净/正常句一字不动/雷达类型与新鲜度读法/提示词编号/MCP 运行态/零 import/收口在显示层/判定层不吞状态），tsc 0、build 过、eslint 0 新增、依赖 diff 空。
+- 3014 实机（#/research）：状态胶囊出「AI 解释」、读数位出「未取到」、留档位出「研究报告留档 / 读取研究报告留档（market|2026-09-23…）」，页面已无裸露英文枚举。
+- 提交前补的两处洞，如实报备：① plain-core 头注写明「钉在 p15-r15-plain-ui.test.ts」，但该文件在磁盘上不存在、全量测试停在 1037 未增（等于新内核零钉测），本轮补齐 18 钉后才提交；② `worklog.md` 连同本轮改动一起从磁盘上消失（无 stash、无副本），已按 HEAD 的 R14 版恢复，R15 条目为本轮重写。
+- 未收口边界：push2、radar_finding、factor_test、computeSentiment 等仍留在注释与机器标识符（映射表的键名、capability id）里——那是键不是文案，属应留；数据看板 BoardPage 在个股/概念/地域三榜断源时仍回退演示数据（半导体 +3.20% 那类假行），用户已拍板下一轮改接实时行情；东财恢复后需回看读法是否仍与真数口径对得上。
