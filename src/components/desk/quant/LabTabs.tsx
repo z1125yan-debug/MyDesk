@@ -224,7 +224,7 @@ export function BacktestTab() {
               <option value="mcp">mcp (china-stock-mcp)</option>
             </select>
           </label>
-          <label className="text-[11.5px] text-muted-foreground">TopN {topN}
+          <label className="text-[11.5px] text-muted-foreground">取前 {topN} 只
             <input type="range" min={3} max={30} value={topN} onChange={(e) => setTopN(+e.target.value)} className="mt-2 w-full" />
           </label>
           <label className="text-[11.5px] text-muted-foreground">调仓周期 {rebalance} 日
@@ -334,7 +334,7 @@ export function SelectionTab() {
               <input type="date" className={inputCls + " mt-1 w-full"} value={asOf} onChange={(e) => setAsOf(e.target.value)} />
             </label>
           )}
-          <label className="text-[11.5px] text-muted-foreground">TopN {topN}
+          <label className="text-[11.5px] text-muted-foreground">取前 {topN} 只
             <input type="range" min={3} max={30} value={topN} onChange={(e) => setTopN(+e.target.value)} className="mt-2 w-full" />
           </label>
           {replay && (

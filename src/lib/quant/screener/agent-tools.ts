@@ -28,6 +28,8 @@ import { computeLimitUp } from "./limitup";
 import { computeSentiment } from "./sentiment";
 import { discoverThemes } from "./themes";
 import { loadInterpretations } from "./event-interpret";
+// P15-R15：只借人话读法核翻状态枚举的显示写法；判定与数据不经这里（同文件口径见 plain-core 头注）。
+import { statusShortZh } from "@/lib/desk/plain-core";
 import { eventDateBuckets, radarDateBuckets, readEventDay, readRadarDay } from "./history";
 import { parseJsonColumn, parseStateFilter } from "./history-core.ts";
 import { listSnapshotRows, snapshotDateRows } from "./snapshot";
@@ -131,18 +133,18 @@ function quoteSummary(rows: { symbol: string; name?: string; price: number; chan
 }
 
 async function quotesViaGateway(symbols: string[], ms: number): Promise<ToolObservation> {
-  const gw = await timed(ms, "eltdx 网关报价", () => tdxQuotes(symbols));
+  const gw = await timed(ms, "通达信网关报价", () => tdxQuotes(symbols));
   const hits = symbols.map((s) => gw.value?.get(s)).filter((r): r is TdxQuote => !!r);
   if (hits.length) {
     return okObs({
-      summary: clipText(`${hits.map((r) => `${r.symbol} 现价 ${n1(r.price)}（${signed(r.changePct)}%）成交 ${n1(r.amountYi)}亿`).join("；")}（eltdx 网关快照：含内外盘/振幅口径，非集合竞价阶段为最新一笔）`),
+      summary: clipText(`${hits.map((r) => `${r.symbol} 现价 ${n1(r.price)}（${signed(r.changePct)}%）成交 ${n1(r.amountYi)}亿`).join("；")}（通达信网关快照：含内外盘/振幅口径，非集合竞价阶段为最新一笔）`),
       payload: {
         quotes: capRows(hits.map((r) => ({
           symbol: r.symbol, price: r.price, changePct: r.changePct, high: r.high, low: r.low,
           prevClose: r.prevClose, amountYi: r.amountYi, insideHand: r.insideHand ?? null, outerHand: r.outerHand ?? null,
         }))),
       },
-      source: "eltdx 本机网关 quotes.get_snapshots", as_of: shanghaiStamp(), data_status: "REAL",
+      source: "通达信网关快照", as_of: shanghaiStamp(), data_status: "REAL",
     });
   }
   // 兜底：腾讯报价。值是真的，但网关独有字段没有 ⇒ 分层降为 DEGRADED 并写明从哪降级
@@ -150,28 +152,28 @@ async function quotesViaGateway(symbols: string[], ms: number): Promise<ToolObse
   const rows = tc.value ?? [];
   if (rows.length) {
     return okObs({
-      summary: clipText(`${quoteSummary(rows)}（eltdx 网关本次不可用，走腾讯报价兜底：价是真的，五档/内外盘这类网关字段本次没有）`),
+      summary: clipText(`${quoteSummary(rows)}（通达信网关本次不可用，走腾讯报价兜底：价是真的，五档/内外盘这类网关字段本次没有）`),
       payload: {
         quotes: capRows(rows.map((r) => ({
           symbol: r.symbol, name: r.name, price: r.price, changePct: r.changePct,
           high: r.high ?? null, low: r.low ?? null, prevClose: r.prevClose ?? null, amountYi: r.amountYi ?? null,
         }))),
       },
-      source: "腾讯 qt.gtimg.cn（eltdx 兜底）", as_of: shanghaiStamp(), data_status: "DEGRADED",
-      degraded_from: "eltdx 网关报价", notes: [`网关侧原因：${gw.error ?? "未取得数据"}`],
+      source: "腾讯行情（通达信网关兜底）", as_of: shanghaiStamp(), data_status: "DEGRADED",
+      degraded_from: "通达信网关报价", notes: [`网关侧原因：${gw.error ?? "未取得数据"}`],
     });
   }
-  return upstreamNull("报价", "eltdx 网关与腾讯两条报价通道", tc.timed_out || gw.timed_out, tc.error ?? gw.error ?? "两条报价通道都没有返回");
+  return upstreamNull("报价", "通达信网关与腾讯两条报价通道", tc.timed_out || gw.timed_out, tc.error ?? gw.error ?? "两条报价通道都没有返回");
 }
 
 async function indexQuotes(symbols: string[], ms: number): Promise<ToolObservation> {
   const r = await timed(ms, "腾讯指数报价", async () => (await fetchQuotesReal(symbols)).filter((q): q is RealQuote => !!q && typeof q.price === "number"));
   const rows = r.value ?? [];
-  if (!rows.length) return upstreamNull("指数报价", "腾讯 qt.gtimg.cn / mkline", r.timed_out, r.error);
+  if (!rows.length) return upstreamNull("指数报价", "腾讯行情", r.timed_out, r.error);
   return okObs({
     summary: clipText(quoteSummary(rows)),
     payload: { indexes: capRows(rows.map((q) => ({ symbol: q.symbol, name: q.name, price: q.price, changePct: q.changePct }))) },
-    source: "腾讯 qt.gtimg.cn", as_of: shanghaiStamp(), data_status: "REAL",
+    source: "腾讯行情", as_of: shanghaiStamp(), data_status: "REAL",
   });
 }
 
@@ -191,34 +193,34 @@ function barsObs(symbol: string, tf: string, rows: BarRow[], source: string, as_
 
 async function barsOf(symbol: string, tf: string, lookback: number, asOf: string, ms: number): Promise<ToolObservation> {
   if (tf !== "day") {
-    // 分钟线只有网关 + 腾讯两条路（hybrid 层只做日线）
-    const gw = await timed(ms, `eltdx ${tf} 线`, async () => {
+    // 分钟线只有网关 + 腾讯两条路（混合取数层只做日线）
+    const gw = await timed(ms, `通达信网关 ${tf} 线`, async () => {
       const rows = await tdxKlines(symbol, tf, Math.min(500, Math.max(5, lookback)));
       return rows ? rows.map((r) => ({ date: r.date, o: r.o, h: r.h, l: r.l, c: r.c })) : null;
     });
     const mine = (gw.value ?? []).slice(-lookback);
-    if (mine.length) return barsObs(symbol, tf, mine, `eltdx 本机网关 ${tf} 线`, shanghaiStamp(), null);
+    if (mine.length) return barsObs(symbol, tf, mine, `通达信网关本机 ${tf} 线`, shanghaiStamp(), null);
     const tc = await timed(ms, `腾讯 ${tf} 线兜底`, () => fetchKlinesReal(symbol, tf, lookback));
     const tcRows = (tc.value ?? []).slice(-lookback);
-    if (tcRows.length) return barsObs(symbol, tf, tcRows, `腾讯 ifzq ${tf} 线（eltdx 兜底）`, shanghaiStamp(), "eltdx 网关");
-    return upstreamNull(`${tf} 线`, "eltdx 网关与腾讯", tc.timed_out || gw.timed_out, tc.error ?? gw.error ?? "两条通道都没有返回");
+    if (tcRows.length) return barsObs(symbol, tf, tcRows, `腾讯行情 ${tf} 线（通达信网关兜底）`, shanghaiStamp(), "通达信网关");
+    return upstreamNull(`${tf} 线`, "通达信网关与腾讯", tc.timed_out || gw.timed_out, tc.error ?? gw.error ?? "两条通道都没有返回");
   }
-  const r = await timed(ms, "日K（eltdx 优先、腾讯兜底）", async () => fetchBarsHybridTracked([symbol], asOf, lookback));
+  const r = await timed(ms, "日K（通达信网关优先、腾讯兜底）", async () => fetchBarsHybridTracked([symbol], asOf, lookback));
   const res = r.value;
-  if (r.timed_out) return failedObs(r.error ?? "日K 超时", "eltdx 日K → 腾讯兜底（hybrid 层）", { timed_out: true });
+  if (r.timed_out) return failedObs(r.error ?? "日K 超时", "通达信网关日K → 腾讯兜底（混合取数层）", { timed_out: true });
   const out = res?.bars.get(symbol) ?? [];
   const outcome = res?.outcomes[0] ?? null;
   if (!out.length) {
-    // hybrid 层分得开「两条通道都没取到」与「取到了但截断后为空」：照它的结论说，不自己判
+    // 混合取数层分得开「两条通道都没取到」与「取到了但截断后为空」：照它的结论说，不自己判
     return failedObs(
-      `日K 未取得任何一根（${symbol}，asOf ${asOf}，请求 ${lookback} 根）：${outcome?.reason ?? "hybrid 层没有返回该代码的任何K线"}。这是取数结果，不等于「该股票没有历史」`,
-      "eltdx 日K → 腾讯兜底（hybrid 层）",
+      `日K 未取得任何一根（${symbol}，asOf ${asOf}，请求 ${lookback} 根）：${outcome?.reason ?? "混合取数层没有返回该代码的任何K线"}。这是取数结果，不等于「该股票没有历史」`,
+      "通达信网关日K → 腾讯兜底（混合取数层）",
     );
   }
-  const degraded = outcome?.channel === "tencent" ? "eltdx 日K" : null;
+  const degraded = outcome?.channel === "tencent" ? "通达信网关日K" : null;
   return barsObs(
     symbol, "day", out as BarRow[],
-    outcome?.channel === "tencent" ? "腾讯 ifzq 日K（eltdx 兜底）" : `eltdx 日K（${outcome?.channel ?? "hybrid"} 通道）`,
+    outcome?.channel === "tencent" ? "腾讯行情日K（通达信网关兜底）" : `通达信网关日K（${outcome?.channel ?? "混合"} 通道）`,
     dayOf(out[out.length - 1].date), degraded,
   );
 }
@@ -231,9 +233,9 @@ async function boardMembers(boardCode: string, kind: "industry" | "concept", ms:
     return provider.listUniverse({ kind, boardCode }, shanghaiDate());
   });
   const rows = r.value ?? [];
-  if (r.timed_out) return failedObs(r.error ?? "成分名单超时", `东财 clist b:${boardCode}`, { timed_out: true });
+  if (r.timed_out) return failedObs(r.error ?? "成分名单超时", `东财榜单接口 b:${boardCode}`, { timed_out: true });
   if (!rows.length) {
-    return emptyObs(`板块 ${boardCode} 本次没有返回成分行（该板块代码不在当日榜单过滤结果里，或当日无行情）：这是空结果，不是「该板块没有股票」`, `东财 clist b:${boardCode}`);
+    return emptyObs(`板块 ${boardCode} 本次没有返回成分行（该板块代码不在当日榜单过滤结果里，或当日无行情）：这是空结果，不是「该板块没有股票」`, `东财榜单接口 b:${boardCode}`);
   }
   const withFlow = rows.filter((m) => typeof m.mainNet === "number");
   const top = [...rows].sort((a, b) => (b.mainNet ?? 0) - (a.mainNet ?? 0)).slice(0, 10);
@@ -243,7 +245,7 @@ async function boardMembers(boardCode: string, kind: "industry" | "concept", ms:
       board_code: boardCode, kind, members_count: rows.length,
       members: capRows(top.map((m) => ({ symbol: m.symbol, name: m.name, changePct: m.changePct ?? null, mainNetYi: yi(m.mainNet), industry: m.industry ?? null })), 12),
     },
-    source: `东财 clist b:${boardCode}`, as_of: shanghaiStamp(), data_status: "REAL",
+    source: `东财榜单接口 b:${boardCode}`, as_of: shanghaiStamp(), data_status: "REAL",
   });
 }
 
@@ -253,9 +255,9 @@ async function fullUniverse(ms: number): Promise<ToolObservation> {
     return provider.listUniverse({ kind: "all" }, shanghaiDate());
   });
   const rows = r.value ?? [];
-  if (r.timed_out) return failedObs(r.error ?? "全A快照超时", "东财 push2 clist（全A）", { timed_out: true });
+  if (r.timed_out) return failedObs(r.error ?? "全A快照超时", "东财榜单接口（全A）", { timed_out: true });
   if (!rows.length) {
-    return upstreamNull("全A快照", "东财 push2 clist", false, "全A快照返回 0 行：该接口按分页取全市场，0 行意味着没取到（不存在「今天全市场 0 只股票」），按失败处理");
+    return upstreamNull("全A快照", "东财榜单接口", false, "全A快照返回 0 行：该接口按分页取全市场，0 行意味着没取到（不存在「今天全市场 0 只股票」），按失败处理");
   }
   const priced = rows.filter((m) => typeof m.price === "number");
   const adv = priced.filter((m) => (m.changePct ?? 0) > 0).length;
@@ -269,7 +271,7 @@ async function fullUniverse(ms: number): Promise<ToolObservation> {
       top_main_net: capRows(byMain.map((m) => ({ symbol: m.symbol, name: m.name, changePct: m.changePct ?? null, mainNetYi: yi(m.mainNet), industry: m.industry ?? null })), 12),
       top_change: capRows(byPct.map((m) => ({ symbol: m.symbol, name: m.name, changePct: m.changePct ?? null, turnover: m.turnover ?? null })), 10),
     },
-    source: "东财 push2 clist 全A快照（emProvider 5 分钟缓存）", as_of: shanghaiStamp(), data_status: "REAL",
+    source: "东财榜单接口 全A快照（em 数据源 5 分钟缓存）", as_of: shanghaiStamp(), data_status: "REAL",
   });
 }
 
@@ -310,7 +312,7 @@ async function riskObs(ms: number): Promise<ToolObservation> {
   // 永远进不了台账 refs——这就是 P6-D 那次「同一台机器 5 分钟内相似日样本 113→225，事后却无法从库里重建窗口」的根因。
   const envWindow = hist?.period ? `，样本区间 ${hist.period.start}→${hist.period.end}` : "，样本区间未给出（引擎没返回 period，不猜窗口）";
   return okObs({
-    summary: clipText(`风险等级「${s.risk.level}」（触发：${s.risk.triggers?.length ? s.risk.triggers.join("、") : "本次无指标越线；空不等于安全，只是没触发这套阈值"}）；涨跌家数 ${s.advancers}/${s.decliners}；炸板率 ${s.break_rate === null ? "算不出（触板 0）" : `${n1(s.break_rate)}%`}；${hist ? `上证相似环境后续统计：样本 ${hist.sample_size} 个${hz ? `，${hz.h}日胜率 ${n1(hz.win_rate)}%（HISTORICAL，不是今天的预测）` : "，各期限胜率都算不出"}${envWindow}${hist.sample_ok ? "" : "；样本不足 30：仅供参考"}` : "本次没有相似日历史参照"}`),
+    summary: clipText(`风险等级「${s.risk.level}」（触发：${s.risk.triggers?.length ? s.risk.triggers.join("、") : "本次无指标越线；空不等于安全，只是没触发这套阈值"}）；涨跌家数 ${s.advancers}/${s.decliners}；炸板率 ${s.break_rate === null ? "算不出（触板 0）" : `${n1(s.break_rate)}%`}；${hist ? `上证相似环境后续统计：样本 ${hist.sample_size} 个${hz ? `，${hz.h}日胜率 ${n1(hz.win_rate)}%（历史留档读数，不是今天的预测）` : "，各期限胜率都算不出"}${envWindow}${hist.sample_ok ? "" : "；样本不足 30：仅供参考"}` : "本次没有相似日历史参照"}`),
     payload: {
       trade_date: s.trade_date, level: s.risk.level, triggers: s.risk.triggers ?? [], live: s.live,
       advancers: s.advancers, decliners: s.decliners, break_rate: s.break_rate, main_net_sum_yi: s.main_net_sum_yi,
@@ -399,6 +401,8 @@ const eventPayload = (rows: Record<string, unknown>[]): Record<string, unknown>[
 // ---------- 快照留档行 → 带口径的 payload ----------
 
 const SNAPSHOT_TABLE: Record<SnapshotKind, string> = { risk: "risk_snapshot", themes: "theme_snapshot", probability: "probability_snapshot" };
+// P15-R15：表名留在 payload（机器可读字段），写给页面/台账看的一律用人话名。
+const SNAPSHOT_ZH: Record<SnapshotKind, string> = { risk: "风险", themes: "主线", probability: "条件概率" };
 const SNAPSHOT_EMPTY_NOTE: Record<SnapshotKind, string> = {
   risk: "风险留档只在人工点「留档今天」时产生（写操作，Agent 不做），没点的那天就没有行",
   themes: "主线留档同上：留档不是自动的，没有行就是那天没留过档，不是「那天没有主线」",
@@ -437,26 +441,26 @@ function snapshotSummary(kind: SnapshotKind, latest: Record<string, unknown>, da
     return `概率留档（基准日 ${latest.tradeDate}${latest.tradeDateIsHistorical ? "，历史回放" : ""}）：${hs}。这是 historical/statistical，不等于今天上涨的概率`;
   }
   if (kind === "risk") {
-    return `风险留档：${latest.tradeDate} 等级「${latest.level}」（留档时刻 ${latest.computedAt}，当时 live=${latest.live}；炸板率 ${latest.breakRate === null ? "当时算不出" : `${n1(latest.breakRate)}%`}）。留档是那一刻的快照，不是实时`;
+    return `风险留档：${latest.tradeDate} 等级「${latest.level}」（留档时刻 ${latest.computedAt}，当时${latest.live === true ? "是实时读数" : "不是实时读数"}；炸板率 ${latest.breakRate === null ? "当时算不出" : `${n1(latest.breakRate)}%`}）。留档是那一刻的快照，不是实时`;
   }
   return `主线留档：${latest.tradeDate} 主线 ${latest.mainCount}／次主线 ${latest.subCount}／轮动 ${latest.rotationCount}／观察 ${latest.watchCount}（留档时刻 ${latest.computedAt}）`;
 }
 
 async function snapshotObs(kind: SnapshotKind, date: string, ms: number): Promise<ToolObservation> {
-  const r = await timed(ms, `${kind} 留档读取`, () => Promise.all([listSnapshotRows(db, kind, date, 5), snapshotDateRows(db, kind)]));
+  const r = await timed(ms, `${SNAPSHOT_ZH[kind]}留档读取`, () => Promise.all([listSnapshotRows(db, kind, date, 5), snapshotDateRows(db, kind)]));
   const found = r.value;
-  if (!found) return failedObs(r.error ?? `读取 ${SNAPSHOT_TABLE[kind]} 失败`, `${kind}_snapshot 表`, { timed_out: r.timed_out });
+  if (!found) return failedObs(r.error ?? `读取${SNAPSHOT_ZH[kind]}留档失败`, `${SNAPSHOT_ZH[kind]}每日留档`, { timed_out: r.timed_out });
   const [rows, days] = found;
   const daySet = [...new Set(days.map((d) => d.tradeDate))].sort().reverse();
   const notes = [`留档不是自动的：有档的交易日 ${daySet.length} 个${daySet.length ? `（最近 ${daySet.slice(0, 6).join("、")}）` : ""}`];
   if (!rows.length) {
-    return emptyObs(`${kind} 留档在 ${date || "最近"} 没有行：${SNAPSHOT_EMPTY_NOTE[kind]}`, `${kind}_snapshot 表`, notes);
+    return emptyObs(`${SNAPSHOT_ZH[kind]}留档在 ${date || "最近"} 没有行：${SNAPSHOT_EMPTY_NOTE[kind]}`, `${SNAPSHOT_ZH[kind]}每日留档`, notes);
   }
   const latest = rows[0] as Record<string, unknown>;
   return okObs({
     summary: clipText(`${snapshotSummary(kind, latest, daySet.length)}。${notes[0]}`),
     payload: { table: SNAPSHOT_TABLE[kind], rows_count: rows.length, days_covered: daySet.length, rows: capRows(snapshotPayload(kind, rows as Record<string, unknown>[]), 5) },
-    source: `${kind}_snapshot 表（由 ${kind} 引擎产出后留档）`,
+    source: `${SNAPSHOT_ZH[kind]}每日留档（由${SNAPSHOT_ZH[kind]}引擎产出后留档）`,
     as_of: String(latest.computedAt ?? latest.tradeDate ?? ""), data_status: "SNAPSHOT", notes,
   });
 }
@@ -476,31 +480,31 @@ export const DISPATCHED_EXECUTORS = [
 
 async function dispatch(executor: string | null, toolName: string, p: Params, ms: number): Promise<ToolObservation> {
   switch (executor) {
-    // ---- 本机 eltdx 网关 ----
+    // ---- 本机 通达信网关 ----
     case "gateway.quotes":
       return toolName === "index_benchmark" ? indexQuotes(list(p, "symbols").length ? list(p, "symbols") : INDEX_DEFAULT, ms) : quotesViaGateway(list(p, "symbols"), ms);
     case "gateway.bars":
       return barsOf(str(p, "symbol"), str(p, "tf", "day"), num(p, "lookback", 60), str(p, "asOf", shanghaiDate()) || shanghaiDate(), ms);
     case "gateway.depth": {
       const symbol = str(p, "symbol");
-      const r = await timed(ms, "eltdx 五档", () => tdxDepth([symbol]));
+      const r = await timed(ms, "通达信五档", () => tdxDepth([symbol]));
       const d = r.value?.get(symbol);
-      if (!d) return failedObs(r.error ?? `eltdx 网关没有返回 ${symbol} 的五档（网关未运行或该代码无快照）。五档只有这一条路，不用别的口径冒充`, "eltdx quotes.get_depth", { timed_out: r.timed_out });
+      if (!d) return failedObs(r.error ?? `通达信网关没有返回 ${symbol} 的五档（网关未运行或该代码无快照）。五档只有这一条路，不用别的口径冒充`, "通达信五档盘口", { timed_out: r.timed_out });
       return okObs({
         summary: clipText(`${symbol} 五档：买一 ${n1(d.bids[0]?.price)}×${d.bids[0]?.volume ?? "null"}手…卖一 ${n1(d.asks[0]?.price)}×${d.asks[0]?.volume ?? "null"}手；内盘 ${d.insideHand}手／外盘 ${d.outerHand}手（现手 ${d.activeHand}）。盘口是瞬时值，两次抓取可以不同`),
         payload: { symbol, last_price: d.lastPrice, bids: d.bids.slice(0, 5), asks: d.asks.slice(0, 5), inside_hand: d.insideHand, outer_hand: d.outerHand },
-        source: "eltdx quotes.get_depth", as_of: shanghaiStamp(), data_status: "REAL",
+        source: "通达信五档盘口", as_of: shanghaiStamp(), data_status: "REAL",
       });
     }
     case "gateway.trades-money": {
       const symbol = str(p, "symbol");
-      const r = await timed(ms, "eltdx 逐笔分档代理", () => tdxTradesMoney(symbol));
+      const r = await timed(ms, "通达信逐笔分档代理", () => tdxTradesMoney(symbol));
       const m = r.value;
-      if (!m) return failedObs(r.error ?? `未取得 ${symbol} 的内外盘成交额（依赖网关报价的全日累计字段，缺字段时本层不折算）。这是代理口径，不是交易所官方逐笔`, "eltdx quotes.get_snapshots（内外盘）", { timed_out: r.timed_out });
+      if (!m) return failedObs(r.error ?? `未取得 ${symbol} 的内外盘成交额（依赖网关报价的全日累计字段，缺字段时本层不折算）。这是代理口径，不是交易所官方逐笔`, "通达信网关快照·内外盘", { timed_out: r.timed_out });
       return okObs({
         summary: clipText(`${symbol} 主动买 ${n1(m.buyAmountYi)}亿／主动卖 ${n1(m.sellAmountYi)}亿／净额 ${signed(m.netYi)}亿（${m.basis}；代理口径，非官方逐笔成交）`),
         payload: { symbol, buy_yi: Math.round(m.buyAmountYi * 100) / 100, sell_yi: Math.round(m.sellAmountYi * 100) / 100, net_yi: Math.round(m.netYi * 100) / 100, basis: m.basis },
-        source: "eltdx 内外盘 × 成交均价（代理口径）", as_of: shanghaiStamp(), data_status: "DERIVED",
+        source: "通达信内外盘 × 成交均价（代理口径）", as_of: shanghaiStamp(), data_status: "DERIVED",
       });
     }
     // ---- 东财直连 ----
@@ -515,10 +519,10 @@ async function dispatch(executor: string | null, toolName: string, p: Params, ms
       const r = await timed(ms, "板块榜（东财+同花顺兜底）", () => fetchBoardRowsRescued(kind, dir, num(p, "size", 20)));
       const rows = r.value?.rows ?? null;
       const fromThs = r.value?.fromThs ?? false;
-      if (!rows) return upstreamNull("板块榜", "东财 push2 clist（同花顺兜底亦无返回）", r.timed_out, r.error ?? "上游无返回");
-      if (!rows) return upstreamNull("板块榜", "东财 push2 clist（同花顺兜底亦无返回）", r.timed_out, r.error);
-      if (!rows.length) return emptyObs(`板块榜 ${kind}/${dir} 本次 0 行：${dir === "in" ? "没有主力净额为正的板块" : "没有主力净额为负的板块"}（该榜按主力净额正负过滤，0 行是真实为空，不是取数失败）`, fromThs ? "同花顺板块资金流榜（净额口径）" : "东财 clist 板块榜");
-      const boardSource = fromThs ? "同花顺板块资金流榜（东财断源兜底，本机直连；净额=流入−流出）" : "东财 clist 板块榜（本机直连）";
+      if (!rows) return upstreamNull("板块榜", "东财榜单接口（同花顺兜底亦无返回）", r.timed_out, r.error ?? "上游无返回");
+      if (!rows) return upstreamNull("板块榜", "东财榜单接口（同花顺兜底亦无返回）", r.timed_out, r.error);
+      if (!rows.length) return emptyObs(`板块榜 ${kind}/${dir} 本次 0 行：${dir === "in" ? "没有主力净额为正的板块" : "没有主力净额为负的板块"}（该榜按主力净额正负过滤，0 行是真实为空，不是取数失败）`, fromThs ? "同花顺板块资金流榜（净额口径）" : "东财榜单接口 板块榜");
+      const boardSource = fromThs ? "同花顺板块资金流榜（东财断源兜底，本机直连；净额=流入−流出）" : "东财榜单接口 板块榜（本机直连）";
       return okObs({
         summary: clipText(`${kind === "industry" ? "行业" : "概念"}板块${dir === "in" ? "净流入" : "净流出"}榜 ${rows.length} 条：${rows.slice(0, 5).map((b) => `${b.name} ${signed(b.main)}亿/${signed(b.changePct)}%（净占比 ${b.fundsMissing || b.breakdownMissing ? "无该口径读数" : `${n1(b.ratio)}%`}，领涨 ${b.leader || "未记录"}）`).join("；")}${fromThs ? "；同花顺榜只有净额口径，无净占比/超大单/大单拆分" : ""}`),
         payload: { boards: capRows(rows.map((b) => ({ board_code: b.code, name: b.name, changePct: b.changePct, mainYi: b.fundsMissing ? null : b.main, ratio: b.fundsMissing || b.breakdownMissing ? null : b.ratio, leader: b.leader })), 12) },
@@ -530,16 +534,16 @@ async function dispatch(executor: string | null, toolName: string, p: Params, ms
     case "em.fflow-daykline": {
       const symbol = str(p, "symbol");
       const secid = symbolToSecid(symbol);
-      if (!secid) return failedObs(`代码 ${symbol} 无法转成东财 secid（市场段/后缀不认识）：这是入参问题，不是该股票没有资金流数据`, "东财 push2his fflow/daykline");
+      if (!secid) return failedObs(`代码 ${symbol} 无法转成东财板块代码（市场段/后缀不认识）：这是入参问题，不是该股票没有资金流数据`, "东财主力资金日明细");
       const r = await timed(ms, "个股主力资金日K", () => fetchDetailReal(secid));
       const days = r.value?.days ?? [];
-      if (r.timed_out) return failedObs(r.error ?? "主力资金日K 超时", "东财 push2his fflow/daykline（新浪备胎同窗未返回）", { timed_out: true });
-      if (!days.length) return emptyObs(`${symbol} 的主力资金日K本次没有返回任何一天（东财 fflow 与新浪备胎都没给数；部分新股/停牌股本来无数据）：不补 0，也不拿别的股票顶上`, "东财 fflow/daykline + 新浪 MoneyFlow");
+      if (r.timed_out) return failedObs(r.error ?? "主力资金日K 超时", "东财主力资金日明细（新浪备胎同窗未返回）", { timed_out: true });
+      if (!days.length) return emptyObs(`${symbol} 的主力资金日K本次没有返回任何一天（东财主力资金与新浪备胎都没给数；部分新股/停牌股本来无数据）：不补 0，也不拿别的股票顶上`, "东财主力资金日明细 + 新浪资金流向");
       const last = days[days.length - 1];
       return okObs({
-        summary: clipText(`${symbol} 近 ${days.length} 日主力净额：${days.slice(-5).map((d) => `${d.date} ${signed(d.value)}亿`).join("；")}（最新 ${last.date} ${signed(last.value)}亿）${r.value?.source === "sina" ? "［新浪日度净额口径：东财 fflow 断源时的备胎，与东财 f62 不完全等价］" : ""}`),
+        summary: clipText(`${symbol} 近 ${days.length} 日主力净额：${days.slice(-5).map((d) => `${d.date} ${signed(d.value)}亿`).join("；")}（最新 ${last.date} ${signed(last.value)}亿）${r.value?.source === "sina" ? "［新浪日度净额口径：东财主力资金断源时的备胎，与东财主力净额 不完全等价］" : ""}`),
         payload: { symbol, days_count: days.length, last_date: last.date, todayYi: last.value, days: days.slice(-10) },
-        source: r.value?.source === "sina" ? "新浪 MoneyFlow 日度净额（东财 push2his 断源备胎）" : "东财 fflow/daykline（本机直连）",
+        source: r.value?.source === "sina" ? "新浪资金流向日度净额（东财断源备胎）" : "东财主力资金日明细（本机直连）",
         as_of: `${last.date} 收盘后`, data_status: "REAL",
       });
     }
@@ -584,7 +588,7 @@ async function dispatch(executor: string | null, toolName: string, p: Params, ms
       return okObs({
         summary: clipText(`最近 ${dates.length} 个真实交易日（取自上证指数日K实际存在的日子）：${dates.slice(0, 6).join("、")}${dates.length > 6 ? " …" : ""}；最新交易日 ${dates[0]}。没有独立节假日表，取不到日K 时返回空而不是猜哪天开市`),
         payload: { dates: dates.slice(0, 30), dates_count: dates.length, last_trade_date: dates[0], as_of_trade_date: today },
-        source: "上证指数日K（hybrid 层：eltdx 优先、腾讯兜底）", as_of: `${dates[0]} 收盘后`, data_status: "HISTORICAL",
+        source: "上证指数日K（混合取数层：通达信网关优先、腾讯兜底）", as_of: `${dates[0]} 收盘后`, data_status: "HISTORICAL",
       });
     }
     case "engine.health": {
@@ -597,16 +601,16 @@ async function dispatch(executor: string | null, toolName: string, p: Params, ms
           coverage.push({ id, error: String((e as Error)?.message ?? e).slice(0, 120) });
         }
       }
-      const gw = await timed(3000, "eltdx 探活", () => tdxQuotes(["000001.SH"]));
+      const gw = await timed(3000, "通达信网关探活", () => tdxQuotes(["000001.SH"]));
       const servers = listServers();
       const tools = listAllTools();
       return okObs({
-        summary: clipText(`Provider 注册：${coverage.map((c) => `${c.id}${c.error ? "=注册失败" : ""}${c.configured === false ? "=未配置" : ""}`).join("、")}；eltdx 网关${gw.value && gw.value.size ? "在线" : `不可用（${gw.error ?? "无返回"}）`}；MCP ${servers.length} 个服务器/${tools.length} 个工具${tools.length ? "" : "（不可用：本层不会假装调用成功）"}`),
+        summary: clipText(`数据源注册：${coverage.map((c) => `${c.id}${c.error ? "=注册失败" : ""}${c.configured === false ? "=未配置" : ""}`).join("、")}；通达信网关${gw.value && gw.value.size ? "在线" : `不可用（${gw.error ?? "无返回"}）`}；MCP ${servers.length} 个服务器/${tools.length} 个工具${tools.length ? "" : "（不可用：本层不会假装调用成功）"}`),
         payload: {
           providers: coverage, gateway_up: !!(gw.value && gw.value.size), gateway_error: gw.error ?? null,
           mcp_servers: servers.length, mcp_ready: servers.filter((s) => s.status === "ready").length, mcp_tools: tools.length,
         },
-        source: "Provider 注册表 + eltdx /rpc 探活 + MCP 运行态", as_of: shanghaiStamp(), data_status: "REAL",
+        source: "数据源注册表 + 通达信网关探活 + MCP 运行态", as_of: shanghaiStamp(), data_status: "REAL",
       });
     }
     // ---- 本地库（只读） ----
@@ -650,7 +654,7 @@ async function dispatch(executor: string | null, toolName: string, p: Params, ms
           event_id: String(r.eventId ?? ""), trade_date: dayOf(r.asOf), title: r.title, status: r.status,
           model: String(r.model ?? ""), stale: r.stale === true, orphan: r.orphan === true,
         })),
-        data_status: "AI_INTERPRETATION", source: "event_interpretation 表（模型产出经服务端复校验后落库）", as_of: bundle.as_of || date,
+        data_status: "AI_INTERPRETATION", source: "事件解释留档（模型产出经服务端复校验后落库）", as_of: bundle.as_of || date,
         emptyNote: "还没有人对当日事件点过「AI 理解」：这一层是空的，不会自动生成（当日事件行仍是可理解的事实原料）",
         notes: bundle.missing?.length ? [`服务端自报口径：${bundle.missing.slice(0, 3).join("；")}`] : [],
       });
@@ -659,16 +663,16 @@ async function dispatch(executor: string | null, toolName: string, p: Params, ms
       const date = str(p, "date", "") || shanghaiDate();
       const row = await db.researchReport.findFirst({ where: { reportKey: `market|${date}` }, orderBy: { createdAt: "desc" } });
       if (!row) {
-        return emptyObs(`research_report 没有 ${date}（scope=market）的报告行：还没有人点过「生成研究报告」，本层不会凭问题现编一份市场环境报告`, "research_report 表", ["没有报告 ≠ 市场没有变化：台账读数在各能力自己的工具里，可直接取"]);
+        return emptyObs(`研究留档里没有 ${date}（全市场范围）的报告行：还没有人点过「生成研究报告」，本层不会凭问题现编一份市场环境报告`, "研究留档（P6-C 落库）", ["没有报告 ≠ 市场没有变化：台账读数在各能力自己的工具里，可直接取"]);
       }
       const missing = parseJsonColumn<string[]>(row.missingJson, []).value;
       return okObs({
-        summary: clipText(`${date} 市场环境研究报告：状态 ${row.status}、模型 ${row.model || "未记录"}、台账 ${row.evidenceTotal} 行、缺失口径 ${missing.length} 条。标题「${row.headline || "未记录"}」。属于 AI_INTERPRETATION 层，不是事实`),
+        summary: clipText(`${date} 市场环境研究报告：状态 ${statusShortZh(row.status)}、模型 ${row.model || "未记录"}、台账 ${row.evidenceTotal} 行、缺失口径 ${missing.length} 条。标题「${row.headline || "未记录"}」。属于「AI 解释」层，不是事实`),
         payload: {
           report_key: row.reportKey, trade_date: dayOf(row.asOf), status: row.status, evidence_total: row.evidenceTotal,
           posture: row.marketPosture, missing: capRows(missing, 8), prompt_version: row.promptVersion,
         },
-        source: "research_report 表（P6-C 落库）", as_of: row.generatedAt || date, data_status: "AI_INTERPRETATION",
+        source: "研究留档（P6-C 落库）", as_of: row.generatedAt || date, data_status: "AI_INTERPRETATION",
       });
     }
     case "db.factor-test": {
@@ -679,13 +683,13 @@ async function dispatch(executor: string | null, toolName: string, p: Params, ms
       ]);
       return rowsObs({
         label: "因子 IC 跑批记录", table: "factor_test", date: key || "全部因子", rows: rows as unknown as Record<string, unknown>[], total,
-        summary: (rs) => `factor_test 共 ${total} 次记录，最近 ${rs.length} 次：${rs.slice(0, 4).map((r) => `${r.factorKey}（区间 ${r.dataRange || "未记录"}，样本 ${r.sampleStocks} 只/${r.sampleDates} 日，前瞻 ${r.horizon} 日，RankIC ${n1(r.rankIc)}，ICIR ${n1(r.icIr)}，${r.passed ? "通过" : "未通过"}）`).join("；")}。这是 HISTORICAL：过去样本不等于今天有效`,
+        summary: (rs) => `因子验证留档共 ${total} 次记录，最近 ${rs.length} 次：${rs.slice(0, 4).map((r) => `${r.factorKey}（区间 ${r.dataRange || "未记录"}，样本 ${r.sampleStocks} 只/${r.sampleDates} 日，前瞻 ${r.horizon} 日，RankIC ${n1(r.rankIc)}，ICIR ${n1(r.icIr)}，${r.passed ? "通过" : "未通过"}）`).join("；")}。这是历史留档：过去样本不等于今天有效`,
         payload: (rs) => rs.map((r) => ({
           factor_key: String(r.factorKey ?? ""), trade_date: dayOf(r.createdAt), sample: Number(r.sampleStocks ?? 0),
           horizon: Number(r.horizon ?? 0), rank_ic: r.rankIc, icir: r.icIr, passed: r.passed, data_range: String(r.dataRange ?? ""),
         })),
-        data_status: "HISTORICAL", source: "factor_test 表（因子测试台跑批）",
-        emptyNote: "还没有跑过批量 IC 验证 ⇒ 任何因子有效性结论只能是 UNVERIFIED，既不是「无效」也不是「有效」",
+        data_status: "HISTORICAL", source: "因子验证留档（因子测试台跑批）",
+        emptyNote: "还没有跑过批量 IC 验证 ⇒ 任何因子有效性结论只能是「未验证」，既不是「无效」也不是「有效」",
       });
     }
     case "db.candidate-pool": {
@@ -748,13 +752,13 @@ async function dispatch(executor: string | null, toolName: string, p: Params, ms
           label: "一次 Agent 运行", table: "agent_tool_call", date: "", rows: calls as unknown as Record<string, unknown>[],
           total: calls.length, source: "agent_run + agent_tool_call 表", data_status: "REAL",
           as_of: String(run.startedAt ?? ""),
-          summary: (rs) => `运行 ${runId}（问题「${clipText(run.question, 60)}」，状态 ${run.status}/${run.answerStatus || "未收尾"}，${run.steps} 步 / ${run.toolCalls} 次调用 / 台账 ${run.evidenceLines} 行 / 缺口 ${run.missingLines} 条，停止原因 ${run.stopReason || "未记录"}）：${rs.map((r) => `第 ${r.step} 步 ${r.tool}→${r.outputStatus}${r.source ? `（${clipText(r.source, 30)}）` : ""}`).join("；")}`,
+          summary: (rs) => `运行 ${runId}（问题「${clipText(run.question, 60)}」，状态 ${statusShortZh(run.status)}/${run.answerStatus ? statusShortZh(run.answerStatus) : "未收尾"}，${run.steps} 步 / ${run.toolCalls} 次调用 / 台账 ${run.evidenceLines} 行 / 缺口 ${run.missingLines} 条，停止原因 ${run.stopReason || "未记录"}）：${rs.map((r) => `第 ${r.step} 步 ${r.tool}→${r.outputStatus}${r.source ? `（${clipText(r.source, 30)}）` : ""}`).join("；")}`,
           payload: (rs) => rs.map((r) => ({
             step: r.step, tool: r.tool, output_status: r.outputStatus, kind: r.kind, data_status: r.dataStatus,
             source: r.source, as_of: r.asOf, latency_ms: r.latencyMs, error: clipText(r.error, 120),
             fallback_of: r.fallbackOf, degraded_from: r.degradedFrom, attempt: r.attempt, evidence_id: r.evidenceId,
           })),
-          notes: ["答案原文与判定（ACCEPTED/PARTIAL/REJECTED）在 /api/agent/run 的完整视图里；answer 属 AI_INTERPRETATION 层"],
+          notes: ["答案原文与判定（成立/部分/不可用）在 /api/agent/run 的完整视图里；答案文本属「AI 解释」层"],
           emptyNote: "这次运行一条调用记录都没有：要么是刚开跑还没执行任何工具，要么是这一步没被记进日志（后者属于 bug，不能读成「Agent 什么都没调」）",
         });
       }

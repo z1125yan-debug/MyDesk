@@ -1,5 +1,5 @@
 // Quant Screener — 市场状态/大盘情绪（服务端）
-// 数据：全A快照（东财 clist，emProvider 缓存）+ 指数实时（腾讯）。
+// 数据：全A快照（东财榜单接口，em 数据源缓存）+ 指数实时（腾讯）。
 // 风险等级按需求文档九的口径，但只用「有真实数据源的指标」；
 // 没有数据源的指标（北向等）显式列入 missing，绝不编造。
 // P0补齐（任务A）：炸板率——用同一份全A快照的 high(f15)/prevClose(f18) 判触板/封板，
@@ -160,11 +160,11 @@ export async function computeSentiment(): Promise<SentimentResult> {
     source: {
       provider:
         universeSource() === "tc"
-          ? "腾讯批量快照兜底（东财 clist 断源；主力净额/行业/上市日不可得）+ 腾讯指数"
-          : "em（东财 clist 全A快照 + 腾讯指数）",
+          ? "腾讯批量快照兜底（东财榜单接口 断源；主力净额/行业/上市日不可得）+ 腾讯指数"
+          : "em（东财榜单接口 全A快照 + 腾讯指数）",
       universe_endpoint:
-        universeSource() === "tc" ? "qt.gtimg.cn/q=（批量60只）× MCP 代码表" : "push2.eastmoney.com/api/qt/clist",
-      indices_endpoint: "qt.gtimg.cn",
+        universeSource() === "tc" ? "腾讯批量行情×本机代码表" : "东财榜单接口",
+      indices_endpoint: "腾讯行情",
     },
   };
 }

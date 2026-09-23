@@ -82,7 +82,7 @@ function symbolToTencent(symbol: string): string | null {
   return m ? `${m[2].toLowerCase()}${m[1]}` : null;
 }
 
-// ---------- 全A / 板块成分（东财 clist；字段口径与 em.ts 板块接口一致） ----------
+// ---------- 全A / 板块成分（东财榜单接口；字段口径与 em.ts 板块接口一致） ----------
 
 // 沪深京 A 股口径沿用 em.ts BOARD_FS.stock
 const FS_ALL_A = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048";
@@ -175,7 +175,7 @@ async function clistUniverseAllA(): Promise<AssetMeta[]> {
   return out;
 }
 
-// 东财 clist 断源（push2 集群对部分出口 IP 拒连，2026-09-22 实测）时改走腾讯批量快照兜底；
+// 东财榜单接口 断源（push2 集群对部分出口 IP 拒连，2026-09-22 实测）时改走腾讯批量快照兜底；
 // 两路都挂才把合并后的错误抛给页面。universeSource() 记录实际服务方，上层据此如实改写 source 文案。
 async function fetchUniverseAllARaw(): Promise<AssetMeta[]> {
   try {
@@ -184,7 +184,7 @@ async function fetchUniverseAllARaw(): Promise<AssetMeta[]> {
       setUniverseSource("em");
       return rows;
     }
-    throw new Error("东财 clist 全A快照无返回");
+    throw new Error("东财榜单接口 全A快照无返回");
   } catch (e) {
     const emErr = (e as Error).message;
     try {
@@ -192,7 +192,7 @@ async function fetchUniverseAllARaw(): Promise<AssetMeta[]> {
       setUniverseSource("tc");
       return tc;
     } catch (e2) {
-      throw new Error(`东财 clist 与腾讯兜底均失败：${emErr}；${(e2 as Error).message}`);
+      throw new Error(`东财榜单接口与腾讯兜底均失败：${emErr}；${(e2 as Error).message}`);
     }
   }
 }

@@ -138,7 +138,7 @@ async function toolSectorRank(args: { kind?: string; size?: number }): Promise<u
 
 async function toolStockSnapshot(args: { symbol: string }): Promise<unknown> {
   const r = await resolveSymbolArg(args.symbol ?? "");
-  if (!r) return { missing: `无法识别标的：${args.symbol}（应为 688256 / 688256.SH 形态，或东财搜索可命中的公司简称）` };
+  if (!r) return { missing: `认不出这只股票：${args.symbol}（应为 688256 / 688256.SH 形态，或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
   const provider = await getProvider("em");
   const tradeDate = shanghaiDate();
@@ -158,19 +158,19 @@ async function toolStockSnapshot(args: { symbol: string }): Promise<unknown> {
     总市值亿: meta?.marketCap != null ? meta.marketCap / 1e8 : null,
     主力净额亿: meta?.mainNet != null ? meta.mainNet / 1e8 : null,
     行业: meta?.industry ?? null,
-    数据源: "eltdx/腾讯快照 + 东财 clist",
+    数据源: "通达信网关/腾讯快照 + 东财榜单接口",
   };
 }
 
 async function toolStockDepth(args: { symbol: string }): Promise<unknown> {
   const r = await resolveSymbolArg(args.symbol ?? "");
-  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
   const d = (await tdxDepth([symbol]).catch(() => null))?.get(symbol);
-  if (!d) return { missing: "五档盘口暂无数据（eltdx 网关未运行）" };
+  if (!d) return { missing: "五档盘口暂无数据（本机通达信行情网关未开启）" };
   const sum = (arr: { volume: number }[]) => arr.reduce((s, l) => s + l.volume, 0);
   return {
-    symbol, ...resolvedNote(r), 数据源: "eltdx · quotes.get_depth",
+    symbol, ...resolvedNote(r), 数据源: "通达信网关 · 五档盘口",
     买五档: d.bids, 卖五档: d.asks,
     委买总量手: sum(d.bids), 委卖总量手: sum(d.asks),
     委买卖比: sum(d.asks) > 0 ? +(sum(d.bids) / sum(d.asks)).toFixed(2) : null,
@@ -180,12 +180,12 @@ async function toolStockDepth(args: { symbol: string }): Promise<unknown> {
 
 async function toolStockTrades(args: { symbol: string }): Promise<unknown> {
   const r = await resolveSymbolArg(args.symbol ?? "");
-  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
   const t = await tdxTradesMoney(symbol).catch(() => null);
-  if (!t) return { missing: "主动买卖数据暂无（eltdx 网关未运行）" };
+  if (!t) return { missing: "主动买卖数据暂无（本机通达信行情网关未开启）" };
   return {
-    symbol, ...resolvedNote(r), 数据源: "eltdx 快照内外盘（全日累计，代理指标）",
+    symbol, ...resolvedNote(r), 数据源: "通达信网关快照内外盘（全日累计，代理指标）",
     口径: t.basis,
     主动买入亿: +t.buyAmountYi.toFixed(2), 主动卖出亿: +t.sellAmountYi.toFixed(2),
     主动净额亿: +t.netYi.toFixed(2),
@@ -195,7 +195,7 @@ async function toolStockTrades(args: { symbol: string }): Promise<unknown> {
 
 async function toolStockKline(args: { symbol: string }): Promise<unknown> {
   const r = await resolveSymbolArg(args.symbol ?? "");
-  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
   const provider = await getProvider("em");
   const tradeDate = shanghaiDate();
@@ -205,7 +205,7 @@ async function toolStockKline(args: { symbol: string }): Promise<unknown> {
   if (!bars.length) {
     // 取数失败与「这只票确实没这么长历史」是两件事，工具返回值必须分开，否则模型会把限流说成「历史不足」
     const oc = barsRes.outcomes[0];
-    return { missing: oc?.kind === "request_failed" ? `日K取数失败：${oc.reason}` : "日K无返回（本标的未取到任何K线）" };
+    return { missing: oc?.kind === "request_failed" ? `日K取数失败：${oc.reason}` : "日K无返回（这只股票没取到任何K线）" };
   }
   if (bars.length < 60) return { missing: `日K历史不足（仅 ${bars.length} 根，需 ≥60），无法计算技术状态` };
   const panel = buildFieldPanel([symbol], [bars], [meta]);
@@ -219,8 +219,8 @@ async function toolStockKline(args: { symbol: string }): Promise<unknown> {
     symbol,
     ...resolvedNote(r),
     数据源: barsRes.outcomes[0]?.channel === "tdx"
-      ? "eltdx 日K（本机直连网关）+ 本机指标计算（未验证因子）"
-      : "腾讯日K（eltdx 未取到，本条为兜底口径）+ 本机指标计算（未验证因子）",
+      ? "通达信网关日K（本机直连）+ 本机指标计算（未验证因子）"
+      : "腾讯日K（通达信网关未取到，本条为兜底口径）+ 本机指标计算（未验证因子）",
     最近5日: bars.slice(-5).map((b) => ({ 日期: b.date, 开: b.o, 高: b.h, 低: b.l, 收: b.c })),
     技术状态: pick("above_ma_5", "above_ma_10", "above_ma_20", "above_ma_60", "above_ma_144", "ma_struct",
       "macd", "macd_cross", "kdj_cross", "rsi_14", "vwap20_filter", "vwap_pos", "rps_50", "rps_120", "is_limit_up"),
@@ -234,17 +234,17 @@ async function toolStockKline(args: { symbol: string }): Promise<unknown> {
 
 async function toolStockFundFlow(args: { symbol: string }): Promise<unknown> {
   const r = await resolveSymbolArg(args.symbol ?? "");
-  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
   const secid = symbolToSecid(symbol);
   const detail = secid ? await fetchDetailReal(secid).catch(() => null) : null;
-  if (!detail) return { missing: "主力资金流暂无数据（东财 fflow 与新浪备胎两条源都没通）" };
+  if (!detail) return { missing: "主力资金流暂无数据（东财主力资金明细与新浪备胎两条源都没通）" };
   return {
     symbol,
     ...resolvedNote(r),
     数据源: detail.source === "sina"
-      ? "新浪 MoneyFlow 日度净额（东财 fflow 断源时的备胎；口径≈主力净流入，与东财 f62 主力净额不完全等价，转述时须注明是新浪口径）"
-      : "东财 · push2his 主力净额",
+      ? "新浪资金流向日度净额（东财断源时的备胎；口径≈主力净流入，与东财主力净额不完全等价，转述时须注明是新浪口径）"
+      : "东财主力资金日明细",
     今日主力净额亿: detail.days.at(-1)?.value ?? null,
     近14日: detail.days.map((d) => ({ 日期: d.date, 主力净额亿: d.value })),
   };
@@ -264,7 +264,7 @@ async function toolMarketNews(args: { limit?: number }): Promise<unknown> {
  */
 async function toolStockNews(args: { symbol?: string; limit?: number }): Promise<unknown> {
   const r = await resolveSymbolArg(String(args.symbol ?? ""));
-  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态，或东财搜索可命中的公司简称；不命中不猜代码）` };
+  if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态，或东财搜索可命中的公司简称；不命中不猜代码）` };
   const code6 = r.symbol.slice(0, 6);
   const n = Math.min(10, Math.max(3, args.limit ?? 6));
   const [news, ann] = await Promise.all([
@@ -382,7 +382,7 @@ async function toolTdxQuotes(args: { symbols?: string[] }): Promise<unknown> {
   const resolved = await Promise.all(raw.map((x) => resolveSymbolArg(String(x))));
   const symbols = resolved.map((x) => x?.symbol).filter((x): x is string => !!x);
   const dropped = raw.filter((_, i) => !resolved[i]);
-  if (!symbols.length) return { missing: `没有可用标的（收到 ${JSON.stringify(raw)}）：应为代码形态，或东财搜索可命中的公司简称` };
+  if (!symbols.length) return { missing: `没有可用的股票（收到 ${JSON.stringify(raw)}）：应为代码形态，或东财搜索可命中的公司简称` };
   const err = await ensureTdxMcp();
   if (err) return { missing: err };
   try {
@@ -396,7 +396,7 @@ async function toolTdxQuotes(args: { symbols?: string[] }): Promise<unknown> {
     const pct = (n: number) => Math.round(n * 10000) / 100;
     return {
       数据源: "通达信行情服务器（tdx-mcp，快照口径，含盘口；与东财快照并报时各报各的出身，不混算）",
-      ...(dropped.length ? { 未识别提示: `${dropped.length} 个标的既不是代码也没被东财搜索命中，本轮未取数：${dropped.join("、")}` } : {}),
+      ...(dropped.length ? { 未识别提示: `${dropped.length} 只既不是代码也没被东财搜索命中，本轮未取数：${dropped.join("、")}` } : {}),
       行情: rows.map((r) => {
         const close = Number(r.close ?? 0);
         const pre = Number(r.pre_close ?? 0);
@@ -426,7 +426,7 @@ async function toolTdxQuotes(args: { symbols?: string[] }): Promise<unknown> {
 
 async function toolTdxKline(args: { symbol?: string; days?: number }): Promise<unknown> {
   const r = await resolveSymbolArg(String(args.symbol ?? ""));
-  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
   const days = Math.min(60, Math.max(5, args.days ?? 20));
   const err = await ensureTdxMcp();
@@ -545,7 +545,7 @@ async function toolFactorScreener(args: {
 
 async function toolHistoricalProbability(args: { symbol: string; conditions: ScreenerCond[] }): Promise<unknown> {
   const r = await resolveSymbolArg(args.symbol ?? "");
-  if (!r) return { missing: `无法识别标的：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
+  if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
   const conds = Array.isArray(args.conditions) ? args.conditions : [];
   if (!conds.length) return { missing: "conditions 为空" };
@@ -556,7 +556,7 @@ async function toolHistoricalProbability(args: { symbol: string; conditions: Scr
   const bars = (barsRes.bars.get(symbol) ?? []) as BarsLike[];
   if (!bars.length) {
     const oc = barsRes.outcomes[0];
-    return { missing: oc?.kind === "request_failed" ? `日K取数失败：${oc.reason}` : "日K无返回（本标的未取到任何K线）" };
+    return { missing: oc?.kind === "request_failed" ? `日K取数失败：${oc.reason}` : "日K无返回（这只股票没取到任何K线）" };
   }
   if (bars.length < 120) return { missing: `日K历史不足（仅 ${bars.length} 根，需 ≥120），无法统计` };
   const stats = historicalWinProbability({ symbol, bars, meta, conditions: conds });
@@ -617,7 +617,7 @@ async function toolWatchlistOverview(args: { symbols?: string[] }, ctx: ToolCtx 
   });
   return {
     清单来源: "用户本机自选存档（浏览器 localStorage，随请求带上，非交易所数据）",
-    数据源: "eltdx/腾讯实时快照 + 东财 clist",
+    数据源: "通达信网关/腾讯实时快照 + 东财榜单接口",
     取数时刻: shanghaiDate(),
     自选: rows,
     家数: rows.length,
@@ -801,7 +801,7 @@ async function toolRunBacktest(args: {
   const readout = backtestReadout({
     asOf: typeof r.asOf === "string" ? r.asOf : asOf,
     periodDays,
-    dataSource: `回测引擎 quant_backtest（数据源 ${dataSource}，K线走 eltdx/腾讯日K）`,
+    dataSource: `回测引擎（数据源 ${dataSource === "em" ? "东财" : dataSource}，K线走通达信网关/腾讯日K）`,
     symbols: typeof panel.symbols === "number" ? panel.symbols : 0,
     dates: typeof panel.dates === "number" ? panel.dates : 0,
     factors: resolved as ResolvedFactor[],
@@ -839,7 +839,7 @@ export const TOOLS: ChatTool[] = [
   { name: "market_sentiment", desc: "大盘情绪：情绪温度(0-100)/涨跌家数/涨停/跌停/成交额/主力净额/风险等级", fn: toolMarketSentiment, params: { type: "object", properties: {} } },
   { name: "sector_rank", desc: "行业/概念板块资金榜（按主力净流入排序）", fn: toolSectorRank, params: { type: "object", properties: { kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number" } } } },
   { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业；symbol 可传代码或公司简称（简称经东财搜索解析，解析结果如实标注）", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
-  { name: "stock_depth", desc: "个股五档盘口（eltdx）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
+  { name: "stock_depth", desc: "个股五档盘口（通达信网关）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标）", fn: toolStockTrades, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "stock_kline_summary", desc: "个股技术状态：均线/MACD/KDJ/RSI/VWAP/RPS + 历史条件概率", fn: toolStockKline, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
   { name: "stock_fund_flow", desc: "个股近14日主力资金净额（东财）", fn: toolStockFundFlow, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },

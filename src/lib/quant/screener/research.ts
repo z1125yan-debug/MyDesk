@@ -26,6 +26,8 @@ import {
   assignEvidenceIds, buildResearchPrompt, capLedger, parseResearchOutput, researchDateError, researchReportKey, researchScopeOf,
   type CollectorStatus, type EvidenceLine, type ResearchReport, type ResearchScope, type SourceProbe,
 } from "./research-core.ts";
+// P15-R15：状态枚举在库里/血缘里仍是英文，写给台账与页面看的那一句换人话读法（判定不动）。
+import { statusShortZh } from "@/lib/desk/plain-core";
 
 type NewLine = Omit<EvidenceLine, "id">;
 
@@ -111,20 +113,23 @@ export interface ResearchFacts {
  * 三层归属：全市场广度/板块榜/事件快讯 = FACTS；风险等级/主线判定/雷达信号 = SIGNALS；
  * 条件概率留档/因子 IC/留档覆盖/无可靠来源能力 = HISTORICAL_EVIDENCE。
  */
+/** 雷达信号类型的中文读法（只翻显示口径，类型值本身不变） */
+const RADAR_KIND_ZH: Record<string, string> = { risk: "风险", theme: "主线", fund: "资金", news: "消息", anomaly: "异动" };
+
 export async function collectResearchFacts(): Promise<ResearchFacts> {
   const date = shanghaiDate();
   const as_of = shanghaiStamp();
   const buckets = await Promise.all([
     // ---- 一次 computeSentiment 同时供四组读数：全市场广度、涨跌停梯队、指数、风险等级（§三十二 不重复调底层） ----
     collect(
-      { capability: "market_snapshot", title: "全市场广度与风险等级", source: "全 A 快照 + 指数实时（sentiment 引擎）", data_status: "REAL" },
+      { capability: "market_snapshot", title: "全市场广度与风险等级", source: "全 A 快照 + 指数实时（情绪引擎）", data_status: "REAL" },
       async () => {
         const s = await computeSentiment();
         const stamp = s.as_of || as_of;
         const lines: NewLine[] = [
           line("FACTS", "market_snapshot",
             `全 A ${s.total} 只：上涨 ${s.advancers}、下跌 ${s.decliners}、平盘 ${s.flat}；中位涨跌幅 ${n1(s.median_pct)}%；成交额合计 ${n1(s.amount_total_yi)}亿；主力净额合计 ${signed(s.main_net_sum_yi)}亿；${s.live ? "盘中实时" : "收盘/休市值（非盘中实时）"}`,
-            s.source?.provider ? `全 A 快照（${s.source.provider}）` : "全 A 快照（东财 clist）", stamp, "REAL"),
+            s.source?.provider ? `全 A 快照：${s.source.provider}` : "全 A 快照（东财榜单接口）", stamp, "REAL"),
           line("FACTS", "limitup",
             `涨停 ${s.limit_up} 家、跌停 ${s.limit_down} 家；触板 ${s.touched_limit}、炸板 ${s.limit_up_broken}，炸板率 ${s.break_rate === null ? "算不出（当日触板数为 0，不以 0% 代替）" : `${n1(s.break_rate)}%`}`,
             "全 A 快照 + 涨跌停判定引擎", stamp, "DERIVED"),
@@ -144,7 +149,7 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
     ),
     // ---- 主线发现（引擎内自带 45 秒缓存，不在本层重复实现） ----
     collect(
-      { capability: "themes", title: "主线发现（规则版）", source: "东财板块榜 + 成分扩散 + 板块资金（themes 引擎）", data_status: "DERIVED" },
+      { capability: "themes", title: "主线发现（规则版）", source: "东财板块榜 + 成分扩散 + 板块资金（主线发现引擎）", data_status: "DERIVED" },
       async () => {
         const th = await discoverThemes();
         const top = (list: typeof th.main, n: number) => (list ?? []).slice(0, n)
@@ -154,7 +159,7 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
         if (th.main?.length || th.sub?.length || th.rotation?.length || th.watch?.length) {
           lines.push(line("SIGNALS", "themes",
             `主线 ${th.main.length} 个（${top(th.main, 3) || "无"}）；次主线 ${th.sub.length}；轮动 ${th.rotation.length}；观察 ${th.watch.length}；判定口径=涨幅/RPS/扩散/资金同步/连续强势`,
-            "themes 引擎（板块榜+扩散+资金）", th.as_of || as_of, "DERIVED"));
+            "主线发现引擎（板块榜+扩散+资金）", th.as_of || as_of, "DERIVED"));
         }
         const missing = (th.missing ?? []).map((m) => `引擎自报缺失：${m}`);
         if (!lines.length) missing.push("主线发现本次没有任何分组结果：库里/上游此刻确实没有可列的主线，不是「没有主线=安全」");
@@ -164,7 +169,7 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
     // ---- 板块资金榜（东财板块榜，em.ts 短时缓存；断源日整榜换同花顺净额榜 —— R8 收口，
     //      这就是能力表里的 sector_rank / 板块主力资金流） ----
     collect(
-      { capability: "sector_rank", title: "板块资金/涨幅榜", source: "东财 clist 行业板块榜（流入+流出两侧合并）", data_status: "REAL" },
+      { capability: "sector_rank", title: "板块资金/涨幅榜", source: "东财榜单接口行业板块榜（流入+流出两侧合并）", data_status: "REAL" },
       async () => {
         const [inR, outR] = await Promise.all([
           fetchBoardRowsRescued("industry", "in", 60),
@@ -207,14 +212,14 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
         }
         const missing: string[] = [];
         if (fromThs) missing.push("本批板块资金为同花顺净额榜（东财断源）：只有流入−流出净额，无东财主力/超大单/大单拆分，且榜按涨幅排序取，深跌净流出的板块可能不在榜");
-        if (inRows === null || outRows === null) missing.push("板块榜只取到一侧（in/out 有一侧为 null）：榜单为部分数据，已按 DEGRADED 口径提示");
-        missing.push("个股主力资金流（fund_flow_stock）与北向净流入未进本批台账：前者需要明确代码，后者无可靠来源 ⇒ 见 HISTORICAL_EVIDENCE 的 MISSING 行");
+        if (inRows === null || outRows === null) missing.push("板块榜只取到一侧（进/出有一侧没数）：榜单为部分数据，已按「降级」口径提示");
+        missing.push("个股主力资金流与北向净流入未进本批台账：前者要指定单只股票代码才能取，后者无可靠来源 ⇒ 见「历史证据」层的「未取到」行");
         return { lines, missing, as_of: stamp };
       },
     ),
     // ---- 雷达：读库（不触发扫描，扫描是写操作） ----
     collect(
-      { capability: "radar", title: "AI 主动发现（当日库行）", source: "SQLite radar_finding（只读）", data_status: "REAL" },
+      { capability: "radar", title: "AI 主动发现（当日库行）", source: "雷达发现留档（只读）", data_status: "REAL" },
       async () => {
         const rows = await db.radarFinding.findMany({ where: { asOf: date, state: "live" }, orderBy: { createdAt: "desc" } });
         const byKind = new Map<string, number>();
@@ -223,21 +228,21 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
         if (!rows.length) {
           return {
             lines: [], status: "empty",
-            missing: [`当日 radar_finding 的 live 行为 0（真实为空，不是失败）：可能当天没扫描、或扫描了但规则没命中；要新结果必须显式触发扫描（写操作，本层不做）`],
-            note: `0 行 live（superseded ${superseded} 行）`,
+            missing: [`当日雷达留档里的在效记录为 0 条（真实为空，不是失败）：可能当天没扫描、或扫描了但规则没命中；要新结果必须显式触发扫描（写操作，本层不做）`],
+            note: `0 条在效（已消失 ${superseded} 条）`,
           };
         }
         const lines: NewLine[] = [
           line("SIGNALS", "radar",
-            `当日雷达 live 信号 ${rows.length} 条（按类型：${[...byKind.entries()].map(([k, v]) => `${k} ${v}`).join("、")}）；已被后续扫描判为不再产出的 superseded ${superseded} 条。样例：${rows.slice(0, 3).map((r) => r.title).join(" / ")}`,
-            "radar_finding 表（上次扫描落库）", date, "REAL"),
+            `当日雷达在效信号 ${rows.length} 条（按类型：${[...byKind.entries()].map(([k, v]) => `${RADAR_KIND_ZH[k] ?? k} ${v}`).join("、")}）；已被后续扫描判为不再产出的消失记录 ${superseded} 条。样例：${rows.slice(0, 3).map((r) => r.title).join(" / ")}`,
+            "雷达发现留档（上次扫描落库）", date, "REAL"),
         ];
-        return { lines, missing: [], as_of: date, note: `${rows.length} 行 live` };
+        return { lines, missing: [], as_of: date, note: `${rows.length} 条在效` };
       },
     ),
     // ---- 事件：读库（复用 P6-B 的事实层：同一套库行解析与 broken_columns 口径） ----
     collect(
-      { capability: "events", title: "全球事件雷达（当日库行）", source: "SQLite global_event（只读，经 P6-B 事实层解析）", data_status: "REAL" },
+      { capability: "events", title: "全球事件雷达（当日库行）", source: "全球事件留档库（只读，按事实层口径解析）", data_status: "REAL" },
       async () => {
         const bundle = await loadEventFacts({ date });
         const hitSectors = new Map<string, number>();
@@ -245,14 +250,14 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
         if (!bundle.facts.length) {
           return {
             lines: [], status: "empty",
-            missing: [`${date} 的 global_event 没有任何事件行（真实为空）：消息面这一路本次没有可读的内容，不猜新闻`],
+            missing: [`留档日 ${date} 没有任何全球事件行（真实为空）：消息面这一路本次没有可读的内容，不猜新闻`],
             note: "0 行",
           };
         }
         const lines: NewLine[] = [
           line("FACTS", "events",
             `当日入库事件 ${bundle.facts.length} 条；产业链映射命中板块 ${hitSectors.size} 个（${[...hitSectors.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k}×${v}`).join("、") || "本批事件都没命中映射表，映射为空是入库时的事实"}）。样例标题：${bundle.facts.slice(0, 3).map((f) => f.title).join(" / ")}`,
-            "global_event 表（快讯来自东财/新浪）", date, "REAL"),
+            "全球事件留档（快讯来自东财/新浪）", date, "REAL"),
         ];
         const missing = bundle.issues.filter((i) => i.broken.length)
           .map((i) => `${i.key}：字段无法解析 ${i.broken.join("、")}（按缺失处理，不当作空值喂给模型）`);
@@ -261,7 +266,7 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
     ),
     // ---- 条件概率：读留档（没有条件就没有概率，绝不自己现算一组条件） ----
     collect(
-      { capability: "probability", title: "历史条件概率（留档回看）", source: "SQLite probability_snapshot（只读，§十一 概率只由 probability 引擎产出）", data_status: "HISTORICAL" },
+      { capability: "probability", title: "历史条件概率（留档回看）", source: "条件概率留档库（只读，概率只由条件概率引擎产出后留档）", data_status: "HISTORICAL" },
       async () => {
         const rows = await db.probabilitySnapshot.findMany({ orderBy: { computedAt: "desc" }, take: 2 });
         if (!rows.length) {
@@ -276,17 +281,17 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
           const conds = parseJsonColumn<unknown[]>(r.conditions, []).value;
           const hs = pooled.length
             ? pooled.map((p) => `${p.h}日胜率 ${n1(p.win_rate)}%（样本 ${p.sample_size}${p.sample_size < 30 ? "，不足 30：仅供参考" : ""}）`).join("；")
-            : "pooled 列为空（留档当时就没算出任何期限的汇总）";
+            : "汇总列留档当时就是空的（没算出任何期限的汇总）";
           return line("HISTORICAL_EVIDENCE", "probability",
-            `留档（基准日 ${r.tradeDate}${r.tradeDateIsHistorical ? "，历史回放" : ""}）条件 ${Array.isArray(conds) ? conds.length : 0} 条：${hs}。${r.sampleOk ? "存在样本数 ≥30 的期限" : "所有期限样本都不足 30：只能写「仅供参考」，不得当结论"}。这是 historical/statistical，不等于今天上涨的概率`,
-            "probability_snapshot 表（probability 引擎产出后留档）", r.computedAt, "HISTORICAL");
+            `留档（基准日 ${r.tradeDate}${r.tradeDateIsHistorical ? "，历史回放" : ""}）条件 ${Array.isArray(conds) ? conds.length : 0} 条：${hs}。${r.sampleOk ? "存在样本数 ≥30 的期限" : "所有期限样本都不足 30：只能写「仅供参考」，不得当结论"}。这是历史统计口径，不等于今天上涨的概率`,
+            "条件概率留档（概率引擎产出后留档）", r.computedAt, "HISTORICAL");
         });
         return { lines, missing: [], as_of: rows[0].computedAt, note: `${rows.length} 条留档` };
       },
     ),
     // ---- 因子验证：读 IC 跑批记录 + verified 账本元信息（只读，绝不写） ----
     collect(
-      { capability: "factor_test", title: "因子 IC 测试记录", source: "SQLite factor_test（只读跑批记录）", data_status: "HISTORICAL" },
+      { capability: "factor_test", title: "因子 IC 测试记录", source: "因子跑批留档（只读）", data_status: "HISTORICAL" },
       async () => {
         const [rows, verified, total] = await Promise.all([
           db.factorTest.findMany({ orderBy: { createdAt: "desc" }, take: 4 }),
@@ -297,22 +302,22 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
         if (rows.length) {
           lines.push(line("HISTORICAL_EVIDENCE", "factor_test",
             `因子 IC 跑批共 ${total} 次记录，最近 ${rows.length} 次：${rows.map((t) => `${t.factorKey}（区间 ${t.dataRange || "未记录"}，样本 ${t.sampleStocks} 只/${t.sampleDates} 日，RankIC ${n1(t.rankIc)}，ICIR ${n1(t.icIr)}，${t.passed ? "通过" : "未通过"}）`).join("；")}`,
-            "factor_test 表（因子测试台跑批）", rows[0].createdAt.toISOString().slice(0, 10), "HISTORICAL"));
+            "因子测试台跑批留档", rows[0].createdAt.toISOString().slice(0, 10), "HISTORICAL"));
         }
         lines.push(line("HISTORICAL_EVIDENCE", "factor_verified",
           verified.exists
-            ? `verified 账本（${verified.path}）现有 ${verified.keys} 个信号键：只有正式批量 IC 流程能改这个状态，研究层与 AI 都不能把未验证说成已验证`
-            : "verified 账本文件不存在：所有因子按 UNVERIFIED 处理（本层不会替它判已验证）",
+            ? `验证账本（${verified.path}）现有 ${verified.keys} 个信号键：只有正式批量 IC 流程能改这个状态，研究层与 AI 都不能把未验证说成已验证`
+            : "验证账本文件不存在：所有因子按「未验证」处理（本层不会替它判已验证）",
           verified.path, "未记录", verified.exists ? "REAL" : "MISSING"));
         const missing: string[] = [];
-        if (!rows.length) missing.push(`库里没有任何 factor_test 跑批记录（factor_test 表 0 行）：没有可引用的 IC/历史有效性证据`);
-        missing.push("回测（backtest）未进本批台账：它需要明确的策略与区间，属于按需计算，研究层不自行发起（也不得由 AI 触发）");
+        if (!rows.length) missing.push(`库里没有任何因子跑批记录（留档 0 行）：没有可引用的 IC/历史有效性证据`);
+        missing.push("回测未进本批台账：它需要明确的策略与区间，属于按需计算，研究层不自行发起（也不得由 AI 触发）");
         return { lines, missing, note: `最近 ${rows.length} 次跑批 + 账本元信息` };
       },
     ),
     // ---- 每日留档与历史覆盖（说明「哪天有档可回看」，这是系统的真实状态，不是市场数据） ----
     collect(
-      { capability: "snapshot_risk", title: "风险/主线每日留档覆盖", source: "SQLite risk_snapshot + theme_snapshot（只读）", data_status: "SNAPSHOT" },
+      { capability: "snapshot_risk", title: "风险/主线每日留档覆盖", source: "风险与主线每日留档（只读）", data_status: "SNAPSHOT" },
       async () => {
         const [riskRows, themeRows, riskDates, themeDates] = await Promise.all([
           db.riskSnapshot.findMany({ orderBy: { computedAt: "desc" }, take: 1 }),
@@ -324,35 +329,35 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
         const lines: NewLine[] = [
           line("HISTORICAL_EVIDENCE", "snapshot_risk",
             riskRows.length
-              ? `风险留档覆盖 ${days(riskDates)} 个交易日，最近一条：${riskRows[0].tradeDate} 等级「${riskRows[0].level}」（${riskRows[0].computedAt}，当时 live=${riskRows[0].live}）。留档是那一刻的快照，不是实时`
+              ? `风险留档覆盖 ${days(riskDates)} 个交易日，最近一条：${riskRows[0].tradeDate} 等级「${riskRows[0].level}」（${riskRows[0].computedAt}，当日在效信号 ${riskRows[0].live} 条）。留档是那一刻的快照，不是实时`
               : "风险留档 0 行：留档只在人工点「留档今天」时产生，没点的那天就没有行",
-            "risk_snapshot 表", riskRows[0]?.tradeDate ?? "未记录", "SNAPSHOT"),
+            "风险每日留档", riskRows[0]?.tradeDate ?? "未记录", "SNAPSHOT"),
           line("HISTORICAL_EVIDENCE", "snapshot_themes",
             themeRows.length
               ? `主线留档覆盖 ${days(themeDates)} 个交易日，最近一条：${themeRows[0].tradeDate} 主线 ${themeRows[0].mainCount} 个/次主线 ${themeRows[0].subCount} 个`
               : "主线留档 0 行（同上：留档不是自动的）",
-            "theme_snapshot 表", themeRows[0]?.tradeDate ?? "未记录", "SNAPSHOT"),
+            "主线每日留档", themeRows[0]?.tradeDate ?? "未记录", "SNAPSHOT"),
         ];
         return { lines, missing: [], note: `风险 ${days(riskDates)} 天 / 主线 ${days(themeDates)} 天` };
       },
     ),
     // ---- 明确无可靠来源：照样进台账，标 MISSING，让模型只能把它写进 UNKNOWN 而不是绕过它 ----
     collect(
-      { capability: "northbound_flow", title: "北向资金与板块连续强势（登记为无可靠来源）", source: "capability-core（登记表 availability=not_covered）", data_status: "MISSING" },
+      { capability: "northbound_flow", title: "北向资金与板块连续强势（登记为无可靠来源）", source: "能力登记表（登记为无可靠来源）", data_status: "MISSING" },
       async () => ({
         lines: [
           line("HISTORICAL_EVIDENCE", "northbound_flow",
             "北向资金净流入：无可靠来源（交易所自 2024-08-19 起停止披露）。本批没有这个读数，涉及资金面时不得用任何形式的北向数字（含 0 与估算）",
-            "capability-core 登记表", "未记录", "MISSING"),
+            "能力登记表", "未记录", "MISSING"),
           line("HISTORICAL_EVIDENCE", "board_day_streak",
             "板块日K连续强势天数：东财板块日K 实测有批次无返回 ⇒ 无返回时保持缺失，不用替代口径硬凑",
-            "capability-core 登记表", "未记录", "MISSING"),
+            "能力登记表", "未记录", "MISSING"),
           line("HISTORICAL_EVIDENCE", "stock_announcements",
             "个股公告源未接入：涉及消息面的判断只能标为假设，不得声称看过公告",
-            "capability-core 登记表", "未记录", "MISSING"),
+            "能力登记表", "未记录", "MISSING"),
         ],
         status: "not_covered",
-        note: "登记为 not_covered：以 MISSING 行的形式进台账，供 UNKNOWN 层引用",
+        note: "登记为无可靠来源：以缺读数行的形式进台账，供「未知与缺口」层引用",
       }),
     ),
   ]);
@@ -365,7 +370,7 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
   if (capped.dropped) {
     missing.push(`台账行数超过上限 ${MAX_LEDGER_LINES}：本次只带前 ${capped.kept.length} 行进提示词，${capped.dropped} 行未参与（不是它们不重要，是一次提问装不下）`);
   }
-  const failed = sources.filter((s) => s.status === "failed").map((s) => s.capability);
+  const failed = sources.filter((s) => s.status === "failed").map((s) => s.title);
   if (failed.length) missing.push(`本次失败的采集器：${failed.join("、")}（失败原因见上一条说明；报告只会基于剩下的读数，缺的那部分必须出现在 UNKNOWN 里）`);
 
   return {
@@ -377,8 +382,8 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
     sources,
     truncated: capped.dropped,
     basis:
-      `台账由服务端现取组装（${as_of}）：一次 computeSentiment 供广度/梯队/指数/风险四组读数，` +
-      `另调 themes 引擎、东财板块榜，其余读库（radar_finding / global_event / probability_snapshot / factor_test / 三张留档表）。` +
+      `台账由服务端现取组装（${as_of}）：一次情绪引擎读数供广度/涨跌停梯队/指数/风险四组，` +
+      `另调 主线发现引擎、东财板块榜，其余读库（雷达发现、全球事件、条件概率、因子跑批与风险/主线每日留档）。` +
       `本层不含任何指标公式：MA/MACD/RSI/IC/回测/条件概率一律由已有引擎产出（§十一）。` +
       `共 ${capped.kept.length} 行台账、${sources.length} 个采集器、${missing.length} 条缺失口径。`,
   };
@@ -475,7 +480,7 @@ export async function storeResearchReport(input: {
         ok: false, persisted: false, scope, date: facts.date, report_key: reportKey, report: parsed.report,
         evidence_total: facts.lines.length, missing: [...facts.missing, `本次模型输出被判 REJECTED，而库里已有一条 ${prev.status} 的报告：保留已有那条，失败这次没有覆盖它`],
         sources: facts.sources,
-        error: `本次没有可采纳的解释（REJECTED），未覆盖库里已存在的 ${prev.status} 报告`,
+        error: `本次没有可采纳的解释（判为「${statusShortZh("REJECTED")}」），未覆盖库里已存在的 ${statusShortZh(prev.status)} 报告`,
         basis: "写库被拒：一次失败的回复不覆盖当天已成立的结论（页面会同时显示两边的状态）",
       };
     }
@@ -508,7 +513,7 @@ export async function storeResearchReport(input: {
     error: parsed.ok ? null : parsed.error,
     basis:
       `服务端按本次现取的 ${facts.lines.length} 行台账复校验后落库 1 条（自然键 ${reportKey}：同一天同范围只留最新一条，` +
-      `所以这张表最多每天一行，不会无限增长）。解释层永远标 AI_INTERPRETATION，台账三层仍是服务端所有。`,
+      `所以这张表最多每天一行，不会无限增长）。解释层永远标「AI 解释」，台账三层仍是服务端所有。`,
   };
 }
 
@@ -583,11 +588,11 @@ export async function loadResearchReport(opts: { date?: string; scope?: string |
   };
   const notes: string[] = [];
   if (!cur) {
-    notes.push(`${date} 还没有 ${scope} 范围的 AI 市场研究报告：这一层只在有人显式点「生成研究报告」时产生，没做过就是空（不是失败，也不会自动补）`);
+    notes.push(`${date} 还没有「${scope === "market" ? "市场全景" : scope}」范围的 AI 市场研究报告：这一层只在有人显式点「生成研究报告」时产生，没做过就是空（不是失败，也不会自动补）`);
   }
   if (stale) notes.push("这份报告生成之后，当天的雷达/事件库里又落了新的扫描结果：报告的台账是生成那一刻的快照，需要重做才对得上最新读数");
   if (broken_payload.length) notes.push(...broken_payload);
-  if (report?.interpretation_status === "REJECTED") notes.push("该日最新一条报告状态为 REJECTED：模型那次没有给出任何可核对的解释，页面不会把它显示成结论");
+  if (report?.interpretation_status === "REJECTED") notes.push("该日最新一条报告被判为不可用：模型那次没有给出任何可核对的解释，页面不会把它显示成结论");
 
   return {
     ok: true,
@@ -601,11 +606,11 @@ export async function loadResearchReport(opts: { date?: string; scope?: string |
     available_dates: rows.map((r) => ({ date: r.asOf, status: r.status, question: r.question })),
     counts,
     layering:
-      `报告共 ${counts.rows} 条（INTERPRETED ${counts.interpreted} / PARTIAL ${counts.partial} / REJECTED ${counts.rejected}）；` +
-      `FACTS / SIGNALS / HISTORICAL_EVIDENCE 由服务端台账产出，INTERPRETATION / RISKS / UNKNOWN / NEXT_CHECKS 属于 AI_INTERPRETATION 层：` +
+      `报告共 ${counts.rows} 条（完整解释 ${counts.interpreted} / 部分可用 ${counts.partial} / 不可用 ${counts.rejected}）；` +
+      `事实/信号/历史证据三层由服务端台账产出，解释/风险/未知/下一步核查四层属「AI 解释」层：` +
       `AI 的解释不是事实，也不会改写任何已有读数`,
     self_check: { broken_payload },
-    basis: `读 research_report(reportKey=${researchReportKey(scope, date)})，台账用落库时冻结的 evidenceJson 原样回显；只读，不重新取数、不改写`,
+    basis: `读取研究报告留档（${researchReportKey(scope, date)}：同一天同范围只留最新一条），台账用落库时冻结的原文回显；只读，不重新取数、不改写`,
     probed_at: shanghaiStamp(),
     error: null,
   };

@@ -57,7 +57,7 @@ export default function PoolPage() {
     try {
       const j = await runPoolVerify(detail.pool_id);
       if (j.status === "pending") {
-        setVerifyMsg(`待下一交易日（asOf=${detail.as_of}，今天尚无新增日K）`);
+        setVerifyMsg(`待下一交易日（留档日=${detail.as_of}，今天尚无新增日K）`);
       } else {
         setVerifyMsg(`验证完成（${j.verify?.verifiedDate}）`);
         await fetchDetail(detail.pool_id);

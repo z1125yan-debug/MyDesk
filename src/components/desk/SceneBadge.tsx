@@ -43,10 +43,10 @@ export default function SceneBadge({ intent }: { intent?: IntentBadge | null }) 
       </span>
       {!!hits.length && <span title="判定命中的词">依据：{hits.join("、")}</span>}
       {intent.inherited && <span title="本轮没有出现新场景词，沿用了上一轮判到的场景">沿用上一轮场景</span>}
-      {intent.followUp && <span title="这句是接着上文问的（省略了主语或标的）">按追问处理</span>}
+      {intent.followUp && <span title="这句是接着上文问的（省略了主语或股票）">按追问处理</span>}
       {intent.symbol && (
         <span>
-          标的 <span className="font-mono text-sky-300">{intent.symbol}</span>
+          股票 <span className="font-mono text-sky-300">{intent.symbol}</span>
           <span className="text-muted-foreground/80">（{sourceNote(intent.symbolSource)}）</span>
         </span>
       )}

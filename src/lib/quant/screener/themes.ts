@@ -129,7 +129,7 @@ export async function discoverThemes(opts?: { force?: boolean }): Promise<ThemeD
   const industry = boardsThs === "full" ? ths!.industry.map(thsToBoardRow) : industry0;
   const concept = ths ? ths.concept.map(thsToBoardRow) : concept0;
   if (!industry.length && !concept.length) {
-    throw new Error("板块数据源暂不可用（东财 clist 与腾讯板块兜底均无返回；同花顺兜底亦无返回）");
+    throw new Error("板块数据源暂不可用（东财榜单接口与腾讯板块兜底均无返回；同花顺兜底亦无返回）");
   }
   // 腾讯板块兜底榜只有涨幅口径（fundsMissing）：资金类读数如实登记缺失，评分自动退到涨幅/扩散度可得的维度
   const boardFundsMissing = [...industry, ...concept].some((r) => r.fundsMissing) && ![...industry, ...concept].some((r) => !r.fundsMissing);

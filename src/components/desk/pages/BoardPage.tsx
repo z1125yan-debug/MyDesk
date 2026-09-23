@@ -235,7 +235,7 @@ export default function BoardPage() {
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card p-4">
-          <div className="mb-1 text-[13.5px] font-semibold">资金流向图 · 主力净额 TOP8</div>
+          <div className="mb-1 text-[13.5px] font-semibold">资金流向图 · 主力净额前 8 名</div>
           <div className="mb-2 text-[12px] text-muted-foreground">
             粒子流向 = 资金去向：红 = 主力净流入个股，绿 = 主力净流出个股；线宽与条长 = 净额大小。悬停查看明细，点击联动右侧资金明细。
           </div>

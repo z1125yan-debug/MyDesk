@@ -28,12 +28,12 @@ export async function GET(req: Request) {
     let dateBasis = "";
     if (rawDate === null || String(rawDate).trim() === "") {
       date = "";
-      dateBasis = `未指定 date → 返回 ${SNAPSHOT_TABLE[kind]} 里最近的留档（按留档时刻倒序，最多 10 条）`;
+      dateBasis = `未指定 date → 返回「${SNAPSHOT_TEXT[kind]}」最近的留档（按留档时刻倒序，最多 10 条）`;
     } else {
       const parsed = parseQueryDate(rawDate, today);
       if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 });
       date = parsed.date;
-      dateBasis = `按请求参数 date=${date} 查询（只读该留档日 tradeDate=${date} 的行）`;
+      dateBasis = `按请求参数 date=${date} 查询（只读留档日等于该日的行）`;
     }
 
     const total = await countSnapshots(db, kind);

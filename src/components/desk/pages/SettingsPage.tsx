@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, PlugZap, Server, Plus, Trash2, FileJson, Info } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
+import { mcpStatusZh } from "@/lib/desk/plain-core";
 import { LifecyclePanel } from "../LifecyclePanel";
 import { CapabilityPanel } from "../CapabilityPanel";
 import { aiChat, aiConfigured, PROVIDER_PRESETS } from "@/lib/desk/ai";
@@ -259,7 +260,7 @@ export default function SettingsPage() {
                       : rt?.status === "failed" ? "bg-rose-500/12 text-rose-300"
                       : rt?.status === "starting" ? "bg-amber-500/12 text-amber-300"
                       : "bg-accent text-muted-foreground")}>
-                    {rt?.status ?? "未启动"}{rt?.toolCount != null ? ` · ${rt.toolCount} 工具` : ""}
+                    {mcpStatusZh(rt?.status)}{rt?.toolCount != null ? ` · ${rt.toolCount} 工具` : ""}
                   </span>
                   <div className="ml-auto flex items-center gap-2">
                     <label className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">

@@ -129,11 +129,11 @@ test("意图小节：徽章字段拼一行话；没徽章/没注入各自如实�
     steps: [], done: null,
   });
   assert.equal(v.intentSection.present, true);
-  assert.equal(v.intentSection.summary, "判为「个股分析」（命中词：分析、结构） · 标的 600519.SH（来源：提问内代码） · 注入数据 321 字");
+  assert.equal(v.intentSection.summary, "判定为「个股分析」（命中词：分析、结构） · 股票 600519.SH（来源：提问内代码） · 随附背景数据 321 字");
   assert.equal(buildDebugView({ steps: [] }).intentSection.summary, "本轮未做场景判定");
   const noData = buildDebugView({ intent: { scene: "quote", label: "行情", hits: [], symbol: null, symbolSource: "", inherited: false, followUp: false, skipped: [] }, steps: [] });
-  assert.match(noData.intentSection.summary, /标的 无/);
-  assert.match(noData.intentSection.summary, /本轮无注入数据/);
+  assert.match(noData.intentSection.summary, /股票 无/);
+  assert.match(noData.intentSection.summary, /本轮没有随附数据/);
   const inherit = buildDebugView({ intent: { scene: "quote", label: "行情", hits: [], symbol: null, symbolSource: "", inherited: true, followUp: true, skipped: [] }, steps: [] });
   assert.match(inherit.intentSection.summary, /沿用上一轮场景/);
 });

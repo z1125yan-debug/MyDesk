@@ -29,15 +29,15 @@ export type DetailTable = "radar_finding" | "global_event";
 export const DETAIL_TABLES: DetailTable[] = ["radar_finding", "global_event"];
 
 export const TABLE_TEXT: Record<DetailTable, string> = {
-  radar_finding: "雷达信号明细（radar_finding）",
-  global_event: "全球事件明细（global_event）",
+  radar_finding: "雷达信号明细",
+  global_event: "全球事件明细",
 };
 
 /** 只报告、不清理的运行记录表 */
 export type RunTable = "task_run" | "scan_cursor";
 export const RUN_TABLE_TEXT: Record<RunTable, string> = {
-  task_run: "扫描运行记录（task_run）",
-  scan_cursor: "增量扫描游标（scan_cursor）",
+  task_run: "扫描运行记录",
+  scan_cursor: "增量扫描游标",
 };
 
 export interface DayBucket {
@@ -103,9 +103,9 @@ export function cutoffOf(today: string, retentionDays = RETENTION_DAYS): string 
 }
 
 export function planBasis(today: string, cutoff: string, retentionDays: number): string {
-  return `清理候选 = ${DETAIL_TABLES.map((t) => TABLE_TEXT[t]).join(" 与 ")} 里 asOf 严格早于 ${cutoff} 的行` +
-    `（今天 ${today} 往前推 ${retentionDays} 天；asOf = ${cutoff} 当天还没满 ${retentionDays} 天，不动）` +
-    `；按整天处理，不拆某天的部分行；当日（asOf=${today}）与判不出年龄的行一律不列入候选。` +
+  return `清理候选 = ${DETAIL_TABLES.map((t) => TABLE_TEXT[t]).join(" 与 ")} 里留档日严格早于 ${cutoff} 的行` +
+    `（今天 ${today} 往前推 ${retentionDays} 天；留档日 = ${cutoff} 当天还没满 ${retentionDays} 天，不动）` +
+    `；按整天处理，不拆某天的部分行；当日（留档日=${today}）与判不出年龄的行一律不列入候选。` +
     `执行方式是人工在预览确认后手动触发：本阶段不挂调度器，没有「到点自动删除」这回事。`;
 }
 
@@ -138,11 +138,11 @@ export function buildPlan(today: string, buckets: DayBucket[], retentionDays = R
       continue;
     }
     if (age < 0) {
-      protectedDays.push({ ...b, reason: `asOf=${b.date} 晚于今天 ${today}：异常日期，不列入清理候选` });
+      protectedDays.push({ ...b, reason: `留档日=${b.date} 晚于今天 ${today}：异常日期，不列入清理候选` });
       continue;
     }
     if (age === 0) {
-      protectedDays.push({ ...b, reason: `当日归档（asOf=${today}）：由扫描口径负责（全量重刷/增量更新），清理不碰当天` });
+      protectedDays.push({ ...b, reason: `当日归档（留档日=${today}）：由扫描口径负责（全量重刷/增量更新），清理不碰当天` });
       continue;
     }
     if (b.date >= cutoff) {
@@ -177,7 +177,7 @@ export function noCandidateNote(plan: LifecyclePlan, totalRows: number): string 
   if (!totalRows) {
     return `库里明细行一共 0 条：没有任何可清理的内容（扫描跑过但当日落库 0 条、或全部行都还在当日口径里，都会是这种状态）。清理不会凭空制造删除。`;
   }
-  return `库里共 ${totalRows} 条明细行，但没有一条 asOf 早于 ${plan.cutoff}（今天 ${plan.today} 往前 ${plan.retention_days} 天）：` +
+  return `库里共 ${totalRows} 条明细行，但没有一条留档日早于 ${plan.cutoff}（今天 ${plan.today} 往前 ${plan.retention_days} 天）：` +
     `本轮可清理 0 行。这是真实数据还没有那么旧，不是清理机制没生效 —— 未执行任何删除。`;
 }
 
@@ -287,11 +287,11 @@ export function exportCountCheck(plan: LifecyclePlan, exportedRows: number): { o
 export function runTablesNote(expired: { table: RunTable; rows: number }[]): string {
   const detail = expired.length
     ? expired.map((e) => `${RUN_TABLE_TEXT[e.table]} ${e.rows} 条`).join("、")
-    : `两张表当前都没有 asOf/tradeDate 早于清理阈值的记录`;
-  return `${RUN_TABLE_TEXT.task_run} 与 ${RUN_TABLE_TEXT.scan_cursor} 不在本阶段清理范围内（用户授权范围是 Radar/Events 明细行的保留天数）。` +
+    : `两张表当前都没有留档日早于清理阈值的记录`;
+  return `扫描运行记录与增量扫描游标不在本阶段清理范围内（用户授权范围是雷达/事件明细行的保留天数）。` +
     `现状：${detail}。` +
-    `为什么留着：task_run 是「哪天扫过、扫出几条」的唯一留痕，第四阶段的运行记录区块靠它回答；` +
-    `游标删掉不会丢数据（P3 口径：库内 live 行的键才是权威），但会丢掉「上次扫到哪」的可解释性。`;
+    `为什么留着：运行记录是「哪天扫过、扫出几条」的唯一留痕，历史查询区块靠它回答；` +
+    `游标删掉不会丢数据（P3 口径：库内有效行的键才是权威），但会丢掉「上次扫到哪」的可解释性。`;
 }
 
 /** 供预览/执行响应共用的口径清单：把「谁决定、怎么删、谁来触发」三条写全，避免页面上出现第二种说法 */
@@ -299,14 +299,14 @@ export function policyNotes(plan: LifecyclePlan): string[] {
   const notes: string[] = [
     RETENTION_DECISION,
     `清理语义：先把候选行完整导出为 data/lifecycle/ 下的 JSON 文件，写盘成功后才允许删除；导出失败或行数对不上 ⇒ 一行都不删。`,
-    `superseded（已标记消失）的当日历史行与 live 行按同一条 asOf 规则处理：它们同样是真实归档，过期前不删、过期时先导出。`,
-    `只删明细行：task_run（运行记录）与 scan_cursor（游标）不在本阶段清理范围内，预览里只报告条数、不动它们。`,
+    `已标记消失的当日历史行与仍有效的行按同一条留档日规则处理：它们同样是真实归档，过期前不删、过期时先导出。`,
+    `只删明细行：扫描运行记录与增量扫描游标不在本阶段清理范围内，预览里只报告条数、不动它们。`,
   ];
   return notes;
 }
 
-/** 状态维度的一句话说明：清理不看 state，看 asOf —— 免得页面把「过期」误写成「消失」 */
+/** 状态维度的一句话说明：清理不看状态，看留档日 —— 免得页面把「过期」误写成「消失」 */
 export function stateAgnosticNote(_filter: StateFilter = "all"): string {
-  return `清理判定只看 asOf（这批行是哪一天写进库的），不看 state：live 与 superseded 都按同一保留天数处理，` +
+  return `清理判定只看留档日（这批行是哪一天写进库的），不看行状态：有效行与已标记消失的行都按同一保留天数处理，` +
     `不存在「消失的信号就先删」这种口径。`;
 }

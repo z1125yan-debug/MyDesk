@@ -32,7 +32,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     source: pool.source,
     data_source: pool.dataSource,
     // §四：价格口径显式标注——冻结行=真实未复权快照价；verify=K线序列口径（同序列内算收益）
-    price_basis: "rows.close=冻结时点真实价（未复权）；verify.open/close=日K序列口径（eltdx 原始价/腾讯前复权qfq，同一序列内自洽）；除权除息日附近两者不相等属正常，不是数据错误",
+    price_basis: "rows.close=冻结时点真实价（未复权）；verify.open/close=日K序列口径（通达信网关原始价/腾讯前复权价，同一序列内自洽）；除权除息日附近两者不相等属正常，不是数据错误",
     rows,
     verify,
   });

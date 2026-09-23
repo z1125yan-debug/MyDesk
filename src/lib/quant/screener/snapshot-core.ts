@@ -13,9 +13,9 @@ import { isValidDate } from "./lifecycle-core.ts"; // 日历合法性只有一�
 export type SnapshotKind = "risk" | "themes" | "probability";
 export const SNAPSHOT_KINDS: SnapshotKind[] = ["risk", "themes", "probability"];
 export const SNAPSHOT_TEXT: Record<SnapshotKind, string> = {
-  risk: "风险监控（Risk）",
-  themes: "主线发现（Themes）",
-  probability: "条件概率（Probability）",
+  risk: "风险监控",
+  themes: "主线发现",
+  probability: "条件概率",
 };
 export const SNAPSHOT_TABLE: Record<SnapshotKind, string> = {
   risk: "risk_snapshot",
@@ -53,8 +53,8 @@ function arr(v: unknown): string[] {
 
 /** 留档的通用口径：一句话讲清「这行是怎么来的」，页面直接显示 */
 export function snapshotBasis(kind: SnapshotKind): string {
-  return `${SNAPSHOT_TEXT[kind]} 的留档行由服务端在点击「留档今天」那一刻重新调用页面同源的计算链路算出` +
-    `（${SNAPSHOT_TABLE[kind]} 存当次完整响应），不是前端算好上传的数字，也不是事后重算的回放。` +
+  return `${SNAPSHOT_TEXT[kind]} 的留档行由服务端在点击「留档今天」那一刻，用与页面同一套算法重新算出` +
+    `（存的是当次完整结果），不是前端算好上传的数字，也不是事后重算的回放。` +
     `它记录的是「那一刻算出来的结果」，同日多次留档会各自成行、互不覆盖。`;
 }
 
@@ -65,7 +65,7 @@ export function noSnapshotNote(kind: SnapshotKind): string {
 
 export function emptyDaySnapshotNote(kind: SnapshotKind, date: string, totalDates: number): string {
   return `${SNAPSHOT_TEXT[kind]} 在 ${date} 没有留档行` +
-    (totalDates ? `（库里已有 ${totalDates} 个留档日，见 available_dates）` : "（库里还没有任何留档日）") +
+    (totalDates ? `（库里已有 ${totalDates} 个留档日）` : "（库里还没有任何留档日）") +
     `。留档只在点击「留档今天」时发生，没留过的那天不会自动补出来，查询也不会拿别的日子顶上。`;
 }
 

@@ -81,5 +81,5 @@ test("前端：AiScanPage 缺口醒目块 + 重复告警不双刷（callout 覆�
 test("出身诚实：兜底期选股响应 provider 不冒充东财口径（universeSource 三元，与 sentiment/limitup 同纪律）", () => {
   const src = readSrc("src/lib/quant/screener/run.ts");
   assert.match(src, /universeSource\(\) === "tc"/);
-  assert.match(src, /腾讯批量快照兜底（东财 clist 断源；K线走 eltdx\/腾讯日K）/);
+  assert.match(src, /腾讯批量快照兜底（东财榜单接口断源；K线走通达信网关\/腾讯日K）/);
 });

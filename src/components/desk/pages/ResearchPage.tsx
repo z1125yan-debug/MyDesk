@@ -35,6 +35,14 @@ import {
   researchFieldCompleteness, researchLayerSections,
   type EvidenceLine, type ResearchReport, type SourceProbe,
 } from "@/lib/quant/screener/research-core";
+import { plainify, promptVerZh } from "@/lib/desk/plain-core";
+
+/** 层名的短中文读法（取 LAYER_TEXT 括号前的头两个词）；认不出原样 */
+const layerZh = (l: string) => LAYER_TEXT[l as keyof typeof LAYER_TEXT]?.split("（")[0] ?? l;
+/** 报告三态的短读法（完整口径仍紧跟在旁边） */
+const STATUS_HEAD: Record<string, string> = { INTERPRETED: "已完成解释", PARTIAL: "部分完成", REJECTED: "不可用" };
+/** 采集器四态的短读法（完整口径在下一行 COLLECTOR_STATUS_TEXT 里） */
+const COLLECTOR_HEAD: Record<string, string> = { ok: "取到", empty: "为空", failed: "失败", not_covered: "无来源" };
 
 const STATUS_TONE: Record<string, string> = {
   INTERPRETED: "text-emerald-300",
@@ -51,7 +59,7 @@ function LedgerLine({ l }: { l: EvidenceLine }) {
     <div className="rounded-lg border border-border/70 bg-card/60 px-2.5 py-1.5">
       <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
         <span className="rounded bg-accent px-1.5 py-0.5 font-mono font-semibold">{l.id}</span>
-        <span className="text-muted-foreground">{l.layer}</span>
+        <span className="text-muted-foreground">{layerZh(l.layer)}</span>
         <SourceBadge status={l.data_status} source={l.source} time={l.as_of} />
       </div>
       <div className="mt-1 text-[11.5px] leading-snug">{l.text}</div>
@@ -98,7 +106,7 @@ function CollectorRow({ s }: { s: SourceProbe }) {
     <div className="rounded-lg border border-border/70 bg-card/50 px-2.5 py-1.5">
       <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
         <span className="font-semibold">{s.title}</span>
-        <span className={`font-mono ${tone}`}>{s.status}</span>
+        <span className={`font-mono ${tone}`}>{COLLECTOR_HEAD[s.status] ?? s.status}</span>
         <SourceBadge status={s.data_status} source={s.source} time={s.as_of} />
       </div>
       <div className="mt-0.5 text-[10px] text-muted-foreground">
@@ -191,7 +199,7 @@ export default function ResearchPage() {
           {view && (
             <SourceBadge
               status={!aiReady(ai) ? "AI_NOT_CONFIGURED 缺失" : "AI_INTERPRETATION"}
-              source={!aiReady(ai) ? "无可用模型通道（浏览器未配置且服务端 .env 通道不可用）：解释层未运行（读数与台账不受影响）" : `research_report · ${view.as_of}`}
+              source={!aiReady(ai) ? "无可用模型通道（浏览器未配置且服务端 .env 通道不可用）：解释层未运行（读数与台账不受影响）" : `研究报告留档 · ${view.as_of}`}
               time={view.report?.generated_at?.slice(5, 16) || view.probed_at?.slice(5, 16)}
             />
           )}
@@ -200,7 +208,7 @@ export default function ResearchPage() {
             {topBusy || viewBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
           </button>
           <button onClick={runAi} disabled={running || topBusy}
-            title="让服务端现取一次台账，交给本机配置的模型解释，再由服务端复校验后落库（这一步会写 research_report 当天那一行）"
+            title="让服务端现取一次台账，交给本机配置的模型解释，再由服务端复校验后落库（这一步会写入当天的研究报告留档）"
             className="flex items-center gap-1 rounded-md bg-fuchsia-500 px-2.5 py-1.5 text-xs text-white hover:bg-fuchsia-400 disabled:cursor-not-allowed disabled:opacity-40">
             {running ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} 生成研究报告
           </button>
@@ -236,13 +244,13 @@ export default function ResearchPage() {
         </div>
         <div className="rounded-lg border border-border/70 bg-card/40 px-3 py-2">
           <div className="text-[10.5px] text-muted-foreground">雷达候选</div>
-          <div className="text-base font-bold">{radar ? `${radar.items.length} 条 live` : "未取到"}</div>
+          <div className="text-base font-bold">{radar ? `${radar.items.length} 条在效` : "未取到"}</div>
           {radar ? (
             <>
               <div className="truncate text-[10.5px] text-muted-foreground" title={radar.items.map((i) => i.title).join(" / ") || "当日没有规则命中"}>
                 {radar.items.slice(0, 2).map((i) => i.title).join(" / ") || "当日 0 条：真实为空，不是失败"}
               </div>
-              <div className="mt-1"><SourceBadge status="REAL" source="radar_finding 当日库行" time={radar.as_of.slice(5, 16)} /></div>
+              <div className="mt-1"><SourceBadge status="REAL" source="雷达发现当日留档" time={radar.as_of.slice(5, 16)} /></div>
             </>
           ) : <div className="text-[10px] text-red-300">{topErr.radar || "正在读取…"}</div>}
         </div>
@@ -254,7 +262,7 @@ export default function ResearchPage() {
               <div className="truncate text-[10.5px] text-muted-foreground" title={events.items.map((i) => i.title).join(" / ") || "当日无事件行"}>
                 {events.items.slice(0, 2).map((i) => i.title).join(" / ") || "当日 0 条：真实为空，本层不会去猜新闻"}
               </div>
-              <div className="mt-1"><SourceBadge status="HISTORICAL" source="global_event 当日库行" time={events.as_of.slice(0, 10)} /></div>
+              <div className="mt-1"><SourceBadge status="HISTORICAL" source="全球事件当日留档行" time={events.as_of.slice(0, 10)} /></div>
             </>
           ) : <div className="text-[10px] text-red-300">{topErr.events || "正在读取…"}</div>}
         </div>
@@ -267,7 +275,7 @@ export default function ResearchPage() {
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value.slice(0, 500))}
-            placeholder="Research Query：想问什么？例：今天半导体链条的资金与涨幅是否互相支持？（留空 = 服务端按默认问题「当前市场环境如何」组装，并把这一条写进缺失口径）"
+            placeholder="想问什么？例：今天半导体链条的资金与涨幅是否互相支持？（留空 = 服务端按默认问题「当前市场环境如何」组装，并把这一条写进缺失口径）"
             className="min-w-[280px] flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs outline-none focus:border-sky-500"
           />
           {view?.available_dates.length ? (
@@ -276,7 +284,7 @@ export default function ResearchPage() {
               <button onClick={() => void loadView("")} className={`rounded border px-1.5 py-0.5 ${date ? "border-border" : "border-sky-500/40 text-sky-300"}`}>今天</button>
               {view.available_dates.slice(0, 6).map((d) => (
                 <button key={d.date} onClick={() => void loadView(d.date)}
-                  title={`${d.status}｜${d.question || "未记录问题"}`}
+                  title={`${STATUS_HEAD[d.status] ?? d.status}｜${d.question || "未记录问题"}`}
                   className={`rounded border px-1.5 py-0.5 ${date === d.date ? "border-sky-500/40 text-sky-300" : "border-border"}`}>
                   {d.date.slice(5)}
                 </button>
@@ -286,14 +294,14 @@ export default function ResearchPage() {
         </div>
         {!aiReady(ai) && (
           <div className="mt-1.5 text-[10.5px] text-amber-300">
-            无可用模型通道（浏览器未配置，且服务端 .env 通道不可用）：解释层跑不了（AI_NOT_CONFIGURED）。上方四块读数与台账都是真实的，缺的只是解释这一步；配好任一条路再生成。
+            无可用模型通道（浏览器未配置，且服务端 .env 通道不可用）：解释层跑不了。上方四块读数与台账都是真实的，缺的只是解释这一步；配好任一条路再生成。
           </div>
         )}
       </LineageSection>
 
       {(err || run?.message) && (
         <div className={`rounded-lg border px-3 py-2 text-xs ${err ? "border-red-500/30 bg-red-500/10 text-red-300" : `border-border bg-card/60 ${STATUS_TONE[run!.status] ?? "text-muted-foreground"}`}`}>
-          {err || `本次「生成研究报告」：${RESEARCH_RUN_STATUS_TEXT[run!.status]} —— ${run!.message}`}
+          {err || plainify(`本次「生成研究报告」：${RESEARCH_RUN_STATUS_TEXT[run!.status]} —— ${run!.message}`)}
           {run && run.raw_chars > 0 && <span className="text-muted-foreground">（模型原文 {run.raw_chars} 字符，服务端复校验后落库）</span>}
         </div>
       )}
@@ -305,15 +313,15 @@ export default function ResearchPage() {
           {rep ? (
             <div className="rounded-lg border border-fuchsia-500/25 bg-card/40 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`text-sm font-semibold ${STATUS_TONE[rep.interpretation_status]}`}>{rep.interpretation_status}</span>
+                <span className={`text-sm font-semibold ${STATUS_TONE[rep.interpretation_status]}`} title={rep.interpretation_status}>{STATUS_HEAD[rep.interpretation_status] ?? rep.interpretation_status}</span>
                 <span className="text-[10.5px] text-muted-foreground">{statusText}</span>
               </div>
               <div className="mt-1 text-[13px] font-medium">{rep.headline || "（本份报告没有 headline：AI 未给出，或被服务端整条剔除）"}</div>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[10.5px] text-muted-foreground">
                 <span>市场姿态：<b className="text-foreground">{rep.market_posture}</b>{rep.posture_cites.length ? `（引用 ${rep.posture_cites.join("、")}）` : "（无引用）"}</span>
                 <SourceBadge status="AI_INTERPRETATION" source={`模型 ${rep.model || "未记录"}`} time={rep.generated_at} />
-                <span>提示词 {rep.prompt_version}</span>
-                <span>台账 {rep.evidence_total} 行（FACTS {rep.evidence_by_layer.FACTS} / SIGNALS {rep.evidence_by_layer.SIGNALS} / HIST {rep.evidence_by_layer.HISTORICAL_EVIDENCE}）</span>
+                <span>提示词 {promptVerZh(rep.prompt_version)}</span>
+                <span>台账 {rep.evidence_total} 行（事实 {rep.evidence_by_layer.FACTS} / 信号 {rep.evidence_by_layer.SIGNALS} / 历史证据 {rep.evidence_by_layer.HISTORICAL_EVIDENCE}）</span>
                 {rep.data_layer !== "AI_INTERPRETATION" && <span className="text-red-300">分层标记异常</span>}
               </div>
               <div className="mt-1 text-[10px] text-muted-foreground/90">研究问题：{rep.question || "未记录"}</div>
@@ -337,19 +345,19 @@ export default function ResearchPage() {
             </div>
           ) : (
             <div className="rounded-lg border border-border/70 bg-card/40 px-4 py-3 text-xs text-muted-foreground">
-              {viewBusy ? "正在读取报告…" : `${view?.as_of || "本日"} 还没有 ${view?.scope || "market"} 范围的 AI 市场研究报告：这一层只在有人点「生成研究报告」时产生，没做过就是空（不是失败，也不会自动补）。`}
+              {viewBusy ? "正在读取报告…" : `${view?.as_of || "本日"} 还没有「${view?.scope === "market" || !view?.scope ? "市场全景" : view?.scope}」范围的 AI 市场研究报告：这一层只在有人点「生成研究报告」时产生，没做过就是空（不是失败，也不会自动补）。`}
               {!!view?.missing.length && <div className="mt-1 text-[10.5px]">{view.missing.join("；")}</div>}
             </div>
           )}
           </LineageSection>
 
           {rep && (
-            <LineageSection title="七分区明细" hint="FACTS/SIGNALS/HIST 是服务端台账 · 其余四层是模型产出、经服务端复校验">
+            <LineageSection title="七分区明细" hint="事实/信号/历史证据三层是服务端台账 · 其余四层是模型产出、经服务端复校验">
             <div className="space-y-2">
               {sections.map((s) => (
                 <div key={s.layer} className="rounded-lg border border-border/70 bg-card/40 px-3 py-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-[10.5px] font-semibold">{s.layer}</span>
+                    <span className="font-mono text-[10.5px] font-semibold">{layerZh(s.layer)}</span>
                     <SourceBadge status={s.owner === "服务端" ? (s.layer === "FACTS" ? "REAL" : s.layer === "SIGNALS" ? "DERIVED" : "HISTORICAL") : "AI_INTERPRETATION"} source={s.owner === "服务端" ? "服务端台账" : "模型产出，经服务端复校验"} />
                     <span className="text-[10px] text-muted-foreground">{LAYER_TEXT[s.layer]}</span>
                   </div>
@@ -382,13 +390,13 @@ export default function ResearchPage() {
 
         {/* ④ Tool Calls 侧栏：采集器观测 + 本次台账目录 + 缺失口径 */}
         <div>
-          <LineageSection title="Tool Calls · 采集器观测" tone={collectorTone} hint="服务端取数观测，不是模型的工具调用" divided={false}>
+          <LineageSection title="采集器观测 · 本次取数留痕" tone={collectorTone} hint="服务端取数观测，不是模型的工具调用" divided={false}>
             <div className="text-[9.5px] leading-snug text-amber-300/90">
               这一栏是服务端本次向哪些能力取了数、取到没有，<b>不是模型的工具调用</b>：模型只拿到下面这份台账文本，自己没有取数能力（Agent 自主调用在 P6-D）。
             </div>
             <div className="mt-1.5 space-y-1.5">
               {(view?.sources ?? []).length ? view!.sources.map((s) => <CollectorRow key={s.capability} s={s} />)
-                : <div className="text-[10.5px] text-muted-foreground">没有采集器观测：这份报告落库时没有留 sources 快照（或还没有报告）。点「刷新」重读一次。</div>}
+                : <div className="text-[10.5px] text-muted-foreground">没有采集器观测：这份报告落库时没有留取数观测快照（或还没有报告）。点「刷新」重读一次。</div>}
             </div>
             <div className="mt-1 text-[9.5px] text-muted-foreground/80">
               台账上限 {MAX_LEDGER_LINES} 行：超出部分不参与本次提示词，截断条数会出现在下方「缺失口径」里（不静默丢行）。
@@ -417,7 +425,7 @@ export default function ResearchPage() {
           )}
             {run?.prompt && (
             <div className="mt-1.5 rounded-lg border border-border/70 bg-card/40 px-3 py-2 text-[9.5px] leading-snug text-muted-foreground">
-              本次提示词：台账 {run.prompt.lines.length} 行 · 采集器 {run.prompt.sources.length} 个 · 截断 {run.prompt.truncated} 行 · as_of {run.prompt.as_of}
+              本次提示词：台账 {run.prompt.lines.length} 行 · 采集器 {run.prompt.sources.length} 个 · 截断 {run.prompt.truncated} 行 · 留档日 {run.prompt.as_of}
               <div className="mt-1">组装依据：{run.prompt.basis}</div>
             </div>
           )}

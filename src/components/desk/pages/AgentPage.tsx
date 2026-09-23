@@ -35,14 +35,23 @@ import {
   AGENT_STOP_REASON_TEXT, AGENT_SYSTEM_PROMPT, LOG_STATUS_TEXT, OBS_KIND_TEXT,
 } from "@/lib/quant/screener/agent-loop-core";
 import { DATA_STATUS_TEXT } from "@/lib/quant/screener/datastatus-core";
+import { plainify, promptVerZh, statusZh } from "@/lib/desk/plain-core";
+
+/** 运行状态的短读法（认不出的值原样显示，不猜） */
+const RUN_HEAD: Record<string, string> = { running: "进行中", finished: "已完成", interrupted: "已中断", started: "已开始" };
+/** 收尾结论三态的短读法（判定值仍是库里的英文枚举，这里只换读法） */
+const ANSWER_HEAD: Record<string, string> = { ACCEPTED: "结论成立", PARTIAL: "部分成立", REJECTED: "不可回溯" };
+const runHead = (s: string | null | undefined) => (s ? RUN_HEAD[s] ?? s : "未记录");
+const answerHead = (s: string | null | undefined) => (!s ? "未收尾" : ANSWER_HEAD[s] ?? statusZh(s));
 
 /** 接口给的是宽 string，内核表按枚举索引：未知值原样显示，不套一句相近的现成文案 */
 const DATA_STATUS_TABLE = DATA_STATUS_TEXT as unknown as Record<string, string>;
 
-/** 内核文案表按枚举索引；接口给的是宽 string，未知值原样显示而不是套一句相近的现成文案 */
+/** 内核文案表按枚举索引；接口给的是宽 string，未知值原样显示而不是套一句相近的现成文案。
+ *  P15-R15：出口再过一道人话读法（表值里夹带的英文枚举只在页面上换读法，表本身一字不动）。 */
 function textOf(table: Record<string, string>, key: string | null | undefined): string {
   if (!key) return "未记录";
-  return table[key] ?? `${key}（内核没有这条文案：原样显示，不猜它算什么）`;
+  return plainify(table[key] ?? `${key}（内核没有这条文案：原样显示，不猜它算什么）`);
 }
 
 const LOOP_TONE: Record<string, string> = {
@@ -168,15 +177,15 @@ function LedgerRow({ l }: { l: NonNullable<AgentRunViewClient["ledger"]>[number]
 function RecentRun({ r, active, onPick }: { r: AgentRunListItemClient; active: boolean; onPick: (id: string) => void }) {
   return (
     <button onClick={() => onPick(r.run_id)}
-      title={`${r.question}\n${r.status}｜停止原因 ${r.stop_reason || "未记录"}｜结论 ${r.answer_status || "未收尾"}`}
+      title={`${r.question}\n${runHead(r.status)}｜停止原因 ${r.stop_reason || "未记录"}｜结论 ${answerHead(r.answer_status)}`}
       className={`w-full rounded-lg border px-2 py-1.5 text-left text-[10px] leading-snug hover:bg-accent ${active ? "border-sky-500/50 bg-sky-500/5" : "border-border/70 bg-card/50"}`}>
       <div className="flex items-center gap-1.5">
         <span className="truncate font-mono">{r.run_id}</span>
-        <span className={r.status === "finished" ? "text-emerald-300" : "text-amber-300"}>{r.status}</span>
+        <span className={r.status === "finished" ? "text-emerald-300" : "text-amber-300"}>{runHead(r.status)}</span>
       </div>
       <div className="truncate text-muted-foreground">{r.question || "（没有研究问题）"}</div>
       <div className="text-muted-foreground/80">
-        步 {r.steps}｜调用 {r.tool_calls}｜台账 {r.evidence_lines}｜缺 {r.missing_lines}｜{r.answer_status || "未收尾"}｜{r.started_at.slice(5, 16)}
+        步 {r.steps}｜调用 {r.tool_calls}｜台账 {r.evidence_lines}｜缺 {r.missing_lines}｜{answerHead(r.answer_status)}｜{r.started_at.slice(5, 16)}
       </div>
     </button>
   );
@@ -274,7 +283,7 @@ export default function AgentPage() {
           {view && (
             <SourceBadge
               status={!aiReady ? "AI_NOT_CONFIGURED 缺失" : "AI_INTERPRETATION"}
-              source={!aiReady ? "无可用模型通道（浏览器未配置且服务端 .env 通道不可用）：循环跑不了（读数与工具目录不受影响）" : `agent_run ${view.run_id} · ${view.status}`}
+              source={!aiReady ? "无可用模型通道（浏览器未配置且服务端 .env 通道不可用）：循环跑不了（读数与工具目录不受影响）" : `自主运行留档 ${view.run_id} · ${runHead(view.status)}`}
               time={view.started_at?.slice(5, 16)}
             />
           )}
@@ -319,11 +328,11 @@ export default function AgentPage() {
             <input value={budgetMs} onChange={(e) => setBudgetMs(e.target.value.replace(/\D/g, "").slice(0, 7))}
               className="w-16 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] outline-none focus:border-sky-500" />
           </label>
-          <span>本机保险 {CLIENT_TURN_GUARD} 格（内核硬上限步数 + 3）· 到点自己停住并照实标 CLIENT_GUARD</span>
+          <span>本机保险 {CLIENT_TURN_GUARD} 格（内核硬上限步数 + 3）· 到点自己停住并照实标「本机保险截停」</span>
         </div>
         {!aiReady && (
           <div className="mt-1.5 text-[10.5px] text-amber-300">
-            没有可用的模型通道（AI_NOT_CONFIGURED）：工具目录、历史运行与每条血缘照常可查，缺的是「问模型选哪条工具」这一步——到设置页填 Base URL / 模型 / Key，或在服务端 .env 配一条可用通道。服务端不会替你跑一轮假的。
+            没有可用的模型通道：工具目录、历史运行与每条血缘照常可查，缺的是「问模型选哪条工具」这一步——到设置页填 Base URL / 模型 / Key，或在服务端 .env 配一条可用通道。服务端不会替你跑一轮假的。
           </div>
         )}
         {!question.trim() && aiReady && !running && (
@@ -337,10 +346,10 @@ export default function AgentPage() {
 
       {run && (
         <div className={`rounded-lg border border-border bg-card/60 px-3 py-2 text-xs ${LOOP_TONE[run.status as AgentLoopStatus] ?? "text-muted-foreground"}`}>
-          <div className="font-semibold">{run.status} · {AGENT_LOOP_STATUS_TEXT[run.status as AgentLoopStatus]}</div>
+          <div className="font-semibold" title={run.status}>{AGENT_LOOP_STATUS_TEXT[run.status as AgentLoopStatus] ?? run.status}</div>
           <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{run.message}</div>
           <div className="mt-1 text-[10px] text-muted-foreground/90">
-            run_id {run.run_id}｜模型 {run.model}｜本机格数 {run.turns.length}（其中带服务端日志 {run.turns.filter((t) => !!t.call).length} 步）
+            运行编号 {run.run_id}｜模型 {run.model}｜本机格数 {run.turns.length}（其中带服务端日志 {run.turns.filter((t) => !!t.call).length} 步）
             ｜停止原因 {run.stop_reason ? textOf(AGENT_STOP_REASON_TEXT, run.stop_reason) : "本轮未触发内核停止条件"}
           </div>
           {!!run.notes.length && <ul className="mt-1 list-disc pl-4 text-[10px] text-muted-foreground/90">{run.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
@@ -354,8 +363,8 @@ export default function AgentPage() {
           {view && (view.answer_text || view.answer_status) ? (
             <div className="rounded-lg border border-fuchsia-500/25 bg-card/40 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`text-sm font-semibold ${view.answer_status === "ACCEPTED" ? "text-emerald-300" : view.answer_status === "PARTIAL" ? "text-amber-300" : "text-red-300"}`}>
-                  {view.answer_status || "未收尾"}
+                <span className={`text-sm font-semibold ${view.answer_status === "ACCEPTED" ? "text-emerald-300" : view.answer_status === "PARTIAL" ? "text-amber-300" : "text-red-300"}`} title={view.answer_status || undefined}>
+                  {answerHead(view.answer_status)}
                 </span>
                 <SourceBadge status="AI_INTERPRETATION" source={`模型 ${view.model || "未记录"}`} time={view.finished_at?.slice(5, 16)} />
                 <span className="text-[10px] text-muted-foreground">服务端按库内调用行复校验的判定，不是市场结论；这段原文没有被改写</span>
@@ -385,7 +394,7 @@ export default function AgentPage() {
             </div>
           ) : (
             <div className="rounded-lg border border-border/70 bg-card/40 px-4 py-3 text-xs text-muted-foreground">
-              {view ? `这次运行（${view.run_id}）还没有结论：库里状态 ${view.status}。${view.stop_reason ? `停止原因：${textOf(AGENT_STOP_REASON_TEXT, view.stop_reason)}。` : ""}没收尾就是没收尾，本页不会显示一条编出来的答案。`
+              {view ? `这次运行（${view.run_id}）还没有结论：库里状态 ${runHead(view.status)}。${view.stop_reason ? `停止原因：${textOf(AGENT_STOP_REASON_TEXT, view.stop_reason)}。` : ""}没收尾就是没收尾，本页不会显示一条编出来的答案。`
                 : "还没有选中任何一次运行：填好问题点「运行研究循环」，或在右边列表点一条回看。"}
             </div>
           )}
@@ -459,8 +468,8 @@ export default function AgentPage() {
             {view && (
               <div className="mt-1.5 text-[9.5px] leading-snug text-muted-foreground/80">
                 <div>{view.basis}</div>
-                <div className="mt-0.5">协议 {view.protocol}｜提示词 {view.prompt_version}｜开始 {view.started_at}｜结束 {view.finished_at || "未收尾"}｜用时 {view.elapsed_ms ?? 0}ms</div>
-                <div className="mt-0.5">分层含义：{Object.entries(DATA_STATUS_TABLE).map(([k, v]) => `${k}=${v}`).join("；")}</div>
+                <div className="mt-0.5">协议 {promptVerZh(view.protocol)}｜提示词 {promptVerZh(view.prompt_version)}｜开始 {view.started_at}｜结束 {view.finished_at || "未收尾"}｜用时 {view.elapsed_ms ?? 0}ms</div>
+                <div className="mt-0.5">分层含义：{Object.entries(DATA_STATUS_TABLE).map(([k, v]) => `${statusZh(k)}＝${v}`).join("；")}</div>
               </div>
             )}
           </LineageSection>
@@ -492,7 +501,7 @@ export default function AgentPage() {
                     {t.timeout_ms ? <span className="text-muted-foreground">超时 {t.timeout_ms}ms</span> : null}
                   </div>
                   <div className="mt-0.5 text-muted-foreground/80">入参：{t.input_note || "无参数"}</div>
-                  {t.disabled_reason ? <div className="mt-0.5 text-amber-300">{t.disabled_reason}</div> : null}
+                  {t.disabled_reason ? <div className="mt-0.5 text-amber-300">{plainify(t.disabled_reason)}</div> : null}
                   {!!t.limitations.length && <div className="mt-0.5 text-muted-foreground/80">限制：{t.limitations.join("；")}</div>}
                   {!!t.fallbacks.length && <div className="mt-0.5 text-muted-foreground/80">兜底：{t.fallbacks.join("、")}</div>}
                 </div>
@@ -504,7 +513,7 @@ export default function AgentPage() {
           <LineageSection title={`历史运行（库内 ${list.length} 次）`} hint="按开始时间倒序 · 这些行是真事：模型自称跑过而没有落库的，这里不会有">
             <div className="mt-1.5 space-y-1.5">
               {list.length ? list.map((r) => <RecentRun key={r.run_id} r={r} active={r.run_id === viewId} onPick={(id) => { setRunId(id); void loadView(id); }} />)
-                : <div className="text-[10px] text-muted-foreground">agent_run 当前 0 行：还没有人带着真实模型回复跑完一轮（不是失败，也不是「自动跑过」）。</div>}
+                : <div className="text-[10px] text-muted-foreground">自主分析运行留档当前 0 行：还没有人带着真实模型回复跑完一轮（不是失败，也不是「自动跑过」）。</div>}
             </div>
           </LineageSection>
 

@@ -403,7 +403,7 @@ test("P4 雷达历史：与今日视图同源一致、live/superseded 可分、�
   assert.equal(none.json.is_today, false);
   assert.deepEqual(none.json.items, []);
   assert.equal(none.json.counts.rows, 0);
-  assert.ok(String(none.json.missing.join(" ")).includes("库里没有 asOf=1990-01-02"), `无数据日期必须给出缺失口径：${JSON.stringify(none.json.missing)}`);
+  assert.ok(String(none.json.missing.join(" ")).includes("库里没有留档日=1990-01-02"), `无数据日期必须给出缺失口径：${JSON.stringify(none.json.missing)}`);
   assert.ok(!String(none.json.missing.join(" ")).includes("今日"), "缺失说明不得夹带今天的口径");
   assert.ok(!Array.isArray(none.json.available_dates) || !none.json.available_dates.some((b: any) => b.date === "1990-01-02"),
     "1990-01-02 不在真实归档清单里：不能为了页面好看把它列成可查询日期");
@@ -469,7 +469,7 @@ test("P4 事件历史：契约如实（无 state 列 ⇒ superseded 为 null）�
     const none = await api("GET", "/api/events/history?date=1990-01-02");
     assert.equal(none.json.date, "1990-01-02");
     assert.deepEqual(none.json.items, [], "没有归档的日期必须返回空，不得回退到已有数据的那天");
-    assert.ok(String(none.json.missing.join(" ")).includes("库里没有 asOf=1990-01-02"));
+    assert.ok(String(none.json.missing.join(" ")).includes("库里没有留档日=1990-01-02"));
   }
   for (const bad of ["1990-1-2", "2999-01-01"]) {
     const r = await api("GET", `/api/events/history?date=${bad}`);

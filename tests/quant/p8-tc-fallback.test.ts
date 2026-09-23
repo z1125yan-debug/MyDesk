@@ -113,7 +113,7 @@ test("全A快照：东财抛错/空返回才走腾讯兜底，两路都挂抛合
   assert.match(src, /async function fetchUniverseAllARaw/);
   assert.match(src, /setUniverseSource\("em"\)/);
   assert.match(src, /const tc = await fetchTcUniverseAllA\(\);\s*\n\s*setUniverseSource\("tc"\)/);
-  assert.match(src, /东财 clist 与腾讯兜底均失败/);
+  assert.match(src, /东财榜单接口与腾讯兜底均失败/);
   assert.match(src, /cached\("universe", `all`, fetchUniverseAllARaw\)/, "TTL 缓存包住整条兜底链");
 });
 
@@ -144,7 +144,7 @@ test("上层 source 文案跟着真实来源走：sentiment/limitup/全A/主线�
     assert.match(readSrc(f), /universeSource\(\) === "tc"/, f);
   }
   const th = readSrc("src/lib/quant/screener/themes.ts");
-  assert.match(th, /东财 clist 与腾讯板块兜底均无返回/);
+  assert.match(th, /东财榜单接口与腾讯板块兜底均无返回/);
   assert.match(th, /腾讯兜底榜不含资金读数/);
   assert.match(th, /boardFundsMissing/, "整榜 fundsMissing 才登记缺失（混榜不误报）");
 });

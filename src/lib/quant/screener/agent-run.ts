@@ -22,6 +22,8 @@ import {
 import { agentToolBasis, findTool, obsNotes, SUMMARY_MAX_LEN } from "./agent-tools-core.ts";
 import type { ToolObservation } from "./agent-tools-core.ts";
 import { DATA_STATUSES, type DataStatus, type ObservationKind } from "./datastatus-core.ts";
+// P15-R15：显示读法核是零依赖纯文件，相对引入不违反上面「不引 @/ 别名」的约束（node --test 可解析）。
+import { promptVerZh, statusShortZh } from "../../desk/plain-core.ts";
 // 类型引用（编译期擦除）：运行时依赖走下面的动态 import，避免 node --test 解析不到 @/ 别名链。
 import type { AgentToolRun, runAgentTool } from "./agent-tools.ts";
 
@@ -688,7 +690,7 @@ export async function finalizeAgentRun(input: { run_id: unknown; raw: unknown; m
     check, summary: summarizeRun(state, check, clock.now_ms), missing: state.missing,
     basis:
       `服务端按库内 ${state.log.length} 条调用记录复校验：答案引用 ${check.cites_valid.length} 行台账，血缘逐条回到工具与出处。` +
-      `判定=${check.status}，结论原文照存不改写。协议 ${AGENT_PROTOCOL_VERSION}；停止原因=${s(state.stop?.reason) || "未记录"}。`,
+      `判定=${statusShortZh(check.status)}，结论原文照存不改写。协议 ${promptVerZh(AGENT_PROTOCOL_VERSION)}；停止原因=${s(state.stop?.reason) || "未记录"}。`,
   };
 }
 

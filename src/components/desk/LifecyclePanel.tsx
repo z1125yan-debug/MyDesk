@@ -64,7 +64,7 @@ export function LifecyclePanel() {
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-1.5 text-[13.5px] font-semibold"><Eraser size={14} className="text-sky-400" /> 数据生命周期（旧信号清理）</div>
         <div className="flex items-center gap-2">
-          {data && <SourceBadge status="READ-ONLY 预览" source={`dry-run ${data.basis ? "口径见下" : ""}`} time={data.today} />}
+          {data && <SourceBadge status="只预览，不会删改" source="确认后才会生成删除计划" time={data.today} />}
           <button onClick={() => void load()} disabled={busy || running}
             className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50">
             {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 重新预览
@@ -81,7 +81,7 @@ export function LifecyclePanel() {
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               {[
                 { k: "保留天数", v: `${data.retention_days} 天`, t: "由用户 2026-09-19 决定，API 不提供可改参数" },
-                { k: "过期阈值（cutoff）", v: data.cutoff, t: `asOf 严格早于 ${data.cutoff} 才进候选；今天（${data.today}）永不进候选` },
+                { k: "过期阈值", v: data.cutoff, t: `留档日严格早于 ${data.cutoff} 才进候选；今天（${data.today}）永不进候选` },
                 { k: "候选清理", v: `${data.totals.candidate_days} 个归档日 / ${data.totals.candidate_rows} 行`, t: "按整天清理，不会出现半天的归档" },
                 { k: "受保护保留", v: `${data.totals.protected_days} 个归档日 / ${data.totals.protected_rows} 行`, t: "未满期、当日、以及判不出年龄的行" },
               ].map((c) => (
@@ -93,7 +93,8 @@ export function LifecyclePanel() {
             </div>
 
             <div className="text-[11px] text-muted-foreground">
-              库里现有明细行 <b className="text-foreground">{data.detail_rows_in_db}</b> 行 · 依据：{data.basis} · 计划指纹 <span className="font-mono">{data.plan_hash}</span>
+              库里现有明细行 <b className="text-foreground">{data.detail_rows_in_db}</b> 行 · 依据：{data.basis} · 计划指纹{" "}
+              <span className="cursor-help underline decoration-dotted" title={`两次数值不同＝两次看到的库内容不一样（防「预览的是 A、确认时已变 B」）：${data.plan_hash}`}>已登记</span>
             </div>
 
             <ul className="space-y-1 text-[11px] leading-4 text-muted-foreground">
@@ -106,7 +107,7 @@ export function LifecyclePanel() {
                 <table className="w-full text-left text-[11px]">
                   <thead className="bg-accent/40 text-muted-foreground">
                     <tr>
-                      <th className="px-2 py-1">表</th><th className="px-2 py-1">归档日（asOf）</th>
+                      <th className="px-2 py-1">表</th><th className="px-2 py-1">归档日</th>
                       <th className="px-2 py-1 text-right">行数</th><th className="px-2 py-1 text-right">其中成立</th>
                       <th className="px-2 py-1 text-right">已标记消失</th><th className="px-2 py-1 text-right">距今</th>
                     </tr>
@@ -114,7 +115,7 @@ export function LifecyclePanel() {
                   <tbody>
                     {candidates.map((c) => (
                       <tr key={`${c.table}@${c.date}`} className="border-t border-border/60">
-                        <td className="px-2 py-1">{TABLE_TEXT[c.table] ?? c.table}（{c.table}）</td>
+                        <td className="px-2 py-1">{TABLE_TEXT[c.table] ?? c.table}</td>
                         <td className="px-2 py-1 font-mono">{c.date}</td>
                         <td className="px-2 py-1 text-right">{c.rows}</td>
                         <td className="px-2 py-1 text-right">{c.live}</td>

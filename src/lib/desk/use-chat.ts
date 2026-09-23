@@ -10,7 +10,7 @@ import { aiChatPlain, aiReady, priceBandOk, resolveChatEndpoint } from "./ai";
 import { aiChatTools } from "./quant-api";
 import { resumeChat, streamChat, playTypewriter } from "./chat-stream-client";
 import {
-  applyEvent, buildPromptMessages, clampTurns, DEFAULT_MAX_TURNS, DEFAULT_PROMPT_BUDGET_CHARS, newId,
+  applyEvent, buildPromptMessages, clampTurns, DEFAULT_MAX_TURNS, DEFAULT_PROMPT_BUDGET_CHARS, joinWarnings, newId,
   settleRunningSteps, titleFromMessages, type ChatMessage, type ChatRequestMessage, type ChatSession,
 } from "./chat-core";
 import { stepsFromTrace, type StreamEvent } from "./chat-stream-core";
@@ -160,7 +160,7 @@ async function resumeRound(sessionId: string, msgId: string, run: string, since:
     patch({
       content: next.content || "（本轮在刷新时中断，此前没有内容；不自动重问。）",
       steps: next.steps,
-      warning: [next.warning, warnText].filter(Boolean).join("；"),
+      warning: joinWarnings([next.warning, warnText]),
       streaming: false,
       runRef: undefined,
     });
@@ -465,7 +465,7 @@ export function useChatSend(cfg: ChatEndpointCfg) {
     const guard = anchorMismatch ? null : snap?.guardPrice ?? null;
     if (!ctrl.signal.aborted && guard && cur.content && !priceBandOk(cur.content, guard)) {
       const correctiveMsg = `警告：你上一次回答中的价位与实时行情快照严重不符（最新价应为 ${guard.toFixed(2)} 元），属于幻觉，已被系统拦截。重新回答：所有价位只允许来自快照，数量级必须与最新价一致。`;
-      onEvent({ type: "warning", data: { text: `价位校验未通过（应为 ${guard.toFixed(2)} 元量级），已带警告重新生成一次。` } });
+      onEvent({ type: "warning", data: { text: `回答里的价格和实时行情对不上（最新价应在 ${guard.toFixed(2)} 元附近），已提醒模型重答一次` } });
       flushNow();
       cur = { ...cur, content: "" };
       const correctiveMessages = [...callMessages, { role: "system" as const, content: correctiveMsg }];

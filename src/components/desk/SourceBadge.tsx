@@ -1,5 +1,7 @@
 "use client";
 // 实时状态徽章（需求文档 三十八）：LIVE / HISTORICAL / DEMO / OFFLINE + 数据源与时间
+// P15-R15：颜色判定继续看原始枚举串（血缘不动），胶囊上的文字走 plain-core 的人话读法。
+import { statusZh } from "@/lib/desk/plain-core";
 export function SourceBadge({ status, source, time }: { status: string; source?: string; time?: string }) {
   const live = /LIVE/i.test(status);
   const degraded = /DEGRADED|缺失|暂无/i.test(status);
@@ -14,7 +16,7 @@ export function SourceBadge({ status, source, time }: { status: string; source?:
   return (
     <span className={`inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 text-[10px] font-medium ${color}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${degraded ? "bg-amber-400" : demo ? "bg-fuchsia-400" : live ? "animate-pulse bg-emerald-400" : "bg-sky-400"}`} />
-      {status}
+      {statusZh(status)}
       {source && <span className="text-muted-foreground">· {source}</span>}
       {time && <span className="text-muted-foreground">· {time}</span>}
     </span>

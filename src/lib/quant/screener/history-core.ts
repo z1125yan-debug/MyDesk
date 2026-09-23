@@ -220,12 +220,12 @@ export function dayRunItems(rows: RunDbRowLite[]): HistoryRunItem[] {
  * is_today=false 时明确写「历史归档只读」，绝不出现「实时」二字。
  */
 export function viewBasis(kind: HistoryKind, date: string, isToday: boolean, filter: StateFilter): string {
-  const table = kind === "radar" ? "radar_finding" : "global_event";
+  const table = kind === "radar" ? "雷达信号明细" : "全球事件明细";
   if (isToday) {
-    return `今日（${date}）· ${table} 当日库行，随每次扫描刷新（写库口径见当日 task_run）`;
+    return `今日（${date}）· ${table}当日库行，随每次扫描刷新（写库口径见当日扫描运行记录）`;
   }
   const extra = kind === "radar" && filter !== "all" ? `；${STATE_TEXT[filter]}` : "";
-  return `历史归档（只读）· ${table} 中 asOf=${date} 的库行，不重算、不回补、不会被今天的扫描改写${extra}`;
+  return `历史归档（只读）· ${table}中留档日=${date} 的库行，不重算、不回补、不会被今天的扫描改写${extra}`;
 }
 
 /**
@@ -240,16 +240,16 @@ export function emptyDayNote(
   opts?: { isToday?: boolean; runCount?: number },
 ): string {
   if (totalRowsOnDay > 0) {
-    return `asOf=${date} 共有 ${totalRowsOnDay} 行，但都不在当前筛选（${STATE_TEXT[filter]}）里：换「全部」再看，不代表这天没有记录`;
+    return `留档日=${date} 共有 ${totalRowsOnDay} 行，但都不在当前筛选（${STATE_TEXT[filter]}）里：换「全部」再看，不代表这天没有记录`;
   }
   const table = kind === "radar" ? "雷达信号" : "全球事件";
   const runs = opts?.runCount ?? 0;
   const why = opts?.isToday
-    ? `今天是 ${date}，当日行会随每次扫描被重写（全量口径先删后插）：现在的真实状态就是 0 行，运行记录见上方 task_run`
+    ? `今天是 ${date}，当日行会随每次扫描被重写（全量口径先删后插）：现在的真实状态就是 0 行，运行记录见上方扫描记录`
     : runs > 0
-      ? `那天有扫描记录（上方为最近的 ${runs} 条），但库里没有留下 asOf=${date} 的${table}行（那次扫描落库 0 条，或后来按全量口径重刷当日时被重写）`
+      ? `那天有扫描记录（上方为最近的 ${runs} 条），但库里没有留下留档日=${date} 的${table}行（那次扫描落库 0 条，或后来按全量口径重刷当日时被重写）`
       : "这一天没有被扫描过（或那天的扫描全部失败、未落库）";
-  return `库里没有 asOf=${date} 的${table}记录：${why}。历史查询不会用别的数据顶上、也不会重新计算那一天。`;
+  return `库里没有留档日=${date} 的${table}记录：${why}。历史查询不会用别的数据顶上、也不会重新计算那一天。`;
 }
 
 /** events 没有 state 列：把这件事讲清楚，而不是让页面显示一个永远为空的「消失」计数 */

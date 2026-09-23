@@ -9,7 +9,7 @@
 // 取数层照抄结论，页面/引擎不得各自再解释一遍。
 import type { ObservationKind } from "../screener/datastatus-core.ts";
 
-/** 两条真实通道：eltdx 直连网关（快、带量额）与腾讯日K（慢、口径稳定） */
+/** 两条真实通道：通达信直连网关（快、带量额）与腾讯日K（慢、口径稳定） */
 export type BarChannel = "tdx" | "tencent";
 
 export interface BarAttempt {
@@ -98,7 +98,7 @@ export function outcomeWarning(outcomes: BarOutcome[]): string {
   const c = summarizeOutcomes(outcomes);
   if (c.no_data === 0 && c.request_failed === 0 && c.tencent === 0) return "";
   const parts = [
-    c.tdx ? `eltdx 直连 ${c.tdx} 只` : "",
+    c.tdx ? `通达信直连 ${c.tdx} 只` : "",
     c.tencent ? `腾讯兜底 ${c.tencent} 只（主通道不可用，已降级）` : "",
     c.request_failed ? `取数失败 ${c.request_failed} 只（未参与K线条件，不算不符合条件）` : "",
     c.no_data ? `无K线返回 ${c.no_data} 只` : "",

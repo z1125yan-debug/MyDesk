@@ -9,7 +9,7 @@
 //    （标的与基准指数在同一批里），沿用 §三十二「四组读数共用一份快照」的既有口径。
 //
 // 取数来源（逐条对应页面上的来源标签，不写本项目没有的源）：
-//   - 日K（标的 + 基准指数）：eltdx 网关优先、腾讯日K兜底（data/hybrid.ts，逐只观测结论见 hybrid-core.ts）；
+//   - 日K（标的 + 基准指数）：通达信网关优先、腾讯日K兜底（data/hybrid.ts，逐只观测结论见 hybrid-core.ts）；
 //   - 市场广度/涨跌停/炸板率/主力净额/成交额/风险等级/指数：screener/sentiment.ts（东财全A快照 + 腾讯指数）；
 //   - 放量/缩量的历史均值基线：risk_snapshot 表（P5 起的每日 /api/market/risk 响应留档，只读）；
 //   - 板块主线（含榜首 RPS 与口径原文）：screener/themes.ts（东财板块榜 + 成分扩散）；
@@ -143,7 +143,7 @@ export async function buildDecisionForSymbol(
   const sources: DecisionSourceBadge[] = [];
 
   if (!/^[0-9]{6}\.(SH|SZ|BJ)$/.test(subject)) {
-    throw new Error(`标的代码格式不接受：「${clip(subject, 24) || "空"}」。需要 6 位代码 + 交易所后缀（如 600519.SH）——本层不猜它属于哪个市场`);
+    throw new Error(`股票代码格式不接受：「${clip(subject, 24) || "空"}」。需要 6 位代码 + 交易所后缀（如 600519.SH）——本层不猜它属于哪个市场`);
   }
 
   // ---- 1) 日K：标的与基准指数同批取（eltdx 优先、腾讯兜底、连续失败熔断） ----
@@ -155,11 +155,11 @@ export async function buildDecisionForSymbol(
       const list = r.bars.get(sym) ?? [];
       barsBySymbol.set(sym, list);
       const o = r.outcomes.find((x) => x.symbol === sym) ?? null;
-      const label = sym === subject ? `日K（标的 ${sym}）` : `日K（${BASE_INDEX.label} ${sym}）`;
+      const label = sym === subject ? `日K（本股票 ${sym}）` : `日K（${BASE_INDEX.label} ${sym}）`;
       sources.push({
         id: `bars:${sym}`, label,
         detail: o
-          ? `${o.channel === "tdx" ? "eltdx 网关" : o.channel === "tencent" ? "腾讯日K（兜底通道）" : "无可用通道"}｜${list.length} 根${o.reason ? `｜${clip(o.reason, 70)}` : ""}`
+          ? `${o.channel === "tdx" ? "通达信网关" : o.channel === "tencent" ? "腾讯日K（兜底通道）" : "无可用通道"}｜${list.length} 根${o.reason ? `｜${clip(o.reason, 70)}` : ""}`
           : "取数层未给逐只观测结论",
         used: list.length > 0,
         as_of: list.length ? String(list[list.length - 1].date).slice(0, 10) : null,
@@ -182,14 +182,14 @@ export async function buildDecisionForSymbol(
     const meta = (await provider.listUniverse({ kind: "custom", symbols: [subject] }, tradeDate).catch(() => []))[0];
     subjectName = meta?.name?.trim() ? meta.name.trim() : null;
     sources.push({
-      id: "universe", label: "全A快照（标的属性）",
-      detail: meta ? `东财 clist：${meta.name || "名称缺失"}${meta.industry ? `／${meta.industry}` : ""}` : "当日快照里没有这只票（代码不存在或快照未覆盖）",
+      id: "universe", label: "全A快照（本股票属性）",
+      detail: meta ? `东财榜单接口：${meta.name || "名称缺失"}${meta.industry ? `／${meta.industry}` : ""}` : "当日快照里没有这只票（代码不存在或快照未覆盖）",
       used: !!meta, as_of: tradeDate,
     });
     if (!meta) notes.push(`${subject} 不在当日全A快照里：本层不猜它的名称，事件相关性只能按代码匹配`);
   } catch (e) {
-    sources.push({ id: "universe", label: "全A快照（标的属性）", detail: `取数抛错：${errText(e)}`, used: false, as_of: null });
-    notes.push(`全A快照读取失败（${errText(e)}）：标的名称不可得，事件面的名称匹配按「无判定」处理`);
+    sources.push({ id: "universe", label: "全A快照（本股票属性）", detail: `取数抛错：${errText(e)}`, used: false, as_of: null });
+    notes.push(`全A快照读取失败（${errText(e)}）：股票名称不可得，事件面的名称匹配按「无判定」处理`);
   }
 
   // ---- 3) 市场面：computeSentiment + discoverThemes（各一次，同源不重复打） ----

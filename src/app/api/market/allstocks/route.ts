@@ -70,8 +70,8 @@ export async function GET(request: Request) {
       source: {
         provider:
           universeSource() === "tc"
-            ? "腾讯批量快照兜底（东财 clist 断源；行业/上市日/主力净额列暂空）"
-            : "em（东财 clist 全A快照）",
+            ? "腾讯批量快照兜底（东财榜单接口断源；行业/上市日/主力净额列暂空）"
+            : "东财榜单接口（全A快照）",
       },
     });
   } catch (e) {

@@ -104,7 +104,7 @@ export function SnapshotBar({
       {resp && (
         <div className="flex flex-wrap items-center gap-2">
           <SourceBadge status={resp.date ? "ARCHIVED 留档回看" : "ARCHIVED 最近留档"}
-            source={`只读 ${resp.table}：${resp.date ? `留档日 ${resp.date}` : "最近若干条（按留档时刻倒序）"}`}
+            source={`只读「${label}」留档：${resp.date ? `留档日 ${resp.date}` : "最近若干条（按留档时间从新到旧）"}`}
             time={resp.date ?? ""} />
           <span className="text-[10px] text-muted-foreground">{resp.date_basis}</span>
         </div>
@@ -115,12 +115,12 @@ export function SnapshotBar({
           {resp.items.map((it) => (
             <li key={it.id} className="rounded-md border border-border/70 bg-background/40 px-2 py-1.5 text-[10.5px]">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-muted-foreground">留档时刻 <b className="text-foreground">{it.computed_at}</b></span>
+                <span className="text-muted-foreground">留档时间 <b className="text-foreground">{it.computed_at}</b></span>
                 <span className="text-muted-foreground">留档日 {it.trade_date}</span>
                 {it.payload_broken && (
                   <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300"
-                    title="payload 列不是合法 JSON：摘要只能按可读部分给出，损坏处不修补、不重算代替">
-                    payload 列损坏
+                    title="存的原文不是合法 JSON：摘要只能按可读部分给出，损坏处不修补、不重算代替">
+                    留档内容损坏
                   </span>
                 )}
               </div>
@@ -132,7 +132,7 @@ export function SnapshotBar({
         </ul>
       ) : resp && !busy ? (
         <div className="text-[10.5px] text-muted-foreground">
-          {resp.missing.length ? resp.missing.join("；") : "没有可读回的留档行（接口返回 0 条，且未给出原因）"}
+          {resp.missing.length ? resp.missing.join("；") : "没有可读回的留档行（本次查询返回 0 条，且未给出原因）"}
         </div>
       ) : null}
 

@@ -36,7 +36,7 @@ test("thsToRankRow：main 用真净额、secid 留空、breakdownMissing 置位"
 test("sectors 路由：东财没数或只剩腾讯占位才换同花顺；三源全断 502 点名同花顺", () => {
   assert.match(SEC, /if \(!list\.length \|\| allPlaceholder\)/, "触发=空榜或全占位");
   assert.match(SEC, /list\.every\(\(r\) => r\.fundsMissing\)/, "占位判据与 R6 同口径");
-  assert.match(SEC, /东财 clist、腾讯板块兜底与同花顺资金流榜均无返回/, "502 话术点名三源");
+  assert.match(SEC, /东财榜单接口、腾讯板块兜底与同花顺资金流榜均无返回/, "502 话术点名三源");
   assert.match(SEC, /source: fromThs \? "ths" : "em"/, "响应自报出身");
 });
 

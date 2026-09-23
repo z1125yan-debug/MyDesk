@@ -130,7 +130,7 @@ export default function StepTimeline({
                 {/* P8-⑤ 调试行：入参与返回摘要只在富化帧到达后才有（本轮请求带过 debug:true）；
                     没有就整行不画——不拿「没显示」冒充「没调用」。 */}
                 {row?.argsText && (
-                  <div className="mt-0.5 break-words font-mono text-[9.5px] text-muted-foreground/70">入参 {row.argsText}</div>
+                  <div className="mt-0.5 break-words font-mono text-[9.5px] text-muted-foreground/70">参数 {row.argsText}</div>
                 )}
                 {row?.summary && (
                   <div className="mt-0.5 break-words font-mono text-[9.5px] text-muted-foreground/70">摘要 {row.summary}</div>
@@ -151,8 +151,8 @@ export default function StepTimeline({
             <span className="font-mono text-[9.5px] text-sky-300/90">结论</span>{" "}
             {view.conclusionSection.noted
               ? [view.conclusionSection.transportText, view.conclusionSection.modelMs != null ? `模型 ${view.conclusionSection.modelMs}ms` : ""].filter(Boolean).join(" · ")
-              : "未留底（本轮未开调试，或 done 帧未到达）"}
-            {` · 计数：共 ${view.counts.total} / 已取到 ${view.counts.ok} / 失败 ${view.counts.error} / 缺数据 ${view.counts.missing} / 滞后 ${view.counts.stale} / 进行中 ${view.counts.running} / 补充轮 ${view.counts.supplemented}`}
+              : "未留底（本轮没开调试，或回复没收到完整收尾包）"}
+            {` · 取数统计：共 ${view.counts.total} 项 · 成功 ${view.counts.ok} · 失败 ${view.counts.error} · 没数据 ${view.counts.missing} · 数据滞后 ${view.counts.stale} · 还在跑 ${view.counts.running} · 模型自取补数 ${view.counts.supplemented} 轮`}
           </div>
         )}
         {warning && (

@@ -72,15 +72,15 @@ test("清理计划分类：过期日进候选，当日 / 未满期 / 判不出�
   assert.match(by.get("global_event@2026-09-30")!, /晚于今天/, "异常的未来日期也要留在库里");
   assert.ok(!plan.protected_days.some((p) => p.rows === 0), "0 行的日期不该出现在任何清单里");
   // 口径文案里必须出现的具体事实（页面直接展示，不让前端自己拼）
-  assert.match(plan.basis, /asOf 严格早于 2026-03-23/);
-  assert.match(plan.basis, /当日（asOf=2026-09-19）/);
+  assert.match(plan.basis, /留档日严格早于 2026-03-23/);
+  assert.match(plan.basis, /当日（留档日=2026-09-19）/);
   assert.match(plan.basis, /不挂调度器/);
   const notes = policyNotes(plan);
   assert.ok(notes.some((n) => n.includes("180 天由用户于 2026-09-19 决定")), "保留天数的来源没写清：用户决定不能被实现者悄悄改掉");
   assert.ok(notes.some((n) => n.includes("导出") && n.includes("写盘成功后才允许删除") && n.includes("一行都不删")),
     `清理语义没写全：${notes.join(" | ")}`);
-  assert.ok(notes.some((n) => n.includes("task_run") && n.includes("不在本阶段清理范围")));
-  assert.match(stateAgnosticNote(), /只看 asOf/);
+  assert.ok(notes.some((n) => n.includes("扫描运行记录") && n.includes("不在本阶段清理范围")));
+  assert.match(stateAgnosticNote(), /只看留档日/);
 });
 
 test("plan 指纹：同一天同批候选稳定；候选变多 / 边界日变化 / 计数变化都会让旧指纹失效", () => {
@@ -140,10 +140,11 @@ test("空候选说明分得清「库里没行」与「有行但都还没过期�
   assert.match(noCandidateNote(empty, 8), /真实数据还没有那么旧/);
   assert.match(noCandidateNote(empty, 8), /未执行任何删除/);
   const note = runTablesNote([{ table: "task_run", rows: 61 }, { table: "scan_cursor", rows: 2 }]);
-  assert.ok(note.includes("扫描运行记录（task_run） 61 条"), `运行记录条数没写进说明：${note}`);
-  assert.ok(note.includes("增量扫描游标（scan_cursor） 2 条"), "游标条数没写进说明");
+  assert.ok(note.includes("扫描运行记录 61 条"), `运行记录条数没写进说明：${note}`);
+  assert.ok(note.includes("增量扫描游标 2 条"), "游标条数没写进说明");
+  assert.doesNotMatch(note, /task_run|scan_cursor/, "P15-R15：面向用户的说明不再抛库表名（表名留在代码常量层）");
   assert.ok(note.includes("不在本阶段清理范围内"), "没说明这两张表为什么不动");
-  assert.match(runTablesNote([]), /都没有 asOf\/tradeDate 早于清理阈值/);
+  assert.match(runTablesNote([]), /都没有留档日早于清理阈值/);
 });
 
 test("导出：文件名可安全落盘、封套带口径与恢复说明、行数与计划不符就拒绝删除", () => {
