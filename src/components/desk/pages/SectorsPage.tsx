@@ -8,6 +8,9 @@ import { PctText, NumText } from "../SourceBadge";
 import { LineageCard, LineageSection, StatCard } from "../ui/LineageCard";
 import { useDesk } from "@/lib/desk/store";
 import { aggregateSectors } from "@/lib/quant/screener/sector-stats-core";
+// P15-R16c：开盘自动重取 + 取数时刻的人话读法（全站共用，别再各页抄一份倒计时）
+import { useLivePoll } from "@/hooks/use-live-poll";
+import { clockZh } from "@/lib/desk/plain-core";
 
 type BoardKind = "industry" | "concept";
 
@@ -48,6 +51,7 @@ export default function SectorsPage() {
   const [list, setList] = useState<SectorRow[] | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
   const [asOf, setAsOf] = useState("");
+  const poll = useLivePoll();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [openBoard, setOpenBoard] = useState<string | null>(null);
@@ -129,7 +133,7 @@ export default function SectorsPage() {
     }
   }, [settleJump, kind, noun]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, poll.tick]);
 
   // 为什么只在这里结算、不给 store 加订阅：板块页是 `page === "sectors"` 才挂载的（AppShell 里条件渲染），
   // 而带可点正文的两个入口（助手页、分析页小窗）都在别的页面上——点链接必然是「先切页、后挂载」，
@@ -177,7 +181,8 @@ export default function SectorsPage() {
               : list.every((r) => r.breakdownMissing && !r.fundsMissing)
               ? "同花顺板块资金流榜（东财断源时的独立兜底：净额=流入−流出，无净占比/超大单/大单拆分）"
               : "东财板块榜（主力资金口径合并流入/流出两侧）"}
-            {" · 点板块行展开成分股 · 点个股跳画像 · "}{asOf ? `更新 ${asOf}` : ""}
+            {" · 点板块行展开成分股 · 点个股跳画像 · "}{asOf ? `数据截至 ${clockZh(asOf) || asOf}` : "本次未取到数据"}
+            {poll.open ? ` · 开盘自动刷新，剩余 ${poll.left}s` : ` · A股${poll.sessionLabel}，自动刷新已暂停`}
           </>
         }
         actions={

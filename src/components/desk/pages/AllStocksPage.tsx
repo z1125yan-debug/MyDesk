@@ -5,6 +5,13 @@ import { Loader2, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
 import { fetchAllStocks, type AllStockRow } from "@/lib/desk/quant-api";
 import { useDesk } from "@/lib/desk/store";
+// P15-R16c：开盘自动重取 + 取数时刻上屏（这页原来只写「交易日」，没说这份快照是几点取的）
+import { useLivePoll } from "@/hooks/use-live-poll";
+import { clockZh } from "@/lib/desk/plain-core";
+// P15-R16b 延伸：东财断源后「主力净额」整列显「—」——把数据看板那份通达信当日逐笔自算榜叠进来，
+// 覆盖得到的显「自算」，覆盖不到的仍显「—」（绝不补 0，也不冒充全市场都有读数）
+import { fetchBoardRows } from "@/lib/desk/market";
+import { MAIN_FLOW_BASIS } from "@/lib/quant/screener/tdx-flow-core";
 
 const SORTS: { key: string; label: string }[] = [
   { key: "amount_yi", label: "成交额" },
@@ -30,7 +37,26 @@ export default function AllStocksPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [tradeDate, setTradeDate] = useState("");
+  const [asOf, setAsOf] = useState("");
+  const poll = useLivePoll();
   const pageSize = 50;
+  // 通达信自算榜按 6 位代码建索引（服务端有 TTL 缓存，与数据看板共用同一份取数）
+  const [flowByCode, setFlowByCode] = useState<Map<string, { main: number; truncated: boolean }>>(new Map());
+
+  useEffect(() => {
+    let dead = false;
+    Promise.all([fetchBoardRows("stock", "in"), fetchBoardRows("stock", "out")])
+      .then(([a, b]) => {
+        if (dead) return;
+        const m = new Map<string, { main: number; truncated: boolean }>();
+        for (const r of [...a.rows, ...b.rows]) {
+          if (r.mainSelfComputed && Number.isFinite(r.main)) m.set(r.code, { main: r.main, truncated: !!r.flowSampleTruncated });
+        }
+        setFlowByCode(m);
+      })
+      .catch(() => { if (!dead) setFlowByCode(new Map()); }); // 取不到就是没有：列退回全「—」，不缓存成 0
+    return () => { dead = true; };
+  }, [poll.tick]);
 
   const load = useCallback(async () => {
     setBusy(true); setError("");
@@ -39,6 +65,7 @@ export default function AllStocksPage() {
       setRows(r.list);
       setTotal(r.total);
       setTradeDate(r.trade_date);
+      setAsOf(new Date().toISOString());
     } catch (e) {
       setError(String((e as Error).message || e));
     } finally {
@@ -46,7 +73,7 @@ export default function AllStocksPage() {
     }
   }, [q, orderBy, dir, page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, poll.tick]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const openProfile = (symbol: string) => { setFocusSymbol(symbol); go("profile"); };
@@ -56,7 +83,11 @@ export default function AllStocksPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-lg font-bold">全A市场列表</div>
-          <div className="text-[11px] text-muted-foreground">东财榜单接口（全A快照） · 交易日 {tradeDate} · 快照口径</div>
+          <div className="text-[11px] text-muted-foreground">
+            东财榜单接口（全A快照） · 交易日 {tradeDate || "未知"} · {asOf ? `数据截至 ${clockZh(asOf)}` : "本次未取到数据"}
+            {poll.open ? ` · 开盘自动刷新，剩余 ${poll.left}s` : ` · A股${poll.sessionLabel}，自动刷新已暂停`}
+            {flowByCode.size > 0 && ` · 主力净额这一列东财无读数处叠了通达信自算 ${flowByCode.size} 只（${MAIN_FLOW_BASIS}），没覆盖到的显「—」不是 0`}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <div className="relative">
@@ -105,7 +136,14 @@ export default function AllStocksPage() {
                 <td className="px-2.5 py-1.5 text-right"><NumText value={r.market_cap_yi} digits={0} /></td>
                 <td className="px-2.5 py-1.5 text-right"><NumText value={r.pe_ttm} digits={1} /></td>
                 <td className="px-2.5 py-1.5 text-right"><NumText value={r.pb} digits={1} /></td>
-                <td className="px-2.5 py-1.5 text-right"><NumText value={r.main_net_yi} digits={2} /></td>
+                <td className="px-2.5 py-1.5 text-right">
+                  {r.main_net_yi == null ? (() => {
+                    const f = flowByCode.get(String(r.symbol).split(".")[0]);
+                    return f
+                      ? <span className="font-mono tabular-nums" title={MAIN_FLOW_BASIS}>{`${f.main >= 0 ? "+" : ""}${f.main.toFixed(2)}`}<span className="ml-1 text-[9px] text-amber-300">{f.truncated ? "自算·截断" : "自算"}</span></span>
+                      : <span className="text-muted-foreground">—</span>;
+                  })() : <NumText value={r.main_net_yi} digits={2} />}
+                </td>
                 <td className="px-2.5 py-1.5">
                   <button onClick={() => addWatch({ symbol: r.symbol, name: r.name, kind: "watch" })}
                     className="text-[10px] text-muted-foreground hover:text-sky-300" title="加入自选">+自选</button>

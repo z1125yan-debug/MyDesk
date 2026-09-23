@@ -2,37 +2,86 @@
 // P15-R7：行业/概念两榜在东财断源（无返回或只剩腾讯涨幅占位）时整榜换同花顺资金流榜
 // （独立上游，净额真数、无净占比拆分 → 行上 breakdownMissing，页面显「—」）；
 // 同花顺榜按涨幅序取，流入向取净额>0 降序、流出向取净额<0 升序，各截前 30。
-// 个股(stock)/地域(region)无同花顺对等榜——维持原样，缺就是缺。
+// P15-R16：个股榜再往下一棒——东财断源时换**通达信当日逐笔自算**的主力净额
+// （口径与分档阈值在 tdx-flow-core 纯核，行上挂 mainSelfComputed，页面必须标「自算」不冒充东财官方读数）。
+// 地域榜无对等替代源——缺就是缺，交回 rows:null 由页面显式声明，绝不落回演示数据。
 import { NextResponse } from "next/server";
 import { fetchBoardReal } from "@/lib/desk/em";
 import { fetchThsBoards, thsToRankRow } from "@/lib/desk/ths";
+import { tdxMainFlowUniverse, type TdxMainFlowRow } from "@/lib/desk/tdx";
+import { pickMainFlowSide, type MainFlow } from "@/lib/quant/screener/tdx-flow-core";
 
 export const dynamic = "force-dynamic";
 
 const KINDS = new Set(["stock", "industry", "concept", "region"]);
+type Kind = "stock" | "industry" | "concept" | "region";
+
+/** 通达信自算行 → 榜单行形状：净额/占比/超大单/大单都来自逐笔轧差，出身必须挂在 mainSelfComputed */
+function tdxToRankRow(r: TdxMainFlowRow, rank: number, flow: MainFlow) {
+  const digits = /^(\d{6})\./.exec(r.symbol);
+  const market = /\.SH$/i.test(r.symbol) ? 1 : /\.SZ$/i.test(r.symbol) ? 0 : null;
+  return {
+    rank,
+    code: digits ? digits[1] : r.symbol,
+    // 有东财 secid 才能点出「近 14 日主力净额」明细；市场前缀推得出就给，推不出留空由页面显式缺失
+    secid: digits && market !== null ? `${market}.${digits[1]}` : undefined,
+    name: r.name,
+    changePct: r.changePct,
+    main: flow.mainNetYi,
+    ratio: flow.ratioPct ?? Number.NaN, // 当日成交额没给 → NaN，页面显「—」，不补一个 0 冒充「占比为 0」
+    superBig: flow.superBigYi,
+    big: flow.bigYi,
+    leader: "",
+    mainSelfComputed: true,
+    // 翻页撞到上限 / 没取满快照给出的全日笔数：样本不完整的行必须自己说出来，不装全量
+    ...(flow.sampleComplete ? {} : { flowSampleTruncated: true }),
+  };
+}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const kindParam = url.searchParams.get("kind") ?? "industry";
-  const kind = (KINDS.has(kindParam) ? kindParam : "industry") as
-    | "stock"
-    | "industry"
-    | "concept"
-    | "region";
+  const kind = (KINDS.has(kindParam) ? kindParam : "industry") as Kind;
   const dir = url.searchParams.get("dir") === "out" ? "out" : "in";
+  const asOf = new Date().toISOString(); // 本机取数完成时刻（页面用来回答「这是哪天的数」）
   try {
-    let rows = await fetchBoardReal(kind, dir);
-    const needThs = kind === "industry" || kind === "concept";
-    if (needThs && (!rows?.length || rows.every((r) => r.fundsMissing))) {
+    const rows = await fetchBoardReal(kind, dir);
+    if (rows?.length && !rows.every((r) => r.fundsMissing)) {
+      return NextResponse.json({ rows, source: "em", asOf });
+    }
+    // 东财这条路没有可用读数：按榜的种类往下递棒，递不到就如实 null
+    const needThs = kind === "industry" || kind === "concept"; // 地域仍无对等榜——缺就是缺
+    if (needThs) {
       const ths = await fetchThsBoards(kind);
       const picked = (dir === "in"
         ? ths.filter((r) => r.netYi > 0).sort((a, b) => b.netYi - a.netYi)
         : ths.filter((r) => r.netYi < 0).sort((a, b) => a.netYi - b.netYi)
       ).slice(0, 30);
-      if (picked.length) rows = picked.map(thsToRankRow);
+      if (picked.length) {
+        return NextResponse.json({ rows: picked.map(thsToRankRow), source: "ths", asOf });
+      }
     }
-    return NextResponse.json({ rows });
+    if (kind === "stock") {
+      const univ = await tdxMainFlowUniverse();
+      if (univ?.rows.length) {
+        const picked = pickMainFlowSide(
+          univ.rows.map((r) => ({ name: r.name, code: r.symbol, changePct: r.changePct, flow: r.flow })),
+          dir,
+        );
+        const bySymbol = new Map(univ.rows.map((r) => [r.symbol, r]));
+        // pickMainFlowSide 已把「逐笔没取到」的行滤掉（不占位、不补 0），这里只保留真有读数的行
+        const out = picked.flatMap((p, i) => {
+          const src = bySymbol.get(p.code);
+          return src?.flow ? [tdxToRankRow(src, i + 1, src.flow)] : [];
+        });
+        if (out.length) {
+          return NextResponse.json({ rows: out, source: "tdx", asOf, quoteTime: univ.asOf || null });
+        }
+      }
+    }
+    // 递棒到底没有可用来源： rows 原样带回（可能是东财给的腾讯涨幅占位榜），由页面显式声明缺失
+    return NextResponse.json({ rows: rows ?? null, source: null, asOf });
   } catch {
-    return NextResponse.json({ rows: null, error: "数据源暂不可用" });
+    return NextResponse.json({ rows: null, error: "数据源暂不可用", asOf });
   }
 }

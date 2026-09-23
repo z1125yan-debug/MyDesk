@@ -12,6 +12,9 @@ import { LineageCard, LineageSection } from "../ui/LineageCard";
 import Sparkline from "../Sparkline";
 import TrackerPage from "./TrackerPage";
 import { useDesk } from "@/lib/desk/store";
+// P15-R16c：轮询走全站共用钩子（休市暂停、开盘自恢复），时刻读法走显示核
+import { useLivePoll } from "@/hooks/use-live-poll";
+import { clockZh } from "@/lib/desk/plain-core";
 // P14：视图过滤与 store 的建/删/移同住纯核，页面不自己抄一份 filter 语义
 import { filterWatchlist } from "@/lib/desk/watchlist-group-core";
 
@@ -47,6 +50,7 @@ export default function WatchlistPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [updatedAt, setUpdatedAt] = useState("");
+  const poll = useLivePoll(); // 交易时段每轮自动重报价；休市暂停（时刻仍留着，说明这是几点取的）
   // 分组视图：all=全部 · none=未分组 · 其余为组 id
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [newGroup, setNewGroup] = useState("");
@@ -81,7 +85,7 @@ export default function WatchlistPage() {
         };
       });
       setRows(merged);
-      setUpdatedAt(new Date().toTimeString().slice(0, 8));
+      setUpdatedAt(new Date().toISOString());
     } catch (e) {
       setError(String((e as Error).message || e));
       setRows([]);
@@ -90,7 +94,7 @@ export default function WatchlistPage() {
     }
   }, [visible, watchlist]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, poll.tick]);
 
   const openProfile = (symbol: string) => { setFocusSymbol(symbol); go("profile"); };
   const openAnalysis = (symbol: string) => { setFocusSymbol(symbol); go("analysis"); };
@@ -110,7 +114,8 @@ export default function WatchlistPage() {
         title={<span className="flex items-center gap-2"><Target size={17} className="text-sky-400" />自选股行情</span>}
         note={
           <>
-            真实报价（通达信/腾讯优先）· 取不到显示暂无数据 · {updatedAt ? `更新 ${updatedAt}` : ""}
+            真实报价（通达信/腾讯优先）· 取不到显示暂无数据 · {updatedAt ? `数据截至 ${clockZh(updatedAt)}` : "本次未取到数据"}
+            {poll.open ? ` · 开盘自动刷新，剩余 ${poll.left}s` : ` · A股${poll.sessionLabel}，自动刷新已暂停（报价停在最后一次取到的时刻）`}
             {visible.length > BATCH ? ` · 当前视图 ${visible.length} 只，仅取前 ${BATCH} 只报价（接口单次上限，其余未取）` : ""}
           </>
         }

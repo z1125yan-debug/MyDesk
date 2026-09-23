@@ -3,6 +3,12 @@
 // 网关未启动时所有函数静默返回 null，由上层回退腾讯/东财源。
 // 启动方式：eltdx-http --host 127.0.0.1 --port 8756
 
+import {
+  accumulateTicks, latestServerTime, mainFlowFromAccum,
+  TICK_PAGE, MAX_TICK_PAGES, MAIN_FLOW_UNIVERSE,
+  type FlowAccum, type FlowTickLike, type MainFlow,
+} from "@/lib/quant/screener/tdx-flow-core";
+
 const GW = process.env.TDX_GATEWAY ?? "http://127.0.0.1:8756";
 
 // MyDesk 符号 → TDX 全码：688256.SH → sh688256
@@ -302,4 +308,114 @@ export async function tdxNameOf(symbol: string): Promise<string | null> {
     }
   }
   return nameCache?.get(key) ?? null;
+}
+
+// ---------- 主力净额自算（当日逐笔分页 → 分档轧差，纯核 tdx-flow-core） ----------
+// 东财 push2 断源后资金流榜的唯一活路：网关没有现成的资金流字段，但 trades.today 给了当日
+// 逐笔（含 side 方向），够按公开分档口径自己算。口径与差异声明全在纯核里，这里只管翻页与缓存。
+
+interface TdxRankRow {
+  rank?: number;
+  full_code?: string;   // sh688825
+  name?: string;
+  change_pct?: number;
+  amount?: number;      // 元
+  raw?: { active1?: number; server_time_raw?: number };
+}
+
+export interface TdxMainFlowRow {
+  symbol: string;       // 688825.SH
+  name: string;
+  changePct: number;
+  amountYi: number;     // 当日成交额（亿）
+  serverTimeRaw: number; // 行情侧时刻原始值，供榜级「数据截至」取最新
+  flow: MainFlow | null; // null = 逐笔没取到，不等于净额 0
+}
+
+// TDX 全码 → MyDesk 符号：sh688825 → 688825.SH
+function toSymbol(fullCode: string): string | null {
+  const m = /^(sh|sz|bj)(\d{6})$/i.exec(String(fullCode ?? "").trim());
+  if (!m) return null;
+  return `${m[2]}.${m[1].toUpperCase()}`;
+}
+
+let flowCache: { at: number; rows: TdxMainFlowRow[]; asOf: string } | null = null;
+
+/** 单只当日逐笔翻页收集后一次性累加（去重交给纯核）；网关没给数据返回 null */
+async function tdxTickAccum(fullCode: string): Promise<{ acc: FlowAccum; pages: number; truncated: boolean } | null> {
+  const all: FlowTickLike[] = [];
+  const seen = new Set<string>();
+  let start = 0;
+  let pages = 0;
+  let truncated = false;
+  for (;;) {
+    const t = await rpc<{ ticks?: FlowTickLike[] }>("trades.today", { code: fullCode, start, count: TICK_PAGE }, 6000);
+    const ticks = Array.isArray(t?.ticks) ? t.ticks : null;
+    if (!ticks) return pages ? { acc: accumulateTicks(all), pages, truncated } : null;
+    pages++;
+    let fresh = 0;
+    for (const tk of ticks) {
+      const key = String(tk?.absolute_index ?? tk?.index ?? `p${pages}n${seen.size}`);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push(tk);
+      fresh++;
+    }
+    if (ticks.length < TICK_PAGE || fresh === 0) break; // 尾页/翻页不再前进就收工
+    if (pages >= MAX_TICK_PAGES) { truncated = true; break; } // 超限：样本截断，不静默按半截算
+    start += TICK_PAGE;
+  }
+  return { acc: accumulateTicks(all), pages, truncated };
+}
+
+/** 并发上限的小池子：80 只票串行翻页要十几秒，8 路并发实测 1.7~3.8 秒 */
+async function mapPool<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length || 1) }, async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+/**
+ * 当日成交额前 N 只的主力净额榜（N = 纯核 MAIN_FLOW_UNIVERSE）。
+ * 返回 null = 榜本身没拿到（网关断/无权限）；单只逐笔取不到时该行 flow 为 null，不补 0。
+ * 交易时段缓存 60 秒，休市后逐笔不再变化 → 缓存 10 分钟（与 tdxDayBars 同一把尺子）。
+ */
+export async function tdxMainFlowUniverse(): Promise<{ rows: TdxMainFlowRow[]; asOf: string } | null> {
+  const { marketSession } = await import("./session");
+  const ttl = marketSession().open ? 60_000 : 600_000;
+  if (flowCache && Date.now() - flowCache.at < ttl) return flowCache;
+  const rank = await rpc<{ rows?: TdxRankRow[] }>(
+    "helpers.stock_realtime_rank", { sort_by: "成交额", count: MAIN_FLOW_UNIVERSE }, 8000,
+  );
+  const list = (rank?.rows ?? []).slice(0, MAIN_FLOW_UNIVERSE);
+  if (!list.length) return flowCache ?? null; // 榜取不到：有旧缓存就用旧的（比空白强），没有就是没取到
+  const rows = await mapPool(list, 8, async (r): Promise<TdxMainFlowRow> => {
+    const full = String(r.full_code ?? "");
+    const base: TdxMainFlowRow = {
+      symbol: toSymbol(full) ?? full,
+      name: String(r.name ?? ""),
+      changePct: isFinite(r.change_pct ?? NaN) ? (r.change_pct as number) : 0,
+      amountYi: isFinite(r.amount ?? NaN) ? (r.amount as number) / 1e8 : 0,
+      serverTimeRaw: r.raw?.server_time_raw ?? 0,
+      flow: null,
+    };
+    const got = await tdxTickAccum(full).catch(() => null);
+    if (!got) return base;
+    return { ...base, flow: mainFlowFromAccum(got.acc, {
+      pages: got.pages, truncated: got.truncated,
+      amountYuan: isFinite(r.amount ?? NaN) ? (r.amount as number) : null,
+      expectedTicks: r.raw?.active1 ?? null,
+    }) };
+  });
+  const asOf = latestServerTime(rows.map((x) => x.serverTimeRaw));
+  flowCache = { at: Date.now(), rows, asOf };
+  return flowCache;
 }

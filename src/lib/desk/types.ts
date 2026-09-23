@@ -42,6 +42,14 @@ export interface SectorRow {
   leader: string;     // 板块=领涨股；个股=所属行业
   fundsMissing?: boolean; // 腾讯板块兜底榜：main/ratio/superBig/big 是占位 0，页面须显示「—」
   breakdownMissing?: boolean; // P15-R7 同花顺兜底榜：main 是真净额，但净占比/超大单/大单无该拆分（0 是占位），这些列须显示「—」
+  /**
+   * P15-R16 通达信逐笔自算：这一行的主力净额是本机按「特大+大单主动买卖」轧差算出来的，
+   * 不是东财官方主力资金读数。分档阈值与差异声明见 tdx-flow-core，页面必须挂「自算」出身，
+   * 不许让读者以为这是东财那套数字（通达信是分笔聚合、东财按委托拆单，同一只票两边不会逐分不差）。
+   */
+  mainSelfComputed?: boolean;
+  /** 自算样本不完整（翻页撞到上限或没取满全日分笔数）：页面须声明「样本截断」，不装全量 */
+  flowSampleTruncated?: boolean;
 }
 
 export interface DetailDay {
