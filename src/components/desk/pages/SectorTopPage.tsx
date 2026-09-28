@@ -336,7 +336,8 @@ function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cro
               .map((j) => (
                 <span key={j.key}>
                   {tonePill(
-                    j.bearish === true ? "red" : j.bearish === false ? "green" : "amber",
+                    // 芯片=行情色（红涨绿跌，与页面 DeltaTag 同规）；预警语义由块的红色标签承担
+                    j.cum5 == null ? "amber" : j.cum5 > 0 ? "red" : j.cum5 < 0 ? "green" : "blue",
                     j.bearish === true && (j.downStreak ?? 0) >= 2
                       ? `${j.label} 连跌${j.downStreak}天 · 5日 ${fmt(j.cum5)}`
                       : `${j.label} 5日 ${fmt(j.cum5)}`,
