@@ -180,7 +180,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
   } else if (topStage && belowTrend && coreBreak && rsNeg) {
     topType = "B";
     topTypeLabel = "趋势顶部·深度调整";
-    topTypeNote = "价格↓、RS↓、宽度↓、龙头破位；属上涨趋势中的深度调整/估值消化。产业层数据不足，若订单↓/库存↑/利润↓确认恶化→升为 C 基本面顶部（待 Phase2 产业链数据）。";
+    topTypeNote = "价格↓、RS↓、宽度↓、龙头破位；属上涨趋势中的深度调整/估值消化。产业层数据不足，若订单↓/库存↑/利润↓确认恶化→升为 C 基本面顶部（产业链数据持续回补中）。";
   } else if (topStage && coreBreak) {
     topType = "B";
     topTypeLabel = "趋势顶部·深度调整";

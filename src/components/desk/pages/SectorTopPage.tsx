@@ -28,6 +28,8 @@ const tonePill = (t: Tone, label: string) => (
   <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${TONE[t]}`}>{label}</span>
 );
 const scoreBand = (v: number): Tone => (v >= 70 ? "red" : v >= 40 ? "amber" : v >= 20 ? "blue" : "green");
+// 健康度是反向刻度：分低=产业恶化=红色警示（与风险分的高分红相反）
+const healthBand = (v: number): Tone => (v < 30 ? "red" : v < 45 ? "amber" : v <= 60 ? "blue" : "green");
 const fmt = (v: number | null, d = 1) => (v == null || !isFinite(v) ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(d)}%`);
 
 function DeltaTag({ tone, label }: { tone: string; label: string }) {
@@ -224,13 +226,14 @@ function Stat({ label, v, tone }: { label: string; v: number; tone: Tone }) {
   );
 }
 
-function ScoreCard({ label, v, na }: { label: string; v: number | null; na?: boolean }) {
-  const tone = v == null ? "amber" : scoreBand(v);
+function ScoreCard({ label, v, na, invert }: { label: string; v: number | null; na?: boolean; invert?: boolean }) {
+  const tone = v == null ? "amber" : invert ? healthBand(v) : scoreBand(v);
   return (
     <div className={`rounded-xl border px-3 py-3 ${TONE[tone]}`}>
       <div className="text-xs opacity-80">{label}</div>
       <div className="mt-1 text-2xl font-bold">{v == null ? "—" : v}</div>
       {na && <div className="text-[10px] opacity-70">数据不足·降权</div>}
+      {invert && v != null && <div className="text-[10px] opacity-70">分低=产业走弱</div>}
     </div>
   );
 }
@@ -298,7 +301,7 @@ function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cro
         <ScoreCard label="短期回撤风险" v={d.scores.shortPullback} />
         <ScoreCard label="中期顶部风险" v={d.scores.midTop} />
         <ScoreCard label="趋势破坏程度" v={d.scores.trendDamage} />
-        <ScoreCard label="产业周期健康度" v={d.scores.industryHealth} na={d.scores.industryHealth == null} />
+        <ScoreCard label="产业周期健康度" v={d.scores.industryHealth} na={d.scores.industryHealth == null} invert />
       </div>
 
       {/* 顶部类型 + 确认窗口 */}
