@@ -12,6 +12,7 @@
 import { computeSentiment } from "@/lib/quant/screener/sentiment";
 // 外盘与 A50（隔夜美股 / 恒生 / 富时A50 期货）：此前 AI 工具集里没有外盘工具，模型只能拿快讯冒充
 import { fetchOverseas } from "@/lib/quant/data/overseas";
+import { formatNationalDayEffect } from "@/lib/quant/data/calendar-effect";
 import { runScreener } from "@/lib/quant/screener/run";
 // P10 择优轮：默认活跃池条件、条件中文读法、出身文案与五条择优纪律（一份定义多处消费，纯核零 IO）
 // R11：池子行/条件读出人话化（poolRowZh/poolCondZh 只换读法，冻结原数据一字不动）
@@ -129,6 +130,18 @@ async function toolMarketOverseas(): Promise<unknown> {
       : null,
     missing: s.missing,
   };
+}
+
+/**
+ * 节假日日历效应（真实历史统计，非预测）。
+ * 用 akshare 上证指数日线（2016-2025）按机构同口径独立复算，落盘 data/calendar-effect-national-day.json。
+ * 模型写「日历效应」节必须用它——禁止自行编造百分比（2026-09-29 事故：模型曾凭空写「过去5年平均跌1.2%」）。
+ * 取不到（JSON 缺失）返回 missing，由骨架兜底写「本仓暂无该统计」。
+ */
+async function toolMarketCalendarEffect(): Promise<unknown> {
+  const text = formatNationalDayEffect();
+  if (!text) return { missing: "节假日日历效应统计未取到（data/calendar-effect-national-day.json 缺失，请用 scripts/quant/calendar-effect-national-day.py 重新生成）" };
+  return { 日历效应: text };
 }
 
 async function toolMarketSentiment(): Promise<unknown> {
@@ -917,6 +930,7 @@ export interface ChatTool {
 export const TOOLS: ChatTool[] = [
   { name: "market_sentiment", desc: "大盘情绪：情绪温度(0-100)/涨跌家数/涨停/跌停/成交额/主力净额/风险等级", fn: toolMarketSentiment, params: { type: "object", properties: {} }, phase: "local_data" },
   { name: "market_overseas", desc: "外盘与A50（隔夜真实行情）：纳指/标普/道指/半导体ETF/英伟达/恒生 + 富时A50期货，带各自行情时刻与时区。凡问「美股/外盘/隔夜/外部环境」必须用它——禁止拿财经快讯冒充外盘读数（2026-09-29 事故）", fn: toolMarketOverseas, params: { type: "object", properties: {} }, phase: "external_data" },
+  { name: "market_calendar_effect", desc: "节假日日历效应（真实历史统计，非预测）：国庆前后一周上证指数的下跌/上涨概率与平均涨跌幅，附逐年明细与中信建投研报公开口径对照。凡写「日历效应/历史统计/国庆前后规律」必须用它——禁止自行编造百分比（2026-09-29 事故：模型曾凭空写「过去5年平均跌1.2%」）。只想说方向（节前偏弱/节后偏强）也要以它的数字为准。", fn: toolMarketCalendarEffect, params: { type: "object", properties: {} }, phase: "local_data" },
   { name: "sector_rank", desc: "行业/概念板块资金榜（按主力净流入排序）", fn: toolSectorRank, params: { type: "object", properties: { kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number" } } }, phase: "local_data" },
   { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业；symbol 可传代码或公司简称（简称经东财搜索解析，解析结果如实标注）", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
   { name: "stock_depth", desc: "个股五档盘口（通达信网关）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
