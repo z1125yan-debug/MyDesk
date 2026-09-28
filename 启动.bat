@@ -34,11 +34,30 @@ REM ============================================================
 
 set "PORT=3000"
 
-if /i "%~1"=="rebuild" (set "MYDESK_FORCE_BUILD=1") else (if /i "%~1"=="dev" (set "MYDESK_MODE=dev") else (if not "%~1"=="" set "PORT=%~1"))
+REM —— 默认开发模式（2026-09-29 用户拍板）——
+REM 生产模式（next build + next start）下改代码必须重新构建才生效，否则跑的是旧构建包
+REM （09-29 事故：BUILD_ID 停在 09-28 11:57，源码已改到 09-29 06:32，双击启动仍是旧版本）。
+REM 改默认开发模式后：改代码即时生效，不再有"构建产物过期"这回事。
+REM 用法：
+REM    双击 启动.bat        开发模式（默认，改代码即时生效）
+REM    启动.bat prod        生产模式（已有构建产物则跳过构建；源码更新会自动重建）
+REM    启动.bat rebuild     生产模式 + 强制重新构建
+REM    启动.bat 3011        换端口
+set "MYDESK_MODE=dev"
+if /i "%~1"=="prod" (
+  set "MYDESK_MODE="
+) else (
+  if /i "%~1"=="rebuild" (
+    set "MYDESK_MODE="
+    set "MYDESK_FORCE_BUILD=1"
+  ) else (
+    if not "%~1"=="" set "PORT=%~1"
+  )
+)
 
 echo ============================================
 
-echo    MyDesk 个人行情工作台 - 一键启动（生产模式）
+echo    MyDesk 个人行情工作台 - 一键启动（开发模式·改代码即时生效）
 
 echo ============================================
 
@@ -140,7 +159,19 @@ REM === 6. 构建生产包（开发模式不需要）===
 
 if "%MYDESK_MODE%"=="dev" goto skip_build
 
-if not exist ".next\BUILD_ID" set "MYDESK_FORCE_BUILD=1"
+if not exist ".next\BUILD_ID" (
+  set "MYDESK_FORCE_BUILD=1"
+) else (
+  REM —— 自动检查：源码是否比构建产物新 ——
+  REM 旧逻辑只看 BUILD_ID 在不在，于是改过代码双击启动仍然跑旧包（2026-09-29 事故：
+  REM BUILD_ID 停在 09-28 11:57，而源码已改到 09-29 06:32，差 19 小时，页面一直是旧版本）。
+  REM 现在改成比对「源码最新修改时间」与「BUILD_ID 时间」，源码更新就自动重建，不用记 rebuild 参数。
+  powershell -NoProfile -Command "$b=Get-Item '.next\BUILD_ID' -ErrorAction SilentlyContinue; if(-not $b){exit 1}; $f=@(); $f+=Get-ChildItem -Path 'src','scripts','public' -Recurse -File -Include *.ts,*.tsx,*.js,*.mjs,*.json -ErrorAction SilentlyContinue; $f+=@('next.config.ts','package.json','tsconfig.json') | ForEach-Object { Get-Item $_ -ErrorAction SilentlyContinue }; $s=$f | Where-Object { $_ } | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if($s -and $s.LastWriteTime -gt $b.LastWriteTime){exit 1}else{exit 0}"
+  if errorlevel 1 (
+    set "MYDESK_FORCE_BUILD=1"
+    echo  [i] 检测到源码比构建产物新，将自动重新构建（免去了手动 rebuild）
+  )
+)
 
 if defined MYDESK_FORCE_BUILD (
 
@@ -152,7 +183,7 @@ if defined MYDESK_FORCE_BUILD (
 
     echo  [!] 构建失败，请检查上方报错信息。
 
-    echo      可先用「启动.bat dev」回到开发模式定位问题。
+    echo      可直接双击「启动.bat」（默认开发模式）定位问题。
 
     pause
 
@@ -164,7 +195,7 @@ if defined MYDESK_FORCE_BUILD (
 
 ) else (
 
-  echo  [OK] 已有构建产物，跳过构建（改过代码请用「启动.bat rebuild」）
+  echo  [OK] 构建产物已是最新（源码未变更），跳过构建
 
 )
 
