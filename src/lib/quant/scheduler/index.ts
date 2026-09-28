@@ -17,6 +17,11 @@ import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
 import { modeBasisLabel } from "@/lib/quant/screener/incremental-core";
 import { cursorSummary, type ScanKind } from "@/lib/quant/screener/incremental";
 import { archiveRadarScan, archiveEventScan, type ArchiveResult, type DeltaStats, type EventRow, type RadarRow, type ScanMode } from "@/lib/quant/screener/persist";
+// R21b sectorsnap：见顶引擎/回测读的是 data/sector-daily-snapshots.json（JSON 归档），而自动沉淀此前只写 custom.db，
+// 双数据源不一致 → 见顶扫描器/回测吃的是手动刷的那份。这里把它接进收盘后窗口，用子进程跑现成脚本（脚本自带 09:30 开盘守卫）。
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { archiveBreadthScan } from "@/lib/quant/screener/breadth-collect";
 import { archiveReviewScan } from "@/lib/quant/screener/review-daily-collect";
 // R20：收盘后涨停名单沉淀（晋级率/梯队断层/昨日涨停表现这三组读数的唯一来源）
@@ -31,18 +36,19 @@ export { SKIP_REASON_TEXT, type TaskKind } from "./rules";
 
 const TICK_MS = 60_000;
 const INDEX_SYMBOL = "000001.SH"; // 交易日判据：上证指数日线（与选股器交易日历同源）
-const KINDS: TaskKind[] = ["radar", "events", "breadth", "review", "roster"];
+const KINDS: TaskKind[] = ["radar", "events", "breadth", "review", "roster", "sectorsnap"];
 /**
  * 没有「增量游标」概念的任务：幂等落在写库层的唯一键上，不是游标上。
  * R20 加 roster 时一并把这段从三元表达式里抽出来——三个 kind 挤一条三元已经读不动了。
  */
-const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster"]);
+const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster", "sectorsnap"]);
 /** 有游标的那两类：写成守卫而不是在调用点 cast —— 以后再加 kind 会在类型层提醒我们分流没更新 */
 const isCursorKind = (k: TaskKind): k is ScanKind => k === "radar" || k === "events";
 const NO_CURSOR_BASIS: Partial<Record<TaskKind, string>> = {
   review: "复盘统计不设增量游标：口径是「按交易日唯一键 upsert，同日重跑以最后一次为准」",
   breadth: "宽度管线不设增量游标：口径是「当日已有收盘价行不重写（收盘价不可变），重跑只补新票」",
   roster: "涨停名单不设增量游标：口径是「按（票 × 交易日）唯一键 upsert，同日重跑以最后一次为准」",
+  sectorsnap: "行业快照不设增量游标：口径是「按交易日 upsert（盘中多次抓刷新同日），见顶引擎/回测读这份 JSON」",
 };
 const UNCONFIRMED_PROBE_MS = 15 * 60_000; // 确证不了交易日时，最多每 15 分钟再问一次数据源
 
@@ -106,6 +112,69 @@ async function rowsOf(kind: TaskKind, tradeDate: string) {
 }
 
 /** 当日窗口（收盘+等待）的 UTC 时刻；周末等无排班日返回 0（不限制成功时刻） */
+/**
+ * sectorsnap：跑 scripts/quant/build-sector-snapshot.mjs 刷新行业快照归档。
+ * 为什么走子进程而不是把逻辑搬进来：脚本已经跑通（4281 只 / 89 行业）且自带交易日守卫，
+ * 搬进来等于把同一套抓取逻辑在两处各养一份，口径迟早分叉。子进程失败会如实抛出，进 task_run 的 failure。
+ * 落档口径：按交易日 upsert（盘中多次抓刷新同日），所以 delta 只有 1 行 —— 新交易日算 inserted，刷新同日算 updated。
+ */
+function archiveSectorSnapshot(): Promise<ArchiveResult<never>> {
+  const scriptPath = path.resolve(process.cwd(), "scripts", "quant", "build-sector-snapshot.mjs");
+  const archivePath = path.resolve(process.cwd(), "data", "sector-daily-snapshots.json");
+  const bj = new Date(Date.now() + 8 * 3600_000);
+  const tradeDate = bj.toISOString().slice(0, 10);
+  const existedBefore = (() => {
+    try {
+      return Boolean(JSON.parse(fs.readFileSync(archivePath, "utf8")).days?.[tradeDate]);
+    } catch {
+      return false;
+    }
+  })();
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [scriptPath], { cwd: process.cwd(), env: { ...process.env, NO_PROXY: "*", no_proxy: "*" } });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (b) => (out += String(b)));
+    child.stderr.on("data", (b) => (err += String(b)));
+    // 全量抓 4281 只约 1–2 分钟；给 5 分钟上限，超时按 failure 记录而不是让它挂着占住任务槽
+    const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("sectorsnap 超时（>5 分钟）")); }, 5 * 60_000);
+    child.on("error", (e) => { clearTimeout(timer); reject(e); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        // 脚本的开盘守卫用 exit 2 表达「拒绝落档」，这不是故障，如实说清原因
+        reject(new Error(`sectorsnap 退出码 ${code}：${(err || out).trim().slice(-200)}`));
+        return;
+      }
+      const cov = /覆盖\s+(\d+)\s+只/.exec(out);
+      const ind = /\/\s*(\d+)\s*行业/.exec(out);
+      const scanned = cov ? Number(cov[1]) : 0;
+      const results = ind ? Number(ind[1]) : 0;
+      resolve({
+        as_of: new Date().toISOString(),
+        trade_date: tradeDate,
+        missing: [],
+        scanned,
+        results,
+        items: [] as never[],
+        unmatched: null,
+        source: "qt.gtimg.cn 实时快照(changePct 字段32) · 子进程 build-sector-snapshot.mjs",
+        mode: "full" as const,
+        delta: {
+          scanned,
+          inserted: existedBefore ? 0 : 1,
+          updated: existedBefore ? 1 : 0,
+          unchanged: 0,
+          skippedByCursor: 0,
+          superseded: 0,
+          kept: 0,
+          collapsed: 0,
+        },
+      });
+    });
+  });
+}
+
 function slotMsFor(date: string, cfg: SchedulerConfig): number {
   return slotAtForDate(date, cfg)?.getTime() ?? 0;
 }
@@ -198,12 +267,14 @@ export async function runTaskTracked(
       : kind === "events" ? await archiveEventScan(archiveOpts)
       : kind === "review" ? await archiveReviewScan()
       : kind === "breadth" ? await archiveBreadthScan()
+      : kind === "sectorsnap" ? await archiveSectorSnapshot()
       : await archiveLimitUpRoster();
     const writeLine = `写入：新增 ${out.delta.inserted}、更新 ${out.delta.updated}、未变 ${out.delta.unchanged}`
       + (out.delta.skippedByCursor ? `、游标跳过 ${out.delta.skippedByCursor}` : "")
       + (kind === "radar" ? `、标记消失 ${out.delta.superseded}` : kind === "events" ? `、保留 ${out.delta.kept}`
         : kind === "review" ? "（复盘统计按交易日唯一键 upsert：同日重跑以最后一次为准）"
         : kind === "roster" ? "（涨停名单按 票×交易日 唯一键 upsert：同日重跑以最后一次为准）"
+        : kind === "sectorsnap" ? "（行业快照按交易日 upsert：盘中多次抓刷新同日，见顶引擎/回测读这份 JSON）"
         : "（收盘价不可变：同日重跑只补新票）");
     await db.taskRun.update({
       where: { id: row.id },
