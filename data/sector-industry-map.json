@@ -1,0 +1,790 @@
+{
+  "generatedAt": "2026-09-28T06:48:46.450Z",
+  "source": "结构化领域知识（非AI生成，v5 §0.6/§6.5）",
+  "layers": [
+    "上游",
+    "中游",
+    "下游"
+  ],
+  "note": "板块→产业链映射为结构化基础设施；扫描器对任意申万板块按 sectorIndustryMap 自动对应产业节点并聚合。industry_metric_snapshot(节点级月度快照)由 Phase2 数据源(akshare/SMM/生意社/NBS/PMI)回补；当前为空 → 引擎标注「产业层数据不足」并降权，不硬编、不靠模型猜。",
+  "domainCount": 8,
+  "nodeCount": 56,
+  "mappedSectorCount": 35,
+  "industryNodes": {
+    "semi_wafer": {
+      "nodeId": "semi_wafer",
+      "name": "硅片",
+      "layer": "上游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_resist": {
+      "nodeId": "semi_resist",
+      "name": "光刻胶",
+      "layer": "上游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_gas": {
+      "nodeId": "semi_gas",
+      "name": "电子特气",
+      "layer": "上游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_material": {
+      "nodeId": "semi_material",
+      "name": "半导体材料",
+      "layer": "上游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_design": {
+      "nodeId": "semi_design",
+      "name": "芯片设计",
+      "layer": "中游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_fab": {
+      "nodeId": "semi_fab",
+      "name": "晶圆制造",
+      "layer": "中游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_osat": {
+      "nodeId": "semi_osat",
+      "name": "封装测试",
+      "layer": "中游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_equip": {
+      "nodeId": "semi_equip",
+      "name": "半导体设备",
+      "layer": "中游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_ai_server": {
+      "nodeId": "semi_ai_server",
+      "name": "AI服务器",
+      "layer": "下游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_phone": {
+      "nodeId": "semi_phone",
+      "name": "智能手机",
+      "layer": "下游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_auto_elec": {
+      "nodeId": "semi_auto_elec",
+      "name": "汽车电子",
+      "layer": "下游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "semi_consumer": {
+      "nodeId": "semi_consumer",
+      "name": "消费电子",
+      "layer": "下游",
+      "domain": "半导体",
+      "parent": null
+    },
+    "ai_hbm": {
+      "nodeId": "ai_hbm",
+      "name": "HBM存储",
+      "layer": "上游",
+      "domain": "AI算力",
+      "parent": null
+    },
+    "ai_gpu": {
+      "nodeId": "ai_gpu",
+      "name": "GPU/算力芯片",
+      "layer": "中游",
+      "domain": "AI算力",
+      "parent": null
+    },
+    "ai_server": {
+      "nodeId": "ai_server",
+      "name": "服务器",
+      "layer": "中游",
+      "domain": "AI算力",
+      "parent": null
+    },
+    "ai_optical_module": {
+      "nodeId": "ai_optical_module",
+      "name": "光模块",
+      "layer": "中游",
+      "domain": "AI算力",
+      "parent": null
+    },
+    "ai_pcb": {
+      "nodeId": "ai_pcb",
+      "name": "PCB/CCL",
+      "layer": "中游",
+      "domain": "AI算力",
+      "parent": null
+    },
+    "ai_cooling": {
+      "nodeId": "ai_cooling",
+      "name": "液冷",
+      "layer": "中游",
+      "domain": "AI算力",
+      "parent": null
+    },
+    "ai_datacenter": {
+      "nodeId": "ai_datacenter",
+      "name": "数据中心/IDC",
+      "layer": "下游",
+      "domain": "AI算力",
+      "parent": null
+    },
+    "ne_lithium": {
+      "nodeId": "ne_lithium",
+      "name": "锂矿/锂盐",
+      "layer": "上游",
+      "domain": "新能源",
+      "parent": null
+    },
+    "ne_polysilicon": {
+      "nodeId": "ne_polysilicon",
+      "name": "硅料",
+      "layer": "上游",
+      "domain": "新能源",
+      "parent": null
+    },
+    "ne_battery": {
+      "nodeId": "ne_battery",
+      "name": "锂电池",
+      "layer": "中游",
+      "domain": "新能源",
+      "parent": null
+    },
+    "ne_cell": {
+      "nodeId": "ne_cell",
+      "name": "电芯/储能",
+      "layer": "中游",
+      "domain": "新能源",
+      "parent": null
+    },
+    "ne_pv": {
+      "nodeId": "ne_pv",
+      "name": "光伏组件",
+      "layer": "中游",
+      "domain": "新能源",
+      "parent": null
+    },
+    "ne_wind": {
+      "nodeId": "ne_wind",
+      "name": "风电整机",
+      "layer": "中游",
+      "domain": "新能源",
+      "parent": null
+    },
+    "ne_ev": {
+      "nodeId": "ne_ev",
+      "name": "新能源车",
+      "layer": "下游",
+      "domain": "新能源",
+      "parent": null
+    },
+    "ne_grid": {
+      "nodeId": "ne_grid",
+      "name": "电网/储能系统",
+      "layer": "下游",
+      "domain": "新能源",
+      "parent": null
+    },
+    "ph_api": {
+      "nodeId": "ph_api",
+      "name": "原料药",
+      "layer": "上游",
+      "domain": "医药",
+      "parent": null
+    },
+    "ph_chemical": {
+      "nodeId": "ph_chemical",
+      "name": "化学制药",
+      "layer": "中游",
+      "domain": "医药",
+      "parent": null
+    },
+    "ph_tcm": {
+      "nodeId": "ph_tcm",
+      "name": "中药",
+      "layer": "中游",
+      "domain": "医药",
+      "parent": null
+    },
+    "ph_bio": {
+      "nodeId": "ph_bio",
+      "name": "生物制品/创新药",
+      "layer": "中游",
+      "domain": "医药",
+      "parent": null
+    },
+    "ph_device": {
+      "nodeId": "ph_device",
+      "name": "医疗器械",
+      "layer": "中游",
+      "domain": "医药",
+      "parent": null
+    },
+    "ph_cxo": {
+      "nodeId": "ph_cxo",
+      "name": "CXO",
+      "layer": "中游",
+      "domain": "医药",
+      "parent": null
+    },
+    "ph_service": {
+      "nodeId": "ph_service",
+      "name": "医疗服务",
+      "layer": "下游",
+      "domain": "医药",
+      "parent": null
+    },
+    "ph_retail": {
+      "nodeId": "ph_retail",
+      "name": "医药商业/药店",
+      "layer": "下游",
+      "domain": "医药",
+      "parent": null
+    },
+    "auto_oem": {
+      "nodeId": "auto_oem",
+      "name": "整车制造",
+      "layer": "中游",
+      "domain": "汽车",
+      "parent": null
+    },
+    "auto_parts": {
+      "nodeId": "auto_parts",
+      "name": "零部件",
+      "layer": "中游",
+      "domain": "汽车",
+      "parent": null
+    },
+    "auto_battery": {
+      "nodeId": "auto_battery",
+      "name": "车用动力电池",
+      "layer": "中游",
+      "domain": "汽车",
+      "parent": null
+    },
+    "auto_smart": {
+      "nodeId": "auto_smart",
+      "name": "智能驾驶",
+      "layer": "中游",
+      "domain": "汽车",
+      "parent": null
+    },
+    "auto_sales": {
+      "nodeId": "auto_sales",
+      "name": "汽车销售/库存",
+      "layer": "下游",
+      "domain": "汽车",
+      "parent": null
+    },
+    "re_land": {
+      "nodeId": "re_land",
+      "name": "土地/新开工",
+      "layer": "上游",
+      "domain": "房地产",
+      "parent": null
+    },
+    "re_material": {
+      "nodeId": "re_material",
+      "name": "建材",
+      "layer": "上游",
+      "domain": "房地产",
+      "parent": null
+    },
+    "re_develop": {
+      "nodeId": "re_develop",
+      "name": "房地产开发",
+      "layer": "中游",
+      "domain": "房地产",
+      "parent": null
+    },
+    "re_property": {
+      "nodeId": "re_property",
+      "name": "物业服务",
+      "layer": "下游",
+      "domain": "房地产",
+      "parent": null
+    },
+    "re_home": {
+      "nodeId": "re_home",
+      "name": "家居",
+      "layer": "下游",
+      "domain": "房地产",
+      "parent": null
+    },
+    "mt_cu": {
+      "nodeId": "mt_cu",
+      "name": "铜",
+      "layer": "上游",
+      "domain": "有色",
+      "parent": null
+    },
+    "mt_al": {
+      "nodeId": "mt_al",
+      "name": "铝",
+      "layer": "上游",
+      "domain": "有色",
+      "parent": null
+    },
+    "mt_gold": {
+      "nodeId": "mt_gold",
+      "name": "黄金/贵金属",
+      "layer": "上游",
+      "domain": "有色",
+      "parent": null
+    },
+    "mt_small": {
+      "nodeId": "mt_small",
+      "name": "小金属",
+      "layer": "上游",
+      "domain": "有色",
+      "parent": null
+    },
+    "mt_energy": {
+      "nodeId": "mt_energy",
+      "name": "能源金属(锂钴镍)",
+      "layer": "上游",
+      "domain": "有色",
+      "parent": null
+    },
+    "mt_process": {
+      "nodeId": "mt_process",
+      "name": "加工费/冶炼",
+      "layer": "中游",
+      "domain": "有色",
+      "parent": null
+    },
+    "ch_basic": {
+      "nodeId": "ch_basic",
+      "name": "基础化工",
+      "layer": "上游",
+      "domain": "化工",
+      "parent": null
+    },
+    "ch_fiber": {
+      "nodeId": "ch_fiber",
+      "name": "化纤",
+      "layer": "中游",
+      "domain": "化工",
+      "parent": null
+    },
+    "ch_agro": {
+      "nodeId": "ch_agro",
+      "name": "农化(化肥/农药)",
+      "layer": "中游",
+      "domain": "化工",
+      "parent": null
+    },
+    "ch_specialty": {
+      "nodeId": "ch_specialty",
+      "name": "精细化工/新材料",
+      "layer": "中游",
+      "domain": "化工",
+      "parent": null
+    },
+    "ch_plastic": {
+      "nodeId": "ch_plastic",
+      "name": "塑料/橡胶",
+      "layer": "下游",
+      "domain": "化工",
+      "parent": null
+    }
+  },
+  "sectorIndustryMap": {
+    "半导体": [
+      {
+        "nodeId": "semi_wafer",
+        "role": "上游"
+      },
+      {
+        "nodeId": "semi_resist",
+        "role": "上游"
+      },
+      {
+        "nodeId": "semi_gas",
+        "role": "上游"
+      },
+      {
+        "nodeId": "semi_material",
+        "role": "上游"
+      },
+      {
+        "nodeId": "semi_design",
+        "role": "中游"
+      },
+      {
+        "nodeId": "semi_fab",
+        "role": "中游"
+      },
+      {
+        "nodeId": "semi_osat",
+        "role": "中游"
+      },
+      {
+        "nodeId": "semi_equip",
+        "role": "中游"
+      },
+      {
+        "nodeId": "semi_ai_server",
+        "role": "下游"
+      },
+      {
+        "nodeId": "semi_phone",
+        "role": "下游"
+      },
+      {
+        "nodeId": "semi_auto_elec",
+        "role": "下游"
+      },
+      {
+        "nodeId": "semi_consumer",
+        "role": "下游"
+      }
+    ],
+    "通信设备": [
+      {
+        "nodeId": "ai_optical_module",
+        "role": "中游"
+      },
+      {
+        "nodeId": "ai_pcb",
+        "role": "中游"
+      },
+      {
+        "nodeId": "ai_datacenter",
+        "role": "下游"
+      },
+      {
+        "nodeId": "ai_cooling",
+        "role": "中游"
+      }
+    ],
+    "计算机设备": [
+      {
+        "nodeId": "ai_gpu",
+        "role": "中游"
+      },
+      {
+        "nodeId": "ai_server",
+        "role": "中游"
+      },
+      {
+        "nodeId": "ai_datacenter",
+        "role": "下游"
+      }
+    ],
+    "元件": [
+      {
+        "nodeId": "ai_pcb",
+        "role": "中游"
+      }
+    ],
+    "消费电子": [
+      {
+        "nodeId": "semi_phone",
+        "role": "下游"
+      },
+      {
+        "nodeId": "semi_consumer",
+        "role": "下游"
+      },
+      {
+        "nodeId": "semi_ai_server",
+        "role": "下游"
+      }
+    ],
+    "通信服务": [
+      {
+        "nodeId": "ai_datacenter",
+        "role": "下游"
+      }
+    ],
+    "电池": [
+      {
+        "nodeId": "ne_lithium",
+        "role": "上游"
+      },
+      {
+        "nodeId": "ne_battery",
+        "role": "中游"
+      },
+      {
+        "nodeId": "ne_cell",
+        "role": "中游"
+      },
+      {
+        "nodeId": "auto_battery",
+        "role": "中游"
+      }
+    ],
+    "光伏设备": [
+      {
+        "nodeId": "ne_polysilicon",
+        "role": "上游"
+      },
+      {
+        "nodeId": "ne_pv",
+        "role": "中游"
+      }
+    ],
+    "风电设备": [
+      {
+        "nodeId": "ne_wind",
+        "role": "中游"
+      }
+    ],
+    "能源金属": [
+      {
+        "nodeId": "ne_lithium",
+        "role": "上游"
+      },
+      {
+        "nodeId": "mt_energy",
+        "role": "上游"
+      }
+    ],
+    "电网设备": [
+      {
+        "nodeId": "ne_cell",
+        "role": "中游"
+      },
+      {
+        "nodeId": "ne_grid",
+        "role": "下游"
+      }
+    ],
+    "其他电源设备": [
+      {
+        "nodeId": "ne_grid",
+        "role": "下游"
+      },
+      {
+        "nodeId": "ne_cell",
+        "role": "中游"
+      }
+    ],
+    "化学制药": [
+      {
+        "nodeId": "ph_api",
+        "role": "上游"
+      },
+      {
+        "nodeId": "ph_chemical",
+        "role": "中游"
+      }
+    ],
+    "中药": [
+      {
+        "nodeId": "ph_tcm",
+        "role": "中游"
+      }
+    ],
+    "生物制品": [
+      {
+        "nodeId": "ph_bio",
+        "role": "中游"
+      }
+    ],
+    "医疗器械": [
+      {
+        "nodeId": "ph_device",
+        "role": "中游"
+      }
+    ],
+    "医疗服务": [
+      {
+        "nodeId": "ph_service",
+        "role": "下游"
+      }
+    ],
+    "医药商业": [
+      {
+        "nodeId": "ph_retail",
+        "role": "下游"
+      }
+    ],
+    "汽车整车": [
+      {
+        "nodeId": "auto_oem",
+        "role": "中游"
+      },
+      {
+        "nodeId": "auto_battery",
+        "role": "中游"
+      },
+      {
+        "nodeId": "auto_smart",
+        "role": "中游"
+      },
+      {
+        "nodeId": "auto_sales",
+        "role": "下游"
+      }
+    ],
+    "汽车零部件": [
+      {
+        "nodeId": "auto_parts",
+        "role": "中游"
+      },
+      {
+        "nodeId": "auto_smart",
+        "role": "中游"
+      }
+    ],
+    "汽车服务及其他": [
+      {
+        "nodeId": "auto_sales",
+        "role": "下游"
+      }
+    ],
+    "房地产": [
+      {
+        "nodeId": "re_develop",
+        "role": "中游"
+      },
+      {
+        "nodeId": "re_property",
+        "role": "下游"
+      },
+      {
+        "nodeId": "re_land",
+        "role": "上游"
+      }
+    ],
+    "建筑材料": [
+      {
+        "nodeId": "re_material",
+        "role": "上游"
+      }
+    ],
+    "家居用品": [
+      {
+        "nodeId": "re_home",
+        "role": "下游"
+      }
+    ],
+    "建筑装饰": [
+      {
+        "nodeId": "re_material",
+        "role": "上游"
+      }
+    ],
+    "工业金属": [
+      {
+        "nodeId": "mt_cu",
+        "role": "上游"
+      },
+      {
+        "nodeId": "mt_al",
+        "role": "上游"
+      },
+      {
+        "nodeId": "mt_process",
+        "role": "中游"
+      }
+    ],
+    "小金属": [
+      {
+        "nodeId": "mt_small",
+        "role": "上游"
+      }
+    ],
+    "贵金属": [
+      {
+        "nodeId": "mt_gold",
+        "role": "上游"
+      }
+    ],
+    "金属新材料": [
+      {
+        "nodeId": "mt_small",
+        "role": "上游"
+      }
+    ],
+    "化学原料": [
+      {
+        "nodeId": "ch_basic",
+        "role": "上游"
+      }
+    ],
+    "化学制品": [
+      {
+        "nodeId": "ch_specialty",
+        "role": "中游"
+      },
+      {
+        "nodeId": "ch_basic",
+        "role": "上游"
+      }
+    ],
+    "化学纤维": [
+      {
+        "nodeId": "ch_fiber",
+        "role": "中游"
+      }
+    ],
+    "农化制品": [
+      {
+        "nodeId": "ch_agro",
+        "role": "中游"
+      }
+    ],
+    "塑料制品": [
+      {
+        "nodeId": "ch_plastic",
+        "role": "下游"
+      }
+    ],
+    "橡胶制品": [
+      {
+        "nodeId": "ch_plastic",
+        "role": "下游"
+      }
+    ]
+  },
+  "metricSnapshotTemplate": {
+    "fields": [
+      "orders_z",
+      "inventory_state",
+      "price_trend",
+      "earnings_z",
+      "capex_state"
+    ],
+    "enums": {
+      "inventory_state": [
+        "去库存",
+        "库存低位",
+        "补库存",
+        "主动补库",
+        "库存高位",
+        "被动累库"
+      ],
+      "price_trend": [
+        "上行",
+        "平稳",
+        "下行"
+      ],
+      "capex_state": [
+        "收缩",
+        "平稳",
+        "扩张"
+      ]
+    },
+    "note": "节点级月度快照；orders_z/earnings_z 为 z-score(标准化)，其余为枚举。Phase2 回补。"
+  },
+  "metricSnapshots": {}
+}
