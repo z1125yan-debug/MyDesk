@@ -108,7 +108,25 @@ function replayWithLivePatch(
     }
   }
   const { deltaYi, prevDate } = turnoverDeltaVsPrev(days);
-  const { idx, cum } = buildIdxCum(catalog, sh, sz, cyb, defFrom, defTo);
+  // idx/cum：优先用本次腾讯日K重建（收盘价真实、不受落档时刻污染）；
+  // 但备源这次也可能整体取空（2026-09-29 00:22 实测 8/8 全空）——那样重建会把快照里
+  // 原本好好的指数线覆盖成 0 根（页面上「只剩一根线」事故）。重建出点才用，否则
+  // 回退到快照存的 idx/cum，按本次请求窗口过滤（快照存的窗口与本次可能不同）。
+  const rebuilt = buildIdxCum(catalog, sh, sz, cyb, defFrom, defTo);
+  const rebuiltHasPts = rebuilt.idx.some((s) => s.pts.length > 1);
+  type IdxPt = { date: string; pct: number };
+  type IdxSeries = { key: string; name: string; pts: IdxPt[] };
+  const inWin = (pts: IdxPt[]) => pts.filter((p) => p.date >= defFrom && p.date <= defTo);
+  const snapIdx = Array.isArray(snapPayload.idx) ? (snapPayload.idx as IdxSeries[]) : [];
+  const snapCum = (snapPayload.cum ?? null) as { sh: IdxPt[]; sz: IdxPt[]; cyb: IdxPt[] } | null;
+  const idx: IdxSeries[] = rebuiltHasPts
+    ? rebuilt.idx
+    : snapIdx.map((s) => ({ ...s, pts: inWin(s.pts ?? []) }));
+  const cum = rebuiltHasPts
+    ? rebuilt.cum
+    : snapCum
+      ? { sh: inWin(snapCum.sh ?? []), sz: inWin(snapCum.sz ?? []), cyb: inWin(snapCum.cyb ?? []) }
+      : rebuilt.cum;
   const snapNotes = Array.isArray(snapPayload.notes) ? (snapPayload.notes as string[]) : [];
   const baseSource = typeof snapPayload.source === "string" ? snapPayload.source : "";
   return {
