@@ -102,9 +102,9 @@ test("R2b-⑥ 调度与读侧接线：breadth 进 KINDS 白名单，端点只算
   assert.ok(api.includes("/api/market/breadth"), "客户端一条口 fetchBreadth");
   const mk = readSrc("src/components/desk/pages/MarketPage.tsx");
   assert.ok(mk.includes("void loadBreadth()"), "首屏自动带宽度进度");
-  // R19c：宽度图从「三条线（主线+分组+对照点线）」回到「一次一条口径」，空态文案补了「同步口径也没到位」。
-  // 这两处只放宽形状、不放松 intent：图仍走 breadthOption、仍吃 pct 非 null 的真实统计日、空态仍明说缺什么。
-  assert.ok(/breadthOption\(bMain, bGroups(?:, \w+)?\)/.test(mk), "宽度图走统一 EChart（吃 pct 非 null 的真实统计日）");
+  // 2026-09-29 五线恢复轮：宽度图走统一 EChart、调用仍是 breadthOption 一个入口（第三参=自算点线，
+  // 本地没攒够时传 null——形状放宽成「bGroups 后面还有参数」，不再写死参数长相）。
+  assert.ok(/breadthOption\(bMain, bGroups,/.test(mk), "宽度图走统一 EChart（吃 pct 非 null 的真实统计日）");
   assert.ok(/emptyText="暂无数据（[^"]*5 天[^"]*）"/.test(mk), "只攒出不足 2 个点时不画线、明说要满 5 天");
   assert.ok(mk.includes("min: 0, max: 100"), "占比图 y 轴固定 0–100%，不自动缩放夸大波动");
 });

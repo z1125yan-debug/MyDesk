@@ -39,7 +39,7 @@ export interface MenuEntry {
   legacyPages?: PageKey[];
 }
 
-/** 顺序即视觉顺序（对齐稳智左栏 HTML 实际排列：大盘情绪→量化因子选股→行业→行情→自选→LLM分析→奇门遁甲→稳智AI→订阅） */
+/** 顺序即视觉顺序（2026-09-29 起：…自选→事件雷达→LLM分析→板块风险→AI分析；「奇门遁甲」按用户指示撤出一级，位子给「板块风险」） */
 export const MENU: MenuEntry[] = [
   { id: "market", label: "大盘情绪", key: "market" },
   {
@@ -50,14 +50,9 @@ export const MENU: MenuEntry[] = [
     legacyPages: ["quant", "screener", "factorlab", "pool", "radar", "problab"],
   },
   // 2026-09-28：行业组挂「行业板块排行」(默认落点) 与「板块风险」(见顶预警扫描器 + 回撤性质识别器)。
-  {
-    id: "sectors",
-    label: "行业",
-    children: [
-      { key: "sectors", label: "行业板块排行" },
-      { key: "sectortop", label: "板块风险" },
-    ],
-  },
+  // 2026-09-29 用户拍板：「板块风险」升一级顶替「奇门遁甲」的菜单位（原话：删了换成见顶），
+  // 「行业」还原成单项直达；#qimen 页本体保留（HIDDEN_PAGES 登记，hash 直达 + 智能助手页奇门解盘模式仍在）。
+  { id: "sectors", label: "行业", key: "sectors" },
   {
     id: "quotes",
     label: "行情",
@@ -79,7 +74,9 @@ export const MENU: MenuEntry[] = [
   // LLM 分析不是纯 AI 对话，是带顶部 5 Tab 的门户工作台（LlmAnalysisPage）。
   // legacyPages 保留——旧的 #/analysis / #/research / #/agent 三个 hash 依然可达（AppShell 分支不删）。
   { id: "assistant", label: "LLM分析", key: "llmportal", legacyPages: ["analysis", "research", "agent"] },
-  { id: "qimen", label: "奇门遁甲", key: "qimen" },
+  // 2026-09-29 用户拍板：奇门遁甲撤出一级菜单，「板块风险」（见顶预警 v1）顶替其位——
+  // 这是本地判顶系统的唯一一级入口。
+  { id: "sectortop", label: "板块风险", key: "sectortop" },
   // 稳智左栏倒数第 2 位是「稳智AI」——本地改叫「AI分析」（2026-09-25 用户拍板）。
   { id: "ai", label: "AI分析", key: "aihome" },
 ];
@@ -100,6 +97,9 @@ export const HIDDEN_PAGES: { key: PageKey; group: string }[] = [
   { key: "themeoverview", group: "assistant" },
   // 2026-09-25：用户要求把「行情」组下的「市场总览」从菜单删掉——页面本体不删，仍可 #/dashboard 直达
   { key: "dashboard", group: "quotes" },
+  // 2026-09-29 用户拍板：奇门遁甲撤出一级菜单（位子让给「板块风险」）——页面本体与 API 保留，
+  // #/qimen 直达仍进 QimenPanel，智能助手页的「奇门解盘」模式也不受影响；高亮归对话血缘组。
+  { key: "qimen", group: "assistant" },
   // 2026-09-26 用户实测修正：对话本体（copilot / AssistantPage）**不占菜单位**（「AI分析」一级项落的是落地页 aihome），
   // 但它是 AI分析 这条血缘线上的页——登记在此只为「在哪一组高亮 + 登记一处不重不漏」，
   // 不是 legacy（进来不挂横幅），也不再被任何重定向劫持（见下面 ROUTE_REDIRECTS 的改动说明）。

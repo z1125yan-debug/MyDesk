@@ -40,12 +40,17 @@ test("R20b-② 自选目录里那两个品种仍然标着「演示」，且沪�
   assert.ok(src("src/lib/desk/market.ts").includes('data_status: "DEMO"'), "合成卡片必须带 DEMO 标记，不能混进真数");
 });
 
-test("R20b-③ 市场页档位牌：读服务端那份压力分，缺数显示「没读到」而不是 0 分", () => {
-  assert.ok(MARKET.includes("pressure"), "市场页没接上 pressure 字段");
-  // 刻度只许有一份：页面自己不许再写一套分档阈值
-  assert.ok(!/score\s*>=\s*\d+\s*\?.*高风险/.test(MARKET), "页面里出现了第二套「分数→档位」的判据");
-  assert.ok(MARKET.includes("算不出") || MARKET.includes("没读到"), "压力分没读到时页面必须写「算不出/没读到」");
-  // 缺读数的分量整行退出：页面不能把 null 分数当 0 画出来
+test("R20b-③(2026-09-29 撤牌) 市场页不再挂见顶压力档位牌；能力保留在 API 不删", () => {
+  // 2026-09-29 用户拍板：档位牌从大盘情绪页整体摘除（判定：丑且不属于此页）。
+  // 页面里不许留半截残留；数据能力（/api/market/sentiment 的 pressure 字段 + top-pressure-core 纯核）原样保留，
+  // 以后接进板块风险页当「全市场背景」层时在这里补新钉。
+  assert.ok(!MARKET.includes("PressurePanel"), "市场页不许再挂 PressurePanel 组件");
+  assert.ok(!MARKET.includes("见顶压力"), "档位牌文案不许残留");
+  assert.ok(!/sent\.pressure/.test(MARKET), "页面不再消费 pressure 字段");
+  const sentimentRoute = src("src/app/api/market/sentiment/route.ts");
+  assert.ok(sentimentRoute.includes("pressure"), "API 的 pressure 字段保留（能力不删）");
+  assert.ok(src("src/lib/quant/screener/top-pressure-core.ts").includes("export"), "纯核 top-pressure-core 保留");
+  // 通用纪律仍有效：真要把压力分画回任何页面，也不许在页面写第二套「分数→档位」判据、不许把 null 兜成 0
   assert.ok(!/score\s*\?\?\s*0/.test(MARKET), "页面把 score=null 兜成了 0 分——缺读数 ≠ 0");
 });
 

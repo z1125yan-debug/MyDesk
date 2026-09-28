@@ -85,19 +85,20 @@ test("R19-X⑥ 最差三天按绝对偏差降序、并列按日期升序，且�
   assert.equal(r.worst.length, 3, "报三条就够看：把 110 天全列出等于没重点");
 });
 
-test("R19-X⑦ 页面一次只画一条口径：默认本地三市自算，两市那份要显式切，差值写在口径行", () => {
+test("R19-X⑦(2026-09-29 反转) 大盘情绪图恢复五线默认：同步四线 + 自算第五条点线，默认口径回「同步·两市」", () => {
   assert.match(PAGE, /compareBreadthWithSeed/, "对照差值走同一份纯核，页面里不许再手写一遍算法");
-  // 默认口径 = 我们自己的三市自算（用户 2026-09-28 拍板：不按两市，本地有数据就自己算）
-  assert.match(PAGE, /useState<"local" \| "sync">\("local"\)/, "开关默认落在本地自算那一侧");
+  // 2026-09-29 用户拍板恢复 R19c 之前的五线视图（原话：原来的这里有大盘小盘微盘什么的 有五根线）——
+  // R19c 的「太拥挤砍成单线」被推翻；「本地·三市」单线视图保留为可切换项。
+  assert.match(PAGE, /useState<"local" \| "sync">\("sync"\)/, "默认口径回到「同步·两市」（五线齐全的那一档）");
   assert.match(PAGE, /const bMain = bDrawn === "sync" \? bSync : bLocalWin;/, "主线跟着实际选中那条走，不是写死种子");
-  assert.match(PAGE, /本地·三市/, "两市那份只能显式切过去看，不做默认");
+  assert.match(PAGE, /本地·三市/, "单线视图保留为可切换项");
   assert.match(PAGE, /同步·两市/);
-  // 第五条并排点线已撤：图上就一条主线（+ 同步模式下的三条分组虚线）
-  assert.match(PAGE, /breadthOption\(bMain, bGroups\)/, "自算那条不再作第三个参数进图");
-  assert.equal(/自算·真实收盘/.test(PAGE), false, "并排摆第五条线已经撤掉了，留着就是「太拥挤」那句还没改");
-  assert.equal(/bSelf/.test(PAGE), false, "bSelf 这条线整个不存在了");
-  // 分组虚线只配出现在同步那条线上（本地库里没有市值分组，不自编一套冒充）
-  assert.match(PAGE, /bDrawn !== "sync"/, "画本地时不把种子分组叠上去");
+  // 第五条点线恢复：自算·真实收盘（蓝点线）作为对照并排摆，两个口径不静默替换
+  assert.match(PAGE, /breadthOption\(bMain, bGroups, /, "自算那条作为第三个参数进图（bLocalWin，本地没攒够时传 null）");
+  assert.match(PAGE, /自算·真实收盘/, "第五条点线恢复：本库真实收盘三市全A自算");
+  assert.match(PAGE, /CHART\.color\.selfComputed/, "自算线用回专属蓝色 token，不蹭分组色");
+  // 分组虚线仍来自同步口径的种子（本地库里没有市值分组，不自编一套冒充）
+  assert.match(PAGE, /微盘股/, "微/中/大盘三条虚线恢复（种子分组）");
   // 两口径差多少仍必须写在标题下面，让人不用悬停量
   assert.match(PAGE, /平均差 \$\{bCheck\.mean_abs_pt/, "差多少个点要摆在脸上");
   assert.match(PAGE, /去掉北交所只少 0\.26 点/, "票池只值 0.26 个点这个量化结论要跟着数走，别让人以为去了北交就齐了");
@@ -105,9 +106,9 @@ test("R19-X⑦ 页面一次只画一条口径：默认本地三市自算，两�
   assert.match(PAGE, /暂时画的是同步口径/);
 });
 
-test("R19-X⑦b 配色令牌里不再留着「并排对照线」那个颜色", () => {
+test("R19-X⑦b(2026-09-29 反转) 配色令牌里 selfComputed 蓝色随第五条线一并恢复", () => {
   const tokens = readFileSync(new URL("../../src/components/desk/charts/chart-tokens.ts", import.meta.url), "utf8");
-  assert.equal(/selfComputed:/.test(tokens), false, "线撤了色还留着，下一个人会以为图上有对照线");
+  assert.match(tokens, /selfComputed:/, "五线视图恢复了，对照线专属蓝色必须在 token 里（页面引用它）");
 });
 
 test("R19-X⑦c 同步那条线只画到种子终点：终点之后库里是三市自算，接上去就是挂错名字的口径", () => {

@@ -65,10 +65,11 @@ test("nav-core：一级菜单顺序文案钉死（稳智左栏顺序，用户要
       ["events", "事件雷达"],
       // P25 稳智对齐 P1 #3：LLM 分析（深度分析）和 AI 对话（快速问答）拆成两个一级项
       ["assistant", "LLM分析"],
-      ["qimen", "奇门遁甲"],
+      // 2026-09-29 用户拍板：奇门遁甲撤出一级菜单（页本体保留），「板块风险」（见顶预警）顶替其位
+      ["sectortop", "板块风险"],
       ["ai", "AI分析"],
     ],
-    "一级项顺序=稳智左栏（大盘情绪·量化因子选股·行业·行情·自选·事件雷达·LLM分析·奇门遁甲·AI分析）；「行业」是单项直达（2026-09-25 拍平对齐稳智 /sectors），事件雷达是本地特色项（P15-R18）",
+    "一级项顺序=大盘情绪·量化因子选股·行业·行情·自选·事件雷达·LLM分析·板块风险·AI分析（2026-09-29 起「板块风险」顶替「奇门遁甲」位；事件雷达是本地特色项 P15-R18）",
   );
   // 「自选」在对方菜单里是独立一级，不许再塞回「行情」组里
   assert.equal(MENU.find((e) => e.id === "watch")!.key, "tracker");
@@ -78,10 +79,12 @@ test("nav-core：一级菜单顺序文案钉死（稳智左栏顺序，用户要
   for (const k of ["settings", "extension"]) {
     assert.ok(!listed_has(k), `${k} 只能从底部系统区进，不许散回一级菜单`);
   }
-  // P9 原钉原样保住（一处入口，不做两套）：奇门是一级模块，对话页内不再挂奇门 tab
+  // P9 原钉原样保住（一处入口，不做两套）：奇门解盘不在对话页挂 tab（菜单位 2026-09-29 已让给「板块风险」，页本体 #/qimen 保留）
   const assistantSrc = read("src/components/desk/pages/AssistantPage.tsx");
   assert.ok(!assistantSrc.includes("奇门解盘"), "对话页不再挂奇门 tab");
   assert.ok(!/deskMode/.test(assistantSrc), "deskMode 死连线已摘除");
+  // 2026-09-29：qimen 从菜单撤下后必须登记在 HIDDEN_PAGES（防漏页对账），页本体不许删
+  assert.ok(HIDDEN_PAGES.some((h) => h.key === "qimen"), "qimen 撤出菜单后要登记 HIDDEN_PAGES（#/qimen 直达保留）");
   function listed_has(k: string) {
     const listed = allRegistered();
     return (listed.get(k)?.length ?? 0) > 1;

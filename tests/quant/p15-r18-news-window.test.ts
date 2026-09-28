@@ -128,8 +128,8 @@ test("P15-R18a：全球事件雷达在一级菜单里，且不再是 legacy 兼�
   assert.equal(isLegacyPage("events"), false);
   assert.deepEqual(
     MENU.map((e) => e.id),
-    ["market", "quant", "sectors", "quotes", "watch", "events", "assistant", "qimen", "ai"],
-    "一级顺序：大盘情绪·量化因子选股·行业·行情·自选·事件雷达·LLM分析·奇门遁甲·AI分析（=稳智左栏顺序，事件雷达是本地特色项）",
+    ["market", "quant", "sectors", "quotes", "watch", "events", "assistant", "sectortop", "ai"],
+    "一级顺序：大盘情绪·量化因子选股·行业·行情·自选·事件雷达·LLM分析·板块风险·AI分析（2026-09-29 起「板块风险」顶替「奇门遁甲」位；事件雷达是本地特色项）",
   );
   assert.ok(!MENU.find((e) => e.id === "ai")!.legacyPages?.includes("events"), "AI 对话组不再代收 events");
 });
