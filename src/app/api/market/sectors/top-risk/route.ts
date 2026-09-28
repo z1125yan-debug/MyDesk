@@ -3,13 +3,17 @@
 // 引擎：src/lib/quant/screener/top-risk-engine.ts（读 data/sector-daily-snapshots.json + sector-industry-map.json）
 import { NextResponse } from "next/server";
 import { scanAll, analyzeSector } from "@/lib/quant/screener/top-risk-engine";
+import { runBacktest } from "@/lib/quant/screener/top-risk-backtest";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
-  const sector = new URL(req.url).searchParams.get("sector");
+  const sp = new URL(req.url).searchParams;
+  const sector = sp.get("sector");
+  const backtest = sp.get("backtest");
   try {
+    if (backtest) return NextResponse.json(await runBacktest());
     if (sector) {
       const r = analyzeSector(sector);
       if (!r) return NextResponse.json({ ok: false, error: `未找到板块：${sector}` }, { status: 404 });
