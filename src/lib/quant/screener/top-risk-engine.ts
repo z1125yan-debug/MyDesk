@@ -75,10 +75,10 @@ const clamp = (x: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, x));
 const r1 = (x: number | null) => (x == null || !isFinite(x) ? null : Math.round(x * 10) / 10);
 
 // 取最新交易日 + 该日所有行业
-function latestDay() {
+function latestDay(asOf?: string) {
   const a = loadArchive();
   const dates = Object.keys(a.days).sort();
-  const d = dates[dates.length - 1];
+  const d = asOf && a.days[asOf] ? asOf : dates[dates.length - 1];
   return { date: d, industries: a.days[d].industries as any[] };
 }
 
@@ -95,8 +95,8 @@ function seriesOf(sector: string): { date: string; mc: number; rs: number; adv: 
 }
 
 // ── 主计算 ────────────────────────────────────────────────────────
-export function analyzeSector(sector: string): SectorTopRisk | null {
-  const { date, industries } = latestDay();
+export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | null {
+  const { date, industries } = latestDay(asOf);
   const cur = industries.find((x) => x.name === sector);
   if (!cur) return null;
   const map = loadMap();
@@ -109,13 +109,14 @@ export function analyzeSector(sector: string): SectorTopRisk | null {
   const second: number = cur.secondChange ?? 0;
   const leadDec: number | null = cur.leadersDecliningPct ?? null;
 
-  // RS 持续性 / 宽度趋势（从序列）
+  // RS 持续性 / 宽度趋势（从序列，按 asOf 对齐索引以便历史重放）
   const ser = seriesOf(sector);
-  const last = ser[ser.length - 1];
-  const rs10ago = ser.length > 10 ? ser[ser.length - 11].rs : null;
-  const rsMom10 = rs10ago != null && last.rs != null ? last.rs - rs10ago : null;
-  const adv20 = ser.slice(-20).map((s) => s.adv).filter((v) => v != null) as number[];
-  const advMean20 = adv20.length ? adv20.reduce((a, b) => a + b, 0) / adv20.length : null;
+  const idx = asOf ? ser.findIndex((s) => s.date === asOf) : ser.length - 1;
+  const i = idx >= 0 ? idx : ser.length - 1;
+  const rs10ago = i >= 10 ? ser[i - 10].rs : null;
+  const rsMom10 = rs10ago != null && ser[i].rs != null ? ser[i].rs - rs10ago : null;
+  const advWindow = ser.slice(Math.max(0, i - 19), i + 1).map((s) => s.adv).filter((v) => v != null) as number[];
+  const advMean20 = advWindow.length ? advWindow.reduce((a, b) => a + b, 0) / advWindow.length : null;
   const breadthDeter = advMean20 != null ? advMean20 - adv : null;
 
   const coreBreak = leader < mc; // 龙头跌幅 > 板块跌幅 = 核心资产趋势破坏
@@ -144,11 +145,12 @@ export function analyzeSector(sector: string): SectorTopRisk | null {
     clamp(posComp * 0.4 + nearHighComp * 0.3 + trendDamage * 0.35 + (rsMom10 != null ? clamp(-rsMom10 / -TH.damageRsMomFull, 0, 1) * 15 : 0)),
   );
 
-  // ── 三阶段状态机 ──
+  // ── 三阶段状态机（回测校准：取中间值——顶部形成中 = 跌破60日趋势+任一恶化信号，或 核心破坏+RS深负+下跌日）──
+  const deterioration = (coreBreak ? 1 : 0) + (rsVeryNeg ? 1 : 0) + (breadthPoor ? 1 : 0);
   let stage: Stage;
   if (belowTrend && coreBreak && rsNeg && (mc <= TH.reversalDrop || (cur.distFromHigh20 ?? 0) <= TH.reversalDrawdown20)) {
     stage = "趋势反转";
-  } else if ((coreBreak || rsVeryNeg || breadthPoor) && (belowTrendSoft || mc <= TH.formingDrop)) {
+  } else if ((belowTrend && deterioration >= 1) || (coreBreak && rsVeryNeg && mc <= TH.formingDrop)) {
     stage = "顶部形成中";
   } else if (mc <= TH.pullbackDrop && !coreBreak && (cur.distMA60 ?? 0) >= TH.pullbackAboveMA) {
     stage = "趋势内回撤";
@@ -328,10 +330,10 @@ function buildConclusion(
 }
 
 // ── 扫描器（全市场）───────────────────────────────────────────────
-export function scanAll(): ScannerResult {
-  const { date, industries } = latestDay();
+export function scanAll(asOf?: string): ScannerResult {
+  const { date, industries } = latestDay(asOf);
   const rows: SectorRow[] = industries.map((ind) => {
-    const r = analyzeSector(ind.name)!;
+    const r = analyzeSector(ind.name, asOf)!;
     return {
       sector: r.sector,
       stage: r.stage,
