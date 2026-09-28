@@ -181,6 +181,8 @@ export interface RecentRiskInput {
   crossWarn: boolean; // 外盘连跌触发
   /** 外盘短句，如「COMEX黄金 连跌5天、5日 -4.9%」；没有对应品种/没读到 = null */
   crossShort: string | null;
+  /** 产业周期健康度（0-100，反向刻度：低=产业恶化）；null=未接入 */
+  industryHealth?: number | null;
 }
 
 export interface RecentRiskVerdict {
@@ -210,6 +212,7 @@ export function recentRiskVerdict(i: RecentRiskInput): RecentRiskVerdict {
   if (i.shortPullback >= 70) { score += 1; reasons.push(`短线急跌 ${i.shortPullback}`); }
   if (i.deltaUp) { score += 0.5; reasons.push("风险还在升温"); }
   if (i.crossWarn && i.crossShort) { score += 1.5; reasons.push(`隔夜外盘：${i.crossShort}`); }
+  if (typeof i.industryHealth === "number" && i.industryHealth < 30) { score += 1; reasons.push(`产业周期走弱(${i.industryHealth})`); }
 
   const tone: RecentRiskVerdict["tone"] = score >= 5 ? "red" : score >= 3 ? "orange" : score >= 1.5 ? "amber" : "green";
   const label = score >= 5 ? "高风险" : score >= 3 ? "风险偏高" : score >= 1.5 ? "有风险苗头" : "暂时安全";
