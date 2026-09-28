@@ -13412,6 +13412,3902 @@
         "unit": "元/桶",
         "proxy_note": "真实原油期货月均价，作基础化工上游能源成本代理"
       }
+    ],
+    "ch_fiber": [
+      {
+        "date": "2020-10",
+        "price_trend": 6234.67,
+        "value": 6234.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2020-11",
+        "price_trend": 6020.57,
+        "value": 6020.57,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2020-12",
+        "price_trend": 6220.26,
+        "value": 6220.26,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-01",
+        "price_trend": 6611.5,
+        "value": 6611.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-02",
+        "price_trend": 7414.67,
+        "value": 7414.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-03",
+        "price_trend": 7366.52,
+        "value": 7366.52,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-04",
+        "price_trend": 6982.0,
+        "value": 6982.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-05",
+        "price_trend": 7042.22,
+        "value": 7042.22,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-06",
+        "price_trend": 7053.14,
+        "value": 7053.14,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-07",
+        "price_trend": 7281.45,
+        "value": 7281.45,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-08",
+        "price_trend": 7065.18,
+        "value": 7065.18,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-09",
+        "price_trend": 7055.0,
+        "value": 7055.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-10",
+        "price_trend": 7936.5,
+        "value": 7936.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-11",
+        "price_trend": 6993.73,
+        "value": 6993.73,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2021-12",
+        "price_trend": 6817.57,
+        "value": 6817.57,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-01",
+        "price_trend": 7406.63,
+        "value": 7406.63,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-02",
+        "price_trend": 7593.88,
+        "value": 7593.88,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-03",
+        "price_trend": 7835.13,
+        "value": 7835.13,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-04",
+        "price_trend": 7792.0,
+        "value": 7792.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-05",
+        "price_trend": 8265.47,
+        "value": 8265.47,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-06",
+        "price_trend": 8469.71,
+        "value": 8469.71,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-07",
+        "price_trend": 7347.33,
+        "value": 7347.33,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-08",
+        "price_trend": 7264.7,
+        "value": 7264.7,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-09",
+        "price_trend": 7358.67,
+        "value": 7358.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-10",
+        "price_trend": 7135.62,
+        "value": 7135.62,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-11",
+        "price_trend": 6891.18,
+        "value": 6891.18,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2022-12",
+        "price_trend": 6937.82,
+        "value": 6937.82,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-01",
+        "price_trend": 7236.88,
+        "value": 7236.88,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-02",
+        "price_trend": 7203.2,
+        "value": 7203.2,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-03",
+        "price_trend": 7305.74,
+        "value": 7305.74,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-04",
+        "price_trend": 7497.47,
+        "value": 7497.47,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-05",
+        "price_trend": 7104.8,
+        "value": 7104.8,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-06",
+        "price_trend": 7079.6,
+        "value": 7079.6,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-07",
+        "price_trend": 7309.05,
+        "value": 7309.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-08",
+        "price_trend": 7454.26,
+        "value": 7454.26,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-09",
+        "price_trend": 7719.6,
+        "value": 7719.6,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-10",
+        "price_trend": 7375.88,
+        "value": 7375.88,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-11",
+        "price_trend": 7370.0,
+        "value": 7370.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2023-12",
+        "price_trend": 7236.38,
+        "value": 7236.38,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-01",
+        "price_trend": 7427.18,
+        "value": 7427.18,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-02",
+        "price_trend": 7399.6,
+        "value": 7399.6,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-03",
+        "price_trend": 7325.33,
+        "value": 7325.33,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-04",
+        "price_trend": 7426.9,
+        "value": 7426.9,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-05",
+        "price_trend": 7388.9,
+        "value": 7388.9,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-06",
+        "price_trend": 7498.63,
+        "value": 7498.63,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-07",
+        "price_trend": 7564.96,
+        "value": 7564.96,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-08",
+        "price_trend": 7286.73,
+        "value": 7286.73,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-09",
+        "price_trend": 6928.95,
+        "value": 6928.95,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-10",
+        "price_trend": 6956.67,
+        "value": 6956.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-11",
+        "price_trend": 6920.48,
+        "value": 6920.48,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2024-12",
+        "price_trend": 6905.73,
+        "value": 6905.73,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-01",
+        "price_trend": 6997.78,
+        "value": 6997.78,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-02",
+        "price_trend": 6959.67,
+        "value": 6959.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-03",
+        "price_trend": 6648.57,
+        "value": 6648.57,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-04",
+        "price_trend": 6122.57,
+        "value": 6122.57,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-05",
+        "price_trend": 6420.21,
+        "value": 6420.21,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-06",
+        "price_trend": 6510.5,
+        "value": 6510.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-07",
+        "price_trend": 6475.91,
+        "value": 6475.91,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-08",
+        "price_trend": 6469.43,
+        "value": 6469.43,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-09",
+        "price_trend": 6347.09,
+        "value": 6347.09,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-10",
+        "price_trend": 6148.24,
+        "value": 6148.24,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-11",
+        "price_trend": 6222.7,
+        "value": 6222.7,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2025-12",
+        "price_trend": 6307.04,
+        "value": 6307.04,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2026-01",
+        "price_trend": 6561.3,
+        "value": 6561.3,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2026-02",
+        "price_trend": 6622.43,
+        "value": 6622.43,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2026-03",
+        "price_trend": 7987.82,
+        "value": 7987.82,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2026-04",
+        "price_trend": 8142.1,
+        "value": 8142.1,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2026-05",
+        "price_trend": 7945.0,
+        "value": 7945.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2026-06",
+        "price_trend": 7462.86,
+        "value": 7462.86,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2026-07",
+        "price_trend": 7216.43,
+        "value": 7216.43,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2026-08",
+        "price_trend": 7479.43,
+        "value": 7479.43,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      },
+      {
+        "date": "2026-09",
+        "price_trend": 8217.79,
+        "value": 8217.79,
+        "source": "akshare.futures_zh_daily_sina(symbol=pf0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实短纤期货月均价，涤纶短纤即化纤类产品"
+      }
+    ],
+    "ch_agro": [
+      {
+        "date": "2019-08",
+        "price_trend": 1739.75,
+        "value": 1739.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2019-09",
+        "price_trend": 1787.25,
+        "value": 1787.25,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2019-10",
+        "price_trend": 1713.28,
+        "value": 1713.28,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2019-11",
+        "price_trend": 1649.86,
+        "value": 1649.86,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2019-12",
+        "price_trend": 1712.91,
+        "value": 1712.91,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-01",
+        "price_trend": 1736.69,
+        "value": 1736.69,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-02",
+        "price_trend": 1741.7,
+        "value": 1741.7,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-03",
+        "price_trend": 1708.45,
+        "value": 1708.45,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-04",
+        "price_trend": 1575.24,
+        "value": 1575.24,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-05",
+        "price_trend": 1533.39,
+        "value": 1533.39,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-06",
+        "price_trend": 1531.8,
+        "value": 1531.8,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-07",
+        "price_trend": 1566.04,
+        "value": 1566.04,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-08",
+        "price_trend": 1693.29,
+        "value": 1693.29,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-09",
+        "price_trend": 1633.73,
+        "value": 1633.73,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-10",
+        "price_trend": 1686.62,
+        "value": 1686.62,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-11",
+        "price_trend": 1769.67,
+        "value": 1769.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2020-12",
+        "price_trend": 1799.0,
+        "value": 1799.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-01",
+        "price_trend": 1946.75,
+        "value": 1946.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-02",
+        "price_trend": 2010.8,
+        "value": 2010.8,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-03",
+        "price_trend": 1942.65,
+        "value": 1942.65,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-04",
+        "price_trend": 2035.76,
+        "value": 2035.76,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-05",
+        "price_trend": 2252.83,
+        "value": 2252.83,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-06",
+        "price_trend": 2296.19,
+        "value": 2296.19,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-07",
+        "price_trend": 2435.32,
+        "value": 2435.32,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-08",
+        "price_trend": 2389.45,
+        "value": 2389.45,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-09",
+        "price_trend": 2639.6,
+        "value": 2639.6,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-10",
+        "price_trend": 2936.81,
+        "value": 2936.81,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-11",
+        "price_trend": 2319.82,
+        "value": 2319.82,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2021-12",
+        "price_trend": 2364.96,
+        "value": 2364.96,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-01",
+        "price_trend": 2544.37,
+        "value": 2544.37,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-02",
+        "price_trend": 2516.06,
+        "value": 2516.06,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-03",
+        "price_trend": 2752.65,
+        "value": 2752.65,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-04",
+        "price_trend": 2777.58,
+        "value": 2777.58,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-05",
+        "price_trend": 2882.11,
+        "value": 2882.11,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-06",
+        "price_trend": 2794.24,
+        "value": 2794.24,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-07",
+        "price_trend": 2246.52,
+        "value": 2246.52,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-08",
+        "price_trend": 2248.83,
+        "value": 2248.83,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-09",
+        "price_trend": 2425.52,
+        "value": 2425.52,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-10",
+        "price_trend": 2321.5,
+        "value": 2321.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-11",
+        "price_trend": 2467.05,
+        "value": 2467.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2022-12",
+        "price_trend": 2564.32,
+        "value": 2564.32,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-01",
+        "price_trend": 2579.19,
+        "value": 2579.19,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-02",
+        "price_trend": 2481.95,
+        "value": 2481.95,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-03",
+        "price_trend": 2483.7,
+        "value": 2483.7,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-04",
+        "price_trend": 2170.42,
+        "value": 2170.42,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-05",
+        "price_trend": 1805.45,
+        "value": 1805.45,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-06",
+        "price_trend": 1729.4,
+        "value": 1729.4,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-07",
+        "price_trend": 2076.67,
+        "value": 2076.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-08",
+        "price_trend": 2185.91,
+        "value": 2185.91,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-09",
+        "price_trend": 2200.15,
+        "value": 2200.15,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-10",
+        "price_trend": 2186.76,
+        "value": 2186.76,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-11",
+        "price_trend": 2340.0,
+        "value": 2340.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2023-12",
+        "price_trend": 2222.24,
+        "value": 2222.24,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-01",
+        "price_trend": 2087.64,
+        "value": 2087.64,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-02",
+        "price_trend": 2141.27,
+        "value": 2141.27,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-03",
+        "price_trend": 2084.43,
+        "value": 2084.43,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-04",
+        "price_trend": 1982.85,
+        "value": 1982.85,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-05",
+        "price_trend": 2157.4,
+        "value": 2157.4,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-06",
+        "price_trend": 2107.05,
+        "value": 2107.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-07",
+        "price_trend": 2054.96,
+        "value": 2054.96,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-08",
+        "price_trend": 1957.05,
+        "value": 1957.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-09",
+        "price_trend": 1800.63,
+        "value": 1800.63,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-10",
+        "price_trend": 1828.56,
+        "value": 1828.56,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-11",
+        "price_trend": 1810.14,
+        "value": 1810.14,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2024-12",
+        "price_trend": 1741.86,
+        "value": 1741.86,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-01",
+        "price_trend": 1700.94,
+        "value": 1700.94,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-02",
+        "price_trend": 1780.72,
+        "value": 1780.72,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-03",
+        "price_trend": 1809.24,
+        "value": 1809.24,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-04",
+        "price_trend": 1812.19,
+        "value": 1812.19,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-05",
+        "price_trend": 1852.37,
+        "value": 1852.37,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-06",
+        "price_trend": 1721.2,
+        "value": 1721.2,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-07",
+        "price_trend": 1756.83,
+        "value": 1756.83,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-08",
+        "price_trend": 1746.9,
+        "value": 1746.9,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-09",
+        "price_trend": 1685.05,
+        "value": 1685.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-10",
+        "price_trend": 1617.65,
+        "value": 1617.65,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-11",
+        "price_trend": 1651.75,
+        "value": 1651.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2025-12",
+        "price_trend": 1691.74,
+        "value": 1691.74,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2026-01",
+        "price_trend": 1786.45,
+        "value": 1786.45,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2026-02",
+        "price_trend": 1808.57,
+        "value": 1808.57,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2026-03",
+        "price_trend": 1861.41,
+        "value": 1861.41,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2026-04",
+        "price_trend": 1920.9,
+        "value": 1920.9,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2026-05",
+        "price_trend": 1870.89,
+        "value": 1870.89,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2026-06",
+        "price_trend": 1785.1,
+        "value": 1785.1,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2026-07",
+        "price_trend": 1731.91,
+        "value": 1731.91,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2026-08",
+        "price_trend": 1727.57,
+        "value": 1727.57,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      },
+      {
+        "date": "2026-09",
+        "price_trend": 1783.79,
+        "value": 1783.79,
+        "source": "akshare.futures_zh_daily_sina(symbol=ur0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实尿素期货月均价，尿素即化肥类产品"
+      }
+    ],
+    "ch_plastic": [
+      {
+        "date": "2007-07",
+        "price_trend": 12580.0,
+        "value": 12580.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2007-08",
+        "price_trend": 12524.78,
+        "value": 12524.78,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2007-09",
+        "price_trend": 12503.25,
+        "value": 12503.25,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2007-10",
+        "price_trend": 12750.0,
+        "value": 12750.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2007-11",
+        "price_trend": 13562.27,
+        "value": 13562.27,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2007-12",
+        "price_trend": 13737.14,
+        "value": 13737.14,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-01",
+        "price_trend": 13886.36,
+        "value": 13886.36,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-02",
+        "price_trend": 14100.62,
+        "value": 14100.62,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-03",
+        "price_trend": 14301.9,
+        "value": 14301.9,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-04",
+        "price_trend": 13890.45,
+        "value": 13890.45,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-05",
+        "price_trend": 14564.77,
+        "value": 14564.77,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-06",
+        "price_trend": 15721.9,
+        "value": 15721.9,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-07",
+        "price_trend": 14426.74,
+        "value": 14426.74,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-08",
+        "price_trend": 13357.62,
+        "value": 13357.62,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-09",
+        "price_trend": 12320.75,
+        "value": 12320.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-10",
+        "price_trend": 8318.0,
+        "value": 8318.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-11",
+        "price_trend": 6522.5,
+        "value": 6522.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2008-12",
+        "price_trend": 7267.17,
+        "value": 7267.17,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-01",
+        "price_trend": 8183.0,
+        "value": 8183.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-02",
+        "price_trend": 8557.5,
+        "value": 8557.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-03",
+        "price_trend": 8426.59,
+        "value": 8426.59,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-04",
+        "price_trend": 9314.29,
+        "value": 9314.29,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-05",
+        "price_trend": 9548.95,
+        "value": 9548.95,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-06",
+        "price_trend": 9921.14,
+        "value": 9921.14,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-07",
+        "price_trend": 10419.13,
+        "value": 10419.13,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-08",
+        "price_trend": 11355.48,
+        "value": 11355.48,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-09",
+        "price_trend": 10028.64,
+        "value": 10028.64,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-10",
+        "price_trend": 10457.81,
+        "value": 10457.81,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-11",
+        "price_trend": 11189.76,
+        "value": 11189.76,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2009-12",
+        "price_trend": 11831.3,
+        "value": 11831.3,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-01",
+        "price_trend": 12070.5,
+        "value": 12070.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-02",
+        "price_trend": 11658.33,
+        "value": 11658.33,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-03",
+        "price_trend": 11414.13,
+        "value": 11414.13,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-04",
+        "price_trend": 11632.86,
+        "value": 11632.86,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-05",
+        "price_trend": 10663.25,
+        "value": 10663.25,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-06",
+        "price_trend": 9694.21,
+        "value": 9694.21,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-07",
+        "price_trend": 9489.32,
+        "value": 9489.32,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-08",
+        "price_trend": 10455.68,
+        "value": 10455.68,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-09",
+        "price_trend": 10598.0,
+        "value": 10598.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-10",
+        "price_trend": 11345.0,
+        "value": 11345.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-11",
+        "price_trend": 12103.18,
+        "value": 12103.18,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2010-12",
+        "price_trend": 12189.35,
+        "value": 12189.35,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-01",
+        "price_trend": 12144.5,
+        "value": 12144.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-02",
+        "price_trend": 12083.0,
+        "value": 12083.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-03",
+        "price_trend": 11757.39,
+        "value": 11757.39,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-04",
+        "price_trend": 11824.47,
+        "value": 11824.47,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-05",
+        "price_trend": 10840.24,
+        "value": 10840.24,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-06",
+        "price_trend": 10553.1,
+        "value": 10553.1,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-07",
+        "price_trend": 11542.62,
+        "value": 11542.62,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-08",
+        "price_trend": 11095.22,
+        "value": 11095.22,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-09",
+        "price_trend": 10254.29,
+        "value": 10254.29,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-10",
+        "price_trend": 9220.94,
+        "value": 9220.94,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-11",
+        "price_trend": 9576.14,
+        "value": 9576.14,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2011-12",
+        "price_trend": 9458.81,
+        "value": 9458.81,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-01",
+        "price_trend": 9874.67,
+        "value": 9874.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-02",
+        "price_trend": 10258.33,
+        "value": 10258.33,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-03",
+        "price_trend": 10687.05,
+        "value": 10687.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-04",
+        "price_trend": 10533.24,
+        "value": 10533.24,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-05",
+        "price_trend": 9919.32,
+        "value": 9919.32,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-06",
+        "price_trend": 9396.0,
+        "value": 9396.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-07",
+        "price_trend": 9930.45,
+        "value": 9930.45,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-08",
+        "price_trend": 9952.61,
+        "value": 9952.61,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-09",
+        "price_trend": 10534.75,
+        "value": 10534.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-10",
+        "price_trend": 10238.89,
+        "value": 10238.89,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-11",
+        "price_trend": 9911.36,
+        "value": 9911.36,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2012-12",
+        "price_trend": 10538.81,
+        "value": 10538.81,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-01",
+        "price_trend": 10779.25,
+        "value": 10779.25,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-02",
+        "price_trend": 11196.33,
+        "value": 11196.33,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-03",
+        "price_trend": 10563.33,
+        "value": 10563.33,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-04",
+        "price_trend": 9995.83,
+        "value": 9995.83,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-05",
+        "price_trend": 10171.59,
+        "value": 10171.59,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-06",
+        "price_trend": 10527.65,
+        "value": 10527.65,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-07",
+        "price_trend": 10552.17,
+        "value": 10552.17,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-08",
+        "price_trend": 10781.82,
+        "value": 10781.82,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-09",
+        "price_trend": 10874.74,
+        "value": 10874.74,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-10",
+        "price_trend": 11312.78,
+        "value": 11312.78,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-11",
+        "price_trend": 11126.0,
+        "value": 11126.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2013-12",
+        "price_trend": 11171.36,
+        "value": 11171.36,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-01",
+        "price_trend": 11001.75,
+        "value": 11001.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-02",
+        "price_trend": 10738.44,
+        "value": 10738.44,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-03",
+        "price_trend": 10475.79,
+        "value": 10475.79,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-04",
+        "price_trend": 10937.86,
+        "value": 10937.86,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-05",
+        "price_trend": 11178.1,
+        "value": 11178.1,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-06",
+        "price_trend": 11728.75,
+        "value": 11728.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-07",
+        "price_trend": 11675.22,
+        "value": 11675.22,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-08",
+        "price_trend": 10932.86,
+        "value": 10932.86,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-09",
+        "price_trend": 10480.71,
+        "value": 10480.71,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-10",
+        "price_trend": 9844.41,
+        "value": 9844.41,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-11",
+        "price_trend": 9977.25,
+        "value": 9977.25,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2014-12",
+        "price_trend": 8359.57,
+        "value": 8359.57,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-01",
+        "price_trend": 8275.0,
+        "value": 8275.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-02",
+        "price_trend": 8934.29,
+        "value": 8934.29,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-03",
+        "price_trend": 9390.0,
+        "value": 9390.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-04",
+        "price_trend": 9767.14,
+        "value": 9767.14,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-05",
+        "price_trend": 9631.75,
+        "value": 9631.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-06",
+        "price_trend": 9574.05,
+        "value": 9574.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-07",
+        "price_trend": 9331.09,
+        "value": 9331.09,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-08",
+        "price_trend": 8551.9,
+        "value": 8551.9,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-09",
+        "price_trend": 8509.05,
+        "value": 8509.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-10",
+        "price_trend": 8415.83,
+        "value": 8415.83,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-11",
+        "price_trend": 7885.24,
+        "value": 7885.24,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2015-12",
+        "price_trend": 7610.22,
+        "value": 7610.22,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-01",
+        "price_trend": 8089.25,
+        "value": 8089.25,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-02",
+        "price_trend": 8680.31,
+        "value": 8680.31,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-03",
+        "price_trend": 8991.74,
+        "value": 8991.74,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-04",
+        "price_trend": 8457.89,
+        "value": 8457.89,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-05",
+        "price_trend": 8055.95,
+        "value": 8055.95,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-06",
+        "price_trend": 8546.5,
+        "value": 8546.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-07",
+        "price_trend": 9019.29,
+        "value": 9019.29,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-08",
+        "price_trend": 8957.83,
+        "value": 8957.83,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-09",
+        "price_trend": 8741.5,
+        "value": 8741.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-10",
+        "price_trend": 9490.31,
+        "value": 9490.31,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-11",
+        "price_trend": 9767.05,
+        "value": 9767.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2016-12",
+        "price_trend": 10042.05,
+        "value": 10042.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-01",
+        "price_trend": 10019.21,
+        "value": 10019.21,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-02",
+        "price_trend": 10047.78,
+        "value": 10047.78,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-03",
+        "price_trend": 9349.35,
+        "value": 9349.35,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-04",
+        "price_trend": 8946.11,
+        "value": 8946.11,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-05",
+        "price_trend": 8994.0,
+        "value": 8994.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-06",
+        "price_trend": 8904.77,
+        "value": 8904.77,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-07",
+        "price_trend": 9248.57,
+        "value": 9248.57,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-08",
+        "price_trend": 9777.39,
+        "value": 9777.39,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-09",
+        "price_trend": 9880.95,
+        "value": 9880.95,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-10",
+        "price_trend": 9673.24,
+        "value": 9673.24,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-11",
+        "price_trend": 9687.27,
+        "value": 9687.27,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2017-12",
+        "price_trend": 9560.71,
+        "value": 9560.71,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-01",
+        "price_trend": 9947.27,
+        "value": 9947.27,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-02",
+        "price_trend": 9559.67,
+        "value": 9559.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-03",
+        "price_trend": 9315.68,
+        "value": 9315.68,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-04",
+        "price_trend": 9240.0,
+        "value": 9240.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-05",
+        "price_trend": 9386.59,
+        "value": 9386.59,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-06",
+        "price_trend": 9185.0,
+        "value": 9185.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-07",
+        "price_trend": 9312.73,
+        "value": 9312.73,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-08",
+        "price_trend": 9614.13,
+        "value": 9614.13,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-09",
+        "price_trend": 9413.68,
+        "value": 9413.68,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-10",
+        "price_trend": 9429.72,
+        "value": 9429.72,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-11",
+        "price_trend": 8712.73,
+        "value": 8712.73,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2018-12",
+        "price_trend": 8505.5,
+        "value": 8505.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-01",
+        "price_trend": 8647.05,
+        "value": 8647.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-02",
+        "price_trend": 8626.33,
+        "value": 8626.33,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-03",
+        "price_trend": 8536.19,
+        "value": 8536.19,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-04",
+        "price_trend": 8396.75,
+        "value": 8396.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-05",
+        "price_trend": 7911.5,
+        "value": 7911.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-06",
+        "price_trend": 7668.68,
+        "value": 7668.68,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-07",
+        "price_trend": 7837.61,
+        "value": 7837.61,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-08",
+        "price_trend": 7416.14,
+        "value": 7416.14,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-09",
+        "price_trend": 7455.75,
+        "value": 7455.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-10",
+        "price_trend": 7341.67,
+        "value": 7341.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-11",
+        "price_trend": 7186.19,
+        "value": 7186.19,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2019-12",
+        "price_trend": 7290.91,
+        "value": 7290.91,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-01",
+        "price_trend": 7344.38,
+        "value": 7344.38,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-02",
+        "price_trend": 6864.5,
+        "value": 6864.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-03",
+        "price_trend": 6417.27,
+        "value": 6417.27,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-04",
+        "price_trend": 6059.29,
+        "value": 6059.29,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-05",
+        "price_trend": 6407.22,
+        "value": 6407.22,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-06",
+        "price_trend": 6735.0,
+        "value": 6735.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-07",
+        "price_trend": 7108.7,
+        "value": 7108.7,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-08",
+        "price_trend": 7172.14,
+        "value": 7172.14,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-09",
+        "price_trend": 7402.73,
+        "value": 7402.73,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-10",
+        "price_trend": 7295.62,
+        "value": 7295.62,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-11",
+        "price_trend": 7647.62,
+        "value": 7647.62,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2020-12",
+        "price_trend": 7809.78,
+        "value": 7809.78,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-01",
+        "price_trend": 7707.0,
+        "value": 7707.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-02",
+        "price_trend": 8369.67,
+        "value": 8369.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-03",
+        "price_trend": 8806.96,
+        "value": 8806.96,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-04",
+        "price_trend": 8330.71,
+        "value": 8330.71,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-05",
+        "price_trend": 8022.5,
+        "value": 8022.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-06",
+        "price_trend": 7830.48,
+        "value": 7830.48,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-07",
+        "price_trend": 8279.09,
+        "value": 8279.09,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-08",
+        "price_trend": 8194.55,
+        "value": 8194.55,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-09",
+        "price_trend": 8778.75,
+        "value": 8778.75,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-10",
+        "price_trend": 9355.62,
+        "value": 9355.62,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-11",
+        "price_trend": 8792.95,
+        "value": 8792.95,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2021-12",
+        "price_trend": 8496.04,
+        "value": 8496.04,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-01",
+        "price_trend": 8827.16,
+        "value": 8827.16,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-02",
+        "price_trend": 8916.12,
+        "value": 8916.12,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-03",
+        "price_trend": 9148.0,
+        "value": 9148.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-04",
+        "price_trend": 8880.63,
+        "value": 8880.63,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-05",
+        "price_trend": 8690.0,
+        "value": 8690.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-06",
+        "price_trend": 8770.67,
+        "value": 8770.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-07",
+        "price_trend": 8030.43,
+        "value": 8030.43,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-08",
+        "price_trend": 7755.74,
+        "value": 7755.74,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-09",
+        "price_trend": 8041.48,
+        "value": 8041.48,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-10",
+        "price_trend": 7837.81,
+        "value": 7837.81,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-11",
+        "price_trend": 7862.55,
+        "value": 7862.55,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2022-12",
+        "price_trend": 8117.0,
+        "value": 8117.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-01",
+        "price_trend": 8232.06,
+        "value": 8232.06,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-02",
+        "price_trend": 8252.95,
+        "value": 8252.95,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-03",
+        "price_trend": 8157.83,
+        "value": 8157.83,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-04",
+        "price_trend": 8158.74,
+        "value": 8158.74,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-05",
+        "price_trend": 7741.6,
+        "value": 7741.6,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-06",
+        "price_trend": 7787.1,
+        "value": 7787.1,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-07",
+        "price_trend": 8057.9,
+        "value": 8057.9,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-08",
+        "price_trend": 8232.91,
+        "value": 8232.91,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-09",
+        "price_trend": 8355.05,
+        "value": 8355.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-10",
+        "price_trend": 8038.35,
+        "value": 8038.35,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-11",
+        "price_trend": 8065.64,
+        "value": 8065.64,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2023-12",
+        "price_trend": 8111.48,
+        "value": 8111.48,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-01",
+        "price_trend": 8166.95,
+        "value": 8166.95,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-02",
+        "price_trend": 8178.47,
+        "value": 8178.47,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-03",
+        "price_trend": 8224.1,
+        "value": 8224.1,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-04",
+        "price_trend": 8392.8,
+        "value": 8392.8,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-05",
+        "price_trend": 8548.3,
+        "value": 8548.3,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-06",
+        "price_trend": 8540.84,
+        "value": 8540.84,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-07",
+        "price_trend": 8400.26,
+        "value": 8400.26,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-08",
+        "price_trend": 8146.05,
+        "value": 8146.05,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-09",
+        "price_trend": 7963.63,
+        "value": 7963.63,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-10",
+        "price_trend": 8174.44,
+        "value": 8174.44,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-11",
+        "price_trend": 8305.38,
+        "value": 8305.38,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2024-12",
+        "price_trend": 8228.95,
+        "value": 8228.95,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-01",
+        "price_trend": 7878.22,
+        "value": 7878.22,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-02",
+        "price_trend": 7833.17,
+        "value": 7833.17,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-03",
+        "price_trend": 7773.86,
+        "value": 7773.86,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-04",
+        "price_trend": 7263.57,
+        "value": 7263.57,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-05",
+        "price_trend": 7112.84,
+        "value": 7112.84,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-06",
+        "price_trend": 7227.55,
+        "value": 7227.55,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-07",
+        "price_trend": 7299.43,
+        "value": 7299.43,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-08",
+        "price_trend": 7339.67,
+        "value": 7339.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-09",
+        "price_trend": 7201.36,
+        "value": 7201.36,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-10",
+        "price_trend": 6957.59,
+        "value": 6957.59,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-11",
+        "price_trend": 6801.25,
+        "value": 6801.25,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2025-12",
+        "price_trend": 6534.57,
+        "value": 6534.57,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2026-01",
+        "price_trend": 6764.55,
+        "value": 6764.55,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2026-02",
+        "price_trend": 6769.5,
+        "value": 6769.5,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2026-03",
+        "price_trend": 8304.27,
+        "value": 8304.27,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2026-04",
+        "price_trend": 8332.38,
+        "value": 8332.38,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2026-05",
+        "price_trend": 8034.67,
+        "value": 8034.67,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2026-06",
+        "price_trend": 7522.81,
+        "value": 7522.81,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2026-07",
+        "price_trend": 7478.43,
+        "value": 7478.43,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2026-08",
+        "price_trend": 7785.0,
+        "value": 7785.0,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      },
+      {
+        "date": "2026-09",
+        "price_trend": 8361.74,
+        "value": 8361.74,
+        "source": "akshare.futures_zh_daily_sina(symbol=L0)",
+        "metric": "price_trend",
+        "frequency": "M",
+        "unit": "元/吨",
+        "proxy_note": "真实聚乙烯期货月均价，交易代码即『塑料』"
+      }
     ]
   }
 }

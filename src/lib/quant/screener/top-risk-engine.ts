@@ -40,6 +40,9 @@ const TH = {
   // 顶部类型
   typeRunUp60: 20, // 前期60日涨幅 >= 此值 = 刚跑高（情绪顶部候选）
   typeDrop: -2,
+  // 产业健康度（Phase2 路线①解锁，2026-09-29）
+  industryPriceFull: 20, // 节点价格 6 月斜率 ±20% → 信号满刻度
+  industryMinMonths: 7, // 至少 7 个月度点才能算 6 月斜率，缺读数不硬算
   // 下行延续(④)：长期下行趋势中的破位/恶化 = 下行本身，不算顶部（2026-09-29 用户定案：
   // 「前面跌了好几个月、回温一点点，不算顶部」——顶部形态要求前期有上涨可反转）
   downtrendRun60: -10, // 前期60日累计涨幅 <= 此值 = 处长期下行趋势
@@ -234,6 +237,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
     nodes[node.layer].push({ n: node.name, tone: snap && snap.length ? "green" : "amber" });
   }
   const chainAvailable = links.length > 0;
+  const industryHealthScore = computeIndustryHealth(links, map.metricSnapshots ?? {}, asOf);
   const industryChain = {
     matched: chainAvailable ? `自动匹配 · ${links.length} 节点 · ${metricsAvailable} 指标` : "未匹配产业链节点",
     available: chainAvailable && metricsAvailable > 0,
@@ -241,8 +245,8 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
     metricsAvailable,
     note: chainAvailable
       ? metricsAvailable > 0
-        ? "产业链节点指标已接入。"
-        : "节点已匹配，但指标快照(订单/库存/价格/利润/产能)待 Phase2 回补 → 产业层数据不足，暂不参与判顶、降权处理，不硬编。"
+        ? "产业链节点指标已接入（目前仅价格趋势分量=真实商品期货月均价6月斜率；订单/库存/利润/产能暂无免费真实源，缺分量不参与计分）。"
+        : "节点已匹配，但指标快照(订单/库存/价格/利润/产能)待回补 → 产业层数据不足，暂不参与判顶、降权处理，不硬编。"
       : "非优先板块，未建产业链映射 → 产业层不可用。",
   };
 
@@ -281,7 +285,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
     sector,
     stage,
     stageTone,
-    scores: { shortPullback: shortPullback ?? 0, midTop: midTop ?? 0, trendDamage: trendDamage ?? 0, industryHealth: null },
+    scores: { shortPullback: shortPullback ?? 0, midTop: midTop ?? 0, trendDamage: trendDamage ?? 0, industryHealth: industryHealthScore },
     topType,
     topTypeLabel,
     topTypeNote,
@@ -344,6 +348,34 @@ function buildConclusion(
   return `${sector}今日${mcS}%，${stagePhrase}；${structPhrase}，${rsPhrase}${posPhrase}。当前判为「${topTypeLabel}」。${
     counter.includes("产业层数据不足(无法确认基本面恶化)") ? `产业层数据不足：${chainNote} ` : ""
   }主要风险：${pro.slice(0, 3).join("、") || "无明显"}；反向信号：${counter.slice(0, 2).join("、") || "暂无——各路读数同向走弱，没有像样的反向证据"}。综合看${stage === "趋势健康" ? "暂无需警示" : stage === "趋势内回撤" ? "偏回调、观察确认窗口" : "需重点跟踪"}。`;
+}
+
+// ── 产业周期健康度（Phase2 路线①解锁：真实商品期货月均价，2026-09-29）──
+// 分量 = 节点 price_trend 的 6 个月斜率（首尾月均价比），±industryPriceFull% 满刻度 → -1..1；
+// 板块分 = 50 + 可用节点信号均值×50（0–100，50=中性）；无可用节点 → null（缺读数≠0）。
+// 订单/库存/利润/产能暂无免费真实源，不参与计分——分量接上时在此扩表，权重自动摊给可用分量。
+export function computeIndustryHealth(
+  links: { nodeId: string; role?: string }[],
+  metricSnapshots: Record<string, { date: string; price_trend?: number | null }[]>,
+  asOf?: string,
+): number | null {
+  const monthCut = asOf ? asOf.slice(0, 7) : null;
+  const signals: number[] = [];
+  for (const l of links) {
+    const snaps = metricSnapshots[l.nodeId];
+    if (!snaps || !snaps.length) continue;
+    const pts = snaps
+      .filter((s) => (monthCut ? s.date <= monthCut : true) && typeof s.price_trend === "number" && (s.price_trend as number) > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (pts.length < TH.industryMinMonths) continue;
+    const first = pts[pts.length - TH.industryMinMonths].price_trend as number;
+    const last = pts[pts.length - 1].price_trend as number;
+    if (!(first > 0)) continue;
+    const slope6m = (last / first - 1) * 100;
+    signals.push(clamp(slope6m / TH.industryPriceFull, -1, 1));
+  }
+  if (!signals.length) return null;
+  return r1(clamp(50 + (signals.reduce((a, b) => a + b, 0) / signals.length) * 50));
 }
 
 // ── 扫描器（全市场）───────────────────────────────────────────────
