@@ -167,17 +167,18 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
   const stageTone: Tone =
     stage === "趋势反转" ? "red" : stage === "顶部形成中" ? "amber" : stage === "下行延续" ? "orange" : stage === "趋势内回撤" ? "blue" : "green";
 
-  // ── 顶部类型（长期下行中不判 A/B 顶部——先回升积累涨幅、再破位才构成顶部形态）──
+  // ── 顶部类型（与阶段机对齐：B 类只在阶段已进入顶部状态时判；长期下行中不判 A/B——先回升积累涨幅、再破位才构成顶部形态）──
+  const topStage = stage === "趋势反转" || stage === "顶部形成中";
   let topType: TopType = null;
   let topTypeLabel = "无明显顶部特征";
   let topTypeNote = "未触发 A/B 顶部信号。";
   if (longDowntrend) {
     topTypeNote = `处长期下行趋势（60日累计 ${r1(cur.prevChange60)}%），当前破位属下行延续，不判顶部；若先回升积累涨幅后再破位，才构成顶部形态。`;
-  } else if (belowTrend && coreBreak && rsNeg) {
+  } else if (topStage && belowTrend && coreBreak && rsNeg) {
     topType = "B";
     topTypeLabel = "趋势顶部·深度调整";
     topTypeNote = "价格↓、RS↓、宽度↓、龙头破位；属上涨趋势中的深度调整/估值消化。产业层数据不足，若订单↓/库存↑/利润↓确认恶化→升为 C 基本面顶部（待 Phase2 产业链数据）。";
-  } else if (coreBreak) {
+  } else if (topStage && coreBreak) {
     topType = "B";
     topTypeLabel = "趋势顶部·深度调整";
     topTypeNote = "核心资产弱于板块（龙头跌幅>板块）。产业层数据不足，C 类基本面顶部待确认。";
@@ -185,7 +186,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
     topType = "A";
     topTypeLabel = "情绪顶部·涨多回调";
     topTypeNote = "前期涨幅大+短线急跌但核心未破，属情绪/拥挤回调，非产业周期结束。";
-  } else if (mc <= TH.typeDrop && rsNeg) {
+  } else if (topStage && mc <= TH.typeDrop && rsNeg) {
     topType = "B";
     topTypeLabel = "趋势顶部·深度调整";
     topTypeNote = "短线破位+相对全市场走弱；产业层数据不足。";
