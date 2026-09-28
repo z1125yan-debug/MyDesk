@@ -263,7 +263,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
   const industryHealthScore = computeIndustryHealth(links, map.metricSnapshots ?? {}, asOf, fundamentals);
   const finAvail = ["earnings", "orders", "inventory", "capex"].filter((k) => typeof fundamentals?.[`${k}_yoy`] === "number").length;
   const industryChain = {
-    matched: chainAvailable ? `自动匹配 · ${links.length} 节点 · ${metricsAvailable} 指标` : "未匹配产业链节点",
+    matched: chainAvailable ? `产业链映射 · ${links.length} 节点` : finAvail > 0 ? "未建商品链映射 · 财务快照已接入" : "未建商品链映射",
     available: chainAvailable && metricsAvailable > 0,
     nodes,
     metricsAvailable,
@@ -279,31 +279,42 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
         }
       : null,
     note: chainAvailable
-      ? metricsAvailable > 0 && finAvail > 0
-        ? `价格趋势(期货月均价)与行业财务(季报·市值前8加权)均已接入；缺分量不参与计分。`
-        : metricsAvailable > 0
-          ? "产业链节点价格趋势已接入（期货月均价）；行业财务分量待聚合脚本回补。"
-          : finAvail > 0
-            ? "行业财务快照已接入（季报·市值前8加权）；产业链节点无商品期货对应，价格分量缺。"
-            : "节点已匹配，但指标快照(订单/库存/价格/利润/产能)待回补 → 产业层数据不足，暂不参与判顶、降权处理，不硬编。"
-      : "非优先板块，未建产业链映射 → 产业层不可用。",
+      ? (metricsAvailable > 0
+          ? "节点价格=对应商品期货的月均价（真实行情）。"
+          : "产业链节点暂无对应的商品期货（这类环节没有可交易的代表品，宁缺毋假）。") +
+        (finAvail > 0
+          ? "行业财务=成分股三表聚合（市值前8加权），已参与健康度计分。"
+          : "行业财务快照待聚合脚本回补，产业层暂不参与打分。")
+      : finAvail > 0
+        ? "这个板块不是典型的『上游原料→中游制造→下游』链条结构，所以没建商品产业链映射；但行业财务快照已从成分股财报聚合出来，参与健康度计分。"
+        : "这个板块暂未建产业链映射，财务聚合也没有可用样本 → 产业层不参与打分。",
   };
 
-  // ── 证据 ──
+  // ── 证据（财务分量按数据说话：有真实财报就给判断，不给模糊的"数据不足"）──
   const pro: string[] = [];
   const counter: string[] = [];
+  const fin = fundamentals;
+  const finEy = fin?.earnings_yoy ?? null;
+  const finOy = fin?.orders_yoy ?? null;
+  const finIy = fin?.inventory_yoy ?? null;
   if ((cur.prevChange60 ?? 0) >= 20) pro.push("前期涨幅较大(60日)");
   if (mc <= -3) pro.push("短线跌幅异常");
   if (coreBreak) pro.push("龙头弱于板块(核心破坏)");
   if (rsVeryNeg) pro.push("相对全市场持续走弱");
   if (breadthPoor) pro.push("板块宽度恶化");
   if ((cur.distFromHigh20 ?? 0) <= -12) pro.push("距近期高点回撤较深");
+  if (finEy != null && finEy <= -10) pro.push(`行业利润同比下滑(${finEy}%)`);
+  if (finOy != null && finOy <= -20) pro.push(`订单萎缩(合同负债同比 ${finOy}%)`);
+  if (finIy != null && finIy >= 30 && (finOy == null || finOy <= 0)) pro.push("存货高企而订单走弱(累库)");
   if (!coreBreak) counter.push("龙头未破(核心资产抗跌)");
   if (adv >= 45) counter.push("宽度未崩");
   if ((cur.distMA60 ?? 0) >= 0) counter.push("仍在60日趋势线上方");
   if (rsMom10 != null && rsMom10 > 0) counter.push("相对全市场开始转强(10日动量转正)");
   if (advMean20 != null && adv > advMean20 + 5) counter.push("上涨家数较20日均值回暖");
-  if (!chainAvailable || metricsAvailable === 0) counter.push("产业层数据不足(无法确认基本面恶化)");
+  if (finEy != null && finEy >= 10) counter.push(`行业利润仍在增长(同比+${finEy}%)，基本面未见恶化`);
+  if (finOy != null && finOy >= 20) counter.push(`订单高增(合同负债同比+${finOy}%)，需求不弱`);
+  // 只有财务和价格全都拿不到时，才允许说"数据不足"——有数据就说判断
+  if (finAvail === 0 && metricsAvailable === 0) counter.push("产业层数据不足(无法确认基本面恶化)");
 
   // ── 风险变化 Δ（vs 上一交易日）──
   const dMc = cur.delta?.medianChange ?? null;

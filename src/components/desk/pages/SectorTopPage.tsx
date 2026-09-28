@@ -272,6 +272,7 @@ function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cro
     deltaUp: d.delta.tone === "up_up",
     crossWarn: sig?.warn === true,
     crossShort,
+    industryHealth: d.scores.industryHealth,
   });
   return (
     <div className="flex flex-col gap-4">
