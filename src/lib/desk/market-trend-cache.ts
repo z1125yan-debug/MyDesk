@@ -87,3 +87,45 @@ export function countTurnoverDays(payload: unknown): number {
   if (!Array.isArray(days)) return 0;
   return days.filter((d) => typeof d?.totalYi === "number" && Number.isFinite(d.totalYi)).length;
 }
+
+// ── 盘中半根柱防线（2026-09-29 增）────────────────────────────────
+// 事故：09-28 上午 10:17 网关在线时，把「只走到上午的当日累计成交额」（7565亿）当成
+// 完整数据落了档；之后网关一挂，接口永远回放这根半根柱冒充全天（真全天 17168亿）。
+// 教训：「完整」不能只数根数 —— 当日柱在收盘闸门前只是盘中累计，落档=拿半根冒充全天。
+
+/** 北京时间收盘闸门：当日成交额柱过了这一刻才算全天（与 breadth/roster 采集的 15:05 同拍） */
+export const CLOSE_GATE_MIN = 15 * 60 + 5;
+
+/** 北京时间的当前日期与盘上分钟（en-CA 给 YYYY-MM-DD） */
+export function beijingNow(d = new Date()): { date: string; minutes: number } {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    }).formatToParts(d).map((p) => [p.type, p.value]),
+  );
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
+}
+
+interface StripDayRow { date: string; totalYi?: number | null }
+interface StripPayload { days?: StripDayRow[]; delta?: { yi: number | null; prev_date: string | null } }
+
+/**
+ * 落档前剥掉「未收盘的当日柱」：请求日=北京今天、且还没过收盘闸门时，最后一根只是
+ * 盘中累计，存进去就是拿半根冒充全天。历史日期不受影响（显式传旧 to 或已收盘时原样返回）。
+ * delta 随之按剥完的末两根重算，不让假增量跟着落档。
+ */
+export function stripIntradayTurnoverTail<T extends StripPayload>(payload: T, fetchDate: string): T {
+  const now = beijingNow();
+  if (fetchDate !== now.date || now.minutes >= CLOSE_GATE_MIN) return payload;
+  const days = payload.days;
+  if (!Array.isArray(days) || !days.length) return payload;
+  const last = days[days.length - 1];
+  if (!last || last.totalYi == null || last.date !== fetchDate) return payload;
+  const strippedDays = days.slice(0, -1);
+  const paired = strippedDays.filter((x): x is StripDayRow & { totalYi: number } => x.totalYi != null);
+  const delta = paired.length >= 2
+    ? { yi: paired[paired.length - 1].totalYi - paired[paired.length - 2].totalYi, prev_date: paired[paired.length - 2].date }
+    : payload.delta;
+  return { ...payload, days: strippedDays, delta };
+}

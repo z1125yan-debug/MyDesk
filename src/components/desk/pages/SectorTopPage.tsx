@@ -3,7 +3,7 @@
 // 第一层=全市场扫描器（发现问题）；第二层=板块详情（为什么）。两层结构，沿用 AI 对话「列表→对话」范式。
 // 数据：/api/market/sectors/top-risk（全市场）+ ?sector= 单板块详情。引擎：top-risk-engine.ts。
 // 不接 Jev/AI；结论卡渲染规则生成的 conclusion 字符串。术语走方案 §3 词典（少黑话）。
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { RefreshCw, ArrowUp, ArrowDown, Minus, Activity, Network } from "lucide-react";
 import type { ScannerResult, SectorRow, SectorTopRisk, Tone } from "@/lib/quant/screener/top-risk-types";
 
@@ -21,7 +21,7 @@ const scoreBand = (v: number): Tone => (v >= 70 ? "red" : v >= 40 ? "amber" : v 
 const fmt = (v: number | null, d = 1) => (v == null || !isFinite(v) ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(d)}%`);
 
 function DeltaTag({ tone, label }: { tone: string; label: string }) {
-  const map: Record<string, { icon: JSX.Element; cls: string }> = {
+  const map: Record<string, { icon: ReactNode; cls: string }> = {
     up_up: { icon: <ArrowUp className="h-3 w-3" />, cls: "text-red-500" },
     up: { icon: <ArrowUp className="h-3 w-3" />, cls: "text-red-400" },
     flat: { icon: <Minus className="h-3 w-3" />, cls: "text-zinc-400" },
