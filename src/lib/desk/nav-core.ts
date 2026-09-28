@@ -49,8 +49,15 @@ export const MENU: MenuEntry[] = [
     key: "aiscreener",
     legacyPages: ["quant", "screener", "factorlab", "pool", "radar", "problab"],
   },
-  // 2026-09-25 用户拍板：对齐稳智——「行业」是单项直达（稳智 index="/sectors"，无子菜单）。
-  { id: "sectors", label: "行业", key: "sectors" },
+  // 2026-09-28：行业组挂「行业板块排行」(默认落点) 与「板块风险」(见顶预警扫描器 + 回撤性质识别器)。
+  {
+    id: "sectors",
+    label: "行业",
+    children: [
+      { key: "sectors", label: "行业板块排行" },
+      { key: "sectortop", label: "板块风险" },
+    ],
+  },
   {
     id: "quotes",
     label: "行情",

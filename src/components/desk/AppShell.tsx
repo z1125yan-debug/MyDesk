@@ -31,6 +31,7 @@ import ProbabilityPage from "./pages/ProbabilityPage";
 import ThemesPage from "./pages/ThemesPage";
 import ThemeOverviewPage from "./pages/ThemeOverviewPage";
 import RadarPage from "./pages/RadarPage";
+import SectorTopPage from "./pages/SectorTopPage";
 import EventsPage from "./pages/EventsPage";
 import ResearchPage from "./pages/ResearchPage";
 import AgentPage from "./pages/AgentPage";
@@ -134,6 +135,7 @@ export default function AppShell() {
             {page === "profile" && <ProfilePage />}
             {page === "market" && <MarketPage />}
             {page === "sectors" && <SectorsPage />}
+            {page === "sectortop" && <SectorTopPage />}
             {page === "allstocks" && <AllStocksPage />}
             {page === "quotes" && <QuotesPage />}
             {page === "dashboard" && <OverviewPage />}

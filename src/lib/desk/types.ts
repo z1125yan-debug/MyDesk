@@ -9,6 +9,7 @@ export type PageKey =
   | "profile"      // 个股资金画像
   | "market"       // 大盘情绪仪表盘
   | "sectors"      // 行业板块排行（P1-2）
+  | "sectortop"    // 板块风险（见顶预警扫描器 + 回撤性质识别器，v5）
   | "allstocks"    // 全A市场列表
   | "quotes"       // 行情（稳智 /overview 复刻：股票搜索 + 分时/日K + 复权 + 加自选）
   | "dashboard"    // 总览（旧）
@@ -183,6 +184,7 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   profile: "个股资金画像",
   market: "大盘情绪",
   sectors: "行业板块排行",
+  sectortop: "板块风险",
   allstocks: "全A市场列表",
   quotes: "行情",
   dashboard: "总览",
