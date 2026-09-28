@@ -48,21 +48,23 @@ test("globals.css：.wz-md 块间距抄稳智的 20px（旧的 space-y-2 + [&_p]
   assert.match(rule(c, ".wz-md ol"), /padding-left:\s*1\.55em;/);
 });
 
-test("globals.css：标题在正文流里、放大到稳智那一档（h1 22 / h2 19 / h3 17，字重 650，margin 34/16）", () => {
+test("globals.css：标题在正文流里、稳智那一档再抬一号（09-29 用户反馈字体调大：h1 23 / h2 20 / h3 18，字重 650，margin 34/16）", () => {
   const c = css();
   const h = rule(c, ".wz-h");
   assert.match(h, /margin:\s*34px 0 16px;/);
   assert.match(h, /font-weight:\s*650;/);
   assert.match(h, /line-height:\s*1\.4;/);
-  assert.match(rule(c, ".wz-h1"), /font-size:\s*22px;/);
+  assert.match(rule(c, ".wz-h1"), /font-size:\s*23px;/);
   assert.match(rule(c, ".wz-h1"), /letter-spacing:\s*-0\.01em;/);
-  assert.match(rule(c, ".wz-h2"), /font-size:\s*19px;/);
-  assert.match(rule(c, ".wz-h3"), /font-size:\s*17px;/);
+  assert.match(rule(c, ".wz-h2"), /font-size:\s*20px;/);
+  assert.match(rule(c, ".wz-h3"), /font-size:\s*18px;/);
+  // 09-29 反馈「字体可以调大一点」：正文从稳智桌面 CSS 的 16px 抬到 17px，锚在 .wz-md 本体
+  assert.match(rule(c, ".wz-md"), /font-size:\s*17px;/);
 });
 
-test("globals.css：表格抄稳智 15px/1.65 + 格内 11x16 + 只画横线 + 表头浅底（旧的 13px / py-1 是最挤的一处）", () => {
+test("globals.css：表格 16px/1.65 + 格内 11x16 + 只画横线 + 表头浅底（09-29 随正文字体同步 15→16）", () => {
   const c = css();
-  assert.match(rule(c, ".wz-table"), /font-size:\s*15px;/);
+  assert.match(rule(c, ".wz-table"), /font-size:\s*16px;/);
   assert.match(rule(c, ".wz-table"), /line-height:\s*1\.65;/);
   const cells = rule(c, ".wz-table th,\n.wz-table td");
   assert.match(cells, /padding:\s*11px 16px;/);
@@ -71,6 +73,18 @@ test("globals.css：表格抄稳智 15px/1.65 + 格内 11x16 + 只画横线 + �
   assert.match(cells, /border-bottom:\s*1px solid var\(--border\);/);
   const th = rule(c, ".wz-table thead th");
   assert.match(th, /font-weight:\s*600;/);
+});
+
+test("globals.css：⏱ 数据时间黑框（稳智「结论先行」顶部那张自适应深灰卡，09-29 反馈「有很多数据的加个黑框」）", () => {
+  const c = css();
+  const box = rule(c, ".wz-md .wz-callout");
+  assert.match(box, /background:\s*var\(--overlay\);/);
+  assert.match(box, /border:\s*1px solid var\(--border\);/);
+  assert.match(box, /border-radius:\s*12px;/);
+  // 列表项形态要抵消 ul 缩进并去掉圆点，黑框才与正文同宽
+  const li = rule(c, ".wz-md li.wz-callout");
+  assert.match(li, /list-style:\s*none;/);
+  assert.match(li, /margin-left:\s*-1\.55em;/);
 });
 
 test("globals.css：浮窗那一套收到 14px/1.7（380px 宽塞不下稳智的全尺寸）", () => {
@@ -104,7 +118,8 @@ test("Markdown：ul/ol 本身不做二次链接识别（识别仍只在 li 那�
   const src = md();
   const ul = src.slice(src.indexOf("function MdUl"), src.indexOf("}", src.indexOf("function MdUl")));
   assert.equal(/Linked/.test(ul), false, "ul 再包一次 Linked 会让同一片文字被换两次、点片段重影");
-  assert.match(src, /function MdLi[\s\S]{0,120}<li><Linked>/);
+  // 09-29 起 MdLi 先判「⏱ 数据时间」黑框形态（wz-callout），普通 li 仍走 <li><Linked>
+  assert.match(src, /function MdLi[\s\S]{0,240}(<li className="wz-callout"><Linked>|<li><Linked>)/);
 });
 
 // P61 这里原本钉两条：① 分区卡卡头 17px/700 + 卡体 .wz-md-plain；② AssistantPage 正文包在 .wz-answer 框里。
