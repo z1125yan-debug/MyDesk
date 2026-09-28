@@ -58,3 +58,33 @@ test("多节点取均值；无数据节点自然跳过", () => {
   const v = computeIndustryHealth([{ nodeId: "mt_cu" }, { nodeId: "mt_al" }, { nodeId: "mt_gold" }], snaps);
   assert.equal(v, 62.5); // (1 + -0.5)/2 = 0.25 → 50 + 12.5
 });
+
+test("财务分量：利润/订单同比为正推高健康分，存货为反向刻度", () => {
+  const v = computeIndustryHealth(
+    [],
+    {},
+    undefined,
+    { earnings_yoy: 30, earnings_period: "2026-06-30", orders_yoy: 30, orders_period: "2026-06-30", inventory_yoy: -30, inventory_period: "2026-06-30", capex_yoy: 40, capex_period: "2026-06-30", sampled: 8, total: 77 },
+  );
+  // 全部分量满格正向 → 100（存货-30 乘 sign=-1 → +1）
+  assert.equal(v, 100);
+});
+
+test("财务分量：利润大跌压低健康分", () => {
+  const v = computeIndustryHealth([], {}, undefined, { earnings_yoy: -60, earnings_period: "2026-06-30", sampled: 8, total: 10 });
+  assert.ok(v !== null && v < 50, `got ${v}`);
+});
+
+test("披露期防回放前视：asOf 未到报告期 → 财务分量不参与", () => {
+  const withFin = computeIndustryHealth([], {}, undefined, { earnings_yoy: 60, earnings_period: "2026-06-30" });
+  const before = computeIndustryHealth([], {}, "2026-05-15", { earnings_yoy: 60, earnings_period: "2026-06-30" });
+  assert.ok((withFin ?? 0) > 50);
+  assert.equal(before, null, "报告期晚于 asOf → 分量不可见 → null");
+});
+
+test("权重归一：只有价格分量时与只有财务分量时都能出分", () => {
+  const priceOnly = computeIndustryHealth([{ nodeId: "mt_cu" }], { mt_cu: monthly([100, 100, 100, 100, 100, 100, 100, 120]) });
+  const finOnly = computeIndustryHealth([], {}, undefined, { earnings_yoy: 30, earnings_period: "2026-06-30" });
+  assert.equal(priceOnly, 100);
+  assert.equal(finOnly, 100);
+});

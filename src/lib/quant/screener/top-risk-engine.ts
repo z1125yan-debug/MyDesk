@@ -43,6 +43,13 @@ const TH = {
   // 产业健康度（Phase2 路线①解锁，2026-09-29）
   industryPriceFull: 20, // 节点价格 6 月斜率 ±20% → 信号满刻度
   industryMinMonths: 7, // 至少 7 个月度点才能算 6 月斜率，缺读数不硬算
+  // 行业财务分量满刻度（同比%，2026-09-29 MCP 三表聚合）
+  finEarningsFull: 30, // 利润同比 ±30% → 满刻度
+  finOrdersFull: 30, // 合同负债(订单)同比 ±30%
+  finInventoryFull: 30, // 存货同比（累库=负贡献）
+  finCapexFull: 40, // 资本开支同比 ±40%
+  // 行业财务分量权重（价格 40 / 利润 35 / 订单 15 / 存货 5 / 资本开支 5，缺的分量权重摊给其余）
+  finWeights: { price: 40, earnings: 35, orders: 15, inventory: 5, capex: 5 },
   // 下行延续(④)：长期下行趋势中的破位/恶化 = 下行本身，不算顶部（2026-09-29 用户定案：
   // 「前面跌了好几个月、回温一点点，不算顶部」——顶部形态要求前期有上涨可反转）
   downtrendRun60: -10, // 前期60日累计涨幅 <= 此值 = 处长期下行趋势
@@ -77,6 +84,21 @@ function loadMap(): IndustryMapJson {
   const parsed = JSON.parse(fs.readFileSync(p, "utf8")) as IndustryMapJson;
   _map = parsed;
   return parsed;
+}
+interface FundamentalsJson { generatedAt: string; sectors: Record<string, SectorFundamentals> }
+let _fundamentals: FundamentalsJson | null = null;
+let _fundamentalsMtime = 0;
+function loadFundamentals(): FundamentalsJson {
+  const p = path.resolve(process.cwd(), "data", "sector-fundamentals.json");
+  try {
+    const mtime = fs.statSync(p).mtimeMs; // 财务快照按季度刷新：文件一变自动重载，不用重启 dev
+    if (_fundamentals && _fundamentalsMtime === mtime) return _fundamentals;
+    _fundamentals = JSON.parse(fs.readFileSync(p, "utf8")) as FundamentalsJson;
+    _fundamentalsMtime = mtime;
+  } catch {
+    _fundamentals = { generatedAt: "", sectors: {} }; // 文件未生成（MCP 聚合没跑过）→ 全部板块无财务分量，不硬编
+  }
+  return _fundamentals;
 }
 
 const clamp = (x: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, x));
@@ -237,16 +259,33 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
     nodes[node.layer].push({ n: node.name, tone: snap && snap.length ? "green" : "amber" });
   }
   const chainAvailable = links.length > 0;
-  const industryHealthScore = computeIndustryHealth(links, map.metricSnapshots ?? {}, asOf);
+  const fundamentals = loadFundamentals().sectors[sector] ?? null;
+  const industryHealthScore = computeIndustryHealth(links, map.metricSnapshots ?? {}, asOf, fundamentals);
+  const finAvail = ["earnings", "orders", "inventory", "capex"].filter((k) => typeof fundamentals?.[`${k}_yoy`] === "number").length;
   const industryChain = {
     matched: chainAvailable ? `自动匹配 · ${links.length} 节点 · ${metricsAvailable} 指标` : "未匹配产业链节点",
     available: chainAvailable && metricsAvailable > 0,
     nodes,
     metricsAvailable,
+    financial: fundamentals
+      ? {
+          earnings_yoy: fundamentals.earnings_yoy ?? null,
+          orders_yoy: fundamentals.orders_yoy ?? null,
+          inventory_yoy: fundamentals.inventory_yoy ?? null,
+          capex_yoy: fundamentals.capex_yoy ?? null,
+          period: [fundamentals.earnings_period, fundamentals.orders_period, fundamentals.inventory_period, fundamentals.capex_period].filter(Boolean).sort().slice(-1)[0] ?? null,
+          sampled: fundamentals.sampled ?? null,
+          total: fundamentals.total ?? null,
+        }
+      : null,
     note: chainAvailable
-      ? metricsAvailable > 0
-        ? "产业链节点指标已接入（目前仅价格趋势分量=真实商品期货月均价6月斜率；订单/库存/利润/产能暂无免费真实源，缺分量不参与计分）。"
-        : "节点已匹配，但指标快照(订单/库存/价格/利润/产能)待回补 → 产业层数据不足，暂不参与判顶、降权处理，不硬编。"
+      ? metricsAvailable > 0 && finAvail > 0
+        ? `价格趋势(期货月均价)与行业财务(季报·市值前8加权)均已接入；缺分量不参与计分。`
+        : metricsAvailable > 0
+          ? "产业链节点价格趋势已接入（期货月均价）；行业财务分量待聚合脚本回补。"
+          : finAvail > 0
+            ? "行业财务快照已接入（季报·市值前8加权）；产业链节点无商品期货对应，价格分量缺。"
+            : "节点已匹配，但指标快照(订单/库存/价格/利润/产能)待回补 → 产业层数据不足，暂不参与判顶、降权处理，不硬编。"
       : "非优先板块，未建产业链映射 → 产业层不可用。",
   };
 
@@ -350,17 +389,34 @@ function buildConclusion(
   }主要风险：${pro.slice(0, 3).join("、") || "无明显"}；反向信号：${counter.slice(0, 2).join("、") || "暂无——各路读数同向走弱，没有像样的反向证据"}。综合看${stage === "趋势健康" ? "暂无需警示" : stage === "趋势内回撤" ? "偏回调、观察确认窗口" : "需重点跟踪"}。`;
 }
 
-// ── 产业周期健康度（Phase2 路线①解锁：真实商品期货月均价，2026-09-29）──
-// 分量 = 节点 price_trend 的 6 个月斜率（首尾月均价比），±industryPriceFull% 满刻度 → -1..1；
-// 板块分 = 50 + 可用节点信号均值×50（0–100，50=中性）；无可用节点 → null（缺读数≠0）。
-// 订单/库存/利润/产能暂无免费真实源，不参与计分——分量接上时在此扩表，权重自动摊给可用分量。
+// ── 产业周期健康度（Phase2 路线①解锁）──
+// 价格分量 = 节点商品期货月均价 6 月斜率（2026-09-29 接入）；
+// 财务分量 = 行业成分股三表聚合（2026-09-29 用户点题接入）：利润/订单(合同负债)/存货/资本开支 同比。
+// 板块分 = 50 + Σ(权重×信号)/Σ权重 × 50（0–100，50=中性）；分量缺读数不参与、权重摊给其余；全缺 → null（缺读数≠0）。
+export interface SectorFundamentals {
+  earnings_yoy?: number | null;
+  orders_yoy?: number | null;
+  inventory_yoy?: number | null;
+  capex_yoy?: number | null;
+  earnings_period?: string | null;
+  orders_period?: string | null;
+  inventory_period?: string | null;
+  capex_period?: string | null;
+  sampled?: number;
+  total?: number;
+}
+
 export function computeIndustryHealth(
   links: { nodeId: string; role?: string }[],
   metricSnapshots: Record<string, { date: string; price_trend?: number | null }[]>,
   asOf?: string,
+  fundamentals?: SectorFundamentals | null,
 ): number | null {
   const monthCut = asOf ? asOf.slice(0, 7) : null;
-  const signals: number[] = [];
+  const w = TH.finWeights;
+  const parts: { weight: number; signal: number }[] = [];
+  // 价格分量（产业链节点）
+  const priceSignals: number[] = [];
   for (const l of links) {
     const snaps = metricSnapshots[l.nodeId];
     if (!snaps || !snaps.length) continue;
@@ -371,11 +427,28 @@ export function computeIndustryHealth(
     const first = pts[pts.length - TH.industryMinMonths].price_trend as number;
     const last = pts[pts.length - 1].price_trend as number;
     if (!(first > 0)) continue;
-    const slope6m = (last / first - 1) * 100;
-    signals.push(clamp(slope6m / TH.industryPriceFull, -1, 1));
+    priceSignals.push(clamp(((last / first - 1) * 100) / TH.industryPriceFull, -1, 1));
   }
-  if (!signals.length) return null;
-  return r1(clamp(50 + (signals.reduce((a, b) => a + b, 0) / signals.length) * 50));
+  if (priceSignals.length) parts.push({ weight: w.price, signal: priceSignals.reduce((a, b) => a + b, 0) / priceSignals.length });
+  // 财务分量（财报有披露期：asOf 未到披露期的不用，防回放前视）
+  if (fundamentals) {
+    const fin = [
+      { k: "earnings", full: TH.finEarningsFull, weight: w.earnings, sign: 1 },
+      { k: "orders", full: TH.finOrdersFull, weight: w.orders, sign: 1 },
+      { k: "inventory", full: TH.finInventoryFull, weight: w.inventory, sign: -1 }, // 累库=负贡献
+      { k: "capex", full: TH.finCapexFull, weight: w.capex, sign: 1 },
+    ] as const;
+    for (const f of fin) {
+      const yoy = fundamentals[`${f.k}_yoy`];
+      const period = fundamentals[`${f.k}_period`];
+      if (typeof yoy !== "number" || !period) continue;
+      if (monthCut && period.slice(0, 7) > monthCut) continue;
+      parts.push({ weight: f.weight, signal: clamp((f.sign * yoy) / f.full, -1, 1) });
+    }
+  }
+  if (!parts.length) return null;
+  const wsum = parts.reduce((a, b) => a + b.weight, 0);
+  return r1(clamp(50 + (parts.reduce((a, b) => a + b.signal * b.weight, 0) / wsum) * 50));
 }
 
 // ── 扫描器（全市场）───────────────────────────────────────────────
