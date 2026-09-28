@@ -129,8 +129,12 @@ test("2026-09-26 用户实测修正：copilot 直达（不再收口到 llmportal
   assert.ok(!/对话/.test(tabs![1]), `门户 Tab 里没有「AI 对话」（当前：${tabs![1]}），所以 copilot 不能收口到它`);
   // store：page 落盘（重开停在原页）+ 白名单（坏值收敛回 market，避免 AppShell 一个分支都不匹配的白屏）
   const store = read("src/lib/desk/store.ts");
-  assert.match(store, /page: \(PAGE_TITLES as Record<string, string \| undefined>\)\[s\.page\] \? s\.page : "market"/,
-    "partialize 要落盘 page，且对坏值收敛回 market");
+  assert.match(store, /page: \(PAGE_TITLES as Record<string, string \| undefined>\)\[s\.page\]/,
+    "partialize 要落盘 page，并按 PAGE_TITLES 校页名合法性");
+  // 2026-09-29 补：光校页名不够——奇门撤下菜单后 qimen 仍留在 PAGE_TITLES（为保留 #/qimen 直达），
+  // 旧存档的 "qimen" 照样通过白名单 ⇒ 冷启动闪出用户已删的页面。故再加「菜单可见」校验。
+  assert.match(store, /isMenuVisible\(s\.page\)/, "page 恢复还要过「菜单可见」校验：菜单上没有的页不许被恢复");
+  assert.match(store, /: "market"/, "页名非法或菜单上已不可见的存档值，一律收敛回 market");
   assert.match(store, /import \{ PAGE_TITLES \} from "\.\/types"/, "白名单来自 types.ts，不另抄一份");
 });
 
@@ -160,7 +164,9 @@ test("R3c 双入口合并：菜单不再单列「全A 实时选股」，aiscan �
   // store.go 统一过一遍重定向——收口在这一处，页面侧调用方（含 P12 递棒 go("aiscan")）不用改
   const store = read("src/lib/desk/store.ts");
   assert.match(store, /page:\s*resolveRoute\(p\)/, "store.go 必须过 resolveRoute，否则合并只在菜单、导航仍分两条");
-  assert.match(store, /import \{ resolveRoute \} from "\.\/nav-core"/, "重定向表来自 nav-core 纯核，store 只接线");
+  // 2026-09-29：store 还要用 nav-core 的 isMenuVisible（冷启动恢复页时校菜单可见），
+  // 故不钉死 import 列表，只钉「resolveRoute 来自 nav-core 纯核」这个意图。
+  assert.match(store, /import \{[^}]*resolveRoute[^}]*\} from "\.\/nav-core"/, "重定向表来自 nav-core 纯核，store 只接线");
   // QuantPage 门户主 Tab 仍挂 AiScanPage 本体（合并的落点必须真有其页）
   assert.match(read("src/components/desk/QuantPage.tsx"), /value="portal"[\s\S]*<AiScanPage \/>/);
 });

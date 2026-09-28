@@ -136,9 +136,12 @@ export function entryTarget(entry: MenuEntry): PageKey {
 }
 
 // 反查表在模块加载时一次性建成：漏页/重页当场 throw，不留到运行时白屏。
-const { GROUP_OF, LEGACY_OF } = (() => {
+const { GROUP_OF, LEGACY_OF, MENU_VISIBLE } = (() => {
   const groupOf = new Map<PageKey, string>();
   const legacyOf = new Map<PageKey, string>();
+  // 只收「菜单上真画得出来」的页（一级 key + 子项）。legacy/hidden/重定向源**不进**：
+  // 它们只是可达（hash 直达 / 旧链接），菜单里没有入口，不该被当成「上次打开的页」恢复。
+  const visible = new Set<PageKey>();
   const take = (k: PageKey, where: string) => {
     if (groupOf.has(k) || legacyOf.has(k) || SYSTEM_ITEMS.some((s) => s.key === k)) {
       throw new Error(`nav-core 口径冲突：${k} 在「${where}」重复登记`);
@@ -148,10 +151,12 @@ const { GROUP_OF, LEGACY_OF } = (() => {
     if (e.key) {
       take(e.key, `${e.id}.key`);
       groupOf.set(e.key, e.id);
+      visible.add(e.key);
     }
     for (const c of e.children ?? []) {
       take(c.key, `${e.id}.children`);
       groupOf.set(c.key, e.id);
+      visible.add(c.key);
     }
     for (const p of e.legacyPages ?? []) {
       take(p, `${e.id}.legacyPages`);
@@ -172,8 +177,21 @@ const { GROUP_OF, LEGACY_OF } = (() => {
     if (!MENU.some((e) => e.id === h.group)) throw new Error(`nav-core 口径错误：HIDDEN_PAGES 的 ${h.key} 归属组 ${h.group} 不存在`);
     groupOf.set(h.key, h.group);
   }
-  return { GROUP_OF: groupOf, LEGACY_OF: legacyOf };
+  return { GROUP_OF: groupOf, LEGACY_OF: legacyOf, MENU_VISIBLE: visible };
 })();
+
+/**
+ * 该页在菜单上是否可见（画得出来）。
+ *
+ * 为什么需要它：2026-09-29 事故——奇门遁甲按用户指示从一级菜单撤下后，冷启动**打开的一瞬间
+ * 仍会闪出奇门页**。根因：store 把「上次打开的页」落盘，恢复时只按 PAGE_TITLES 校页名合法性，
+ * 而 qimen 为了保留 `#/qimen` 直达仍留在 PAGE_TITLES 里 ⇒ 存档值 "qimen" 通过校验 ⇒ 被恢复出来。
+ * 菜单上都没有的页，不该被当成「上次停在哪」恢复——那等于给用户看一个他自己删掉的入口。
+ * 注意：这只约束**冷启动恢复**；hash 直达（`#/qimen`）走 AppShell 的 hash 同步，不受影响。
+ */
+export function isMenuVisible(page: PageKey): boolean {
+  return MENU_VISIBLE.has(page);
+}
 
 /** 页面属于哪个一级菜单组（legacy 页也算组，供高亮）；系统项返回 null */
 export function menuGroupOf(page: PageKey): MenuEntry | null {

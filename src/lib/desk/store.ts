@@ -17,7 +17,7 @@ import { sanitizeHold, type HoldCtx } from "./hold-core";
 // P14：自选分组的三个纯操作（建/删/移）住在零 IO 纯核里，store 只做接线——行为可直接 node --test
 import { addGroupCore, removeGroupCore, moveWatchCore } from "./watchlist-group-core";
 // R3c：导航重定向表住在 nav-core 纯核里，store.go 只是照表收口——菜单/递棒/旧 hash 共用一条裁决
-import { resolveRoute } from "./nav-core";
+import { isMenuVisible, resolveRoute } from "./nav-core";
 
 // 回答风格的清单只有一份（modes.ts），这里原样转出键类型，页面不再各自声明一遍联合类型
 export type { ChatMode };
@@ -470,7 +470,13 @@ export const useDesk = create<DeskState>()(
         // 优先级：URL 带 #/xxx 时 hash 优先（AppShell 的 hash 同步 effect 会 go(hash 页)）；
         // 无 hash（桌面端冷启动就是根地址）时用这份存档恢复。
         // 白名单收敛：存档被手改成不存在的页名时回 market——否则 AppShell 一个分支都不匹配 ⇒ 白屏。
-        page: (PAGE_TITLES as Record<string, string | undefined>)[s.page] ? s.page : "market",
+        // 2026-09-29 修正：光校「页名合法」不够，还要校「这页在菜单上还画不画得出来」。
+        // 奇门遁甲从一级菜单撤下后，qimen 为保留 #/qimen 直达仍留在 PAGE_TITLES 里 ⇒ 旧存档的
+        // "qimen" 照样通过白名单 ⇒ 冷启动闪出用户已经删掉的页面。菜单上没有的页回 market；
+        // hash 直达（#/qimen）走 AppShell 的 hash 同步，不经过这里，因此不受影响。
+        page: (PAGE_TITLES as Record<string, string | undefined>)[s.page] && isMenuVisible(s.page)
+          ? s.page
+          : "market",
         sidebarCollapsed: s.sidebarCollapsed,
         focusSymbol: s.focusSymbol,
         watchlist: s.watchlist,
