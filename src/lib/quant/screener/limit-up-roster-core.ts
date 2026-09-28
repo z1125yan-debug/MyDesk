@@ -244,7 +244,9 @@ export interface MoneyEffect {
 }
 
 /** 覆盖率低于这个数就不报「赚钱效应」——昨日 52 只只查到 10 只涨跌，均值是噪声不是结论 */
-export const MONEY_EFFECT_MIN_COVERAGE = 0.5;/**
+export const MONEY_EFFECT_MIN_COVERAGE = 0.5;
+
+/**
  * 赚钱效应（涨停口径）：**昨日涨停股在今天的平均表现**。
  * 与 `market-inference.ts` 里那个被叫作「赚钱效应」的 MA5 上方占比是两回事，
  * 同名不同义已经坑过一次，所以这里函数名、字段名、页面文案都必须带「昨日涨停」四个字。
@@ -304,4 +306,110 @@ export interface PromotionBlock {
   adjacent: boolean | null;
   missing: string[];
   source: string;
+}
+
+// ---------- 龙头滞涨（R20b：见顶压力分第三个分量） ----------
+
+/** 组内至少读到两只的今日涨跌幅才出结论——一只高标股的当天涨跌是噪声，不是「龙头滞涨」 */
+export const LEADER_MIN_READ = 2;
+/** 跑输基准多少个「百分点」算滞涨、多少算领涨（本机定的刻度，不是交易所规则；改只改这一处） */
+export const LEADER_STALL_PT = 1.5;
+export const LEADER_LEAD_PT = 1.5;
+
+/**
+ * 龙头组 = 昨日板数 ≥ 最高板 − 1 的那批（含最高板自己）。
+ * 只取最高板那一档时经常只剩 1~2 只，一天的涨跌全看一只票脸色，所以往下带一档；
+ * 带了几个门槛、组里几只，最后都会写进 LeaderStall.tier / sample，页面上看得见——不偷偷扩样本。
+ */
+export function topTierOf(rows: RosterRow[]): { tier: number; highest: number; rows: RosterRow[] } {
+  const withBoards = (rows ?? []).filter((r): r is RosterRow & { boards: number } => typeof r.boards === "number");
+  if (!withBoards.length) return { tier: 0, highest: 0, rows: [] };
+  const highest = Math.max(...withBoards.map((r) => r.boards));
+  for (const tier of [highest, highest - 1, highest - 2]) {
+    if (tier < 1) break;
+    const picked = withBoards.filter((r) => r.boards >= tier);
+    if (picked.length >= LEADER_MIN_READ) return { tier, highest, rows: picked };
+  }
+  // 一天最高板只有 1~2 只时如实返回那一小撮，够不够出结论交给 leaderStall 判（它会把 available 关掉）
+  return { tier: highest, highest, rows: withBoards.filter((r) => r.boards === highest) };
+}
+
+export interface LeaderStall {
+  date: string | null; // 龙头梯队所属的那个交易日（= 名单最新一天，不是「今天」）
+  highest: number | null;
+  tier: number | null; // 实际取板的门槛
+  sample: number; // 组内家数
+  read: number; // 读到今日涨跌幅的家数
+  avg: number | null;
+  median: number | null;
+  benchmark: number | null; // 对比基准（全 A 中位涨跌幅），缺读数时 null
+  gap: number | null; // 龙头中位 − 基准（负=跑输）
+  verdict: "滞涨" | "同步" | "领涨" | "";
+  available: boolean;
+  reason: string;
+  line: string; // 一行结论（页面原样显示）
+}
+
+/**
+ * 龙头滞涨：**昨日最高板梯队今天的表现 vs 全 A 中位涨跌幅**。
+ * 为什么基准用中位数而不是上证指数：指数被几只权重股拉着走，高标股集体跑输中位数才是
+ * 「接力资金撤退」的形状。这也和 R20a 那条「赚钱效应」区分开——那条看的是整张昨日涨停名单，
+ * 这条只看梯队顶上那一小撮，两个数不一样是正常的，不要合并成一个。
+ */
+export function leaderStall(
+  date: string | null,
+  rows: RosterRow[],
+  todayPct: Map<string, number | null>,
+  benchmark: number | null,
+  /** 取数层的失败说明（比如今日行情整批没取到）。纯核不看 IO，只把它并进 reason 里说清楚 */
+  ioNote?: string,
+): LeaderStall {
+  const withIo = (s: LeaderStall): LeaderStall =>
+    ioNote ? { ...s, reason: [s.reason, `取数：${ioNote}`].filter(Boolean).join("；") } : s;
+  const empty: LeaderStall = {
+    date, highest: null, tier: null, sample: 0, read: 0, avg: null, median: null,
+    benchmark, gap: null, verdict: "", available: false, reason: "", line: "",
+  };
+  if (!rows?.length) return withIo({ ...empty, reason: "库里没有昨日涨停名单，龙头梯队无从取组" });
+  const group = topTierOf(rows);
+  if (!group.rows.length) return withIo({ ...empty, reason: "昨日名单里没有一只带连板数，取不出龙头组" });
+  const vals: number[] = [];
+  for (const r of group.rows) {
+    const v = todayPct.get(r.symbol);
+    if (typeof v === "number" && Number.isFinite(v)) vals.push(v);
+  }
+  const sorted = [...vals].sort((a, b) => a - b);
+  const base: LeaderStall = {
+    date, highest: group.highest, tier: group.tier, sample: group.rows.length, read: vals.length,
+    avg: vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null,
+    median: sorted.length ? sorted[Math.floor(sorted.length / 2)] : null,
+    benchmark, gap: null, verdict: "", available: false, reason: "", line: "",
+  };
+  if (vals.length < LEADER_MIN_READ) {
+    return withIo({ ...base, reason: `龙头组 ${group.rows.length} 只里只读到 ${vals.length} 只今日涨跌幅（<${LEADER_MIN_READ} 只），不出结论` });
+  }
+  if (benchmark === null || !Number.isFinite(benchmark)) {
+    return withIo({ ...base, reason: "全 A 中位涨跌幅没读到，没有基准就不判滞涨（不拿 0 当基准）" });
+  }
+  const gap = (base.median as number) - benchmark;
+  const verdict: LeaderStall["verdict"] = gap <= -LEADER_STALL_PT ? "滞涨" : gap >= LEADER_LEAD_PT ? "领涨" : "同步";
+  const why = verdict === "领涨"
+    ? "梯队顶上的票仍在领涨，不像见顶形状"
+    : verdict === "滞涨"
+      ? `跑输基准 ${Math.abs(gap).toFixed(2)} 个百分点（阈值 ≤-${LEADER_STALL_PT}）——高位接力不认账`
+      : `与基准相差 ${gap >= 0 ? "+" : ""}${gap.toFixed(2)} 个百分点，在 ±${LEADER_STALL_PT} 以内算同步`;
+  return withIo({
+    ...base,
+    gap,
+    verdict,
+    available: true,
+    reason: vals.length < group.rows.length ? `缺 ${group.rows.length - vals.length} 只今日读数（停牌/无成交不计入）` : "",
+    line: `龙头梯队（${date ?? "—"} 的 ${group.tier} 板及以上 ${group.rows.length} 只，读到 ${vals.length} 只）`
+      + `今日中位 ${fmtSigned(base.median as number)}%、平均 ${fmtSigned(base.avg as number)}%，`
+      + `基准（全A中位）${fmtSigned(benchmark)}% → ${verdict}。${why}`,
+  });
+}
+
+function fmtSigned(v: number): string {
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
 }

@@ -8,6 +8,11 @@ import { PctText, NumText } from "../SourceBadge";
 import { LineageCard, LineageSection, StatCard } from "../ui/LineageCard";
 import { useDesk } from "@/lib/desk/store";
 import { aggregateSectors } from "@/lib/quant/screener/sector-stats-core";
+// P15-R20b：外盘与 A50 的背离判定挂在 /api/market/sentiment 的 divergence 字段上，
+// 板块页原来没有外盘视角，这里只取那一块（判定句与四条证据都由服务端纯核写好，页面原样显示）。
+// 类型只从 overseas-core 拿（纯核、零 IO），quant-api 里那个字段就是它的可空引用。
+import { fetchSentiment } from "@/lib/desk/quant-api";
+import type { Divergence } from "@/lib/quant/data/overseas-core";
 // P15-R16c：开盘自动重取 + 取数时刻的人话读法（全站共用，别再各页抄一份倒计时）
 import { useLivePoll } from "@/hooks/use-live-poll";
 import { clockZh } from "@/lib/desk/plain-core";
@@ -54,6 +59,12 @@ export default function SectorsPage() {
   const poll = useLivePoll();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /**
+   * P15-R20b 顶部那一行「外盘与 A50 是不是背离」：另一条通路（/api/market/sentiment）的独立取数，
+   * 与板块榜的 list/error/busy 完全隔离——这一路失败只把这一行置成「没读到」，不拖榜单。
+   * `state:"loading"` 只是行内一个小转圈，不是一套骨架；`divergence:null` = 这一路没算出来（不是「无背离」）。
+   */
+  const [overseasLine, setOverseasLine] = useState<{ state: "loading" | "done"; divergence: Divergence | null }>({ state: "loading", divergence: null });
   const [openBoard, setOpenBoard] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberRow[] | null>(null);
   const [membersBusy, setMembersBusy] = useState(false);
@@ -133,7 +144,23 @@ export default function SectorsPage() {
     }
   }, [settleJump, kind, noun]);
 
-  useEffect(() => { load(); }, [load, poll.tick]);
+  /**
+   * 顶部外盘那一行的取数（P15-R20b）。三条纪律：
+   * ① setState 全在 await 之后——effect 的同步路径里不 setState，不给 lint 基线添一条；
+   * ② 独立 try/catch，失败只把这一行置成「没读到」，绝不写 list/error/busy（板块榜不陪葬）；
+   * ③ 重取期间保留上一条读数继续显示，不闪骨架、不清空。
+   */
+  const loadOverseas = useCallback(async () => {
+    try {
+      const s = await fetchSentiment();
+      setOverseasLine({ state: "done", divergence: s.divergence ?? null });
+    } catch {
+      setOverseasLine({ state: "done", divergence: null });
+    }
+  }, []);
+
+  // 榜单与外盘那一行跟着同一个刷新节奏走（useLivePoll 的 tick）：挂进同一个 effect 的依赖，不新起计时器
+  useEffect(() => { load(); void loadOverseas(); }, [load, loadOverseas, poll.tick]);
 
   // 为什么只在这里结算、不给 store 加订阅：板块页是 `page === "sectors"` 才挂载的（AppShell 里条件渲染），
   // 而带可点正文的两个入口（助手页、分析页小窗）都在别的页面上——点链接必然是「先切页、后挂载」，
@@ -203,6 +230,37 @@ export default function SectorsPage() {
           </>
         }
       >
+      {/* P15-R20b 外盘与 A50 背离：通栏一行（这页原来没有任何外盘视角，看不出「今天 A 股跌是自己弱还是外盘带的」）。
+          判定句与四条证据都是服务端纯核写好的原文，这里原样摆：四条各带自己的行情时刻或「距今 N 天」，
+          美股那几条是上一段美东收盘、恒指与 A50 是实时——这个差别必须摆在明面上，页面不折算时区、不另拼一句、不给建议。 */}
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-border/60 bg-card px-3 py-2 text-[13px]">
+        {overseasLine.state === "loading" ? (
+          <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+            <Loader2 size={12} className="animate-spin" /> 外盘与 A50 读数中…
+          </span>
+        ) : overseasLine.divergence ? (
+          <>
+            <span>{overseasLine.divergence.line}</span>
+            {overseasLine.divergence.evidence.map((e) => (
+              <span key={e} title="这条读数的行情时刻（上游原样：美股那几条是上一段美东收盘，恒指与 A50 是实时）"
+                className="rounded-full border border-border/60 px-2 py-0.5 text-[11.5px] text-muted-foreground">
+                {e}
+              </span>
+            ))}
+            {overseasLine.divergence.missing.length > 0 && (
+              <span className="ml-auto text-[11.5px] text-amber-300/90"
+                title={overseasLine.divergence.missing.join("\n")}>
+                外盘这几条有 {overseasLine.divergence.missing.length} 项没读到
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="text-[12.5px] text-muted-foreground">
+            外盘与 A50 这次没读到，判不了是不是背离——不是没有背离
+          </span>
+        )}
+      </div>
+
       {alerted && (
         <LineageSection title="数据提醒" tone={error ? "danger" : "warning"} divided={false}>
           {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}（数据源失败时不展示任何假数据）</div>}

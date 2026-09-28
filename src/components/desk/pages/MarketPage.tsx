@@ -293,6 +293,89 @@ function bandColor(v: number | null): string | undefined {
   return "#f87171";
 }
 
+// —— P15-R20b 见顶压力档位牌 ——
+// 这一张牌上**没有任何判据**：分数、档位、每条读数、缺哪格、为什么退出，全部来自
+// `/api/market/sentiment` 里那份服务端纯核（`top-pressure-core`）。页面在这里只做两件事：排版、上色。
+// 为什么要把判据挡在页面外：刻度一旦在页面再写一份，接口改了页面还自信地报旧档，
+// 而「多少分算高风险」这种话在两处不一致时，读者没有任何办法发现。
+const TIER_TONE: Record<string, string> = {
+  高风险: "text-red-400 border-red-500/40 bg-red-500/10",
+  偏高: "text-orange-400 border-orange-500/40 bg-orange-500/10",
+  注意: "text-amber-400 border-amber-500/40 bg-amber-500/10",
+  正常: "text-emerald-400 border-emerald-500/40 bg-emerald-500/10",
+};
+
+function PressurePanel({ sent }: { sent: SentimentClient }) {
+  const p = sent.pressure ?? null;
+  const d = sent.divergence ?? null;
+  return (
+    <div className="apple-slide-up rounded-2xl border border-border/60 bg-overlay px-5 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="min-w-[190px]">
+          <div className="text-[14.5px] font-medium">见顶压力（六分量加权 0–100）</div>
+          <div className="mt-2.5 flex items-center gap-2">
+            <span className="text-[30px] font-semibold leading-none tracking-tight">
+              {p && p.score !== null ? p.score.toFixed(1) : "—"}
+            </span>
+            {p && p.tier ? (
+              <span className={`rounded-md border px-2 py-0.5 text-[12.5px] ${TIER_TONE[p.tier] ?? "border-border text-muted-foreground"}`}>
+                {p.tier}
+              </span>
+            ) : (
+              <span className="rounded-md border border-border/60 px-2 py-0.5 text-[12.5px] text-muted-foreground">
+                {p ? "算不出" : "没读到"}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 text-[12px] text-muted-foreground">
+            {p ? `可用权重 ${p.available_weight}/100 · ${p.renormalized ? "缺失分量已摊给其余分量" : "六分量全在"}` : sent.pressure_error || "压力分这一格没读到"}
+          </div>
+        </div>
+        <div className="max-w-[560px] flex-1 text-[12.5px] leading-6 text-muted-foreground">
+          {p ? p.line : "见顶压力没算出来：下面六格里能读到的数仍然照摆，读不到的那格写原因，不拿 0 顶。"}
+          {p && <div className="mt-1">{p.crosscheck}</div>}
+        </div>
+      </div>
+
+      {!!p?.components.length && (
+        <div className="mt-3.5 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {p.components.map((c) => (
+            <div key={c.key} className="rounded-xl border border-border/50 px-3 py-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[13px] font-medium">{c.name}</span>
+                <span className={c.available ? "font-mono text-[13.5px]" : "text-[12px] text-muted-foreground"}>
+                  {c.available && c.score !== null ? `${c.score.toFixed(0)} 分` : "整格退出"}
+                </span>
+              </div>
+              <div className="mt-1 text-[12px] leading-5 text-muted-foreground">{c.reading || "—"}</div>
+              <div className="mt-1 text-[11.5px] text-muted-foreground/80">
+                <span className="rounded border border-border/50 px-1 py-px">{c.as_of || "无时间标签"}</span>
+                <span className="ml-1.5">权重 {c.weight}</span>
+              </div>
+              {c.from && <div className="mt-1 text-[11.5px] text-muted-foreground/80">怎么来的：{c.from}</div>}
+              {c.reason && <div className="mt-1 text-[11.5px] text-amber-400/90">{c.reason}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!!d?.evidence.length && (
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground/85">
+          {d.evidence.map((e) => <span key={e}>· {e}</span>)}
+        </div>
+      )}
+
+      {p && (
+        <div className="mt-2.5 text-[11.5px] leading-5 text-muted-foreground/75">
+          {p.basis}
+          {!!p.dropped.length && <div className="mt-1">缺读数的分量：{p.dropped.join(" ｜ ")}</div>}
+          <div className="mt-1">口径：档位词沿用风险页那四个，不另立一套；只给压力档与证据，不给点位预测、不给买卖与仓位指令。收盘后的沉淀要等 15:20 那次任务跑完才往前走一天。</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MarketPage() {
   const [sent, setSent] = useState<SentimentClient | null>(null);
   const [busy, setBusy] = useState(true);
@@ -595,6 +678,10 @@ export default function MarketPage() {
           <Loader2 size={13} className="animate-spin" /> 正在加载市场快照...
         </div>
       )}
+
+      {/* P15-R20b：见顶压力档位牌。与顶上四张卡吃的是同一次 /api/market/sentiment 计算，
+          所以「情绪温度」和「见顶压力」两个读数天然是同一拍的钱——不是这里刷一次、那里刷一次。 */}
+      {sent && <PressurePanel sent={sent} />}
 
       {/* 大盘情绪区：日期范围 + 行情状态 + 加载复盘数据统计（稳智同款控件行） */}
       <div className="apple-fade-in flex flex-wrap items-center justify-between gap-2">

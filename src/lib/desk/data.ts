@@ -167,13 +167,16 @@ export function buildDetail(code: string, name: string, refresh: number): Sector
 
 // ---------- 自选行情（演示数据） ----------
 
+// P15-R20b：这里原来挂着 "HS300"=3987.51 / "NDX100"=20184.33 两条**编造的指数价格**。
+// 两个代码既不在 CATALOG 里、也没有任何调用方传进来，摆着只有坏处——名字是真的（沪深300、纳指100），
+// 数是假的，一旦被当成读数转述就是造数。要真数走这两条现成通路，不在本文件兜：
+//   沪深300 → CATALOG 里的 000300.SH（A 股代码，实时）；
+//   纳指/标普/道指/半导体 → `quant/data/overseas.ts`（腾讯 qt.gtimg.cn，免 key，带上游行情时刻）。
 const QUOTE_BASE: Record<string, { name: string; price: number }> = {
   "XAU/USD": { name: "现货黄金", price: 2912.4 },
   "BTC/USDT": { name: "比特币", price: 84215.0 },
   "ETH/USDT": { name: "以太坊", price: 3184.6 },
   "000001.SH": { name: "上证指数", price: 3421.76 },
-  "HS300": { name: "沪深300", price: 3987.51 },
-  "NDX100": { name: "纳指100", price: 20184.33 },
 };
 
 export function buildQuote(symbol: string, refresh: number): QuoteCard {
