@@ -92,26 +92,26 @@ test("权重归一：只有价格分量时与只有财务分量时都能出分",
 test("解读：用户范式的标题+正文（利润翻倍/订单超一倍/提前备货/订单≠利润提醒）", () => {
   const r = readFundamentals({ earnings_yoy: 100.4, orders_yoy: 142.4, inventory_yoy: 88.2, period: "2026-06-30", sampled: 8 });
   assert.ok(r!.headline.includes("利润翻倍"), r!.headline);
-  assert.ok(r!.headline.includes("订单增长超一倍"), r!.headline);
+  assert.ok(r!.headline.includes("合同负债增长超一倍"), r!.headline);
   assert.ok(r!.headline.includes("提前备货"), r!.headline);
   assert.ok(r!.body.startsWith("截至2026-06-30，市值排名前8的行业龙头"), r!.body);
-  assert.ok(r!.body.includes("订单/合同负债增速甚至高于利润增速"), r!.body);
-  assert.ok(r!.body.includes("订单增长不等于最终利润一定增长"), r!.body);
-  assert.ok(r!.body.includes("资本开支数据暂缺"), r!.body);
+  assert.ok(r!.look.includes("合同负债增速（142.4%）高于利润增速"), r!.look);
+  assert.ok(r!.caution.includes("合同负债增长并不等于未来利润一定增长"), r!.caution);
+  assert.ok(r!.caution.includes("资本开支数据暂缺"), r!.caution);
 });
 
 test("解读：订单萎缩+存货积压 → 风险话术", () => {
   const r = readFundamentals({ earnings_yoy: -5, orders_yoy: -35, inventory_yoy: 40 });
-  assert.ok(r!.headline.includes("订单大幅萎缩"));
+  assert.ok(r!.headline.includes("合同负债大幅萎缩"));
   assert.ok(r!.headline.includes("库存明显积压"), r!.headline);
-  assert.ok(r!.body.includes("库存积压会侵蚀后续利润"), r!.body);
+  assert.ok(r!.caution.includes("库存积压会侵蚀后续利润"), r!.caution);
 });
 
 test("解读：capex 有数 → 说明扩产/收缩，不再说暂缺", () => {
   const r = readFundamentals({ earnings_yoy: 10, capex_yoy: 45 });
-  assert.ok(r!.body.includes("同步扩产"), r!.body);
+  assert.ok(r!.caution.includes("同步扩产"), r!.caution);
   const r2 = readFundamentals({ earnings_yoy: 10 });
-  assert.ok(r2!.body.includes("资本开支数据暂缺"), r2!.body);
+  assert.ok(r2!.caution.includes("资本开支数据暂缺"), r2!.caution);
 });
 
 test("解读：全空 → null", () => {

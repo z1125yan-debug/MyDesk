@@ -281,7 +281,7 @@ function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cro
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold">近期风险：{risk.label}</span>
         </div>
-        <p className="mt-1 text-xs leading-relaxed">{risk.line}</p>
+        <p className="mt-1 text-sm leading-relaxed">{risk.line}</p>
       </div>
       {/* 状态条 */}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -312,7 +312,7 @@ function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cro
           {tonePill(d.topType ? "red" : "green", d.topTypeLabel)}
           <span className="text-xs text-zinc-400">确认窗口：{d.window}</span>
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-zinc-400">{d.topTypeNote}</p>
+        <p className="mt-2 text-sm leading-relaxed text-zinc-400">{d.topTypeNote}</p>
       </div>
 
       {/* 隔夜外盘（跨市场预警）：对应板块的美国品种/国际期货连跌 → 提醒 */}
@@ -328,7 +328,7 @@ function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cro
             </button>
           )}
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-zinc-300">{crossError ? "外盘读数没拿到（网络或上游问题），判不了——不是没有信号。" : sig?.line ?? (cross ? "这个板块没有贴近的外盘品种，不硬套跨市场信号。" : "外盘读数加载中…")}</p>
+        <p className="mt-2 text-sm leading-relaxed text-zinc-300">{crossError ? "外盘读数没拿到（网络或上游问题），判不了——不是没有信号。" : sig?.line ?? (cross ? "这个板块没有贴近的外盘品种，不硬套跨市场信号。" : "外盘读数加载中…")}</p>
         {cross?.instruments?.length && sig?.instrumentKeys?.length ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {cross.instruments
@@ -412,10 +412,16 @@ function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cro
                 <p className="mt-1.5 text-sm font-medium leading-relaxed text-zinc-100">
                   行业财务快照｜{d.industryChain.financial.reading.headline}
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-300">{d.industryChain.financial.reading.body}</p>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-300">{d.industryChain.financial.reading.body}</p>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-300">
+                  <span className="font-medium text-zinc-100">怎么看：</span>{d.industryChain.financial.reading.look}
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-300">
+                  <span className="font-medium text-zinc-100">需要注意：</span>{d.industryChain.financial.reading.caution}
+                </p>
               </>
             ) : (
-              <p className="mt-1.5 text-xs leading-relaxed text-zinc-400">
+              <p className="mt-1.5 text-sm leading-relaxed text-zinc-400">
                 行业财务快照（{d.industryChain.financial.period ?? "报告期未知"} · 市值前8加权 · 样本 {d.industryChain.financial.sampled ?? 0}/{d.industryChain.financial.total ?? 0} 家）：
                 利润同比 {fmt(d.industryChain.financial.earnings_yoy)} · 订单(合同负债)同比 {fmt(d.industryChain.financial.orders_yoy)} ·
                 存货同比 {fmt(d.industryChain.financial.inventory_yoy)} · 资本开支同比 {fmt(d.industryChain.financial.capex_yoy)}
@@ -423,7 +429,7 @@ function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cro
             )}
           </>
         )}
-        <p className="mt-1 text-xs leading-relaxed text-zinc-400">{d.industryChain.note}</p>
+        <p className="mt-1 text-sm leading-relaxed text-zinc-400">{d.industryChain.note}</p>
       </div>
 
       {/* 证据 */}
