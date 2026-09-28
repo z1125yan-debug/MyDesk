@@ -33,7 +33,7 @@ import { stripScaffoldEcho, SCAFFOLD_ONLY_NOTICE, type GuardOpts } from "@/lib/d
 import { detectRepetition, degenWarning, type DegenVerdict } from "@/lib/desk/degen-core";
 import { debugFramesFromSteps } from "@/lib/desk/debug-core";
 import { injectSceneContext, trimDialog, clampTurns, type ChatRequestMessage, type ContextMsg, type StepInfo } from "@/lib/desk/chat-core";
-import { asChatMode, asHorizon, HORIZON_NOTES, MODE_NOTES, type ChatHorizon, type ChatMode } from "@/lib/desk/modes";
+import { asChatMode, asHorizon, HORIZON_NOTES, MARKET_OUTLOOK_SKELETON, MODE_NOTES, type ChatHorizon, type ChatMode } from "@/lib/desk/modes";
 // 持仓上下文（标的/成本/仓位/建仓日期）：清洗、拼句、使用规则都在 hold-core 一处，
 // 与 /api/ai/proxy 同一份 —— 两条链路不能各写一句「我持有 X，成本 C」。
 import { HOLD_USAGE_NOTE } from "@/lib/desk/hold-core";
@@ -129,6 +129,9 @@ function systemPrompt(
     `你是 MyDesk 的 AI 交易员分析引擎。今天是 ${today}。${MODE_NOTES[mode]}`,
     dataNote,
     calendarNote,
+    // 大盘研判骨架（照稳智大盘报告逆向）：只在用户问市场级问题时生效，个股问题仍走四档模式骨架。
+    // 它的第一段自己写了触发条件，所以无条件挂在这里不会污染个股问答。
+    MARKET_OUTLOOK_SKELETON,
     horizon ? HORIZON_NOTES[horizon] : "",
     focusSymbol ? `用户当前关注标的：${focusSymbol}。` : "",
     // 持仓条件（标的/成本/仓位/建仓日期）：由 composer 小窗或持仓卡填出，随请求带来。
