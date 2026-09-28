@@ -102,8 +102,10 @@ test("路由：自产只查种子终点之后，异常不能吃掉历史", () =>
 
 test("调度：review 已注册为新任务种类", () => {
   assert.match(RULES, /"radar" \| "events" \| "breadth" \| "review"/);
-  assert.match(SCHED, /\["radar", "events", "breadth", "review"\]/);
+  // R20 起了第五种任务（roster 涨停名单），这里不再写死整个数组——钉要盯的是「review 在自动排班清单里」，
+  // 写死整行会让每加一种任务都红一次（R2b 那条评论说的就是这个坑）。
+  assert.match(SCHED, /\["radar", "events", "breadth", "review"/);
   assert.match(SCHED, /kind === "review" \? await archiveReviewScan\(\)/);
   assert.match(RUN_ROUTE, /body\.kind === "review" \? "review"/, "手动补跑入口也要认 review");
-  assert.match(RUN_ROUTE, /radar、events、breadth 或 review/);
+  assert.match(RUN_ROUTE, /kind 只能是 radar、events、breadth/, "手动接口的提示要认得出 review 这一类（后面还能再列新种类）");
 });

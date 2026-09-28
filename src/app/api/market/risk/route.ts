@@ -5,6 +5,10 @@ import { computeSentiment } from "@/lib/quant/screener/sentiment";
 import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
 import { similarReturnForward } from "@/lib/quant/screener/similar-env";
 import { shanghaiDate } from "@/lib/desk/session";
+// R20：全 A 快照不带 mainNet，这里另挂一份通达信逐笔自算的主力净额合计
+import { marketMainNetTdx } from "@/lib/desk/fund-flow";
+// R20：接力（晋级率）/ 梯队断层 / 昨日涨停股今日表现 —— 读本地涨停名单表，判定口径在纯核里
+import { readPromotionBlock, type PromotionRead } from "@/lib/quant/screener/limit-up-roster";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -32,9 +36,25 @@ export async function GET() {
     }
 
     const suggestions = SUGGEST[sent.risk.level] ?? SUGGEST.注意;
+    // 名单读侧失败不能拖垮整页：读不到就整块给 null + 一句原因，页面据此显示「算不出」而不是报错页
+    let promotion: PromotionRead | null = null;
+    let promotion_error = "";
+    try {
+      promotion = await readPromotionBlock();
+    } catch (e) {
+      promotion_error = (e as Error).message;
+    }
     return NextResponse.json({
       ok: true,
       ...sent,
+      missing: [
+        ...sent.missing,
+        ...(promotion ? promotion.missing : [`接力/梯队：读本地涨停名单失败：${promotion_error || "无数据"}`]),
+      ],
+      // R20：主力净额同款补一份通达信逐笔自算（全 A 快照不带 mainNet，那一路常年是 0）
+      ...(await marketMainNetTdx()),
+      promotion,
+      promotion_error: promotion ? "" : promotion_error,
       suggestions,
       history_ref,
       history_ref_note: history_ref

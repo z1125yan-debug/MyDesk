@@ -106,7 +106,7 @@ export interface SentimentClient {
   /** 全 A 快照里主力净额真实有值的家数（P11 情绪温度必需：0 时合计是 ?? 0 累加的假 0，资金流分量必按缺读数处理） */
   main_net_known: number;
   indices: { symbol: string; name: string; price: number; changePct: number }[];
-  risk: { level: string; triggers: string[] };
+  risk: { level: string; triggers: string[]; severe_signals?: string[] };
   missing: string[];
   source: { provider: string };
 }
@@ -497,6 +497,13 @@ export async function fetchTradeDates(count = 120): Promise<{ as_of_trade_date: 
 
 export interface RiskClient extends SentimentClient {
   suggestions: string[];
+  /**
+   * P15-R20 接力（晋级率）/ 梯队断层 / 昨日涨停股今日表现。
+   * 结构在纯核 limit-up-roster-core 里定义，服务端读侧与本页面认同一份；
+   * null = 本地涨停名单表还没攒出两天名单，页面显示「算不出 + 原因」，不当 0% 画线。
+   */
+  promotion?: import("@/lib/quant/screener/limit-up-roster-core").PromotionBlock | null;
+  promotion_error?: string;
   history_ref: {
     today_return: number | null;
     band: number;

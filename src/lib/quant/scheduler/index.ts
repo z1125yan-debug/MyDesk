@@ -15,10 +15,12 @@ import { db } from "@/lib/db";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
 import { modeBasisLabel } from "@/lib/quant/screener/incremental-core";
-import { cursorSummary } from "@/lib/quant/screener/incremental";
+import { cursorSummary, type ScanKind } from "@/lib/quant/screener/incremental";
 import { archiveRadarScan, archiveEventScan, type ArchiveResult, type DeltaStats, type EventRow, type RadarRow, type ScanMode } from "@/lib/quant/screener/persist";
 import { archiveBreadthScan } from "@/lib/quant/screener/breadth-collect";
 import { archiveReviewScan } from "@/lib/quant/screener/review-daily-collect";
+// R20：收盘后涨停名单沉淀（晋级率/梯队断层/昨日涨停表现这三组读数的唯一来源）
+import { archiveLimitUpRoster } from "@/lib/quant/screener/limit-up-collect";
 import { shanghaiDate } from "@/lib/desk/session";
 import {
   DEFAULT_SCHEDULER_CONFIG, SKIP_REASON_TEXT, decideRun, isDueWindow, judgeTradingDay, nextSlot, slotAtForDate,
@@ -29,7 +31,19 @@ export { SKIP_REASON_TEXT, type TaskKind } from "./rules";
 
 const TICK_MS = 60_000;
 const INDEX_SYMBOL = "000001.SH"; // 交易日判据：上证指数日线（与选股器交易日历同源）
-const KINDS: TaskKind[] = ["radar", "events", "breadth", "review"];
+const KINDS: TaskKind[] = ["radar", "events", "breadth", "review", "roster"];
+/**
+ * 没有「增量游标」概念的任务：幂等落在写库层的唯一键上，不是游标上。
+ * R20 加 roster 时一并把这段从三元表达式里抽出来——三个 kind 挤一条三元已经读不动了。
+ */
+const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster"]);
+/** 有游标的那两类：写成守卫而不是在调用点 cast —— 以后再加 kind 会在类型层提醒我们分流没更新 */
+const isCursorKind = (k: TaskKind): k is ScanKind => k === "radar" || k === "events";
+const NO_CURSOR_BASIS: Partial<Record<TaskKind, string>> = {
+  review: "复盘统计不设增量游标：口径是「按交易日唯一键 upsert，同日重跑以最后一次为准」",
+  breadth: "宽度管线不设增量游标：口径是「当日已有收盘价行不重写（收盘价不可变），重跑只补新票」",
+  roster: "涨停名单不设增量游标：口径是「按（票 × 交易日）唯一键 upsert，同日重跑以最后一次为准」",
+};
 const UNCONFIRMED_PROBE_MS = 15 * 60_000; // 确证不了交易日时，最多每 15 分钟再问一次数据源
 
 export interface TaskOutcome {
@@ -179,15 +193,17 @@ export async function runTaskTracked(
   // P3：扫描口径交给落库层判定（当日已有成功游标才走增量），这里只负责把结果如实写进 task_run
   const archiveOpts = { force: opts?.force, mode: opts?.mode ?? "auto" as const };
   try {
-    // breadth 的 mode/force 不参与落库口径：写库层本就是「唯一键 + 不重写」，没有全量重刷这回事
+    // breadth/roster 的 mode/force 不参与落库口径：写库层本就是「唯一键 + upsert」，没有全量重刷这回事
     const out = kind === "radar" ? await archiveRadarScan(archiveOpts)
       : kind === "events" ? await archiveEventScan(archiveOpts)
       : kind === "review" ? await archiveReviewScan()
-      : await archiveBreadthScan();
+      : kind === "breadth" ? await archiveBreadthScan()
+      : await archiveLimitUpRoster();
     const writeLine = `写入：新增 ${out.delta.inserted}、更新 ${out.delta.updated}、未变 ${out.delta.unchanged}`
       + (out.delta.skippedByCursor ? `、游标跳过 ${out.delta.skippedByCursor}` : "")
       + (kind === "radar" ? `、标记消失 ${out.delta.superseded}` : kind === "events" ? `、保留 ${out.delta.kept}`
         : kind === "review" ? "（复盘统计按交易日唯一键 upsert：同日重跑以最后一次为准）"
+        : kind === "roster" ? "（涨停名单按 票×交易日 唯一键 upsert：同日重跑以最后一次为准）"
         : "（收盘价不可变：同日重跑只补新票）");
     await db.taskRun.update({
       where: { id: row.id },
@@ -322,9 +338,11 @@ export async function schedulerStatus() {
       // P3：当日增量游标（没有游标 = 今天还没成功跑过，下一次会走全量口径）
       // breadth 没有游标概念：它的幂等在写库层——(symbol, tradeDate) 唯一键、已有行不重写。
       // review 同理：按 tradeDate 唯一键 upsert，同日重跑以最后一次为准（统计口径会随数据源落定微调）。
-      cursor: kind === "breadth" || kind === "review"
-        ? { kind, trade_date: today, exists: false, watermark: "", done_keys: 0, unmatched_keys: 0, scanned: 0, results: 0, basis: kind === "review" ? "复盘统计不设增量游标：口径是「按交易日唯一键 upsert，同日重跑以最后一次为准」" : "宽度管线不设增量游标：口径是「当日已有收盘价行不重写（收盘价不可变），重跑只补新票」", note: "", updated_at: null }
-        : await cursorSummary(kind, today),
+      // roster（R20 涨停名单）同理：按 (symbol, tradeDate) 唯一键 upsert，同日重跑以最后一次为准。
+      cursor: NO_CURSOR_KINDS.has(kind)
+        ? { kind, trade_date: today, exists: false, watermark: "", done_keys: 0, unmatched_keys: 0, scanned: 0, results: 0, basis: NO_CURSOR_BASIS[kind] ?? "", note: "", updated_at: null }
+        : isCursorKind(kind) ? await cursorSummary(kind, today)
+          : { kind, trade_date: today, exists: false, watermark: "", done_keys: 0, unmatched_keys: 0, scanned: 0, results: 0, basis: "未知任务类型：既不在无游标清单里，也不是雷达/事件，游标读不了", note: "", updated_at: null },
     };
   }));
   return {

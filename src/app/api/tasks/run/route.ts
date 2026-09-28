@@ -23,12 +23,13 @@ export async function POST(req: Request) {
     /* 允许空 body */
   }
   const kind = body.kind === "events" ? "events" : body.kind === "radar" ? "radar"
-    : body.kind === "breadth" ? "breadth" : body.kind === "review" ? "review" : null;
+    : body.kind === "breadth" ? "breadth" : body.kind === "review" ? "review"
+    : body.kind === "roster" ? "roster" : null;
   if (!kind) {
-    return NextResponse.json({ ok: false, error: "kind 只能是 radar、events、breadth 或 review" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "kind 只能是 radar、events、breadth、review 或 roster" }, { status: 400 });
   }
   if (body.mode !== undefined && body.mode !== "full" && body.mode !== "incremental") {
-    return NextResponse.json({ ok: false, error: 'mode 只能是 "full" 或 "incremental"（不传=自动判定；breadth/review 不吃这个口径）' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'mode 只能是 "full" 或 "incremental"（不传=自动判定；breadth/review/roster 不吃这个口径）' }, { status: 400 });
   }
   if (body.trade_date && body.trade_date !== shanghaiDate()) {
     return NextResponse.json(
