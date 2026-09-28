@@ -1,12 +1,13 @@
 "use client";
-// P15-R3a 侧栏：对齐稳智左侧菜单——一级平铺（大盘情绪·量化选股·行业板块·行情·自选·AI 对话·奇门遁甲），
+// P15-R3a 侧栏：对齐稳智左侧菜单——一级平铺（大盘情绪·量化选股·行业·行情·自选·事件雷达·LLM分析·板块风险·AI分析），
 // 血缘近的次级页挂在所属项下面展开，不再有两层「工作台」互点。
+// 2026-09-29 用户拍板：「奇门遁甲」撤出一级菜单（#qimen 页与助手页奇门解盘模式保留），「板块风险」顶替其位。
 // 设置/扩展收进底部齿轮（对方「订阅账号与点数」位）；工程状态文案（数据源/REAL_DATA_ONLY）不外露。
 // P20 侧栏底部加「最近」会话历史区：从 useDesk.sessions 读最近 5 条（按 updatedAt 倒序），
 // 只列有消息的会话，点击切到 AI 对话页并把 activeSessionId 切过去。
 // P32 稳智对齐 P3 #17：品牌区加折叠按钮（稳智 nav-header 位置），点击后折叠侧栏。
 import { useMemo, useState } from "react";
-import { Bot, Brain, ChevronDown, ChevronUp, Compass, Flame, Gauge, History, LayoutGrid, ListVideo, MessageSquare, PanelLeftClose, Puzzle, Settings, Star, Wand2 } from "lucide-react";
+import { Bot, Brain, ChevronDown, ChevronUp, Flame, Gauge, History, LayoutGrid, ListVideo, MessageSquare, PanelLeftClose, Puzzle, Settings, ShieldAlert, Star, Wand2 } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { MENU, SYSTEM_ITEMS, entryTarget, menuGroupOf, type MenuEntry } from "@/lib/desk/nav-core";
 import { prefetchPage } from "@/lib/desk/api-cache";
@@ -23,7 +24,8 @@ const GROUP_ICONS: Record<string, React.ComponentType<{ size?: number | string; 
   // P25：LLM 分析用 Brain 图标（深度分析），AI 对话用 Bot 图标（快速问答）
   assistant: Brain,
   ai: Bot,
-  qimen: Compass,
+  // 2026-09-29：奇门遁甲撤出一级菜单，「板块风险」（见顶预警）顶替其位——图标用 ShieldAlert（与风险监控页同线）
+  sectortop: ShieldAlert,
   settings: Settings,
   extension: Puzzle,
 };
