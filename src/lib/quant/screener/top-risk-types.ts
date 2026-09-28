@@ -45,6 +45,7 @@ export interface SectorTopRisk {
       earnings_yoy: number | null;
       orders_yoy: number | null;
       inventory_yoy: number | null;
+      inventory_ratio_pct: number | null;
       capex_yoy: number | null;
       period: string | null;
       sampled: number | null;

@@ -1,11 +1,12 @@
 {
-  "generatedAt": "2026-09-28T19:40:42.483Z",
+  "generatedAt": "2026-09-28T21:21:22.453Z",
   "source": "china-stock-mcp 三表（get_income_statement/get_balance_sheet/get_cash_flow）· 市值前8加权",
   "frequency": "季度财报",
   "sectors": {
     "电网设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 17.49,
       "earnings_yoy": 15,
       "earnings_period": "2026-06-30",
       "orders_yoy": 11,
@@ -18,6 +19,7 @@
     "游戏": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 2,
       "earnings_yoy": 67.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": 29.5,
@@ -30,6 +32,7 @@
     "医疗器械": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 10.26,
       "earnings_yoy": 12,
       "earnings_period": "2026-06-30",
       "orders_yoy": 25.8,
@@ -42,6 +45,7 @@
     "专用设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 19.39,
       "earnings_yoy": 15,
       "earnings_period": "2026-06-30",
       "orders_yoy": 188.2,
@@ -54,6 +58,7 @@
     "服装家纺": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 23.74,
       "earnings_yoy": 11.5,
       "earnings_period": "2026-06-30",
       "orders_yoy": 2.5,
@@ -66,6 +71,7 @@
     "化学制药": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 5.93,
       "earnings_yoy": 278.8,
       "earnings_period": "2026-06-30",
       "orders_yoy": 229.3,
@@ -78,6 +84,7 @@
     "通用设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 20.62,
       "earnings_yoy": 407.1,
       "earnings_period": "2026-06-30",
       "orders_yoy": 82.3,
@@ -90,6 +97,7 @@
     "军工装备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 17.21,
       "earnings_yoy": 131.4,
       "earnings_period": "2026-06-30",
       "orders_yoy": 67,
@@ -102,6 +110,7 @@
     "生物制品": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 10.74,
       "earnings_yoy": -6.1,
       "earnings_period": "2026-06-30",
       "orders_yoy": 39,
@@ -114,6 +123,7 @@
     "轨交设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 15.79,
       "earnings_yoy": 5.1,
       "earnings_period": "2026-06-30",
       "orders_yoy": 7.2,
@@ -126,6 +136,7 @@
     "其他社会服务": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 3.27,
       "earnings_yoy": 7.5,
       "earnings_period": "2026-06-30",
       "orders_yoy": 247.6,
@@ -138,6 +149,7 @@
     "物流": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 4.65,
       "earnings_yoy": 28.5,
       "earnings_period": "2026-06-30",
       "orders_yoy": 1.3,
@@ -150,6 +162,7 @@
     "电池": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 9.88,
       "earnings_yoy": 384.9,
       "earnings_period": "2026-06-30",
       "orders_yoy": 47.5,
@@ -162,6 +175,7 @@
     "医疗服务": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 6.53,
       "earnings_yoy": 245.8,
       "earnings_period": "2026-06-30",
       "orders_yoy": 23.2,
@@ -174,6 +188,7 @@
     "IT服务": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 20.74,
       "earnings_yoy": 444,
       "earnings_period": "2026-06-30",
       "orders_yoy": 2023.4,
@@ -186,6 +201,7 @@
     "化学制品": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 9.74,
       "earnings_yoy": 107.8,
       "earnings_period": "2026-06-30",
       "orders_yoy": 19.5,
@@ -198,6 +214,7 @@
     "种植业与林业": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 16.25,
       "earnings_yoy": -2.1,
       "earnings_period": "2026-06-30",
       "orders_yoy": -5.5,
@@ -210,6 +227,7 @@
     "零售": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 19.38,
       "earnings_yoy": 106,
       "earnings_period": "2026-06-30",
       "orders_yoy": 9.6,
@@ -222,6 +240,7 @@
     "自动化设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 14.84,
       "earnings_yoy": 82.4,
       "earnings_period": "2026-06-30",
       "orders_yoy": 81.1,
@@ -234,6 +253,7 @@
     "通信服务": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 0.72,
       "earnings_yoy": -7.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": -4.8,
@@ -246,6 +266,7 @@
     "中药": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 17.19,
       "earnings_yoy": -12.8,
       "earnings_period": "2026-06-30",
       "orders_yoy": 5.4,
@@ -258,6 +279,7 @@
     "影视院线": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 6.77,
       "earnings_yoy": 13.9,
       "earnings_period": "2026-06-30",
       "orders_yoy": -22.9,
@@ -270,6 +292,7 @@
     "消费电子": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 30.57,
       "earnings_yoy": 64,
       "earnings_period": "2026-06-30",
       "orders_yoy": 38.1,
@@ -282,6 +305,7 @@
     "软件开发": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 2.51,
       "earnings_yoy": 111.1,
       "earnings_period": "2026-06-30",
       "orders_yoy": 28.8,
@@ -294,6 +318,7 @@
     "电力": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 1.1,
       "earnings_yoy": -7.1,
       "earnings_period": "2026-06-30",
       "orders_yoy": 434.7,
@@ -306,6 +331,7 @@
     "计算机设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 22.25,
       "earnings_yoy": 121.7,
       "earnings_period": "2026-06-30",
       "orders_yoy": 66.9,
@@ -318,6 +344,7 @@
     "半导体": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 10.98,
       "earnings_yoy": 242.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": 145,
@@ -330,6 +357,7 @@
     "光伏设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 18.78,
       "earnings_yoy": -0.5,
       "earnings_period": "2026-06-30",
       "orders_yoy": 20.4,
@@ -342,6 +370,7 @@
     "石油加工贸易": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 6.79,
       "earnings_yoy": 110,
       "earnings_period": "2026-06-30",
       "orders_yoy": 7.6,
@@ -354,6 +383,7 @@
     "文化传媒": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 2.64,
       "earnings_yoy": 3.8,
       "earnings_period": "2026-06-30",
       "orders_yoy": 38.1,
@@ -366,6 +396,7 @@
     "环境治理": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 10.79,
       "earnings_yoy": 56.9,
       "earnings_period": "2026-06-30",
       "orders_yoy": 8.4,
@@ -378,6 +409,7 @@
     "光学光电子": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 8.18,
       "earnings_yoy": 34,
       "earnings_period": "2026-06-30",
       "orders_yoy": 11.8,
@@ -390,6 +422,7 @@
     "养殖业": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 19.88,
       "earnings_yoy": 1302.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": 30.9,
@@ -402,6 +435,7 @@
     "通信设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 25.42,
       "earnings_yoy": 226.6,
       "earnings_period": "2026-06-30",
       "orders_yoy": 737.9,
@@ -414,6 +448,7 @@
     "汽车零部件": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 13.23,
       "earnings_yoy": 12.9,
       "earnings_period": "2026-06-30",
       "orders_yoy": 35.3,
@@ -426,6 +461,7 @@
     "军工电子": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 14.92,
       "earnings_yoy": 96.7,
       "earnings_period": "2026-06-30",
       "orders_yoy": 1.4,
@@ -438,6 +474,7 @@
     "环保设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 11.57,
       "earnings_yoy": 84.7,
       "earnings_period": "2026-06-30",
       "orders_yoy": 18.1,
@@ -450,6 +487,7 @@
     "饮料制造": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 7.01,
       "earnings_yoy": -2.7,
       "earnings_period": "2026-06-30",
       "orders_yoy": 6.4,
@@ -462,6 +500,7 @@
     "橡胶制品": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 9.69,
       "earnings_yoy": -16.3,
       "earnings_period": "2026-06-30",
       "orders_yoy": 49.6,
@@ -474,6 +513,7 @@
     "金属新材料": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 18.43,
       "earnings_yoy": 52,
       "earnings_period": "2026-06-30",
       "orders_yoy": 70.9,
@@ -486,6 +526,7 @@
     "风电设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 13.16,
       "earnings_yoy": 19.4,
       "earnings_period": "2026-06-30",
       "orders_yoy": -2.7,
@@ -498,6 +539,7 @@
     "其他电子": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 16.65,
       "earnings_yoy": 901.6,
       "earnings_period": "2026-06-30",
       "orders_yoy": 674.7,
@@ -510,6 +552,7 @@
     "美容护理": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 6.05,
       "earnings_yoy": 4.3,
       "earnings_period": "2026-06-30",
       "orders_yoy": 12.9,
@@ -522,6 +565,7 @@
     "贵金属": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 14.57,
       "earnings_yoy": 99.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": 29.5,
@@ -534,6 +578,7 @@
     "旅游及酒店": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 7.55,
       "earnings_yoy": 10.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": 15.3,
@@ -546,6 +591,7 @@
     "食品加工制造": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 9.44,
       "earnings_yoy": 12.6,
       "earnings_period": "2026-06-30",
       "orders_yoy": -3.7,
@@ -558,6 +604,7 @@
     "其他电源设备": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 17.2,
       "earnings_yoy": 37.6,
       "earnings_period": "2026-06-30",
       "orders_yoy": 147.7,
@@ -570,6 +617,7 @@
     "白色家电": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 9.86,
       "earnings_yoy": 1.4,
       "earnings_period": "2026-06-30",
       "orders_yoy": 19,
@@ -582,6 +630,7 @@
     "农产品加工": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 22.62,
       "earnings_yoy": 7,
       "earnings_period": "2026-06-30",
       "orders_yoy": 0.4,
@@ -594,6 +643,7 @@
     "塑料制品": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 12.79,
       "earnings_yoy": 313.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": 3004.1,
@@ -606,6 +656,7 @@
     "油气开采及服务": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 0.86,
       "earnings_yoy": 32.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": -29.7,
@@ -618,6 +669,7 @@
     "教育": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 1.53,
       "earnings_yoy": 70.7,
       "earnings_period": "2026-06-30",
       "orders_yoy": -13.4,
@@ -630,6 +682,7 @@
     "建筑材料": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 6.41,
       "earnings_yoy": 46.4,
       "earnings_period": "2026-06-30",
       "orders_yoy": 34.9,
@@ -642,6 +695,7 @@
     "工程机械": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 15.41,
       "earnings_yoy": -1.6,
       "earnings_period": "2026-06-30",
       "orders_yoy": 12,
@@ -654,6 +708,7 @@
     "互联网电商": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 8.87,
       "earnings_yoy": 223.1,
       "earnings_period": "2026-06-30",
       "orders_yoy": 290.5,
@@ -666,6 +721,7 @@
     "汽车服务及其他": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 10.66,
       "earnings_yoy": -9.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": 44.7,
@@ -678,6 +734,7 @@
     "包装印刷": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 12.92,
       "earnings_yoy": 31.5,
       "earnings_period": "2026-06-30",
       "orders_yoy": 48.3,
@@ -690,6 +747,7 @@
     "农化制品": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 7.39,
       "earnings_yoy": 103.7,
       "earnings_period": "2026-06-30",
       "orders_yoy": -6.5,
@@ -702,6 +760,7 @@
     "小家电": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 16.42,
       "earnings_yoy": -3.1,
       "earnings_period": "2026-06-30",
       "orders_yoy": 13.1,
@@ -714,6 +773,7 @@
     "建筑装饰": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 10,
       "earnings_yoy": -17.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": -1,
@@ -726,6 +786,7 @@
     "电子化学品": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 10.17,
       "earnings_yoy": 131.6,
       "earnings_period": "2026-06-30",
       "orders_yoy": 2927.6,
@@ -738,6 +799,7 @@
     "元件": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 14.38,
       "earnings_yoy": 100.4,
       "earnings_period": "2026-06-30",
       "orders_yoy": 142.4,
@@ -750,6 +812,7 @@
     "小金属": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 28.77,
       "earnings_yoy": 132.3,
       "earnings_period": "2026-06-30",
       "orders_yoy": 70.2,
@@ -762,6 +825,7 @@
     "家居用品": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 10.24,
       "earnings_yoy": 1.3,
       "earnings_period": "2026-06-30",
       "orders_yoy": 23.8,
@@ -774,6 +838,7 @@
     "燃气": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 1.46,
       "earnings_yoy": -5,
       "earnings_period": "2026-06-30",
       "orders_yoy": -6.5,
@@ -786,6 +851,7 @@
     "工业金属": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 21.63,
       "earnings_yoy": 56.2,
       "earnings_period": "2026-06-30",
       "orders_yoy": 1537.1,
@@ -798,6 +864,7 @@
     "能源金属": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 10.72,
       "earnings_yoy": 1787.1,
       "earnings_period": "2026-06-30",
       "orders_yoy": 235.9,
@@ -810,6 +877,7 @@
     "电机": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 13.68,
       "earnings_yoy": -6.8,
       "earnings_period": "2026-06-30",
       "orders_yoy": 24.5,
@@ -822,6 +890,7 @@
     "多元金融": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 0.02,
       "earnings_yoy": 56.5,
       "earnings_period": "2026-06-30",
       "orders_yoy": 307.3,
@@ -834,6 +903,7 @@
     "纺织制造": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 16.5,
       "earnings_yoy": 31.8,
       "earnings_period": "2026-06-30",
       "orders_yoy": 39.8,
@@ -846,6 +916,7 @@
     "化学纤维": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 11.86,
       "earnings_yoy": 978.6,
       "earnings_period": "2026-06-30",
       "orders_yoy": 28.8,
@@ -858,6 +929,7 @@
     "钢铁": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 10.38,
       "earnings_yoy": 19,
       "earnings_period": "2026-06-30",
       "orders_yoy": 68.4,
@@ -870,6 +942,7 @@
     "化学原料": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 5.5,
       "earnings_yoy": 34,
       "earnings_period": "2026-06-30",
       "orders_yoy": 49.3,
@@ -882,6 +955,7 @@
     "厨卫电器": {
       "sampled": 7,
       "total": 7,
+      "inventory_ratio_pct": 7.16,
       "earnings_yoy": -39,
       "earnings_period": "2026-06-30",
       "orders_yoy": -3,
@@ -894,6 +968,7 @@
     "房地产": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 36.72,
       "earnings_yoy": -23,
       "earnings_period": "2026-06-30",
       "orders_yoy": 0,
@@ -906,6 +981,7 @@
     "医药商业": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 17.84,
       "earnings_yoy": -10.6,
       "earnings_period": "2026-06-30",
       "orders_yoy": -1.7,
@@ -918,6 +994,7 @@
     "汽车整车": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 9.26,
       "earnings_yoy": -19.4,
       "earnings_period": "2026-06-30",
       "orders_yoy": 17.7,
@@ -930,6 +1007,7 @@
     "非金属材料": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 12.12,
       "earnings_yoy": 79.4,
       "earnings_period": "2026-06-30",
       "orders_yoy": 185.4,
@@ -942,6 +1020,7 @@
     "造纸": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 13.5,
       "earnings_yoy": 11,
       "earnings_period": "2026-06-30",
       "orders_yoy": 69.1,
@@ -954,6 +1033,7 @@
     "黑色家电": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 21.56,
       "earnings_yoy": 79.8,
       "earnings_period": "2026-06-30",
       "orders_yoy": 242.5,
@@ -966,6 +1046,7 @@
     "银行": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": null,
       "earnings_yoy": null,
       "earnings_period": null,
       "orders_yoy": null,
@@ -978,6 +1059,7 @@
     "机场航运": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 3.45,
       "earnings_yoy": -3.9,
       "earnings_period": "2026-06-30",
       "orders_yoy": -5.4,
@@ -990,6 +1072,7 @@
     "公路铁路运输": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 0.46,
       "earnings_yoy": 2.9,
       "earnings_period": "2026-06-30",
       "orders_yoy": 9.4,
@@ -1002,6 +1085,7 @@
     "港口航运": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 1.18,
       "earnings_yoy": 22.9,
       "earnings_period": "2026-06-30",
       "orders_yoy": 12.5,
@@ -1014,6 +1098,7 @@
     "贸易": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 19.35,
       "earnings_yoy": 67.8,
       "earnings_period": "2026-06-30",
       "orders_yoy": 20.5,
@@ -1026,6 +1111,7 @@
     "综合": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 7.1,
       "earnings_yoy": -20.4,
       "earnings_period": "2026-06-30",
       "orders_yoy": 860.8,
@@ -1038,6 +1124,7 @@
     "证券": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": null,
       "earnings_yoy": null,
       "earnings_period": null,
       "orders_yoy": null,
@@ -1050,6 +1137,7 @@
     "煤炭开采加工": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 1.89,
       "earnings_yoy": 17.5,
       "earnings_period": "2026-06-30",
       "orders_yoy": 66,
@@ -1062,6 +1150,7 @@
     "白酒": {
       "sampled": 8,
       "total": 8,
+      "inventory_ratio_pct": 20.28,
       "earnings_yoy": 4,
       "earnings_period": "2026-06-30",
       "orders_yoy": -30.9,

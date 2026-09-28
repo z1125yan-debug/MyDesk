@@ -55,8 +55,19 @@ function yoyFromRows(rows, field) {
   return { yoy: +(((cur / base - 1) * 100)).toFixed(1), period };
 }
 
+// 存货重要性：存货/总资产。服务型公司这个比例极小，同比是噪音，不该进解读和计分
+function inventoryMateriality(rows) {
+  const rs = rowsByDateDesc(rows).filter((r) => Number.isFinite(Number(r?.inventory)) && Number.isFinite(Number(r?.total_assets)) && Number(r.total_assets) > 0);
+  if (!rs.length) return null;
+  return +((Number(rs[0].inventory) / Number(rs[0].total_assets)) * 100).toFixed(2);
+}
+
 async function main() {
   const cons = JSON.parse(fs.readFileSync("data/sector-constituents.json", "utf8"));
+  // 个股级缓存：财报是季度频率，重跑时跳过已拉过的股票（脚本改动/换季度时删掉缓存文件即可）
+  const RAW_CACHE_PATH = "data/sector-fundamentals-raw.json";
+  let rawCache = { generatedAt: new Date().toISOString(), stocks: {} };
+  try { rawCache = JSON.parse(fs.readFileSync(RAW_CACHE_PATH, "utf8")); } catch {}
   const industries = cons.industries ?? {};
   const init = await rpc({ jsonrpc: "2.0", id: seq++, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "sector-fundamentals", version: "1" } } });
   if (!init?.result) throw new Error("MCP initialize 失败");
@@ -79,6 +90,8 @@ async function main() {
     while (codes.length) {
       const code = codes.shift();
       if (!code) break;
+      const cached = rawCache.stocks[code];
+      if (cached) { results[code] = cached; done++; continue; }
       const [inc, bal, cf] = await Promise.all([
         tool("get_income_statement", { symbol: code }),
         tool("get_balance_sheet", { symbol: code }),
@@ -88,10 +101,16 @@ async function main() {
         earnings: yoyFromRows(inc, "net_income_common_stock"),
         orders: yoyFromRows(bal, "deferred_revenue"),
         inventory: yoyFromRows(bal, "inventory"),
+        inventory_ratio: inventoryMateriality(bal),
         capex: yoyFromRows(cf, "capital_expenditure"),
+        fetchedAt: new Date().toISOString(),
       };
+      rawCache.stocks[code] = results[code];
       done++;
-      if (done % 40 === 0) console.log(`  ${done}/${stockJobs.size} 股完成`);
+      if (done % 40 === 0) {
+        console.log(`  ${done}/${stockJobs.size} 股完成`);
+        fs.writeFileSync(RAW_CACHE_PATH, JSON.stringify(rawCache));
+      }
     }
   }
   await Promise.all(Array.from({ length: CONCUR }, worker));
@@ -99,22 +118,24 @@ async function main() {
   // 行业聚合：市值加权；period 取样本内最新报告期（引擎按 asOf 与报告期比较，防回放前视）
   const out = { generatedAt: new Date().toISOString(), source: "china-stock-mcp 三表（get_income_statement/get_balance_sheet/get_cash_flow）· 市值前8加权", frequency: "季度财报", sectors: {} };
   for (const [sector, members] of Object.entries(plans)) {
-    let wsum = 0; const acc = { earnings: 0, orders: 0, inventory: 0, capex: 0 }; const cnt = { earnings: 0, orders: 0, inventory: 0, capex: 0 };
+    let wsum = 0; const acc = { earnings: 0, orders: 0, inventory: 0, capex: 0, inventory_ratio: 0 }; const cnt = { earnings: 0, orders: 0, inventory: 0, capex: 0, inventory_ratio: 0 };
     let sampled = 0;
     for (const m of members) {
       const r = results[m.code];
       if (!r) continue;
       sampled++;
       const w = m.mktCapYi ?? 1;
-      for (const k of Object.keys(acc)) if (r[k]?.yoy != null) { acc[k] += r[k].yoy * w; cnt[k] += w; }
+      for (const k of ["earnings", "orders", "inventory", "capex"]) if (r[k]?.yoy != null) { acc[k] += r[k].yoy * w; cnt[k] += w; }
+      if (r.inventory_ratio != null) { acc.inventory_ratio += r.inventory_ratio * w; cnt.inventory_ratio += w; }
     }
-    const sectorOut = { sampled, total: members.length };
-    for (const k of Object.keys(acc)) {
+    const sectorOut = { sampled, total: members.length, inventory_ratio_pct: cnt.inventory_ratio > 0 ? +(acc.inventory_ratio / cnt.inventory_ratio).toFixed(2) : null };
+    for (const k of ["earnings", "orders", "inventory", "capex"]) {
       sectorOut[`${k}_yoy`] = cnt[k] > 0 ? +(acc[k] / cnt[k]).toFixed(1) : null;
       sectorOut[`${k}_period`] = cnt[k] > 0 ? members.map((m) => results[m.code]?.[k]?.period).filter(Boolean).sort().slice(-1)[0] ?? null : null;
     }
     out.sectors[sector] = sectorOut;
   }
+  fs.writeFileSync(RAW_CACHE_PATH, JSON.stringify(rawCache));
   fs.writeFileSync("data/sector-fundamentals.json", JSON.stringify(out, null, 2));
   const got = Object.values(out.sectors).filter((s) => s.earnings_yoy != null).length;
   console.log(`完成：${got}/${Object.keys(out.sectors).length} 行业有利润同比`);

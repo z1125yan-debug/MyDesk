@@ -117,3 +117,16 @@ test("解读：capex 有数 → 说明扩产/收缩，不再说暂缺", () => {
 test("解读：全空 → null", () => {
   assert.equal(readFundamentals({}), null);
 });
+
+test("存货重要性闸门：占比<3% 的服务型行业，存货不进解读也不进计分", () => {
+  const withTinyInv = readFundamentals({ earnings_yoy: 70.7, orders_yoy: -13.4, inventory_yoy: -2, inventory_ratio_pct: 0.8, sampled: 8 });
+  assert.ok(!withTinyInv!.headline.includes("库存"), "服务型行业不该出现库存话术：" + withTinyInv!.headline);
+  assert.ok(!withTinyInv!.look.includes("存货"), withTinyInv!.look);
+  const tinyInvOnly = computeIndustryHealth([], {}, undefined, { inventory_yoy: -80, inventory_ratio_pct: 0.5 });
+  assert.equal(tinyInvOnly, null, "只剩噪音存货 → 无分量 → null");
+});
+
+test("存货重要性闸门：占比高的制造业照常参与", () => {
+  const r = readFundamentals({ earnings_yoy: 100.4, orders_yoy: 142.4, inventory_yoy: 88.2, inventory_ratio_pct: 15, sampled: 8 });
+  assert.ok(r!.look.includes("备货"), r!.look);
+});

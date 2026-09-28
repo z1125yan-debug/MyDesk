@@ -280,6 +280,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
           earnings_yoy: fundamentals.earnings_yoy ?? null,
           orders_yoy: fundamentals.orders_yoy ?? null,
           inventory_yoy: fundamentals.inventory_yoy ?? null,
+          inventory_ratio_pct: fundamentals.inventory_ratio_pct ?? null,
           capex_yoy: fundamentals.capex_yoy ?? null,
           period: [fundamentals.earnings_period, fundamentals.orders_period, fundamentals.inventory_period, fundamentals.capex_period].filter(Boolean).sort().slice(-1)[0] ?? null,
           sampled: fundamentals.sampled ?? null,
@@ -473,6 +474,7 @@ export function readFundamentals(fin: {
   orders_yoy?: number | null;
   inventory_yoy?: number | null;
   capex_yoy?: number | null;
+  inventory_ratio_pct?: number | null;
   period?: string | null;
   earnings_period?: string | null;
   orders_period?: string | null;
@@ -485,14 +487,17 @@ export function readFundamentals(fin: {
   const o = fin.orders_yoy ?? null;
   const inv = fin.inventory_yoy ?? null;
   const capex = fin.capex_yoy ?? null;
-  if (e == null && o == null && inv == null && capex == null) return null;
+  // 存货重要性闸门：存货占总资产 <3%（服务型行业常态）→ 存货同比是噪音，不进解读
+  const invImmaterial = fin.inventory_ratio_pct != null && fin.inventory_ratio_pct < 3;
+  const invEff = invImmaterial ? null : inv;
+  if (e == null && o == null && invEff == null && capex == null) return null;
   const period = fin.period ?? [fin.earnings_period, fin.orders_period, fin.inventory_period, fin.capex_period].filter(Boolean).sort().slice(-1)[0] ?? null;
 
   const words: string[] = [];
   if (e != null) words.push(earningsWord(e));
   if (o != null) words.push(ordersWord(o));
-  if (inv != null && o != null) words.push(inventoryWord(inv, o));
-  else if (inv != null) words.push(inv >= 0 ? "库存同步增加" : "库存在去化");
+  if (invEff != null && o != null) words.push(inventoryWord(invEff, o));
+  else if (invEff != null) words.push(invEff >= 0 ? "库存同步增加" : "库存在去化");
   const headline = `头部${fin.sampled ?? "?"}家公司${words.join("，")}`;
 
   // 正文：只报数字与总体状态
@@ -500,7 +505,7 @@ export function readFundamentals(fin: {
   const nums: string[] = [];
   if (e != null) nums.push(`利润同比增长${r1(e)}%`);
   if (o != null) nums.push(`合同负债增长${r1(o)}%`);
-  if (inv != null) nums.push(`存货增长${r1(inv)}%`);
+  if (invEff != null) nums.push(`存货增长${r1(invEff)}%`);
   const body = `截至${period ?? "最新报告期"}，市值排名前${fin.sampled ?? 8}的行业龙头${strength}：${nums.join("，")}。`;
 
   // 怎么看：三个数字各自的含义
@@ -517,25 +522,25 @@ export function readFundamentals(fin: {
     else if (o > -10) lookParts.push("合同负债基本平稳，需求没有明显变化");
     else lookParts.push(`合同负债下降${r1(-o)}%，表明新增需求在走弱`);
   }
-  if (inv != null) {
-    if (o != null && inv - o > 30) lookParts.push(`存货涨得比合同负债快（+${r1(inv)}%），要警惕货压在手里卖不动`);
-    else if (inv >= 10) lookParts.push("存货同步增长，反映企业正在提前备货以应对后续需求");
-    else if (inv >= 0) lookParts.push("存货小幅增加，备货节奏温和");
+  if (invEff != null) {
+    if (o != null && invEff - o > 30) lookParts.push(`存货涨得比合同负债快（+${r1(invEff)}%），要警惕货压在手里卖不动`);
+    else if (invEff >= 10) lookParts.push("存货同步增长，反映企业正在提前备货以应对后续需求");
+    else if (invEff >= 0) lookParts.push("存货小幅增加，备货节奏温和");
     else lookParts.push("存货在下降，企业没有囤货意愿");
   }
   const look = lookParts.length ? lookParts.join("；") + "。" : "";
 
   // 需要注意：订单≠利润、库存双刃剑、资本开支
   const cautions: string[] = [];
-  if (o != null && inv != null && inv - o > 30) {
+  if (o != null && invEff != null && invEff - o > 30) {
     cautions.push("存货增速明显快于订单（合同负债），如果需求没有跟上，库存积压会侵蚀后续利润");
   } else if (o != null) {
     cautions.push(
-      inv != null
+      invEff != null
         ? "合同负债增长并不等于未来利润一定增长：如果后续订单顺利兑现、库存顺利消化，当前备货有利于承接需求；反之，若需求不及预期，较快的库存增长可能转化为经营压力"
         : "合同负债增长并不等于未来利润一定增长，订单能否顺利兑现仍需跟踪",
     );
-  } else if (inv != null && inv >= 30) {
+  } else if (invEff != null && invEff >= 30) {
     cautions.push("存货增速偏高，若需求跟不上，库存积压会侵蚀后续利润");
   }
   if (capex == null) {
@@ -559,6 +564,7 @@ export interface SectorFundamentals {
   earnings_yoy?: number | null;
   orders_yoy?: number | null;
   inventory_yoy?: number | null;
+  inventory_ratio_pct?: number | null;
   capex_yoy?: number | null;
   earnings_period?: string | null;
   orders_period?: string | null;
@@ -594,13 +600,15 @@ export function computeIndustryHealth(
   if (priceSignals.length) parts.push({ weight: w.price, signal: priceSignals.reduce((a, b) => a + b, 0) / priceSignals.length });
   // 财务分量（财报有披露期：asOf 未到披露期的不用，防回放前视）
   if (fundamentals) {
+    const invImmaterial = fundamentals.inventory_ratio_pct != null && fundamentals.inventory_ratio_pct < 3;
     const fin = [
       { k: "earnings", full: TH.finEarningsFull, weight: w.earnings, sign: 1 },
       { k: "orders", full: TH.finOrdersFull, weight: w.orders, sign: 1 },
-      { k: "inventory", full: TH.finInventoryFull, weight: w.inventory, sign: -1 }, // 累库=负贡献
+      { k: "inventory", full: TH.finInventoryFull, weight: w.inventory, sign: -1, skip: invImmaterial }, // 服务型行业存货占比过小 → 噪音，不参与
       { k: "capex", full: TH.finCapexFull, weight: w.capex, sign: 1 },
     ] as const;
     for (const f of fin) {
+      if ("skip" in f && f.skip) continue;
       const yoy = fundamentals[`${f.k}_yoy`];
       const period = fundamentals[`${f.k}_period`];
       if (typeof yoy !== "number" || !period) continue;
