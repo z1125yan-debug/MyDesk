@@ -258,6 +258,8 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
   if (!coreBreak) counter.push("龙头未破(核心资产抗跌)");
   if (adv >= 45) counter.push("宽度未崩");
   if ((cur.distMA60 ?? 0) >= 0) counter.push("仍在60日趋势线上方");
+  if (rsMom10 != null && rsMom10 > 0) counter.push("相对全市场开始转强(10日动量转正)");
+  if (advMean20 != null && adv > advMean20 + 5) counter.push("上涨家数较20日均值回暖");
   if (!chainAvailable || metricsAvailable === 0) counter.push("产业层数据不足(无法确认基本面恶化)");
 
   // ── 风险变化 Δ（vs 上一交易日）──
@@ -270,6 +272,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
     else if (dMc >= 1) dTone = "down";
   }
   const delta = { tone: dTone, medianChange: r1(dMc), label: dTone === "up_up" ? "升温" : dTone === "up" ? "升温" : dTone === "down" ? "缓解" : dTone === "down_down" ? "缓解" : "持平" };
+  if (dMc != null && dMc >= 1) counter.push("较昨日跌幅收窄");
 
   // ── conclusion（规则生成，不调模型）──
   const conclusion = buildConclusion(sector, stage, topTypeLabel, mc, leader, core, second, rs, cur, pro, counter, industryChain.note);
@@ -340,7 +343,7 @@ function buildConclusion(
   const posPhrase = `（20日${r1(cur.prevChange20)}% / 60日${r1(cur.prevChange60)}% / 距MA60 ${r1(cur.distMA60)}%）`;
   return `${sector}今日${mcS}%，${stagePhrase}；${structPhrase}，${rsPhrase}${posPhrase}。当前判为「${topTypeLabel}」。${
     counter.includes("产业层数据不足(无法确认基本面恶化)") ? `产业层数据不足：${chainNote} ` : ""
-  }主要风险：${pro.slice(0, 3).join("、") || "无明显"}；反向信号：${counter.slice(0, 2).join("、") || "无"}。综合看${stage === "趋势健康" ? "暂无需警示" : stage === "趋势内回撤" ? "偏回调、观察确认窗口" : "需重点跟踪"}。`;
+  }主要风险：${pro.slice(0, 3).join("、") || "无明显"}；反向信号：${counter.slice(0, 2).join("、") || "暂无——各路读数同向走弱，没有像样的反向证据"}。综合看${stage === "趋势健康" ? "暂无需警示" : stage === "趋势内回撤" ? "偏回调、观察确认窗口" : "需重点跟踪"}。`;
 }
 
 // ── 扫描器（全市场）───────────────────────────────────────────────
