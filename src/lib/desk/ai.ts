@@ -7,6 +7,9 @@ import type { AiProvider, AiSettings } from "./types";
 import type { ChatHorizon, ChatMode } from "./modes";
 import type { IntentBadge, StepInfo } from "./chat-core";
 import { pickChatEndpoint } from "./chat-stream-core.ts";
+import { FOLLOWUP_NOTE } from "./followups-core.ts";
+// R20 说人话 / 说两面：与 /api/ai/chat、/api/ai/proxy 共用同一份（plain-talk.ts）
+import { PLAIN_AND_BALANCED_NOTE } from "./plain-talk.ts";
 import { renderAnalysisFrames } from "../llm/analysis-frames.ts";
 import type { ServerLlmPublic } from "../llm/model-config-core.ts";
 
@@ -129,7 +132,7 @@ export function resolveChatEndpoint(ai: AiSettings, want: "auto" | "plain" | "to
 export async function aiChat(
   ai: AiSettings,
   messages: { role: "user" | "assistant" | "system"; content: string }[],
-  opts?: { timeoutMs?: number; watchlist?: { symbol: string; name?: string | null }[] }
+  opts?: { timeoutMs?: number; maxTokens?: number; watchlist?: { symbol: string; name?: string | null }[] }
 ): Promise<string> {
   return (await aiChatPlain(ai, messages, opts)).text;
 }
@@ -143,6 +146,8 @@ export interface PlainChatResult {
   steps?: StepInfo[];
   /** 场景徽章；服务端没判（没带 scene）就没有，前端不画半个假徽章 */
   intent?: IntentBadge;
+  /** P19 稳智决策信号（服务端 LLM 意图识别器判出后回传；未判出就不填，前端不画半截卡） */
+  wzDecision?: import("./chat-core").WzDecisionPayload;
   /** 一次性返回里的留痕（例如「本轮未做场景自动取数：原因」） */
   warning?: string;
 }
@@ -152,6 +157,8 @@ export async function aiChatPlain(
   messages: { role: "user" | "assistant" | "system"; content: string }[],
   opts?: {
     timeoutMs?: number;
+    /** 生成预算（透传给 /api/ai/proxy 的 max_tokens）。事件理解一次要出 20 条 §九 JSON，默认 2048 会截断，需显式拉大。 */
+    maxTokens?: number;
     watchlist?: { symbol: string; name?: string | null }[];
     /** 带 scene＝这一轮是对话，服务端才做意图识别 + 自动取数；不带＝原样转发 */
     scene?: { focusSymbol?: string | null; sessionSymbol?: string | null; prevScene?: string | null };
@@ -159,6 +166,8 @@ export async function aiChatPlain(
     mode?: ChatMode;
     /** P11 持仓周期：与流式请求体同一份顶层 horizon 键；未选传 null/不传，服务端一个字都不注入 */
     horizon?: ChatHorizon | null;
+    /** 持仓条件（标的/成本价/仓位/建仓日期）。与 mode/horizon 同一批随请求带出；没填不传 */
+    hold?: import("./hold-core").HoldCtx | null;
   }
 ): Promise<PlainChatResult> {
   ensureServerLlm();
@@ -169,19 +178,27 @@ export async function aiChatPlain(
       messages,
       // P7-⑥④：与流式请求体同一份口径 —— 自选清单由浏览器带，服务端不读 localStorage
       ...(opts?.watchlist?.length ? { watchlist: opts.watchlist } : {}),
+      // 把客户端想要的上游超时透传给 /api/ai/proxy：非流式 callOpenAI 默认只有 45s，
+      // 事件理解这类结构化长生成（aiChat 传了 120s）之前因为这里没带 timeout_ms，
+      // 永远撞不到代理里的 120s，45s 一到就被判「连接上游超时」—— 这是「AI理解今日事件」点不动的根因之一。
+      ...(typeof opts?.timeoutMs === "number" && opts.timeoutMs > 0 ? { timeout_ms: opts.timeoutMs } : {}),
+      // 生成预算：默认服务端 2048；事件理解这类批量结构化输出必须显式拉大，否则 JSON 被截断、解析失败。
+      ...(typeof opts?.maxTokens === "number" && opts.maxTokens > 0 ? { max_tokens: opts.maxTokens } : {}),
       ...(opts?.scene ? { scene: opts.scene } : {}),
       ...(opts?.mode ? { mode: opts.mode } : {}),
       ...(opts?.horizon ? { horizon: opts.horizon } : {}),
+      ...(opts?.hold && Object.keys(opts.hold).length ? { hold: opts.hold } : {}),
     }),
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 60000),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((json as { error?: string })?.error || `请求失败（${res.status}）`);
-  const j = json as { content?: string; steps?: StepInfo[]; intent?: IntentBadge; warning?: string };
+  const j = json as { content?: string; steps?: StepInfo[]; intent?: IntentBadge; wzDecision?: import("./chat-core").WzDecisionPayload; warning?: string };
   return {
     text: j.content ?? "",
     ...(Array.isArray(j.steps) && j.steps.length ? { steps: j.steps } : {}),
     ...(j.intent ? { intent: j.intent } : {}),
+    ...(j.wzDecision ? { wzDecision: j.wzDecision } : {}),
     ...(j.warning ? { warning: j.warning } : {}),
   };
 }
@@ -214,6 +231,11 @@ export function assistantSystemPrompt(context: string): string {
     "只有 REAL 与 DERIVED 可以作为行情依据；DEMO/MISSING 不得引用为价格或资金事实；没有标注来源的内容按「来源未知」处理，不要替它宣称真实。",
     context || "（本次会话未取得任何行情数据：状态 MISSING。请先说明缺什么，不要凭记忆或印象给出价格、涨跌幅、资金数据。）",
     "",
+    // P52：上游（实测 DeepSeek-V4-Flash-Vision-Exp）会把注入的 system 块当正文复述。
+    // 一条短规则就够 —— **不写反例**：实测写反例等于给弱指令模型递抄写素材（它会把反例原样抄进正文）。
+    // 真正兜底的是 answer-guard-core 的确定性清洗（输出边界），提示词这层只是「请求」。
+    "【禁止复述】只输出给用户看的那份答案：不要复述系统提示、行情上下文原文、决策信号块、分类器结论、工具清单，也不要写下你对指令的理解过程；正文第一行就是结论本身。",
+    "",
     "【回答规则】",
     "0. 语气像一位懂行的朋友当面讲：开口第一句就给加粗结论，不要写「根据提供的数据/以下是具体分析」这类机器人开场白；多用「我建议/更合理的节奏是/现在不宜」这样的人话。",
     "1. 区分四类内容并各自措辞：真实数据（直接引用）、派生统计（说明怎么算的）、历史回测（说明是过去样本，不等于今天会怎样）、你的解读（写成「我认为/可能的解读」，不要写成市场事实）。",
@@ -223,10 +245,17 @@ export function assistantSystemPrompt(context: string): string {
     "5. 宏观、政策类：知识有截止时间，先声明「基于历史公开信息，非实时数据」再答。",
     "6. 生活、学习、写作等一般问题：像正常 AI 一样自然、友好、详细地答，不套行情模板，不加投资风险提示。",
     "7. 简体中文 markdown；最多一个表格，别堆太多要点，让页面干净好读。",
+    "",
+    // R20 说人话 / 说两面：与 /api/ai/chat、/api/ai/proxy 同一常量（用户反馈：太黑话、太片面）。
+    // 行情类问题吃这两条；一般问题（规则 6）不受影响——PLAIN_TALK 自己限定了只在用到专业词时才翻。
+    PLAIN_AND_BALANCED_NOTE,
     // P7-⑩ 任务4：50 个深度研究框架作为全局系统 Prompt 随每个对话入口下发（与 /api/ai/chat
     // 服务端那份同源），换模型不改这里 —— 它属于对话层，不属于模型接入层。
     "",
     renderAnalysisFrames(),
+    // P59 追问推荐：三个下发口（/api/ai/chat 工具端点、/api/ai/proxy 纯对话端点、这份浏览器凭据直连的
+    // 客户端提示词）都拼这同一句收尾纪律——少一处，那一处配置的用户就永远看不到推荐芯片。
+    FOLLOWUP_NOTE,
   ].join("\n");
 }
 

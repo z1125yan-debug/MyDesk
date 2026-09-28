@@ -94,11 +94,11 @@ export default function RadarPage() {
   const histDate = hist?.date ?? "";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-6 py-4">
+    <div className="w-full space-y-4 px-6 py-4">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Radar size={18} className="text-sky-400" /> AI 主动发现</div>
-          <div className="text-[11px] text-muted-foreground">自动扫描市场，发现资金、主线和异动信号。</div>
+          <div className="text-[12px] text-muted-foreground">自动扫描市场，发现资金、主线和异动信号。</div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={scan} disabled={busy || view === "history"}
@@ -120,7 +120,7 @@ export default function RadarPage() {
         <div className="text-xs text-muted-foreground">今天还没有扫描。收盘后会自动跑一次，也可以点右上角「立即扫描」。</div>
       )}
       {view === "today" && superseded > 0 && (
-        <div className="text-[10.5px] text-muted-foreground/80">
+        <div className="text-[11.5px] text-muted-foreground/80">
 另有 {superseded} 条信号在最近一次扫描中已消失，不再显示。
         </div>
       )}
@@ -130,9 +130,9 @@ export default function RadarPage() {
           {items.map((it) => (
             <button key={it.id ?? it.title} onClick={() => go(KIND_GO[it.kind] ?? "market")}
               className="block w-full rounded-xl border border-border bg-card px-4 py-3 text-left hover:border-sky-500/40">
-              <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">{KIND_ZH[it.kind] ?? it.kind}</div>
+              <div className="text-[11.5px] uppercase tracking-wide text-muted-foreground">{KIND_ZH[it.kind] ?? it.kind}</div>
               <div className="text-sm font-medium">{it.title}</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">{it.detail}</div>
+              <div className="mt-1 text-[12px] text-muted-foreground">{it.detail}</div>
             </button>
           ))}
         </div>
@@ -146,21 +146,21 @@ export default function RadarPage() {
           {hist?.items.map((it) => (
             <div key={it.id} className={`rounded-xl border px-4 py-3 ${it.superseded ? "border-dashed border-border bg-card/40" : "border-border bg-card"}`}>
               <div className="flex items-start justify-between gap-3">
-                <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                <div className="text-[11.5px] uppercase tracking-wide text-muted-foreground">
                   类型 {KIND_ZH[it.kind] ?? it.kind} · 留档日 {it.as_of}
                 </div>
-                <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${it.superseded ? "border-amber-500/40 text-amber-300" : "border-emerald-500/40 text-emerald-300"}`}>
+                <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[11px] ${it.superseded ? "border-amber-500/40 text-amber-300" : "border-emerald-500/40 text-emerald-300"}`}>
                   {it.state_label}
                 </span>
               </div>
               <div className={`text-sm font-medium ${it.superseded ? "text-muted-foreground line-through decoration-amber-500/40" : ""}`}>{it.title}</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">{it.detail || "（这条没有存正文）"}</div>
-              <div className="mt-1.5 text-[10px] text-muted-foreground/80" title={plainify(it.source_basis)}>
+              <div className="mt-1 text-[12px] text-muted-foreground">{it.detail || "（这条没有存正文）"}</div>
+              <div className="mt-1.5 text-[11px] text-muted-foreground/80" title={plainify(it.source_basis)}>
                 来源：{plainify(it.source)} · 首次入库 {bjTime(it.created_at)}（北京）
                 {it.evidence_broken && <span className="ml-1 text-amber-300">证据字段无法解析（库内原文损坏，未当作空值）</span>}
               </div>
               {!it.superseded && (
-                <button onClick={() => go(KIND_GO[it.kind] ?? "market")} className="mt-1 text-[10.5px] text-sky-400 hover:text-sky-300">
+                <button onClick={() => go(KIND_GO[it.kind] ?? "market")} className="mt-1 text-[11.5px] text-sky-400 hover:text-sky-300">
                   跳转到对应板块（按当前实时口径，非该日口径）
                 </button>
               )}

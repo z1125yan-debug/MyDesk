@@ -23,16 +23,17 @@ const RULES = "src/lib/quant/screener/theme-rules.ts";
 const THEMES = "src/lib/quant/screener/themes.ts";
 const API = "src/lib/desk/quant-api.ts";
 
-test("路由接线：themeoverview 进 PageKey 全集 + 标题 + 渲染分支 + 菜单一处登记", () => {
+test("路由接线：themeoverview 进 PageKey 全集 + 标题 + 渲染分支 + 隐藏页一处登记", () => {
   const types = readSrc(TYPES);
   assert.match(types, /"themeoverview"/, "PageKey 要有 themeoverview");
   assert.match(types, /themeoverview:\s*"主题血缘总览"/, "PAGE_TITLES 要有中文标题");
   const shell = readSrc(SHELL);
   assert.match(shell, /import ThemeOverviewPage from "\.\/pages\/ThemeOverviewPage"/, "AppShell 要 import 本页");
   assert.match(shell, /page === "themeoverview" && <ThemeOverviewPage \/>/, "AppShell 要有渲染分支");
-  // 归在「行业板块」组下（与主线热点血缘最近），作为子项一处登记
+  // 2026-09-25 用户拍板：稳智把「主题热点」放在 LLM分析 的 Tab 里（不是独立菜单项），
+  // 本页也从菜单移除、只留 hash 直达——登记在 HIDDEN_PAGES 里（防漏页对账），不再占菜单位。
   const nav = readSrc(NAV);
-  assert.match(nav, /\{ key: "themeoverview", label: "主题血缘总览" \}/, "nav-core 要有该菜单子项");
+  assert.match(nav, /HIDDEN_PAGES[\s\S]*?"themeoverview"/, "nav-core 把 themeoverview 登记为隐藏页（从菜单移除、只留 hash 直达）");
 });
 
 test("kind 透传：纯核输入带 kind、装配处填 _kind、客户端类型对齐（去选股递棒才递得动）", () => {
@@ -94,7 +95,8 @@ test("断源诚实：腾讯兜底榜占位 0 主力不当实数（走查正逢�
   assert.match(src, /\/腾讯板块兜底\/\.test\(data\.source\.provider\)/, "来源串兜底命中也算断源");
   assert.match(src, /value=\{fundsMissing \? null : t\.mainYi\}/, "左榜主力断源显「—」不是 0.0");
   assert.match(src, /今日主力净额" value=\{fundsMissing \? "暂无数据"/, "关键数字主力断源显暂无");
-  assert.match(src, /\["今日主力净额", fundsMissing \? "暂无数据（板块资金断源）"/, "全字段展开同样不画占位 0");
+  // R21：不再对用户播报「某家断源」，改成说清这份榜本身不含资金读数
+  assert.match(src, /\["今日主力净额", fundsMissing \? "暂无数据（该榜不含资金读数）"/, "全字段展开同样不画占位 0");
 });
 
 test("本页只 import 血缘组件，不 local 重定义（与 R3b 单源纪律一致）", () => {

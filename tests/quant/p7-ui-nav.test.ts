@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  MENU, SYSTEM_ITEMS, ROUTE_REDIRECTS, resolveRoute, entryTarget, isLegacyPage, legacyReturnTarget, menuGroupOf,
+  MENU, SYSTEM_ITEMS, ROUTE_REDIRECTS, resolveRoute, entryTarget, isLegacyPage, legacyReturnTarget, menuGroupOf, HIDDEN_PAGES,
 } from "../../src/lib/desk/nav-core.ts";
 
 const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "utf8");
@@ -36,6 +36,8 @@ function allRegistered() {
     for (const p of e.legacyPages ?? []) put(p, `${e.id}.legacyPages`);
   }
   for (const s of SYSTEM_ITEMS) put(s.key, "SYSTEM_ITEMS");
+  // 2026-09-25：从菜单移除、只留 hash 直达的页（themes/themeoverview）也算「登记一处」
+  for (const h of HIDDEN_PAGES) put(h.key, "HIDDEN_PAGES");
   // R3c：合并后 aiscan 从 children 挪进 ROUTE_REDIRECTS——别名源也算「登记一处」（漏页防线不放松）
   for (const from of Object.keys(ROUTE_REDIRECTS)) put(from, "ROUTE_REDIRECTS");
   return listed;
@@ -56,15 +58,17 @@ test("nav-core：一级菜单顺序文案钉死（稳智左栏顺序，用户要
     MENU.map((e) => [e.id, e.label] as const),
     [
       ["market", "大盘情绪"],
-      ["quant", "量化选股"],
-      ["sectors", "行业板块"],
+      ["quant", "量化因子选股"],
+      ["sectors", "行业"],
       ["quotes", "行情"],
       ["watch", "自选"],
-      ["events", "全球事件雷达"],
-      ["ai", "AI 对话"],
+      ["events", "事件雷达"],
+      // P25 稳智对齐 P1 #3：LLM 分析（深度分析）和 AI 对话（快速问答）拆成两个一级项
+      ["assistant", "LLM分析"],
       ["qimen", "奇门遁甲"],
+      ["ai", "AI分析"],
     ],
-    "一级项必须是大盘情绪·量化选股·行业板块·行情·自选·全球事件雷达·AI 对话·奇门遁甲 这个顺序（对方菜单从左到右即此序；「LLM分析」是行业词，人话版叫 AI 对话。事件雷达 P15-R18 按用户指示从 legacy 挖回一级，排在同为「每天打开就读」的自选之后）",
+    "一级项顺序=稳智左栏（大盘情绪·量化因子选股·行业·行情·自选·事件雷达·LLM分析·奇门遁甲·AI分析）；「行业」是单项直达（2026-09-25 拍平对齐稳智 /sectors），事件雷达是本地特色项（P15-R18）",
   );
   // 「自选」在对方菜单里是独立一级，不许再塞回「行情」组里
   assert.equal(MENU.find((e) => e.id === "watch")!.key, "tracker");
@@ -97,12 +101,34 @@ test("nav-core：每个一级项要么直达、要么有非空子项；点组必
 });
 
 test("nav-core：并入对话的旧页可 hash 直达但不上菜单；copilot 自己不算 legacy", () => {
-  for (const p of ["aihome", "analysis", "research", "agent"] as const) {
-    assert.ok(isLegacyPage(p), `${p} 应登记为 legacy（横幅指回对话）`);
-    assert.equal(legacyReturnTarget(p), "copilot", `${p} 的横幅出口应回对话本体`);
-    assert.equal(menuGroupOf(p)?.id, "ai", `${p} 归属 AI 对话组`);
+  // P25 稳智对齐：aihome 不再在 legacyPages 里（现在是一级菜单项「AI 对话」）
+  // P26：analysis/research/agent 仍在 legacyPages 里（横幅指回 LLM 分析门户）
+  for (const p of ["analysis", "research", "agent"] as const) {
+    assert.ok(isLegacyPage(p), `${p} 应登记为 legacy（横幅指回 LLM 分析）`);
+    assert.equal(legacyReturnTarget(p), "llmportal", `${p} 的横幅出口应回 LLM 分析门户`);
+    assert.equal(menuGroupOf(p)?.id, "assistant", `${p} 归属 LLM 分析组`);
   }
+  // P25：aihome 不再是被横幅指回的旧页（现在是一级菜单项「AI 对话」）
+  assert.equal(isLegacyPage("aihome"), false, "aihome 不再是被横幅指回的旧页（P25 稳智对齐：AI 对话是一级菜单项）");
   assert.equal(isLegacyPage("copilot"), false, "copilot 是对话本体，不是兼容路由");
+});
+
+test("2026-09-26 用户实测修正：copilot 直达（不再收口到 llmportal）+ page 落盘（重开停在上次那页）", () => {
+  // 事故复盘：`copilot→llmportal` 把四条路全弹到「LLM分析」——落地页发送（askInAssistant→copilot）、
+  // 最近会话、概览卡「智能助手」、小窗「在助手页继续」；而门户 5 Tab 里**没有 AI 对话**，
+  // 唯一消费 pendingAsk 的 AssistantPage 永不挂载 ⇒ 那句话被静默吞掉。用户原话「我在ai想发送的时候直接给我跳到llm了」。
+  assert.equal(resolveRoute("copilot"), "copilot", "copilot 必须直达对话本体（不许再收口到 llmportal）");
+  assert.equal(menuGroupOf("copilot")!.id, "ai", "对话本体归属 AI分析 组（进来时那一项要高亮）");
+  assert.equal(isLegacyPage("copilot"), false, "对话本体不是兼容路由，不挂横幅");
+  // 「门户第 5 个 Tab 就是 AI 对话」这条理由不成立——源码实证门户 Tab 清单里没有它
+  const tabs = read("src/components/desk/LlmAnalysisPage.tsx").match(/const TABS = \[([^\]]*)\]/);
+  assert.ok(tabs, "LlmAnalysisPage 的 TABS 清单要能被读到（这条钉要跟着页面改）");
+  assert.ok(!/对话/.test(tabs![1]), `门户 Tab 里没有「AI 对话」（当前：${tabs![1]}），所以 copilot 不能收口到它`);
+  // store：page 落盘（重开停在原页）+ 白名单（坏值收敛回 market，避免 AppShell 一个分支都不匹配的白屏）
+  const store = read("src/lib/desk/store.ts");
+  assert.match(store, /page: \(PAGE_TITLES as Record<string, string \| undefined>\)\[s\.page\] \? s\.page : "market"/,
+    "partialize 要落盘 page，且对坏值收敛回 market");
+  assert.match(store, /import \{ PAGE_TITLES \} from "\.\/types"/, "白名单来自 types.ts，不另抄一份");
 });
 
 test("P15-R18：全球事件雷达从 legacy 挖回一级菜单（用户：找出来塞进去）", () => {
@@ -120,7 +146,8 @@ test("R3c 双入口合并：菜单不再单列「全A 实时选股」，aiscan �
   // 用户拍板「合并成一条」：quant 门户主 Tab 挂的就是 AiScanPage 本体，两个窗口同一份实现——
   // 菜单删重复子项、导航收口到统一入口，但 PageKey/渲染分支/P12 递棒钉一个不删。
   const quantEntry = MENU.find((e) => e.id === "quant")!;
-  assert.ok(!quantEntry.children!.some((c) => c.key === "aiscan"),
+  // 2026-09-25：quant 恢复为单项直达（无子项），children 可能为空——用 ?? [] 兜住，断言意图不变。
+  assert.ok(!(quantEntry.children ?? []).some((c) => c.key === "aiscan"),
     "「全A 实时选股」不许再作为独立子项挂在菜单里（否则合并白做）");
   // 旧 key 走重定向到 quant
   assert.equal(resolveRoute("aiscan"), "quant", "aiscan 导航应收口到 quant 门户");
@@ -145,7 +172,9 @@ test("nav-core 是纯核：不 import React/window/存储，保证单测可直�
 test("AppShell：每个 PageKey 的渲染分支一个不删（任务书约束：不删页面、老路由照常出内容）", () => {
   const src = read("src/components/desk/AppShell.tsx");
   for (const key of PAGE_KEYS) {
-    assert.match(src, new RegExp(`page === "${key}" && <\\w+(?:Page|Panel) \\/>`), `旧路由 #/${key} 的渲染分支被删了`);
+    // 原正则只认以 Page/Panel 结尾的组件名，aiscreener 渲染的是 <ScreenerWorkbench /> 会被误判成「分支被删」。
+    // 本钉的意图是「分支一个不删」，认任意大写开头的自闭合组件即可（ScreenerWorkbench 也算）。
+    assert.match(src, new RegExp(`page === "${key}" && <[A-Z]\\w*\\s*\\/>`), `旧路由 #/${key} 的渲染分支被删了`);
   }
   assert.match(src, /<WorkbenchShell>[\s\S]*<\/WorkbenchShell>/, "分支没有包进 WorkbenchShell：legacy 横幅不会生效");
 });
@@ -175,7 +204,8 @@ test("WorkbenchShell：不再画第二层左栏；legacy 兼容路由挂横幅�
 
 test("store：新会话默认落在 AI 决策对话（旧默认 aihome 已并入），persist 键不改动", () => {
   const src = read("src/lib/desk/store.ts");
-  assert.match(src, /page:\s*"copilot"/, "初始页应是 copilot");
+  // P26：默认页从 copilot 迁到 llmportal 门户（对齐稳智顶部 5 Tab 工作台）
+  assert.match(src, /page:\s*"(copilot|llmportal)"/, "初始页应是 copilot 或 llmportal");
   assert.doesNotMatch(src, /page:\s*"aihome"/, "不应残留 aihome 初始值（两个初始值会打架）");
   assert.match(src, /name:\s*"mydesk-state"/, "persist 存储名改动会让老用户本地状态全丢，本轮不允许");
 });
@@ -191,3 +221,17 @@ test("折叠/展开用原生 useState，导航改造零新增依赖", () => {
   }
   assert.doesNotMatch(read("package.json"), /element-plus/, "package.json 被塞了新依赖：违反全局约束");
 });
+
+test("AppShell：rehydrate 完成前不渲染、不写 hash（防「先显示大盘情绪、再自动跳到别的菜单」）", () => {
+  const src = read("src/components/desk/AppShell.tsx");
+  // 2026-09-26 用户实测：刷新时先闪出初始页（market），随后被 persist 恢复出的存档页覆盖 ⇒ 看着像"自动跳菜单"。
+  // 钉死修法：读 persist 的 hydrate 状态 → 未完成前两个 effect 直接 return → 内容也不渲染。
+  assert.match(src, /const p = useDesk\.persist;/, "要读 persist 的 hydrate 状态");
+  assert.match(src, /p\.hasHydrated\(\)/, "已 hydrate 时立即放行");
+  assert.match(src, /p\.onFinishHydration\(\(\) => setHydrated\(true\)\)/, "未 hydrate 时监听 rehydrate 完成");
+  assert.match(src, /if \(!hydrated\) return null;/, "rehydrate 完成前不渲染内容（首帧不闪出初始页）");
+  assert.match(src, /if \(!hydrated\) return;\r?\n    const syncFromHash/, "hash 同步 effect 必须等 hydrate 之后再跑");
+  assert.match(src, /\}, \[go, hydrated\]\);/, "hash effect 依赖 hydrated");
+  assert.match(src, /\}, \[page, go, hydrated\]\);/, "自愈 effect 依赖 hydrated");
+});
+

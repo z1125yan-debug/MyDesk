@@ -21,7 +21,7 @@ const TONE: Record<string, string> = {
   未知: "border-border text-muted-foreground",
 };
 
-const chip = "rounded border px-1.5 py-0.5 text-[10px]";
+const chip = "rounded border px-1.5 py-0.5 text-[11px]";
 
 /** 置信度只按「AI 对自己这套解释的把握」来读，永远不写成上涨概率（§九 原文口径） */
 export function confidenceText(c: number | null): string {
@@ -33,7 +33,7 @@ export function confidenceText(c: number | null): string {
 
 function Kv({ label, value }: { label: string; value: string }) {
   if (!value) return null;
-  return <div className="mt-1 text-[11px]"><b className="text-muted-foreground">{label}：</b>{value}</div>;
+  return <div className="mt-1 text-[12px]"><b className="text-muted-foreground">{label}：</b>{value}</div>;
 }
 
 export function InterpretationCard({ itp }: { itp: EventInterpretation & Partial<InterpretationViewClient> }) {
@@ -50,17 +50,17 @@ export function InterpretationCard({ itp }: { itp: EventInterpretation & Partial
         <span className={`${chip} border-border text-muted-foreground`}>重要性 {itp.importance}</span>
         {itp.stale && <span className={`${chip} border-amber-500/40 text-amber-300`}>事件已更新：解释过时</span>}
         {itp.orphan && <span className={`${chip} border-amber-500/40 text-amber-300`}>原事件行已不在当天库中：只剩解释快照</span>}
-        <span className="ml-auto text-[10px] text-muted-foreground">{itp.model || "模型未记录"} · {promptVerZh(itp.prompt_version)}</span>
+        <span className="ml-auto text-[11px] text-muted-foreground">{itp.model || "模型未记录"} · {promptVerZh(itp.prompt_version)}</span>
       </div>
 
-      <div className="mt-1.5 text-[11.5px] leading-relaxed">{itp.summary || "（模型未给出摘要，本条已被判为无摘要）"}</div>
-      <div className="mt-1 text-[10.5px] text-muted-foreground">{confidenceText(itp.confidence)}</div>
+      <div className="mt-1.5 text-[12.5px] leading-relaxed">{itp.summary || "（模型未给出摘要，本条已被判为无摘要）"}</div>
+      <div className="mt-1 text-[11.5px] text-muted-foreground">{confidenceText(itp.confidence)}</div>
 
       <Kv label="AI 实体" value={itp.entities.join("、")} />
       <Kv label="AI 行业/主题" value={[...itp.industries, ...itp.themes].join("、")} />
       <Kv label="AI 认为相关（标题或既有映射里有出处）" value={itp.affected_symbols.join("、")} />
       {!!itp.hypothesized_symbols?.length && (
-        <div className="mt-1 text-[11px] text-amber-300/90">
+        <div className="mt-1 text-[12px] text-amber-300/90">
           <b>AI 假设标的（无出处，未验证）：</b>{itp.hypothesized_symbols.join("、")}
           <span className="text-muted-foreground"> —— 这是 AI 猜的（假设层），不是「已确认相关」</span>
         </div>
@@ -68,7 +68,7 @@ export function InterpretationCard({ itp }: { itp: EventInterpretation & Partial
       <Kv label="仍需验证" value={itp.unknowns.join("；")} />
       <Kv label="下一步该查" value={itp.follow_up_queries.join("；")} />
       {!!(itp.violations?.length || nDropped) && (
-        <div className="mt-1 text-[10.5px] text-amber-300/90">
+        <div className="mt-1 text-[11.5px] text-amber-300/90">
           校验留痕：违规 {itp.violations?.length ?? 0} 条 · 被降级/剔除 {nDropped} 处（原文在下方回溯里，未静默删除）
         </div>
       )}
@@ -76,11 +76,11 @@ export function InterpretationCard({ itp }: { itp: EventInterpretation & Partial
       <DeskCollapse
         className="mt-1.5"
         title="展开完整回溯链（原始事件 → AI 提取 → AI 解释 → 状态分层）"
-        triggerClassName="text-[10.5px] text-muted-foreground hover:text-foreground"
-        contentClassName="text-[10.5px] text-muted-foreground"
+        triggerClassName="text-[11.5px] text-muted-foreground hover:text-foreground"
+        contentClassName="text-[11.5px] text-muted-foreground"
       >
-        <pre className="whitespace-pre-wrap break-words rounded border border-border/60 bg-background/60 p-2 text-[10.5px] leading-relaxed">{trace}</pre>
-        <div className="mt-1 text-[10px] text-muted-foreground/80">
+        <pre className="whitespace-pre-wrap break-words rounded border border-border/60 bg-background/60 p-2 text-[11.5px] leading-relaxed">{trace}</pre>
+        <div className="mt-1 text-[11px] text-muted-foreground/80">
           字段归属（内核唯一出处，页面不自己判）：事实 {FACT_FIELDS.join("/")} ｜
           AI 解释 {AI_FIELDS.join("/")}
           {AI_EXTRA_FIELDS.length ? ` + ${AI_EXTRA_FIELDS.join("/")}` : ""} ｜

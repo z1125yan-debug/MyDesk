@@ -257,7 +257,16 @@ test("首页收敛为纯入口：交接那一句话，自己不发请求、不�
   // （对话页 composer 挂的是同一个），首页不再亲手碰 store 的模式键——「单一出处」的原意图
   // 反过来更硬了：画法也只有一份。读写落点改钉在组件源码上，首页钉「只许挂载、不许另起炉灶」。
   assert.match(src, /<ChatModeMenu/, "首页的风格下拉必须是共享的 ChatModeMenu，不再自绘一套");
-  assert.ok(!/assistantMode|setAssistantMode/.test(src), "模式读写不许回流首页本地：唯一落点是 ChatModeMenu（store 接线在组件里）");
+  // 2026-09-27 P58 口径迁移：场景卡自带 chatMode（点卡即换风格是稳智语义），所以「写 store 的模式键」
+  // 从禁止改成必须——但只能经 useDesk.getState() 这一处写。原意图（首页不自存一份模式状态、
+  // 清单只有 modes.ts 一份）反过来钉得更硬：不许 useState、不许读 s.assistantMode。
+  // P15-R20 口径迁移：八张卡改成随模式换（cardsForMode），首页于是需要**读**当前模式。
+  // 原意图（首页不自存一份模式状态、清单只有 modes.ts 一份）不变，收紧的落点改成：
+  // 不许本地影子状态（useState 存模式）、不许自己写模式键（写只经 getState().setAssistantMode）。
+  // 只读订阅 s.assistantMode 是允许的——它没有第二份状态，读的仍是同一个 store 键。
+  assert.ok(!/useState<ChatMode/.test(src), "首页不许留本地影子状态（模式只有 store 一份）");
+  assert.ok(!/useDesk\(\(s\) => s\.setAssistantMode\)/.test(src), "首页不许订阅模式 setter（写只走一处）");
+  assert.match(src, /useDesk\.getState\(\)\.setAssistantMode\(/, "点卡的风格切换写回同一个 store 键");
   const menuSrc = readFileSync(new URL("../../src/components/desk/ui/ChatModeMenu.tsx", import.meta.url), "utf8");
   assert.match(menuSrc, /s\.assistantMode/, "菜单的选中值读自 store");
   assert.match(menuSrc, /s\.setAssistantMode/, "菜单改的值写回 store");
@@ -270,6 +279,40 @@ test("首页收敛为纯入口：交接那一句话，自己不发请求、不�
   ] as const) {
     assert.ok(!needle.test(src), `${why}（首页里出现了 ${needle}）`);
   }
+});
+
+test("「AI分析」入口先落落地页：点进不再直接进对话（2026-09-26 用户拍板，推翻 09-25）", () => {
+  const appShell = readFileSync(new URL("../../src/components/desk/AppShell.tsx", import.meta.url), "utf8");
+  assert.match(appShell, /import AiHomePage from "\.\/pages\/AiHomePage"/, "落地页要挂回来（要有 import）");
+  assert.match(appShell, /page === "aihome" && <AiHomePage \/>/, "aihome 挂落地页 AiHomePage");
+  assert.ok(!/page === "aihome" && <CopilotPage \/>/.test(appShell), "aihome 不再直接挂对话页（点进即对话已撤销）");
+  // 落地页提问仍走唯一交接：askInAssistant 写 pendingAsk 并跳 copilot（对话本体只在 AssistantPage 一处）
+  assert.match(homeSrc, /askInAssistant\(/, "落地页提问交给唯一对话页");
+});
+
+test("AI分析落地页：8 张快捷卡都能出结果（direct 直发 / 带参卡先收参数再拼稳智同款问句）", () => {
+  // 8 张卡齐（文案逐字对齐稳智 /ai-matrix 的 Ki 数组）。
+  // 2026-09-27 P58：卡的字面量从落地页搬进了 suggestion-cards-core.ts ——
+  // 落地页与对话页吃的是同一份，所以这里改扫 core（扫页面会在两页共用后重复计一份，且搬走就红）。
+  const coreSrc = readFileSync(new URL("../../src/lib/desk/suggestion-cards-core.ts", import.meta.url), "utf8");
+  for (const label of [
+    "七维分析一只股票", "按成本制定持仓计划", "判断现在能否买入", "对比多只股票强弱",
+    "分析板块当前阶段", "判断今日仓位策略", "筛选持续流入板块", "制定股票交易计划",
+  ]) {
+    assert.ok(coreSrc.includes(`"${label}"`), `缺卡：${label}`);
+  }
+  // 无参卡（稳智 mode:"direct"）整句直发；带参卡先弹表单，不把带【】的模板原样发出去。
+  // 判据从「页面里手写 if」换成「页面只经 needsDialog/directDispatch 这一道门」——
+  // 两页共用同一个分支，写死字面量反而会漏掉另一页的接线。
+  assert.match(homeSrc, /if \(needsDialog\(c\)\)/, "落地页按 needsDialog 分直发/弹窗");
+  assert.match(homeSrc, /directDispatch\(c\)/, "落地页的直发卡走 core 的 directDispatch 拼句");
+  assert.match(assistantSrc, /if \(needsDialog\(c\)\)/, "对话页同一道门（两页不许各判一次）");
+  const dialogSrc = readFileSync(new URL("../../src/components/desk/ui/SuggestionCardDialog.tsx", import.meta.url), "utf8");
+  assert.match(dialogSrc, /validateCard\(/, "参数窗先校验：条件没填全不发（稳智「缺参数不发」同纪律）");
+  assert.ok(!/onSend\([^)]*\)[\s\S]{0,40}setErr\(""\)/.test(dialogSrc), "校验没过就把句子发出去了（错误分支不得同时 send）");
+  // 问句只交唯一对话页；落地页自己不发任何请求
+  assert.match(homeSrc, /askInAssistant\(/);
+  assert.ok(!/fetch\(|"\/api\/|\/api\//.test(homeSrc), "落地页不发请求");
 });
 
 test("交接是一次性的：只写 pendingAsk + 跳对话页，且不落盘、取一次即清", () => {
@@ -311,6 +354,7 @@ test("回答风格只有 modes.ts 一份定义，两个画法都从它出", () =
 test("mode 是浏览器带来的外部输入：进提示词之前先过白名单", () => {
   assert.match(chatRouteSrc, /const mode = asChatMode\(body\?\.mode\)/, "路由不得把 body.mode 当合法值直接用");
   assert.ok(!/body\?\.mode \?\? "decision"/.test(chatRouteSrc), "旧写法（认不出也照样当决策）不该回来");
-  assert.match(chatRouteSrc, /function systemPrompt\(mode: ChatMode/, "查表键收成四个合法值，加模式漏登记编译期就报");
+  // P15-R20：签名多了持仓参数后换行排版了，钉的是「查表键是收窄过的 ChatMode」，不是排版。
+  assert.match(chatRouteSrc, /function systemPrompt\(\s*mode: ChatMode,/, "查表键收成四个合法值，加模式漏登记编译期就报");
   assert.ok(!/modeNote\[mode\] \?\? ""/.test(chatRouteSrc), "合法性由 asChatMode 保证，不再靠 ?? 静默兜一个不声明的空缺");
 });

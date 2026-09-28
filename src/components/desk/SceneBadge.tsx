@@ -36,7 +36,7 @@ export default function SceneBadge({ intent }: { intent?: IntentBadge | null }) 
   const skipped = intent.skipped ?? [];
   const chars = intent.prefetchChars ?? 0;
   return (
-    <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] leading-4 text-muted-foreground">
+    <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] leading-4 text-muted-foreground">
       <span className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-sky-300">
         <Sparkles size={10} />
         场景 · {intent.label || sceneName(intent.scene)}

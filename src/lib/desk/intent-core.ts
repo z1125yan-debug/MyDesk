@@ -520,6 +520,8 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
       case "scene_snapshot": return `按「${SCENE_LABELS[intent.scene]}」取实时快照`;
       case "kline": return "取日 K 并算技术状态（均线/MACD/KDJ/RSI）";
       case "fund_flow": return "取近 14 日主力资金";
+      case "depth": return "取五档盘口（挂单量与委买卖比）";
+      case "trades": return "取逐笔主动买卖（内外盘全日口径）";
       case "news": return "同时问了消息面/原因";
       case "news_why": return "同时问了消息面/为什么";
       case "watchlist": return `按「${SCENE_LABELS.watchlist}」取全部自选的实时行情`;

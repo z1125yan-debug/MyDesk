@@ -7,7 +7,8 @@ import { tdxQuotes, tdxKlines, tdxNameOf, type TdxQuote } from "./tdx";
 import { parseTcBoardRankList } from "@/lib/quant/data/tc-snapshot-core";
 import { parseSinaFundFlow, sinaFundFlowUrl } from "@/lib/quant/data/sina-flow-core";
 import {
-  NEWS_MAX_PAGES, NEWS_PAGE_SIZE, lastCursor, pickNewsWindow, shouldFetchMore,
+  NEWS_MAX_PAGES, NEWS_MAX_PAGES_MULTI, NEWS_PAGE_SIZE, lastCursor, pickNewsDays, pickNewsWindow,
+  shouldFetchMore, shouldFetchMoreUntil,
   type NewsLiteRow, type NewsRawRow,
 } from "@/lib/quant/screener/news-window-core";
 
@@ -224,12 +225,15 @@ const MINUTE_TF: Record<string, [string, number]> = {
   "30分": ["m30", 320], "60分": ["m60", 320],
 };
 
-export async function fetchKlinesReal(symbol: string, tf: string, lmt = 160): Promise<RealCandle[] | null> {
+export async function fetchKlinesReal(symbol: string, tf: string, lmt = 160, fq = "qfq"): Promise<RealCandle[] | null> {
   const tc = symbolToTencent(symbol);
   if (!tc) return null;
-  // 1) 通达信网关优先（未启动时静默回退腾讯）
-  const tdx = await tdxKlines(symbol, tf, lmt).catch(() => null);
-  if (tdx && tdx.length > 10) return tdx.slice(-lmt);
+  // 1) 通达信网关优先（未启动时静默回退腾讯）。只有默认「前复权」才走网关——
+  //    网关给的是原始行情，后复权/不复权由腾讯 fqkline 提供，口径不能混。
+  if (fq === "qfq") {
+    const tdx = await tdxKlines(symbol, tf, lmt).catch(() => null);
+    if (tdx && tdx.length > 10) return tdx.slice(-lmt);
+  }
   // 2) 腾讯兜底
   try {
     let rows: string[][];
@@ -243,12 +247,14 @@ export async function fetchKlinesReal(symbol: string, tf: string, lmt = 160): Pr
     } else {
       const per = tf === "周线" ? "week" : tf === "月线" ? "month" : "day";
       const count = tf === "日线" ? 160 : 120;
+      // 复权口径：qfq 前复权 / hfq 后复权 / none 不复权（腾讯 fqkline 末段参数；空串=不复权）
+      const fqParam = fq === "hfq" ? "hfq" : fq === "none" ? "" : "qfq";
       const j = await cached<{ data?: Record<string, Record<string, string[][]>> }>(
-        "kline", `${tc}:${per}`,
-        () => fetchJson(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tc},${per},,,${count},qfq`),
+        "kline", `${tc}:${per}:${fqParam || "none"}`,
+        () => fetchJson(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tc},${per},,,${count},${fqParam}`),
       );
       const d = j?.data?.[tc] ?? {};
-      rows = d[`qfq${per}`] ?? d[per] ?? [];
+      rows = d[`${fqParam}${per}`] ?? d[per] ?? [];
     }
     if (!rows.length) return null;
     return rows
@@ -497,22 +503,36 @@ export interface NewsWindow {
 
 type NewsPageFn = (cursor: string, pageNo: number) => Promise<NewsRawRow[]>;
 
-/** 通用的「按核的判定翻页」循环：核说停就停，游标不前进也停（防上游回同一页造成无限翻） */
-async function pageThrough(tradeDate: string, getPage: NewsPageFn): Promise<{ pages: NewsRawRow[][]; pagesFetched: number; capped: boolean }> {
+/** 翻页循环本体：什么时候停由核给的 shouldMore 说了算，本层不拍脑袋；游标不前进也停（防上游回同一页造成无限翻） */
+async function pageLoop(
+  maxPages: number,
+  shouldMore: (rows: NewsRawRow[]) => boolean,
+  getPage: NewsPageFn,
+): Promise<{ pages: NewsRawRow[][]; pagesFetched: number; capped: boolean }> {
   const pages: NewsRawRow[][] = [];
   let cursor = "";
   let capped = false;
-  for (let i = 0; i < NEWS_MAX_PAGES; i++) {
+  for (let i = 0; i < maxPages; i++) {
     const rows = await getPage(cursor, i + 1);
     if (!rows.length) break;
     pages.push(rows);
-    if (!shouldFetchMore(rows, tradeDate)) break;
+    if (!shouldMore(rows)) break;
     const next = lastCursor(rows);
     if (next && next === cursor) break;
     cursor = next;
-    if (i === NEWS_MAX_PAGES - 1) capped = true; // 整页且末行仍是当天，却没页数可翻了
+    if (i === maxPages - 1) capped = true; // 核说还要翻，但页数预算用完了 → 如实标 capped
   }
   return { pages, pagesFetched: pages.length, capped };
+}
+
+/** 单日（日内实时扫描）：翻到跨出目标日为止 */
+async function pageThrough(tradeDate: string, getPage: NewsPageFn) {
+  return pageLoop(NEWS_MAX_PAGES, (rows) => shouldFetchMore(rows, tradeDate), getPage);
+}
+
+/** 区间（研报要的「最近 N 个交易日」）：翻到早于区间最早一天为止 */
+async function pageThroughUntil(oldestDate: string, getPage: NewsPageFn) {
+  return pageLoop(NEWS_MAX_PAGES_MULTI, (rows) => shouldFetchMoreUntil(rows, oldestDate), getPage);
 }
 
 async function emNewsPage(cursor: string): Promise<NewsRawRow[]> {
@@ -572,6 +592,80 @@ export async function fetchNewsWindowForDate(tradeDate: string): Promise<NewsWin
     }
     try {
       return await buildNewsWindow(tradeDate, sinaNewsPage, "新浪直播");
+    } catch {
+      return null;
+    }
+  });
+}
+
+// ---------- 多日快讯池（P65：研报「关联新闻」的口径修正） ----------
+// 起因：拿稳智的研报对了一遍口径 —— 它那条「涨价链与周期出清反内卷」的关联新闻写的是
+// 「快递单票价格同比+4%…玻纤电子布连续5个月提价…钢铁三重底部…粮食库销比历史低位」。
+// 实测东财 7x24 最近 14 天 8000 条里：「快递单票」0 命中，而 09-20/09-21 有
+// 「快递“反内卷”引发新一轮涨价 多家公司今起安徽区域单票最低上调0.15元」；「制冷剂」「钽精矿」「库销比」「三重底部」全部 0 命中。
+// → 它那一栏既不是当日快讯，也不是逐字标题，而是**跨多日、按主题聚合后被模型改写的证据短句**。
+// 我们只借这个「多日窗口」的口径（当日快讯挂不住一条主线是真问题：单日 760 条里与某主线相关的常常只有个位数），
+// 不借它「改写数字」的写法：本层往下给到模型的永远是带日期的原标题，正文只许逐字照抄。
+
+export interface NewsDaysWindow {
+  /** 请求的目标交易日（原样回显，新→旧） */
+  tradeDates: string[];
+  /** 按天分桶的快讯（桶一定存在，没翻到就是空数组） */
+  perDay: Record<string, NewsLiteRow[]>;
+  /** 摊平成一条时间线（按 tradeDates 的顺序拼接，桶内新→旧），给只要列表的消费者用 */
+  items: NewsLiteRow[];
+  source: NewsWindow["source"];
+  fetchedRows: number;
+  offDay: number;
+  duplicated: number;
+  dropped: number;
+  /** 页数预算花完还没翻到区间最早一天 → 窗口不完整，调用方要如实说明 */
+  capped: boolean;
+  /** 实际翻到的最早/最晚日期（YYYY-MM-DD），用于「窗口覆盖 09-22~09-24」这种说明 */
+  spanFrom: string;
+  spanTo: string;
+}
+
+async function buildNewsDaysWindow(tradeDates: string[], getPage: NewsPageFn, source: NewsWindow["source"]): Promise<NewsDaysWindow | null> {
+  const oldest = [...tradeDates].sort()[0] ?? "";
+  const { pages, capped } = await pageThroughUntil(oldest, getPage);
+  const picked = pickNewsDays(pages, tradeDates);
+  const items = tradeDates.flatMap((d) => picked.perDay[d] ?? []);
+  if (!items.length) return null;
+  const hitDays = tradeDates.filter((d) => (picked.perDay[d] ?? []).length);
+  return {
+    tradeDates,
+    perDay: picked.perDay,
+    items,
+    source,
+    fetchedRows: picked.fetchedRows,
+    offDay: picked.offDay,
+    duplicated: picked.duplicated,
+    dropped: picked.dropped,
+    capped,
+    spanFrom: hitDays[hitDays.length - 1] ?? "", // hitDays 是新→旧，末尾才是最早那天
+    spanTo: hitDays[0] ?? "",
+  };
+}
+
+/**
+ * 多日快讯池：按 realSort 游标从「现在」翻到早于区间最早一天为止。
+ * 与单日版的区别就在停止判据（>= oldest，而不是 === 目标日）：抓取日往往晚于目标区间，
+ * 用 === 会在第一页（末行还是区间外的新日子）就停手，一页就空手而归。
+ * 两源都拿不到时返回 null，不返回空窗口冒充「这几天没有新闻」。
+ */
+export async function fetchNewsWindowForDates(tradeDates: string[]): Promise<NewsDaysWindow | null> {
+  const dates = [...new Set(tradeDates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d))))].sort((a, b) => (a < b ? 1 : -1));
+  if (!dates.length) return null;
+  return cached("news", `days:${dates.join(",")}`, async () => {
+    try {
+      const em = await buildNewsDaysWindow(dates, emNewsPage, "东财7x24");
+      if (em) return em;
+    } catch {
+      // 换新浪
+    }
+    try {
+      return await buildNewsDaysWindow(dates, sinaNewsPage, "新浪直播");
     } catch {
       return null;
     }

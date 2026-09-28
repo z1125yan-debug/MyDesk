@@ -61,7 +61,7 @@ export default function FactorLabPage() {
     negIsBad ? "text-emerald-400" : (v ?? 0) > 0 ? "text-red-400" : (v ?? 0) < 0 ? "text-emerald-400" : "";
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 px-6 py-4">
+    <div className="w-full space-y-4 px-6 py-4">
       {/* P15-R3c 血缘收口：选因子→跑测试→看结果→翻记录是同一条验证链，
           原来是四块各套各的边框竖着散开——收成一张卡，参数条升格为卡头控制面板。 */}
       <LineageCard
@@ -74,15 +74,15 @@ export default function FactorLabPage() {
         }
         actions={
           <>
-            <span className="text-[12px] text-muted-foreground">因子 <span className="font-mono text-sky-300">{def?.zh ?? field}</span></span>
-            <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <span className="text-[13px] text-muted-foreground">因子 <span className="font-mono text-sky-300">{def?.zh ?? field}</span></span>
+            <label className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
               前向天数
               <select value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}
                 className="rounded border border-border bg-background px-1.5 py-1 text-xs">
                 {[1, 3, 5, 10, 20].map((h) => <option key={h} value={h}>{h}日</option>)}
               </select>
             </label>
-            <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <label className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
               样本数
               <select value={maxStocks} onChange={(e) => setMaxStocks(Number(e.target.value))}
                 className="rounded border border-border bg-background px-1.5 py-1 text-xs">
@@ -90,7 +90,7 @@ export default function FactorLabPage() {
               </select>
             </label>
             <button onClick={run} disabled={busy}
-              className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-1.5 text-[12.5px] font-medium text-white hover:bg-sky-400 disabled:opacity-50">
+              className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-1.5 text-[13.5px] font-medium text-white hover:bg-sky-400 disabled:opacity-50">
               {busy ? <Loader2 size={13} className="animate-spin" /> : <Microscope size={13} />} 跑测试
             </button>
           </>
@@ -102,7 +102,7 @@ export default function FactorLabPage() {
             {catalog?.category
               ? Object.entries(catalog.category).map(([cat, keys]) => (
                 <div key={cat} className="mb-2 last:mb-0">
-                  <div className="mb-1 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground/70">{cat}</div>
+                  <div className="mb-1 text-[11.5px] font-medium uppercase tracking-wider text-muted-foreground/70">{cat}</div>
                   <div className="space-y-0.5">
                     {keys.map((k) => {
                       const f = catalog.fields.find((x) => x.key === k);
@@ -111,12 +111,12 @@ export default function FactorLabPage() {
                         <button key={k} onClick={() => { if (!disabled) { setField(k); loadHistory(k); } }} disabled={disabled}
                           title={disabled ? "快照口径字段：无历史时点数据，不可测" : f?.zh}
                           className={
-                            "flex w-full items-center gap-1.5 rounded px-2 py-1 text-[11.5px] transition-colors " +
+                            "flex w-full items-center gap-1.5 rounded px-2 py-1 text-[12.5px] transition-colors " +
                             (field === k ? "bg-sky-500/10 text-sky-300 font-medium" : disabled ? "text-muted-foreground/40" : "text-muted-foreground hover:bg-accent hover:text-foreground")
                           }>
                           <span className="truncate">{f?.zh ?? k}</span>
-                          {f?.verified && <span className="ml-auto rounded bg-emerald-500/15 px-1 text-[9px] text-emerald-400">已验证</span>}
-                          {disabled && !f?.verified && <span className="ml-auto text-[9px] text-muted-foreground/50">快照</span>}
+                          {f?.verified && <span className="ml-auto rounded bg-emerald-500/15 px-1 text-[10px] text-emerald-400">已验证</span>}
+                          {disabled && !f?.verified && <span className="ml-auto text-[10px] text-muted-foreground/50">快照</span>}
                         </button>
                       );
                     })}
@@ -128,7 +128,7 @@ export default function FactorLabPage() {
 
           <div className="min-w-0">
             {busy && (
-              <div className="rounded-lg border border-sky-500/25 bg-sky-500/5 px-3 py-2 text-[11px] text-sky-300">
+              <div className="rounded-lg border border-sky-500/25 bg-sky-500/5 px-3 py-2 text-[12px] text-sky-300">
                 正在拉取 {maxStocks} 只 × 500 根真实日K并计算（通达信优先，腾讯兜底）—— 约需 1~3 分钟，请勿离开页面…
               </div>
             )}
@@ -142,10 +142,10 @@ export default function FactorLabPage() {
                       (result.passed ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300")}>
                       {result.passed ? "✓ 通过（已写入验证状态）" : "✗ 未通过（保持未验证标记）"}
                     </span>
-                    <span className="text-[10.5px] text-muted-foreground">{result.metrics.dataRange} · 样本 {result.metrics.sample.stocks} 只 × {result.metrics.sample.dates} 日 · 有效截面 {result.metrics.sample.validPairs}</span>
+                    <span className="text-[11.5px] text-muted-foreground">{result.metrics.dataRange} · 样本 {result.metrics.sample.stocks} 只 × {result.metrics.sample.dates} 日 · 有效截面 {result.metrics.sample.validPairs}</span>
                   </div>
 
-                  <div className="text-[10.5px] text-muted-foreground">{result.passRule}</div>
+                  <div className="text-[11.5px] text-muted-foreground">{result.passRule}</div>
 
                   {/* 指标小卡走全仓库唯一源 StatCard（口径进 tooltip，措辞与 metrics.ts 实现一致） */}
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -157,13 +157,13 @@ export default function FactorLabPage() {
                     <StatCard label="换手(日)" value={<NumText value={result.metrics.turnover ?? null} digits={3} />} title="因子截面排名日间变化度量（越高调仓越频繁）" />
                     <StatCard label="最优档最大回撤" value={<NumText value={result.metrics.maxDrawdown * 100} digits={1} suffix="%" />} toneClass={metricTone(result.metrics.maxDrawdown, true)} title="方向调整后最优档 1日前瞻收益复权曲线的最大回撤" />
                     <div className="rounded-md bg-accent/40 p-2">
-                      <div className="text-[10px] text-muted-foreground">5档分层年化（低→高）</div>
+                      <div className="text-[11px] text-muted-foreground">5档分层年化（低→高）</div>
                       <GroupBars values={result.metrics.groupAnnual} />
                     </div>
                   </div>
 
                   {!!result.monthlyIc?.length && <MonthlyBars months={result.monthlyIc} />}
-                  <div className="text-[10px] leading-5 text-muted-foreground">{result.note}</div>
+                  <div className="text-[11px] leading-5 text-muted-foreground">{result.note}</div>
                 </div>
               </LineageSection>
             )}
@@ -184,7 +184,7 @@ export default function FactorLabPage() {
                   <tbody>
                     {history.map((t) => (
                       <tr key={t.id ?? `${t.field}-${t.testedAt}`} className="border-b border-border/40">
-                        <td className="px-3 py-1.5">{t.metrics ? t.field : ""}<span className="ml-1 text-[10px] text-muted-foreground">{t.field}</span></td>
+                        <td className="px-3 py-1.5">{t.metrics ? t.field : ""}<span className="ml-1 text-[11px] text-muted-foreground">{t.field}</span></td>
                         <td className="px-3 py-1.5">{t.horizon}日</td>
                         <td className="px-3 py-1.5 text-right"><NumText value={t.metrics?.rankIc} digits={4} /></td>
                         <td className="px-3 py-1.5 text-right"><NumText value={t.metrics?.icIr} digits={3} /></td>
@@ -193,10 +193,10 @@ export default function FactorLabPage() {
                         <td className="px-3 py-1.5 text-right text-emerald-400">{((t.metrics?.maxDrawdown ?? 0) * 100).toFixed(1)}%</td>
                         <td className="px-3 py-1.5">
                           {t.passed
-                            ? <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-400">通过</span>
-                            : <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-300">未过</span>}
+                            ? <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-400">通过</span>
+                            : <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-[11px] text-rose-300">未过</span>}
                         </td>
-                        <td className="px-3 py-1.5 text-[10px] text-muted-foreground">{t.testedAt?.slice(0, 16).replace("T", " ")}</td>
+                        <td className="px-3 py-1.5 text-[11px] text-muted-foreground">{t.testedAt?.slice(0, 16).replace("T", " ")}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -217,7 +217,7 @@ function GroupBars({ values }: { values: number[] }) {
     <div className="mt-1 space-y-0.5">
       {values.map((v, i) => (
         <div key={i} className="flex items-center gap-1">
-          <span className="w-8 text-[9px] text-muted-foreground">G{i + 1}</span>
+          <span className="w-8 text-[10px] text-muted-foreground">G{i + 1}</span>
           <div className="relative h-2 flex-1 rounded-sm bg-background">
             <div className="absolute inset-y-0 left-1/2 w-px bg-border" />
             <div
@@ -225,7 +225,7 @@ function GroupBars({ values }: { values: number[] }) {
               style={{ width: `${Math.min(50, (Math.abs(v) / max) * 50)}%` }}
             />
           </div>
-          <span className="w-14 text-right font-mono text-[9.5px]">{(v * 100).toFixed(1)}%</span>
+          <span className="w-14 text-right font-mono text-[10.5px]">{(v * 100).toFixed(1)}%</span>
         </div>
       ))}
     </div>
@@ -236,7 +236,7 @@ function MonthlyBars({ months }: { months: { month: string; rankIc: number }[] }
   const max = Math.max(1e-6, ...months.map((m) => Math.abs(m.rankIc)));
   return (
     <div>
-      <div className="mb-1 text-[10.5px] text-muted-foreground">逐月 RankIC（方向已调整：正柱=当月有效）</div>
+      <div className="mb-1 text-[11.5px] text-muted-foreground">逐月 RankIC（方向已调整：正柱=当月有效）</div>
       <div className="flex h-16 items-end gap-0.5">
         {months.map((m) => (
           <div key={m.month} title={`${m.month}: ${m.rankIc.toFixed(4)}`} className="flex-1">

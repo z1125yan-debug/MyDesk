@@ -25,10 +25,30 @@ test("MODE_NOTES：与 CHAT_MODES 一键一句、逐句非空，四键齐全（R
     assert.match(MODE_NOTES[k as ChatMode], /。$/, "风格句以句号收口：它会被拼进提示词，半截话会吞掉下一句");
   }
   // 四句原文钉死：两条链路共用这一份，改动只能发生在这里并被这两处消费方同步带到
-  assert.equal(MODE_NOTES.decision, "决策模式：面向操作前的快速研判，结论前置、证据充分。");
-  assert.equal(MODE_NOTES.judge, "研判模式：侧重技术结构与资金结构的客观描述，减少主观倾向。");
-  assert.equal(MODE_NOTES.deep, "深度思考模式：先梳理数据，再做逻辑推演，最后给风险清单。");
-  assert.equal(MODE_NOTES.search, "实时搜索模式：优先引用 market_news 返回的真实快讯，注明时间；无数据则明说。");
+  // P17 稳智对齐（2026-09-23）：decision 曾升级为结构化 11 字段模板；P20 回退（2026-09-23 20:47）：
+  // doubao-pro 这种中等指令遵循模型撑不住 11 字段模板，强约束下会"只填 3 个字段就停"或"全写暂无"。
+  // 改回自然语言散文体，跟稳智"人话版"输出对齐——稳智的答案也不是纯 11 字段表格。
+  assert.ok(MODE_NOTES.decision.startsWith("决策模式：像一位懂行的朋友当面讲"), "decision 是人话版散文体开头");
+  // P15-R21（2026-09-28 用户口径）：出处不再逐句刷屏——「关键数字和出处」改成「关键数字（出处需要时一处点明）」。
+  // 钉的是新口径的两半：数字仍必须挂，括号尾巴仍必须禁。
+  assert.ok(MODE_NOTES.decision.includes("每个判断都挂关键数字"), "人话版要求挂关键数字");
+  assert.ok(MODE_NOTES.decision.includes("不逐句挂括号"), "R21：出处不逐句刷屏");
+  assert.ok(MODE_NOTES.decision.includes("翻译成白话"), "人话版保留白话翻译收尾");
+  assert.ok(MODE_NOTES.decision.includes("暂无数据"), "数据纪律：取不到就写暂无");
+  assert.match(MODE_NOTES.decision, /。$/, "以句号收口（与三条测试的通用断言一致）");
+  // P15-R20（2026-09-28）：judge/deep/search 三档从「一句话风格描述」升级为**完整骨架**
+  // （用户要求「把剩下三个从稳智扒出来，然后同步骨架」）。原来那三句一句话的断言就此作废，
+  // 改成钉骨架的硬特征——逐字相等会挡住任何正常的文案打磨，硬特征才是真要守住的东西。
+  assert.ok(MODE_NOTES.judge.startsWith("研判模式：只回答「现在是什么状态」"), "judge 只交付状态，不交付动作");
+  assert.ok(MODE_NOTES.judge.includes("反对这个定性的证据"), "judge 两侧证据都要写");
+  assert.ok(MODE_NOTES.deep.startsWith("深度思考模式：推理强度开到最高"), "deep 口径是推理强度 high");
+  assert.ok(MODE_NOTES.deep.includes("🧪 **反证状态：**"), "deep 必须单独写反证");
+  assert.ok(MODE_NOTES.search.startsWith("实时搜索模式：先查最新的公开消息"), "search 先把消息查出来再谈判断");
+  assert.ok(MODE_NOTES.search.includes("已核验的信息来源"), "search 要挂带站点的来源计数");
+  // 三档都从稳智前端契约推演而来（decision 是实扒），证据边界写在了 modes.ts 的头注释里，
+  // 这里只钉「骨架确实存在且各自可区分」，不冒充成实扒。
+  const sigs = new Set(["judge", "deep", "search"].map((m) => MODE_NOTES[m as ChatMode].slice(0, 40)));
+  assert.equal(sigs.size, 3, "三档骨架开头必须各不相同");
 });
 
 test("风格句只有一份：chat 路由不再本地抄写，两条路由都查 MODE_NOTES", () => {
@@ -44,10 +64,13 @@ test("proxy 的风格件只给对话轮：不带 scene 的一次一问调用不�
     "生效条件钉死为「带 scene 的对话轮」");
   // 2026-09-22 P11 口径迁移：风格件从「只有 modeNote」扩成 styleNote=[风格句, 周期句]（filter(Boolean) 拼接）。
   // 2026-09-23 P15-R12 口径迁移：网关身份卡（brief）在风格件之前独立前置，out 拼装式改写。
+  // 2026-09-23 P17-① 口径迁移：稳智决策信号块（wzNote）跟在 styleNote 之后、身份卡之后。
   // 原意图逐字不变——①风格件仍放消息数组最前（身份卡之外）；②「不带 scene 零注入」仍成立：
   // 无 scene 时 body?.scene 为假 ⇒ brief=[]，且 modeNote="" 且 horizon=null ⇒ styleNote=""，一个 system 件都不多插。
-  assert.match(proxyRoute, /const out: MsgIn\[\] = \[\.\.\.brief, \.\.\.\(styleNote \? \[\{ role: "system" as const, content: styleNote \}\] : \[\]\), \.\.\.merged\];/,
-    "风格件（含周期句）放在消息数组最前，且空（无 scene）时 brief 与 styleNote 双双为 [] ⇒ 一个 system 件都不多插");
+  // P17-① 之后：分类器只在带 scene 的对话轮启用（enabled=!!body?.scene），无 scene 时 wzDecisionBlock.block=[]
+  // ⇒ wzNote=[]，仍是「一个 system 件都不多插」。
+  assert.match(proxyRoute, /const out: MsgIn\[\] = \[\.\.\.brief, \.\.\.\(styleNote \? \[\{ role: "system" as const, content: styleNote \}\] : \[\]\), \.\.\.wzNote, \.\.\.merged\];/,
+    "风格件（含周期句）放在消息数组最前，稳智决策块紧跟其后；无 scene 时 brief/styleNote/wzNote 双双为 [] ⇒ 一个 system 件都不多插");
   assert.match(proxyRoute, /injectSceneContext\(messages,/, "无场景轮次仍走原消息（p7 钉测形状保住，风格件在其后单独前置）");
 });
 

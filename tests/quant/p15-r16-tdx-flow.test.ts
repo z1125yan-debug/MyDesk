@@ -173,21 +173,25 @@ test("自算只覆盖当日成交额前 N 只：榜口径必须说清是这个�
 
 test("board 路由递棒顺序：东财优先 → 同花顺（行业/概念）→ 通达信自算（个股）→ 都没有就 null", () => {
   const route = read("src/app/api/market/board/route.ts");
-  assert.match(route, /if \(rows\?\.length && !rows\.every\(\(r\) => r\.fundsMissing\)\) \{\s*return NextResponse\.json\(\{ rows, source: "em", asOf \}\)/, "东财有可用读数就原样走 em：正常链路零变化");
+  assert.match(route, /if \(rows\?\.length && !rows\.every\(\(r\) => r\.fundsMissing\)\) \{\s*return NextResponse\.json\(\{ rows, source: "em", asOf, tradeDate \}\)/, "东财有可用读数就原样走 em：正常链路零变化");
   assert.match(route, /if \(kind === "stock"\) \{[\s\S]*?tdxMainFlowUniverse\(\)/, "自算只接个股榜");
   assert.match(route, /mainSelfComputed: true/, "自算行必须挂出身，不冒充东财官方读数");
   assert.match(route, /flow\.sampleComplete \? \{\} : \{ flowSampleTruncated: true \}/, "样本没取满的行自己声明截断");
   assert.match(route, /ratio: flow\.ratioPct \?\? Number\.NaN/, "成交额缺失 ⇒ NaN ⇒ 页面显「—」");
   assert.match(route, /const needThs = kind === "industry" \|\| kind === "concept"/, "地域仍无对等榜——缺就是缺");
-  assert.match(route, /return NextResponse\.json\(\{ rows: rows \?\? null, source: null, asOf \}\)/, "递棒到底没有可用来源：返回 null 交页面显式声明");
+  assert.match(route, /return NextResponse\.json\(\{ rows: rows \?\? null, source: null, asOf, tradeDate \}\)/, "递棒到底没有可用来源：返回 null 交页面显式声明");
   assert.match(route, /asOf = new Date\(\)\.toISOString\(\)/, "每种出身都带回取数完成时刻");
+  // 2026-09-26 用户实测「周六 22:34 看到 15:33 的行情时刻，以为是假数」：
+  // 只有时分秒的行情时刻必须配一个交易日，否则休市日会被读成「今天下午还在交易」。
+  assert.match(route, /const tradeDate = await latestTradeDate\(\)\.catch\(\(\) => null\)/, "每种出身都带回最近交易日（行情源给的，不靠本地日历猜节假日）");
+  assert.match(route, /source: "tdx", asOf, tradeDate, quoteTime: univ\.asOf \|\| null/, "自算榜的交易日与行情时刻一起交给页面");
 });
 
 test("数据看板砍掉演示回退：market.ts 不再产 demo 榜、也不再把兜底行喂回 buildDetail", () => {
   const mk = read("src/lib/desk/market.ts");
   assert.doesNotMatch(mk, /buildRanking\(/, "演示榜生成调用必须断根");
   assert.doesNotMatch(mk, /buildDetail\(/, "演示明细生成调用必须断根");
-  assert.match(mk, /rows: \[\], origin: null, asOf: "", quoteTime: null/, "取不到就是空榜 + 出身 null");
+  assert.match(mk, /rows: \[\], origin: null, asOf: "", tradeDate: null, quoteTime: null/, "取不到就是空榜 + 出身 null + 交易日 null");
   assert.match(mk, /source: "real" \| "missing"/, "明细只有真数与 missing 两档，没有 demo");
   assert.match(mk, /cache: "no-store"/, "看板每次真取，不吃浏览器缓存的旧时刻");
 });
@@ -195,7 +199,8 @@ test("数据看板砍掉演示回退：market.ts 不再产 demo 榜、也不再�
 test("页面口径：时间戳上屏、自算徽标、没取到的话说清楚，且全站不再出现「演示数据」这一档", () => {
   const page = read("src/components/desk/pages/BoardPage.tsx");
   assert.match(page, /<LiveStamp poll=\{poll\} iso=\{asOf\} \/>/, "看板的时间戳与倒计时走共用组件");
-  assert.match(page, /行情时刻 \{quoteTime\}/, "通达信快照给的行情侧时刻");
+  assert.match(page, /行情时刻 \{quoteStamp\}/, "行情时刻带上交易日一起上屏（只有时分秒会被读成今天的行情）");
+  assert.match(page, /const quoteStamp = tradeDate && quoteTime \? `\$\{tradeDate\} \$\{quoteTime\}`/, "交易日 + 行情时刻拼成一个戳");
   assert.match(page, /自算/, "主力净额列头挂自算徽标");
   assert.match(page, /MAIN_FLOW_BASIS/, "口径整句原样上屏，不缩成「自算」两个字");
   assert.match(page, /没取到：\{TABS\.find\(\(t\) => t\.key === kind\)\?\.label\}榜当前无可用数据源（不显示演示数据）/, "空榜说清楚是没取到");

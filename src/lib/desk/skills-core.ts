@@ -15,7 +15,7 @@ import type { Scene } from "./intent-core.ts";
 /** 入参形状判别符（具体拼法在 intent-core 的 planDispatch，文案单一出处） */
 export type SkillArgs = "empty" | "news8" | "sector_kind" | "symbol" | "screener_pool";
 /** 「为什么取它」的文案键（渲染时套 SCENE_LABELS，与旧 switch 逐字一致；news 两变体照抄不统一） */
-export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "news" | "news_why" | "watchlist" | "screener_pool" | "stock_news";
+export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "depth" | "trades" | "news" | "news_why" | "watchlist" | "screener_pool" | "stock_news";
 /** 出条件判别符：news=提问显式要消息面；watchlist_nonempty=本机自选非空 */
 export type SkillGate = "news" | "watchlist_nonempty";
 
@@ -52,7 +52,7 @@ export interface SceneDispatchConfig {
 
 /** 全局一次对话最多预取几只（口径搬自 intent-core，导出名不变） */
 export const DISPATCH_MAX_SYMBOLS = 5;
-/** 个股分析最多预取几只（每只 3 个工具，再深就慢得没法用） */
+/** 个股分析最多预取几只（每只 5 个工具：快照/盘口/逐笔/日K/资金流 + 消息面，再深就慢得没法用） */
 export const DISPATCH_ANALYSIS_MAX = 3;
 
 // ---------- 内置技能表（顺序=chat-tools TOOLS 的注册顺序；换顺序会换调度顺序，别乱动） ----------
@@ -76,10 +76,19 @@ export const BUILTIN_SKILLS: Skill[] = [
       { scene: "stock_analysis", spread: "per_symbol", args: "symbol", reason: "scene_snapshot", dedupe_snapshot: true, required: true },
     ],
   },
-  // stock_depth / stock_trades 不进自动调度：盘口与主动买卖是对话里模型自取的深水区读数，
-  // 预取它们只会让每轮行情查询多打两次 eltdx（旧 switch 也没取，行为一字不变）。
-  { name: "stock_depth", desc: "个股五档盘口（通达信网关）" },
-  { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标）" },
+  // stock_depth / stock_trades 进个股分析预取（P：用户实测「数据侧有五档，AI 分析里永远没有」——
+  // 只把它放进模型自取清单是不够的，模型基本不会自己调，系统必须替它取到）。
+  // 代价是每只多打两次 eltdx，所以两项都不标 required：网关没起就留 missing，不拖住这一轮。
+  {
+    name: "stock_depth",
+    desc: "个股五档盘口（通达信网关）",
+    plan: [{ scene: "stock_analysis", spread: "per_symbol", args: "symbol", reason: "depth" }],
+  },
+  {
+    name: "stock_trades",
+    desc: "个股主动买卖金额（内外盘全日口径，代理指标）",
+    plan: [{ scene: "stock_analysis", spread: "per_symbol", args: "symbol", reason: "trades" }],
+  },
   {
     name: "stock_kline_summary",
     desc: "个股技术状态：均线/MACD/KDJ/RSI/VWAP/RPS + 历史条件概率",
@@ -144,7 +153,7 @@ export const SCENE_PREFERS: Record<Scene, string[]> = {
   screener: ["factor_screener", "historical_probability"],
   quote: ["stock_snapshot"],
   watchlist: ["watchlist_overview", "market_sentiment"],
-  stock_analysis: ["stock_snapshot", "stock_kline_summary", "stock_fund_flow", "stock_news", "market_news"],
+  stock_analysis: ["stock_snapshot", "stock_depth", "stock_trades", "stock_kline_summary", "stock_fund_flow", "stock_news", "market_news"],
   qimen: [],
   general: [],
 };

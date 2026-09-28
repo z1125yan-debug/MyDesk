@@ -1,5 +1,6 @@
 // POST /api/pool/freeze — 冻结候选池（落库后 rows 永不覆盖）
 import { NextResponse } from "next/server";
+import { invalidateServerCache } from "@/lib/quant/server-cache";
 import { db } from "@/lib/db";
 import { shanghaiDate } from "@/lib/desk/session";
 
@@ -52,5 +53,6 @@ export async function POST(request: Request) {
     },
   });
 
+  invalidateServerCache("pool/list"); // 冻结新池 → 让池列表的短缓存失效
   return NextResponse.json({ ok: true, pool_id: poolId, row_count: body.rows.length });
 }

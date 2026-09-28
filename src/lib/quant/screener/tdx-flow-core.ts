@@ -146,7 +146,7 @@ export function accumulateTicks(ticks: readonly FlowTickLike[]): FlowAccum {
  */
 export function mainFlowFromAccum(
   acc: FlowAccum,
-  opts: { pages: number; truncated: boolean; amountYuan?: number | null; expectedTicks?: number | null },
+  opts: { pages: number; truncated: boolean; amountYuan?: number | null; expectedTicks?: number | null; complete?: boolean },
 ): MainFlow {
   const superBigYi = (acc.superBuyYuan - acc.superSellYuan) / 1e8;
   const bigYi = (acc.bigBuyYuan - acc.bigSellYuan) / 1e8;
@@ -166,8 +166,11 @@ export function mainFlowFromAccum(
     badTicks: acc.badTicks,
     pages: opts.pages,
     truncated: opts.truncated,
-    // 快照给的 active1 是全日分笔数：取够数才算样本完整；没有 active1 时不冒充完整（false）
-    sampleComplete: !opts.truncated && isFinite(expected) && expected > 0 && acc.ticksSeen >= expected,
+    // 快照给的 active1 是全日分笔数：取够数才算样本完整；没有 active1 时不冒充完整（false）。
+    // R20 例外：`trades.all_today` 一次就把当天的逐笔全给了（无翻页、无截断），
+    // 这时即便拿不到 active1 对账，也确实拿到了全日样本 → complete=true 直接认完整。
+    // 截断一票否决：哪怕是 all_today 取的，撞了页上限就只是半截样本，不许认完整。
+    sampleComplete: !opts.truncated && (!!opts.complete || (isFinite(expected) && expected > 0 && acc.ticksSeen >= expected)),
     basis: MAIN_FLOW_BASIS,
   };
 }

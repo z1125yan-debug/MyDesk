@@ -228,7 +228,7 @@ export default function AnalysisPage() {
   }, [search]);
 
   return (
-    <div className="mx-auto flex max-w-[1400px] flex-col gap-4 p-5 xl:flex-row">
+    <div className="flex w-full flex-col gap-4 p-5 xl:flex-row">
       {/* 左：图表 */}
       <div className="min-w-0 flex-1 space-y-4">
         <div className="rounded-xl border border-border bg-card">
@@ -238,7 +238,7 @@ export default function AnalysisPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="搜索：代码/名称/拼音"
-                className="h-full w-32 bg-transparent px-2.5 font-mono text-[12.5px] outline-none"
+                className="h-full w-32 bg-transparent px-2.5 font-mono text-[13.5px] outline-none"
               />
             </div>
             <div className="flex gap-1.5 overflow-x-auto">
@@ -248,7 +248,7 @@ export default function AnalysisPage() {
               ).map((c) => (
                 <button key={c.symbol}
                   onClick={() => { setFocusSymbol(c.symbol); setSearch(""); setResults([]); setResult(null); setRawText(""); }}
-                  className={"shrink-0 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors " +
+                  className={"shrink-0 rounded-md border px-2.5 py-1.5 text-[13px] transition-colors " +
                     (c.symbol === symbol ? "border-sky-500/50 bg-sky-500/12 text-sky-300" : "border-border text-muted-foreground hover:text-foreground")}>
                   {c.label}
                 </button>
@@ -259,23 +259,23 @@ export default function AnalysisPage() {
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
               <div>
                 <div className="flex items-baseline gap-2.5">
-                  <span className="font-mono text-[26px] font-bold tabular-nums">{(quote?.price ?? candles[candles.length - 1]?.c ?? 0).toFixed(2)}</span>
-                  <span className={"font-mono text-[14px] " + ((quote?.changePct ?? 0) >= 0 ? "text-rose-400" : "text-emerald-400")}>
+                  <span className="font-mono text-[27px] font-bold tabular-nums">{(quote?.price ?? candles[candles.length - 1]?.c ?? 0).toFixed(2)}</span>
+                  <span className={"font-mono text-[15px] " + ((quote?.changePct ?? 0) >= 0 ? "text-rose-400" : "text-emerald-400")}>
                     {(quote?.changePct ?? 0) >= 0 ? "+" : ""}{(quote?.changePct ?? 0).toFixed(2)}%
                   </span>
                 </div>
-                <div className="mt-0.5 text-[12px] text-muted-foreground">
+                <div className="mt-0.5 text-[13px] text-muted-foreground">
                   {name} · {symbol} · {kSource === "real" ? "真实行情" : "演示数据"}{kLoading ? " · K线加载中" : ""}
                 </div>
               </div>
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <button onClick={() => setShowChannel((v) => !v)}
-                className={"inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors " +
+                className={"inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[13px] transition-colors " +
                   (showChannel ? "border-sky-500/50 bg-sky-500/12 text-sky-300" : "border-border text-muted-foreground hover:text-foreground")}>
                 <Crosshair size={12.5} /> 趋势通道 {showChannel ? "开" : "关"}
               </button>
               <button onClick={() => setChatOpen((v) => !v)}
-                className={"inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors " +
+                className={"inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors " +
                   (chatOpen ? "border border-sky-500/50 bg-sky-500/12 text-sky-300" : "bg-sky-500/90 text-white hover:bg-sky-400")}>
                 <Bot size={12.5} /> 智能助手
               </button>
@@ -285,7 +285,7 @@ export default function AnalysisPage() {
           <div className="flex gap-1.5 overflow-x-auto border-b border-border px-4 pb-2.5">
             {TIMEFRAMES.map((t) => (
               <button key={t} onClick={() => { setTf(t); setResult(null); setRawText(""); }}
-                className={"shrink-0 rounded-md px-2.5 py-1.5 font-mono text-[12px] transition-colors " +
+                className={"shrink-0 rounded-md px-2.5 py-1.5 font-mono text-[13px] transition-colors " +
                   (tf === t ? "bg-sky-500/15 font-semibold text-sky-300" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
                 {t}
               </button>
@@ -303,8 +303,8 @@ export default function AnalysisPage() {
         {/* 技术快照 · 多周期 */}
         <div className="rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-            <span className="text-[13px] font-semibold">技术快照 · 多周期</span>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[14px] font-semibold">技术快照 · 多周期</span>
+            <span className="text-[12px] text-muted-foreground">
               {snap ? (snap.source === "real" ? "真实行情" : "演示数据") : "计算中…"}
             </span>
           </div>
@@ -312,15 +312,15 @@ export default function AnalysisPage() {
             <div className="space-y-3.5 px-4 py-3.5">
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="rounded-lg border border-border bg-background/60 p-2.5">
-                  <div className="text-[11px] text-muted-foreground">信号（{tf} 趋势）</div>
-                  <div className={"mt-0.5 text-[16px] font-bold " +
+                  <div className="text-[12px] text-muted-foreground">信号（{tf} 趋势）</div>
+                  <div className={"mt-0.5 text-[17px] font-bold " +
                     (tfTrend === "上行" ? "text-rose-400" : tfTrend === "下行" ? "text-emerald-400" : "text-sky-300")}>
                     {tfTrend}
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-background/60 p-2.5">
-                  <div className="text-[11px] text-muted-foreground">盈亏比（支撑→阻力）</div>
-                  <div className="mt-0.5 font-mono text-[16px] font-bold text-sky-300">
+                  <div className="text-[12px] text-muted-foreground">盈亏比（支撑→阻力）</div>
+                  <div className="mt-0.5 font-mono text-[17px] font-bold text-sky-300">
                     {rr ? `${rr.toFixed(2)} : 1` : "—"}
                   </div>
                 </div>
@@ -328,25 +328,25 @@ export default function AnalysisPage() {
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="rounded-lg bg-emerald-500/10 p-2.5">
-                  <div className="text-[11px] text-emerald-300/80">最近支撑</div>
-                  <div className="font-mono text-[14px] text-emerald-300">{sup != null ? sup.toFixed(2) : "—"}</div>
+                  <div className="text-[12px] text-emerald-300/80">最近支撑</div>
+                  <div className="font-mono text-[15px] text-emerald-300">{sup != null ? sup.toFixed(2) : "—"}</div>
                 </div>
                 <div className="rounded-lg bg-rose-500/10 p-2.5">
-                  <div className="text-[11px] text-rose-300/80">最近阻力</div>
-                  <div className="font-mono text-[14px] text-rose-300">{res != null ? res.toFixed(2) : "—"}</div>
+                  <div className="text-[12px] text-rose-300/80">最近阻力</div>
+                  <div className="font-mono text-[15px] text-rose-300">{res != null ? res.toFixed(2) : "—"}</div>
                 </div>
               </div>
 
               <div>
-                <div className="mb-1.5 text-[12px] font-medium text-muted-foreground">多周期趋势</div>
+                <div className="mb-1.5 text-[13px] font-medium text-muted-foreground">多周期趋势</div>
                 <div className="space-y-1">
                   {snap.tfs.map((t) => (
-                    <div key={t.tf} className="flex items-center gap-2 text-[12px]">
+                    <div key={t.tf} className="flex items-center gap-2 text-[13px]">
                       <span className="w-9 font-mono text-muted-foreground">{t.tf}</span>
                       <span className={"w-14 " + (t.trend === "上行" ? "text-rose-400" : t.trend === "下行" ? "text-emerald-400" : "text-sky-300")}>
                         {t.trend === "上行" ? "↑ " : t.trend === "下行" ? "↓ " : "→ "}{t.trend}
                       </span>
-                      <span className="ml-auto rounded bg-accent px-1.5 py-0.5 font-mono text-[11px]">
+                      <span className="ml-auto rounded bg-accent px-1.5 py-0.5 font-mono text-[12px]">
                         RSI {t.rsi != null ? t.rsi.toFixed(1) : "—"}
                       </span>
                     </div>
@@ -356,7 +356,7 @@ export default function AnalysisPage() {
 
               {snap.rangePos != null && (
                 <div>
-                  <div className="mb-1 flex justify-between text-[11px] text-muted-foreground">
+                  <div className="mb-1 flex justify-between text-[12px] text-muted-foreground">
                     <span className="font-mono">{snap.rangeLow?.toFixed(2)}</span>
                     <span>区间位置 {snap.rangePos.toFixed(0)}%</span>
                     <span className="font-mono">{snap.rangeHigh?.toFixed(2)}</span>
@@ -373,11 +373,11 @@ export default function AnalysisPage() {
 
         <div className="rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div className="flex items-center gap-2 text-[13.5px] font-semibold">
+            <div className="flex items-center gap-2 text-[14.5px] font-semibold">
               <TrendingUp size={15} className="text-sky-400" /> AI 结构化分析
             </div>
             <button onClick={runAnalysis} disabled={running}
-              className="inline-flex items-center gap-1.5 rounded-md bg-sky-500 px-3.5 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-sky-400 disabled:opacity-60">
+              className="inline-flex items-center gap-1.5 rounded-md bg-sky-500 px-3.5 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-sky-400 disabled:opacity-60">
               {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
               {running ? "分析中…" : "开始分析"}
             </button>
@@ -385,20 +385,20 @@ export default function AnalysisPage() {
 
           <div className="px-4 py-3.5">
             {!configured ? (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/8 p-3 text-[12.5px] leading-5 text-amber-200/90">
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/8 p-3 text-[13.5px] leading-5 text-amber-200/90">
                 AI 还没配置：需要填入你自己的模型接口（OpenAI / Claude / Gemini / DeepSeek / Ollama 等）。
                 <button onClick={() => go("settings")} className="ml-1 inline-flex items-center gap-1 font-medium text-sky-300 underline underline-offset-2">
                   <Settings2 size={12} /> 去设置
                 </button>
               </div>
             ) : !result && !rawText && !running ? (
-              <div className="py-3 text-center text-[12.5px] leading-5 text-muted-foreground">
+              <div className="py-3 text-center text-[13.5px] leading-5 text-muted-foreground">
                 点击「开始分析」，基于当前图表的<br />结构、支撑/阻力与回归通道生成解读
               </div>
             ) : null}
 
             {running && (
-              <div className="flex items-center gap-2 py-3 text-[12.5px] text-muted-foreground">
+              <div className="flex items-center gap-2 py-3 text-[13.5px] text-muted-foreground">
                 <Loader2 size={14} className="animate-spin text-sky-400" />
                 正在读取图表上下文并请求模型…
               </div>
@@ -409,38 +409,38 @@ export default function AnalysisPage() {
                 <Section title="结构解读" body={result.structure} />
                 {(result.support?.length || result.resistance?.length) ? (
                   <div>
-                    <div className="mb-1.5 text-[12px] font-medium text-muted-foreground">关键价位</div>
+                    <div className="mb-1.5 text-[13px] font-medium text-muted-foreground">关键价位</div>
                     <div className="flex flex-wrap gap-1.5">
                       {result.resistance?.map((v, i) => (
-                        <span key={"r" + i} className="rounded-md bg-rose-500/12 px-2 py-1 font-mono text-[11.5px] text-rose-300">阻力 {v}</span>
+                        <span key={"r" + i} className="rounded-md bg-rose-500/12 px-2 py-1 font-mono text-[12.5px] text-rose-300">阻力 {v}</span>
                       ))}
                       {result.support?.map((v, i) => (
-                        <span key={"s" + i} className="rounded-md bg-emerald-500/12 px-2 py-1 font-mono text-[11.5px] text-emerald-300">支撑 {v}</span>
+                        <span key={"s" + i} className="rounded-md bg-emerald-500/12 px-2 py-1 font-mono text-[12.5px] text-emerald-300">支撑 {v}</span>
                       ))}
                     </div>
                   </div>
                 ) : null}
                 <div className="rounded-lg border border-border bg-background/60 p-3">
-                  <div className="flex items-center gap-2 text-[12px]">
+                  <div className="flex items-center gap-2 text-[13px]">
                     <span className={"rounded px-1.5 py-0.5 font-medium " +
                       (result.bias === "看多" ? "bg-rose-500/15 text-rose-300" : result.bias === "看空" ? "bg-emerald-500/15 text-emerald-300" : "bg-sky-500/15 text-sky-300")}>
                       {result.bias || "—"}
                     </span>
-                    {result.entry != null && <span className="font-mono text-[11.5px] text-muted-foreground">入场 {result.entry}</span>}
-                    {result.stop != null && <span className="font-mono text-[11.5px] text-muted-foreground">止损 {result.stop}</span>}
-                    {result.targets?.length ? <span className="font-mono text-[11.5px] text-muted-foreground">目标 {result.targets.join(" / ")}</span> : null}
+                    {result.entry != null && <span className="font-mono text-[12.5px] text-muted-foreground">入场 {result.entry}</span>}
+                    {result.stop != null && <span className="font-mono text-[12.5px] text-muted-foreground">止损 {result.stop}</span>}
+                    {result.targets?.length ? <span className="font-mono text-[12.5px] text-muted-foreground">目标 {result.targets.join(" / ")}</span> : null}
                   </div>
                 </div>
                 <Section title="风险提示" body={result.risk} />
                 <button onClick={openTracker}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 py-2 text-[12.5px] font-medium text-sky-300 hover:bg-sky-500/20">
+                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 py-2 text-[13.5px] font-medium text-sky-300 hover:bg-sky-500/20">
                   <Plus size={14} /> 加入追踪（入场 / 止损 / 目标）
                 </button>
               </div>
             )}
 
             {rawText && (
-              <div className="desk-scroll max-h-[280px] overflow-auto rounded-lg border border-border bg-background/60 p-3 text-[12.5px] leading-5">
+              <div className="wz-compact desk-scroll max-h-[280px] overflow-auto rounded-lg border border-border bg-background/60 p-3">
                 <Markdown content={rawText} />
               </div>
             )}
@@ -453,8 +453,8 @@ export default function AnalysisPage() {
       {dlgOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" onClick={() => setDlgOpen(false)}>
           <div className="w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="text-[14px] font-semibold">加入追踪 · {symbol}</div>
-            <div className="mt-3 space-y-2.5 text-[12.5px]">
+            <div className="text-[15px] font-semibold">加入追踪 · {symbol}</div>
+            <div className="mt-3 space-y-2.5 text-[13.5px]">
               <div className="flex gap-2">
                 {(["long", "short"] as const).map((d) => (
                   <button key={d} onClick={() => setPlan((p) => ({ ...p, direction: d }))}
@@ -470,18 +470,18 @@ export default function AnalysisPage() {
                 <label key={k} className="block">
                   <span className="text-muted-foreground">{label}</span>
                   <input value={plan[k]} onChange={(e) => setPlan((p) => ({ ...p, [k]: e.target.value }))}
-                    className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[12.5px] outline-none focus:border-sky-500/60" />
+                    className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[13.5px] outline-none focus:border-sky-500/60" />
                 </label>
               ))}
               <label className="block">
                 <span className="text-muted-foreground">备注</span>
                 <textarea value={plan.note} onChange={(e) => setPlan((p) => ({ ...p, note: e.target.value }))} rows={2}
-                  className="mt-1 w-full rounded-md border border-border bg-background px-2.5 py-2 text-[12.5px] outline-none focus:border-sky-500/60" />
+                  className="mt-1 w-full rounded-md border border-border bg-background px-2.5 py-2 text-[13.5px] outline-none focus:border-sky-500/60" />
               </label>
             </div>
             <div className="mt-4 flex gap-2">
-              <button onClick={() => setDlgOpen(false)} className="flex-1 rounded-md border border-border py-2 text-[12.5px] text-muted-foreground hover:text-foreground">取消</button>
-              <button onClick={saveTracker} className="flex-1 rounded-md bg-sky-500 py-2 text-[12.5px] font-medium text-white hover:bg-sky-400">保存</button>
+              <button onClick={() => setDlgOpen(false)} className="flex-1 rounded-md border border-border py-2 text-[13.5px] text-muted-foreground hover:text-foreground">取消</button>
+              <button onClick={saveTracker} className="flex-1 rounded-md bg-sky-500 py-2 text-[13.5px] font-medium text-white hover:bg-sky-400">保存</button>
             </div>
           </div>
         </div>
@@ -497,8 +497,8 @@ function Section({ title, body }: { title: string; body?: string }) {
   if (!body) return null;
   return (
     <div>
-      <div className="mb-1 text-[12px] font-medium text-muted-foreground">{title}</div>
-      <p className="rounded-lg border border-border bg-background/60 p-3 text-[12.5px] leading-5">{body}</p>
+      <div className="mb-1 text-[13px] font-medium text-muted-foreground">{title}</div>
+      <p className="rounded-lg border border-border bg-background/60 p-3 text-[13.5px] leading-5">{body}</p>
     </div>
   );
 }

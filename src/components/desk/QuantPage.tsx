@@ -83,7 +83,7 @@ function StatusBadge({ status }: { status: string }) {
     failed: "bg-red-500/15 text-red-300 border-red-500/30",
     cancelled: "bg-zinc-500/15 text-zinc-300 border-zinc-500/30",
   };
-  return <Badge variant="outline" className={"text-[11px] " + (map[status] ?? "")}>{status}</Badge>;
+  return <Badge variant="outline" className={"text-[12px] " + (map[status] ?? "")}>{status}</Badge>;
 }
 
 export default function QuantPage() {
@@ -148,7 +148,7 @@ export default function QuantPage() {
   }, [refresh]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4">
+    <div className="w-full space-y-4 p-4">
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 shadow-md shadow-sky-500/20">
           <FlaskConical size={20} className="text-white" />
@@ -169,9 +169,9 @@ export default function QuantPage() {
           {TAB_GROUPS.map((g, gi) => (
             <span key={g.label} className="flex items-center gap-1">
               {gi > 0 && <span className="mx-1 h-4 w-px bg-border" aria-hidden />}
-              <span className="px-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">{g.label}</span>
+              <span className="px-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">{g.label}</span>
               {g.tabs.map((t) => (
-                <TabsTrigger key={t.key} value={t.key} className="text-[12.5px]">{t.label}</TabsTrigger>
+                <TabsTrigger key={t.key} value={t.key} className="text-[13.5px]">{t.label}</TabsTrigger>
               ))}
             </span>
           ))}
@@ -204,12 +204,12 @@ export default function QuantPage() {
             </Card>
             <Card className="md:col-span-2">
               <CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground">数据源（Data Provider）</CardTitle></CardHeader>
-              <CardContent className="space-y-1.5 text-[12.5px]">
+              <CardContent className="space-y-1.5 text-[13.5px]">
                 {health?.providers.map((p) => (
                   <div key={p.id} className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-[11px]">{p.id}</Badge>
+                    <Badge variant="outline" className="text-[12px]">{p.id}</Badge>
                     <span className="text-muted-foreground">{p.coverage.source}</span>
-                    <span className="ml-auto text-[11px] text-muted-foreground">
+                    <span className="ml-auto text-[12px] text-muted-foreground">
                       日线{p.coverage.daily ? "✓" : "✗"} · 分钟{p.coverage.minute ? "✓" : "✗"} · 基本面={p.coverage.fundamentals}
                     </span>
                   </div>
@@ -227,7 +227,7 @@ export default function QuantPage() {
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
                 <select
-                  className="h-8 rounded-md border border-border bg-background px-2 text-[13px]"
+                  className="h-8 rounded-md border border-border bg-background px-2 text-[14px]"
                   value={source}
                   onChange={(e) => setSource(e.target.value as "em" | "demo")}
                 >
@@ -237,18 +237,18 @@ export default function QuantPage() {
                 <Button size="sm" disabled={busy} onClick={() => void probeUniverse()}>
                   <Activity size={14} className="mr-1" /> {busy ? "探测中…" : "探测股票池"}
                 </Button>
-                <span className="text-[11.5px] text-muted-foreground">验证 DataProvider → API → UI 全链路</span>
+                <span className="text-[12.5px] text-muted-foreground">验证 DataProvider → API → UI 全链路</span>
               </div>
               {universe.length > 0 && (
-                <div className="text-[11px] text-muted-foreground">
+                <div className="text-[12px] text-muted-foreground">
                   现价＝{clockZh(universeAsOf) ? `${clockZh(universeAsOf)} 探测那一刻的一口价` : "探测时刻未记录（本轮没记上，别当实时价读）"}
                   ——点「探测股票池」才重取，本表不自动刷：这一路要拉整个股票池，按 30 秒轮询是白烧上游。
                 </div>
               )}
               {universe.length > 0 && (
                 <div className="max-h-56 overflow-y-auto rounded-md border border-border">
-                  <table className="w-full text-[12px]">
-                    <thead className="sticky top-0 bg-card text-muted-foreground">
+                  <table className="w-full text-[13px]">
+                    <thead className="sticky top-0 z-10 bg-surface text-muted-foreground">
                       <tr>
                         <th className="px-2 py-1.5 text-left font-normal">代码</th>
                         <th className="px-2 py-1.5 text-left font-normal">名称</th>
@@ -282,14 +282,14 @@ export default function QuantPage() {
             </CardHeader>
             <CardContent>
               {jobs.length === 0 ? (
-                <div className="py-4 text-center text-[12.5px] text-muted-foreground">暂无任务。因子挖掘 / 回测 / 研究任务将在此显示进度。</div>
+                <div className="py-4 text-center text-[13.5px] text-muted-foreground">暂无任务。因子挖掘 / 回测 / 研究任务将在此显示进度。</div>
               ) : (
                 <div className="space-y-2">
                   {jobs.map((j) => (
-                    <div key={j.id} className="rounded-md border border-border p-2.5 text-[12.5px]">
+                    <div key={j.id} className="rounded-md border border-border p-2.5 text-[13.5px]">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-[11px] text-muted-foreground">{j.id}</span>
-                        <Badge variant="outline" className="text-[11px]">{j.kind}</Badge>
+                        <span className="font-mono text-[12px] text-muted-foreground">{j.id}</span>
+                        <Badge variant="outline" className="text-[12px]">{j.kind}</Badge>
                         <StatusBadge status={j.status} />
                         <span className="ml-auto text-muted-foreground">{j.stage || j.kind}</span>
                         {(j.status === "running" || j.status === "queued") && (
@@ -305,7 +305,7 @@ export default function QuantPage() {
                       <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-accent">
                         <div className="h-full rounded-full bg-sky-500 transition-all" style={{ width: `${j.progress}%` }} />
                       </div>
-                      <div className="mt-1 text-[11.5px] text-muted-foreground">
+                      <div className="mt-1 text-[12.5px] text-muted-foreground">
                         {j.error ? <span className="text-red-300">失败原因：{j.error}</span> : j.message || `${j.progress}%`}
                       </div>
                     </div>

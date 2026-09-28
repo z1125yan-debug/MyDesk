@@ -64,7 +64,7 @@ export function SnapshotBar({
 
   return (
     <div className="space-y-2 rounded-xl border border-border bg-card/60 px-3 py-2.5">
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+      <div className="flex flex-wrap items-center gap-2 text-[12px]">
         <span className="inline-flex items-center gap-1 text-muted-foreground"><Archive size={12} /> 每日留档</span>
         <button onClick={save} disabled={saving || busy || blocked}
           title={blocked ? "还没有可留档的计算结果：先完成一次计算再留档（留档存的就是这一次的结果）" : sideEffect}
@@ -78,17 +78,17 @@ export function SnapshotBar({
         </button>
         <input type="date" value={pick} max={resp?.today || undefined} disabled={busy || saving}
           onChange={(e) => setPick(e.target.value)}
-          className="rounded-md border border-border bg-background px-2 py-1 text-[11px]" />
+          className="rounded-md border border-border bg-background px-2 py-1 text-[12px]" />
         <button onClick={() => pick && void load(pick)} disabled={busy || saving || !pick}
-          className="inline-flex items-center gap-1 rounded-md bg-sky-500/90 px-2 py-1 text-[11px] text-white hover:bg-sky-400 disabled:opacity-50">
+          className="inline-flex items-center gap-1 rounded-md bg-sky-500/90 px-2 py-1 text-[12px] text-white hover:bg-sky-400 disabled:opacity-50">
           <CalendarDays size={11} /> 看指定留档日
         </button>
-        <span className="text-[10.5px] text-muted-foreground">{sumText}</span>
-        {busy && <span className="text-[10.5px] text-muted-foreground">读取中…</span>}
+        <span className="text-[11.5px] text-muted-foreground">{sumText}</span>
+        {busy && <span className="text-[11.5px] text-muted-foreground">读取中…</span>}
       </div>
 
       {!!dates.length && (
-        <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground/80">
+        <div className="flex flex-wrap gap-1 text-[11px] text-muted-foreground/80">
           已有留档日（倒序，括号内为当天条数）：
           {dates.slice(0, 12).map((d) => (
             <button key={d.date} onClick={() => void load(d.date)} disabled={busy || saving}
@@ -106,19 +106,19 @@ export function SnapshotBar({
           <SourceBadge status={resp.date ? "ARCHIVED 留档回看" : "ARCHIVED 最近留档"}
             source={`只读「${label}」留档：${resp.date ? `留档日 ${resp.date}` : "最近若干条（按留档时间从新到旧）"}`}
             time={resp.date ?? ""} />
-          <span className="text-[10px] text-muted-foreground">{resp.date_basis}</span>
+          <span className="text-[11px] text-muted-foreground">{resp.date_basis}</span>
         </div>
       )}
 
       {resp?.items.length ? (
         <ul className="space-y-1">
           {resp.items.map((it) => (
-            <li key={it.id} className="rounded-md border border-border/70 bg-background/40 px-2 py-1.5 text-[10.5px]">
+            <li key={it.id} className="rounded-md border border-border/70 bg-background/40 px-2 py-1.5 text-[11.5px]">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-muted-foreground">留档时间 <b className="text-foreground">{it.computed_at}</b></span>
                 <span className="text-muted-foreground">留档日 {it.trade_date}</span>
                 {it.payload_broken && (
-                  <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300"
+                  <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] text-amber-300"
                     title="存的原文不是合法 JSON：摘要只能按可读部分给出，损坏处不修补、不重算代替">
                     留档内容损坏
                   </span>
@@ -131,17 +131,17 @@ export function SnapshotBar({
           ))}
         </ul>
       ) : resp && !busy ? (
-        <div className="text-[10.5px] text-muted-foreground">
+        <div className="text-[11.5px] text-muted-foreground">
           {resp.missing.length ? resp.missing.join("；") : "没有可读回的留档行（本次查询返回 0 条，且未给出原因）"}
         </div>
       ) : null}
 
       {savedNote && (
-        <div className="rounded-md border border-emerald-500/25 bg-emerald-500/5 px-2 py-1 text-[10.5px] text-emerald-300/90">{savedNote}</div>
+        <div className="rounded-md border border-emerald-500/25 bg-emerald-500/5 px-2 py-1 text-[11.5px] text-emerald-300/90">{savedNote}</div>
       )}
-      {error && <div className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10.5px] text-red-300">{error}</div>}
+      {error && <div className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[11.5px] text-red-300">{error}</div>}
 
-      <div className="text-[10px] leading-4 text-muted-foreground/70">
+      <div className="text-[11px] leading-4 text-muted-foreground/70">
         口径：{resp?.basis ?? "留档口径读取中…（下面这段是本页的固定说明）"}
         {" "}{sideEffect}
         {" "}本页没有调度器：留档只在点上面那个按钮时发生，不点就不会有那天的行，也不会自动补。

@@ -54,7 +54,7 @@ export default function BubbleFlow({
   const outs = outRows.filter((r) => r.main < 0).slice(0, TOP);
   if (!ins.length && !outs.length) {
     return (
-      <div className="flex h-40 items-center justify-center text-center text-[12.5px] text-muted-foreground">
+      <div className="flex h-40 items-center justify-center text-center text-[13.5px] text-muted-foreground">
         资金流向暂无读数：{unitLabel}榜里流入/流出两侧都没拿到主力净额——不拿占位 0 画流向、不编造线宽。
       </div>
     );
@@ -126,18 +126,18 @@ export default function BubbleFlow({
       {/* 汇总条（对齐「资金流向」面板风格） */}
       <div className="mb-3 grid grid-cols-3 gap-3">
         <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2.5">
-          <div className="text-[11px] text-muted-foreground">主力净流入合计（流入榜前 {ins.length} 名{unitLabel}）</div>
-          <div className="mt-0.5 font-mono text-[19px] font-bold text-rose-400">+{totalIn.toFixed(1)}亿</div>
+          <div className="text-[12px] text-muted-foreground">主力净流入合计（流入榜前 {ins.length} 名{unitLabel}）</div>
+          <div className="mt-0.5 font-mono text-[20px] font-bold text-rose-400">+{totalIn.toFixed(1)}亿</div>
         </div>
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
-          <div className="text-[11px] text-muted-foreground">主力净流出合计（流出榜前 {outs.length} 名{unitLabel}）</div>
-          <div className="mt-0.5 font-mono text-[19px] font-bold text-emerald-400">{totalOut.toFixed(1)}亿</div>
+          <div className="text-[12px] text-muted-foreground">主力净流出合计（流出榜前 {outs.length} 名{unitLabel}）</div>
+          <div className="mt-0.5 font-mono text-[20px] font-bold text-emerald-400">{totalOut.toFixed(1)}亿</div>
         </div>
         <div className="rounded-lg border border-border bg-background/40 px-3 py-2.5">
-          <div className="text-[11px] text-muted-foreground">流入 / 流出 {unitLabel}数（榜内）</div>
-          <div className="mt-0.5 font-mono text-[19px] font-bold">
+          <div className="text-[12px] text-muted-foreground">流入 / 流出 {unitLabel}数（榜内）</div>
+          <div className="mt-0.5 font-mono text-[20px] font-bold">
             <span className="text-rose-400">{ins.length}</span>
-            <span className="mx-1.5 text-[13px] font-normal text-muted-foreground">/</span>
+            <span className="mx-1.5 text-[14px] font-normal text-muted-foreground">/</span>
             <span className="text-emerald-400">{outs.length}</span>
           </div>
         </div>
@@ -160,15 +160,15 @@ export default function BubbleFlow({
       </svg>
 
       {tip && (
-        <div className="pointer-events-none absolute right-3 top-2 rounded-md border border-border bg-popover/95 px-3 py-2 text-[12px] shadow-lg">
-          <div className="font-medium">{tip.name} <span className="ml-1 font-mono text-[11px] text-muted-foreground">{tip.code}</span></div>
+        <div className="pointer-events-none absolute right-3 top-2 rounded-md border border-border bg-popover/95 px-3 py-2 text-[13px] shadow-lg">
+          <div className="font-medium">{tip.name} <span className="ml-1 font-mono text-[12px] text-muted-foreground">{tip.code}</span></div>
           <div className="mt-1 font-mono">
             当日涨幅 <span className={tip.changePct >= 0 ? "text-rose-400" : "text-emerald-400"}>
               {Number.isFinite(tip.changePct) ? `${tip.changePct >= 0 ? "+" : ""}${tip.changePct.toFixed(2)}%` : "—"}
             </span>
             <span className="ml-3">主力</span>
             <span className={tip.main >= 0 ? "text-rose-400" : "text-emerald-400"}> {tip.main.toFixed(2)}亿</span>
-            {tip.mainSelfComputed && <span className="ml-2 text-[10px] text-amber-300">自算</span>}
+            {tip.mainSelfComputed && <span className="ml-2 text-[11px] text-amber-300">自算</span>}
           </div>
           <div className="mt-0.5 text-muted-foreground">{tip.leader ? `所属/领涨：${tip.leader}` : ""}</div>
         </div>

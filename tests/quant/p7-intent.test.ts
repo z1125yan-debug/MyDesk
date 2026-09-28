@@ -17,6 +17,9 @@ import {
   symbolSourceText, toolsForScene, wantsNews,
   type Intent, type Scene,
 } from "../../src/lib/desk/intent-core.ts";
+import {
+  SUGGESTION_CARDS_CORE, needsDialog, directDispatch, dialogDispatch, toCardInput, initialFormState,
+} from "../../src/lib/desk/suggestion-cards-core.ts";
 
 function intent(scene: Scene, over: Partial<Intent> = {}): Intent {
   return {
@@ -254,12 +257,13 @@ test("行情查询：逐个代码取快照，超过上限要说明只取了前�
   assert.ok(r.skipped.some((s) => s.includes(`只取前 ${DISPATCH_MAX_SYMBOLS} 个`)), "超限必须留痕");
 });
 
-test("个股分析：快照 + 技术状态 + 资金流 + 新闻公告四件套，且深度上限内不静默截断", () => {
-  // R10 扩容：三件套升四件套——用户口径「除了技术还要结合新闻回答我」，消息面进 per_symbol 预取
+test("个股分析：快照 + 盘口 + 逐笔 + 技术状态 + 资金流 + 个股消息六件套，且深度上限内不静默截断", () => {
+  // R10 扩容：三件套升四件套——用户口径「除了技术还要结合新闻回答我」，消息面进 per_symbol 预取；
+  // 本轮再升六件套——用户实测「数据侧有五档盘口，AI 分析里永远没有」，盘口与逐笔也必须系统替它取到。
   const r = planDispatch({ intent: intent("stock_analysis", { question: "688256 和 600519 怎么看", symbols: ["688256.SH", "600519.SH"] }) });
   assert.deepEqual(r.calls.map((c) => c.tool), [
-    "stock_snapshot", "stock_kline_summary", "stock_fund_flow", "stock_news",
-    "stock_snapshot", "stock_kline_summary", "stock_fund_flow", "stock_news",
+    "stock_snapshot", "stock_depth", "stock_trades", "stock_kline_summary", "stock_fund_flow", "stock_news",
+    "stock_snapshot", "stock_depth", "stock_trades", "stock_kline_summary", "stock_fund_flow", "stock_news",
   ]);
   assert.ok(r.calls.every((c) => typeof c.reason === "string" && c.reason.length > 0), "每个预取都要说清为什么");
   const many = planDispatch({ intent: intent("stock_analysis", { question: "a", symbols: ["1.SH", "2.SH", "3.SH", "4.SH", "5.SH"] }) });
@@ -271,7 +275,7 @@ test("客户端快照已带该品种时不重复取数，并把原因留在 skip
     intent: intent("stock_analysis", { question: "688256 怎么看", symbol: "688256.SH", symbols: ["688256.SH"] }),
     snapshotSymbols: ["688256.SH"],
   });
-  assert.deepEqual(r.calls.map((c) => c.tool), ["stock_kline_summary", "stock_fund_flow", "stock_news"], "快照已实时，只补 K 线、资金与这只票的消息面（dedupe 只抵快照本体）");
+  assert.deepEqual(r.calls.map((c) => c.tool), ["stock_depth", "stock_trades", "stock_kline_summary", "stock_fund_flow", "stock_news"], "快照已实时，只补盘口/逐笔/K 线/资金与这只票的消息面（dedupe 只抵快照本体）");
   assert.ok(r.skipped.some((s) => s.includes("未重复取数")));
 
   // 纯行情查询这一轮确实不需要再取：抵完之后没有别的工具要跑，skipped 要把「为什么没步骤」说清楚
@@ -370,10 +374,14 @@ test("上一轮场景经过 asScene 以后才进判定：伪造的 prevScene 不
 /** 从组件源码里抽出「字符串数组字面量」形式的快捷问（数组元素 ≥2 才算，单元素的多是提示文案）。
  *  P9-观感轮口径迁移：助手页空状态把快捷问改画成建议卡（`{ q: "…", icon: X }` 对象数组），
  *  纯字符串数组正则就漏了它们——而这条测试的意图恰恰是「界面临时摆到用户嘴边的每一句都得判对场景」。
- *  所以现在两种形状都抽：裸字符串数组 + 带 `q:`/`question:` 键的对象字段，一条不落地拿去判。 */
+ *  所以现在两种形状都抽：裸字符串数组 + 带 `q:`/`question:` 键的对象字段，一条不落地拿去判。
+ *  P58 口径收敛：不再扫 `label:` —— 场景卡的 label 在 core 里只是「卡片标题」，
+ *  同形状混在里面的还有参数窗的字段名与选项文案（「当前大概成本价」「买入」「选择分析周期」），
+ *  那些不是发给模型的话，判它们场景等于判输入框标题，纯属噪声。
+ *  卡真正发出去的那句由下面的循环走「填表 → 校验 → 拼装」这条真实链路逐张判，比扫字面量更准。 */
 function questionArraysFrom(files: string[]): string[] {
   const re = /\[\s*((?:"[^"\n]{2,40}"\s*,?\s*)+)\]/g;
-  const objRe = /\bq:\s*"([^"\n]{2,40})"/g;
+  const objRe = /\b(?:q|question):\s*"([^"\n]{2,40})"/g;
   const out: string[] = [];
   for (const f of files) {
     const src = readFileSync(new URL(f, import.meta.url), "utf8");
@@ -390,6 +398,7 @@ function questionArraysFrom(files: string[]): string[] {
 const QUICK_QUESTIONS = questionArraysFrom([
   "../../src/components/desk/AssistantWidget.tsx",
   "../../src/components/desk/pages/AssistantPage.tsx",
+  "../../src/lib/desk/suggestion-cards-core.ts",
 ]);
 
 // 只有「解释一个概念」这类本来就不需要取数的问句允许落到 general。
@@ -400,7 +409,8 @@ const QUICK_QUESTIONS = questionArraysFrom([
 const ALLOW_GENERAL = new Set(["均线多头排列该怎么理解？"]);
 
 test("快捷问清单确实从源码里抽到了（正则一失效这条就该红，而不是静悄悄全过）", () => {
-  assert.ok(QUICK_QUESTIONS.length >= 7, `只抽到 ${QUICK_QUESTIONS.length} 条：${QUICK_QUESTIONS.join(" / ")}`);
+  // 4 条 = 小窗那四条（其余快捷问已收进场景卡，见下面的逐卡判句，不再从字面量里扫）
+  assert.ok(QUICK_QUESTIONS.length >= 4, `只抽到 ${QUICK_QUESTIONS.length} 条：${QUICK_QUESTIONS.join(" / ")}`);
   for (const q of ["关键位在哪", "现在适合进场吗", "给我一个风控清单", "多周期趋势总结"]) {
     assert.ok(QUICK_QUESTIONS.includes(q), `小窗那四条快捷问少了「${q}」`);
   }
@@ -411,6 +421,18 @@ test("界面上递到用户嘴边的快捷问，点一下不该退化成不取�
     const r = classifyIntent({ question: q, sessionSymbol: "688256.SH", focusSymbol: "600519.SH" });
     if (ALLOW_GENERAL.has(q)) { assert.equal(r.scene, "general", `${q} 是概念解释，按通用问答处理`); continue; }
     assert.notEqual(r.scene, "general", `${q} 判成了通用问答：徽章会显示「通用问答」且一步数据都不取`);
+  }
+  // 场景卡真正发送的八句：句句都要取数。
+  // P58：卡是「先补条件再拼句」的，光拿关注品种拼（renderCardPrompt）对成本类卡会得到空串，
+  // 那是校验挡下了没填成本，不是场景判错 —— 所以这里按弹窗链路喂一份填全的表单，
+  // 再判拼出来的那句（directDispatch / dialogDispatch 两条路各自都要过）。
+  for (const c of SUGGESTION_CARDS_CORE) {
+    const sent = needsDialog(c)
+      ? dialogDispatch(c, toCardInput(c, { ...initialFormState(c), subject: "寒武纪 688256.SH", cost: "1280", position: "3成", action: c.defaults.action ?? "", horizon: c.defaults.horizon ?? "", ma: c.defaults.ma ?? "" })).prompt
+      : directDispatch(c).prompt;
+    assert.ok(sent.length > 0, `场景卡「${c.label}」条件给全了还拼不出句子`);
+    const r = classifyIntent({ question: sent, sessionSymbol: "688256.SH", focusSymbol: "600519.SH" });
+    assert.notEqual(r.scene, "general", `场景卡「${c.label}」发送的提问判成了通用问答：${sent.slice(0, 40)}`);
   }
 });
 

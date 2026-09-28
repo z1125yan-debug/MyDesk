@@ -9,16 +9,27 @@
 // 顺序即优先级（与它一致）：一个标题同时含多类词时，取先命中的类。
 export type SectionKind =
   | "risk" | "action" | "capital" | "technical" | "fundamental"
-  | "market" | "event" | "decision" | "note";
+  | "market" | "event" | "decision" | "note"
+  // P21 结论契约：LLM 用固定前缀输出这四类块，前端强识别
+  | "conclusion" | "watchlist" | "invalidation" | "plan";
 
 /** 分类优先级由数组顺序定义；emoji 一份定义（渲染层不再各抄一份）。
- *  fundamental 不收裸词「数据」：它会抢在 note 的「数据口径/数据来源」前面命中，把口径说明画成财报卡。 */
+ *  fundamental 不收裸词「数据」：它会抢在 note 的「数据口径/数据来源」前面命中，把口径说明画成财报卡。
+ *
+ * P21 结论契约：四类固定前缀（🎯 核心判断 / 🔍 关注清单 / 🛑 失效条件 / 🧭 执行计划）
+ * 是 decision 模式注入到 LLM 提示词的强约束，LLM 按这套前缀输出，前端按硬前缀命中——
+ * 排在最前面，抢在通用 risk/action 等关键词前命中，避免"核心判断"被归成"决策"、
+ * "失效条件"被归成"风险"。 */
 export const SECTION_DEFS: { kind: SectionKind; emoji: string; words: string[] }[] = [
-  { kind: "risk",         emoji: "⚠️", words: ["风险", "止损", "失效", "防守", "警惕", "注意"] },
-  { kind: "action",       emoji: "🧭", words: ["仓位", "减仓", "加仓", "操作", "计划", "买点", "卖点", "策略", "执行", "应对", "风控清单"] },
+  { kind: "conclusion",   emoji: "🎯", words: ["核心判断", "核心结论", "核心观点", "🎯 核心判断", "🎯 核心结论"] },
+  { kind: "watchlist",    emoji: "🔍", words: ["关注清单", "观察清单", "观察标的", "🔍 关注清单", "🔍 观察清单"] },
+  { kind: "invalidation", emoji: "🛑", words: ["失效条件", "失效信号", "失效场景", "🛑 失效条件"] },
+  { kind: "plan",         emoji: "🧭", words: ["执行计划", "操作计划", "入场计划", "执行清单", "🧭 执行计划", "🧭 操作计划"] },
+  { kind: "risk",         emoji: "⚠️", words: ["风险", "止损", "防守", "警惕", "注意"] },
+  { kind: "action",       emoji: "📊", words: ["仓位", "减仓", "加仓", "买点", "卖点", "策略", "应对", "风控清单"] },
   { kind: "capital",      emoji: "💰", words: ["资金", "主力", "量能", "成交", "筹码"] },
   { kind: "technical",    emoji: "📈", words: ["技术", "趋势", "均线", "支撑", "压力", "回踩", "形态", "指标", "关键位", "阻力"] },
-  { kind: "fundamental",  emoji: "📊", words: ["财报", "业绩", "基本面", "估值", "盈利", "公司", "产业", "行业逻辑", "证据"] },
+  { kind: "fundamental",  emoji: "📉", words: ["财报", "业绩", "基本面", "估值", "盈利", "公司", "产业", "行业逻辑", "证据"] },
   { kind: "market",       emoji: "🔥", words: ["市场", "大盘", "板块", "轮动", "情绪", "环境"] },
   { kind: "event",        emoji: "📰", words: ["新闻", "消息", "公告", "催化", "事件", "快讯"] },
   { kind: "decision",     emoji: "🎯", words: ["结论", "判断", "总结", "定性", "一句话", "决策", "评分", "综合"] },

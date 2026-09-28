@@ -79,11 +79,11 @@ export default function AllStocksPage() {
   const openProfile = (symbol: string) => { setFocusSymbol(symbol); go("profile"); };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-3 px-6 py-4">
+    <div className="w-full space-y-3 px-6 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-lg font-bold">全A市场列表</div>
-          <div className="text-[11px] text-muted-foreground">
+          <div className="text-[12px] text-muted-foreground">
             东财榜单接口（全A快照） · 交易日 {tradeDate || "未知"} · {asOf ? `数据截至 ${clockZh(asOf)}` : "本次未取到数据"}
             {poll.open ? ` · 开盘自动刷新，剩余 ${poll.left}s` : ` · A股${poll.sessionLabel}，自动刷新已暂停`}
             {flowByCode.size > 0 && ` · 主力净额这一列东财无读数处叠了通达信自算 ${flowByCode.size} 只（${MAIN_FLOW_BASIS}），没覆盖到的显「—」不是 0`}
@@ -124,9 +124,9 @@ export default function AllStocksPage() {
               <tr key={r.symbol} className="border-b border-border/40 hover:bg-sky-500/5">
                 <td className="cursor-pointer px-2.5 py-1.5 font-mono" onClick={() => openProfile(r.symbol)}>{r.symbol}</td>
                 <td className="cursor-pointer px-2.5 py-1.5" onClick={() => openProfile(r.symbol)}>
-                  {r.name}{r.st && <span className="ml-1 text-[9px] text-red-400">ST</span>}{r.suspended && <span className="ml-1 text-[9px] text-muted-foreground">停</span>}
+                  {r.name}{r.st && <span className="ml-1 text-[10px] text-red-400">ST</span>}{r.suspended && <span className="ml-1 text-[10px] text-muted-foreground">停</span>}
                 </td>
-                <td className="px-2.5 py-1.5 text-[10.5px] text-muted-foreground">{r.industry ?? "—"}</td>
+                <td className="px-2.5 py-1.5 text-[11.5px] text-muted-foreground">{r.industry ?? "—"}</td>
                 <td className="px-2.5 py-1.5 text-right"><NumText value={r.price} /></td>
                 <td className="px-2.5 py-1.5 text-right"><PctText value={r.change_pct} /></td>
                 <td className="px-2.5 py-1.5 text-right"><NumText value={r.amount_yi} digits={1} /></td>
@@ -140,13 +140,13 @@ export default function AllStocksPage() {
                   {r.main_net_yi == null ? (() => {
                     const f = flowByCode.get(String(r.symbol).split(".")[0]);
                     return f
-                      ? <span className="font-mono tabular-nums" title={MAIN_FLOW_BASIS}>{`${f.main >= 0 ? "+" : ""}${f.main.toFixed(2)}`}<span className="ml-1 text-[9px] text-amber-300">{f.truncated ? "自算·截断" : "自算"}</span></span>
+                      ? <span className="font-mono tabular-nums" title={MAIN_FLOW_BASIS}>{`${f.main >= 0 ? "+" : ""}${f.main.toFixed(2)}`}<span className="ml-1 text-[10px] text-amber-300">{f.truncated ? "自算·截断" : "自算"}</span></span>
                       : <span className="text-muted-foreground">—</span>;
                   })() : <NumText value={r.main_net_yi} digits={2} />}
                 </td>
                 <td className="px-2.5 py-1.5">
                   <button onClick={() => addWatch({ symbol: r.symbol, name: r.name, kind: "watch" })}
-                    className="text-[10px] text-muted-foreground hover:text-sky-300" title="加入自选">+自选</button>
+                    className="text-[11px] text-muted-foreground hover:text-sky-300" title="加入自选">+自选</button>
                 </td>
               </tr>
             ))}

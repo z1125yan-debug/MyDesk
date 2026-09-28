@@ -48,7 +48,7 @@ export function HistoryBar({
 
   return (
     <div className="space-y-2 rounded-xl border border-border bg-card/60 px-3 py-2.5">
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+      <div className="flex flex-wrap items-center gap-2 text-[12px]">
         <span className="inline-flex items-center gap-1 text-muted-foreground"><CalendarDays size={12} /> 查询范围</span>
         <button onClick={onToday} disabled={busy}
           className={`rounded-md border px-2 py-1 ${view === "today" ? "border-sky-500/50 bg-sky-500/15 text-sky-200" : "border-border text-muted-foreground hover:border-sky-500/40"}`}>
@@ -61,28 +61,28 @@ export function HistoryBar({
         </button>
         <input type="date" value={pick} max={today || undefined} disabled={busy}
           onChange={(e) => setPick(e.target.value)}
-          className="rounded-md border border-border bg-background px-2 py-1 text-[11px]" />
+          className="rounded-md border border-border bg-background px-2 py-1 text-[12px]" />
         <button onClick={() => pick && onDate(pick)} disabled={busy || !pick}
-          className="rounded-md bg-sky-500/90 px-2 py-1 text-[11px] text-white hover:bg-sky-400 disabled:opacity-50">
+          className="rounded-md bg-sky-500/90 px-2 py-1 text-[12px] text-white hover:bg-sky-400 disabled:opacity-50">
           查指定日期
         </button>
-        {loading && <span className="text-[10.5px] text-muted-foreground">读取归档中…</span>}
+        {loading && <span className="text-[11.5px] text-muted-foreground">读取归档中…</span>}
       </div>
 
       {view === "history" && resp && (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[12px] text-muted-foreground">历史归档 · {resp.date}</span>
+            <span className="text-[13px] text-muted-foreground">历史归档 · {resp.date}</span>
             {kind === "radar" && (
-              <span className="text-[12px] text-muted-foreground">成立 {resp.counts.live} 条 · 已消失 {resp.counts.superseded ?? 0} 条</span>
+              <span className="text-[13px] text-muted-foreground">成立 {resp.counts.live} 条 · 已消失 {resp.counts.superseded ?? 0} 条</span>
             )}
-            {kind === "events" && <span className="text-[12px] text-muted-foreground">共 {resp.counts.rows} 条</span>}
+            {kind === "events" && <span className="text-[13px] text-muted-foreground">共 {resp.counts.rows} 条</span>}
           </div>
           {onState && (
             <div className="flex gap-1.5">
               {(["all", "live", "superseded"] as const).map((s) => (
                 <button key={s} onClick={() => onState(s)} disabled={busy}
-                  className={`rounded border px-2.5 py-1 text-[11.5px] ${resp.state_filter === s ? "border-sky-500/50 text-sky-200" : "border-border text-muted-foreground hover:border-sky-500/40"}`}>
+                  className={`rounded border px-2.5 py-1 text-[12.5px] ${resp.state_filter === s ? "border-sky-500/50 text-sky-200" : "border-border text-muted-foreground hover:border-sky-500/40"}`}>
                   {s === "all" ? "全部" : s === "live" ? "只看成立" : "只看已消失"}
                 </button>
               ))}
@@ -92,7 +92,7 @@ export function HistoryBar({
       )}
 
       {view === "today" && (
-        <div className="text-[11px] text-muted-foreground/70">
+        <div className="text-[12px] text-muted-foreground/70">
           {latest ? `想看历史？点上面的日期，最近有数据的是 ${latest.date}。` : "收盘后会自动扫描，历史记录会保留下来。"}
         </div>
       )}

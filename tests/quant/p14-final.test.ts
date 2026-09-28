@@ -107,11 +107,12 @@ test("友好多色卡：蓝/绿/橙三色 + 灰=技术补充折叠；未解析�
 const marketSrc = read("../../src/components/desk/pages/MarketPage.tsx");
 const quantApi = read("../../src/lib/desk/quant-api.ts");
 
-test("成交额卡：先过 amount_known 再换算万亿；vs昨日不硬凑（数据源无该字段就在 title 里说清）", () => {
+test("成交额卡：先过 tLatest 再换算万亿；vs昨日只在趋势真带回 delta 时给，缺就显「—」不凑", () => {
   assert.ok(quantApi.includes("amount_known: number"), "客户端类型补上真实读数家数（合计 0≠全市场 0 亿）");
-  assert.ok(marketSrc.includes("sent.amount_known === 0"), "一家都没抓到 → 暂无数据，不出 0.00 万亿");
-  assert.ok(marketSrc.includes("(sent.amount_total_yi / 1e4).toFixed(2)} 万亿"), "≥万亿对齐稳智格式");
-  assert.ok(marketSrc.includes("不做 vs 昨日对比"), "缺就是缺，宁缺这条副行");
+  assert.ok(marketSrc.includes('tLatest ? `${((tLatest.totalYi as number) / 1e4).toFixed(2)}万亿` : "—"'),
+    "一家都没抓到 → 暂无数据（—），不出 0.00 万亿");
+  assert.ok(marketSrc.includes("万亿"), "≥万亿对齐稳智格式");
+  assert.ok(marketSrc.includes("delta?.yi != null"), "vs昨日只在趋势真带回 delta 时给，缺就是缺、不硬凑");
 });
 
 test("连板分档 chips：三/四/五板+ 从「3连板+」名单实数归档，20+ 计入五板+", () => {

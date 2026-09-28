@@ -114,9 +114,12 @@ test("对话页不再挂载即开新会话：切换页面/刷新都续着原会�
   // 另一半病灶：侧栏「AI 决策」按钮旧实现点击即 newSession()（实机走查抓到：切回来变 Hello）——
   // 导航不许再碰会话，新会话只认页内「新对话」按钮。
   // P15-R3a 口径迁移：工作台按钮没了（菜单收成一级平铺），「点 AI 对话 = go(copilot) 且只 go」
-  // 改钉在 nav-core 登记表上——一级项 copilot 直达，Sidebar 只会 go(entryTarget)。
+  // P25 稳智对齐：拆成 LLM 分析（copilot）和 AI 对话（aihome）两个一级项。
+  // 改钉在 nav-core 登记表上——LLM 分析一级项直达 copilot，Sidebar 只会 go(entryTarget)。
   const sidebar = readSrc("src/components/desk/Sidebar.tsx");
   assert.ok(!/s\.newSession|newSession\(/.test(sidebar), "Sidebar 不再订阅 newSession（点导航不清会话）");
   const nav = readSrc("src/lib/desk/nav-core.ts");
-  assert.match(nav, /label: "AI 对话", key: "copilot"/, "AI 对话一级项必须直达 copilot（旧 wb.key===\"ai\" 分支的同义）");
+  // P26 起 LLM分析 是带顶部 5 Tab 的门户工作台，一级项直达 llmportal（不再是 copilot）
+  assert.match(nav, /label: "LLM分析", key: "llmportal"/, "LLM分析一级项必须直达 llmportal（P26 门户工作台；P1 #3 的「AI 一级项直达」原意不变）");
+  assert.match(nav, /label: "AI分析", key: "aihome"/, "AI分析一级项必须直达 aihome（2026-09-25 用户拍板改名：稳智AI→AI分析）");
 });

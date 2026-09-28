@@ -9,8 +9,8 @@
 //     factorCatalog() 读取该文件（mtime 缓存）把对应字段覆盖为 verified:true；
 //     文件缺失/损坏时安全回退全部未验证。
 
-import fs from "node:fs";
-import path from "node:path";
+import fs from "fs";
+import path from "path";
 
 export type FactorFieldSource = "kline" | "snapshot";
 
@@ -78,6 +78,10 @@ export const FACTOR_FIELD_DEFS: FactorFieldDef[] = [
   { key: "above_ma_144", zh: "站上MA144", category: "趋势与均线", source: "kline", verified: false },
   { key: "ma_struct", zh: "均线多头排列", category: "趋势与均线", source: "kline", verified: false },
   { key: "ema14_gt_ema26", zh: "EMA14>EMA26", category: "趋势与均线", source: "kline", verified: false },
+  {
+    key: "close", zh: "收盘价", category: "趋势与均线", source: "kline", verified: false, unit: "元",
+    description: "当日收盘价（K线口径）。供「近N日涨幅」等 rolling 条件使用（稳智无 field 的 rolling_return 即口径=收盘价）。",
+  },
   { key: "rps_50", zh: "RPS50", category: "趋势与均线", source: "kline", verified: false },
   { key: "rps_120", zh: "RPS120", category: "趋势与均线", source: "kline", verified: false },
   { key: "rps_composite", zh: "RPS综合", category: "趋势与均线", source: "kline", verified: false },
@@ -96,10 +100,38 @@ export const FACTOR_FIELD_DEFS: FactorFieldDef[] = [
   { key: "atr_ratio_14", zh: "相对波动率", category: "动量与形态", source: "kline", verified: false, unit: "%" },
   { key: "upper_shadow_ratio", zh: "长上影(上影/实体)", category: "动量与形态", source: "kline", verified: false },
   { key: "lower_shadow_ratio", zh: "长下影(下影/实体)", category: "动量与形态", source: "kline", verified: false },
+  // K线形态数值化（0/1）：把 candlePatternCalc 的字符串标签暴露成**可筛选的布尔字段**。
+  // 为什么不直接把 candle_patterns_text 接进筛选：筛选引擎的列是数值列，字符串列需架构支持；
+  // 这里不做「字符串编码成数字」的假接入，而是每个形态一个独立布尔（与 is_limit_up / macd_cross 同一形态）。
+  {
+    key: "candle_bullish_engulf", zh: "看涨吞没", category: "动量与形态", source: "kline", verified: false,
+    description: "candlePatternCalc 的「看涨吞没」标签数值化（1=成立）：今阳线实体完全包住昨阴线实体。",
+    formula: "LABEL_t == \"看涨吞没\" ? 1 : 0",
+    dependencies: ["candle_patterns_text"],
+  },
+  {
+    key: "candle_morning_star", zh: "早晨之星", category: "动量与形态", source: "kline", verified: false,
+    description: "三K反转形态（本项目定义，阈值同 candlePatternCalc 的其它形态属项目级约定）：t-2 阴线且实体>0；t-1 星线实体 ≤0.3×t-2 实体且整根落在 t-2 实体下方；t 阳线且收盘站上 t-2 实体中点。",
+    formula: "body0=O_{t-2}-C_{t-2}>0; |C_{t-1}-O_{t-1}| <= 0.3*body0; H_{t-1} < C_{t-2}; C_t > O_t; C_t > (O_{t-2}+C_{t-2})/2",
+  },
   // 主力资金与成本
   { key: "main_net_yi", zh: "主力净额(东财)", category: "主力资金与成本", source: "snapshot", verified: false, unit: "亿元" },
   { key: "above_cost_20", zh: "站上20日成本线", category: "主力资金与成本", source: "kline", verified: false },
+  {
+    key: "above_cost_60", zh: "站上60日成本线", category: "主力资金与成本", source: "kline", verified: false,
+    description: "当日收盘 ≥ 60日市场成本线(market_cost_60)；与 above_cost_20 同口径，周期换成 60 日（稳智「市场成本_60信号」）。",
+    formula: "above_cost_60_t = (C_t >= market_cost_60_t) ? 1 : 0",
+    dependencies: ["market_cost_60"],
+  },
   { key: "break_cost_20", zh: "突破20日成本线", category: "主力资金与成本", source: "kline", verified: false },
+  // 与 break_cost_20 同口径（首次上穿），成本线换成 market_cost_60（=vwapCalc(...,60)）。
+  // 稳智 /screener 的「突破60日成本」chip 用它；此前项目只有 60 日成本**值**、没有突破**信号**。
+  {
+    key: "break_cost_60", zh: "突破60日成本线", category: "主力资金与成本", source: "kline", verified: false,
+    description: "与 break_cost_20 同口径（首次上穿），成本线换成 60 日：当日收盘 ≥ market_cost_60 且前一日 < 它。",
+    formula: "above_t = (C_t >= COST60_t);  signal_t = (t>0 && above_t==1 && above_{t-1}==0) ? 1 : 0;",
+    dependencies: ["market_cost_60"],
+  },
   // VWAP体系
   { key: "vwap20_filter", zh: "站上VWAP20", category: "VWAP体系", source: "kline", verified: false },
   { key: "vwap_pos", zh: "VWAP位置(偏离%)", category: "VWAP体系", source: "kline", verified: false, unit: "%" },
@@ -429,33 +461,33 @@ export const FACTOR_FIELD_DEFS: FactorFieldDef[] = [
     implemented: false, status: "pending_dependency",
   },
   {
-    key: "sector_rps_50", zh: "板块RPS50", category: "板块与概念", source: "kline", verified: false,
-    description: "需板块指数行情聚合（板块页有涨幅榜，但无逐日板块RPS历史序列）→ 待接入，不造数",
-    data_requirements: "板块指数行情", implemented: false, status: "pending_dependency",
+    key: "sector_rps_50", zh: "行业整体RPS_50", category: "板块与概念", source: "snapshot", verified: false,
+    description: "行业整体 RPS_50（稳智同名字段口径）：把行业当整体，在所有行业里按近 50 日涨幅排名取百分位。数据=稳智种子最新交易日快照（data/rps-seed-latest.json），非本地 K线重算",
+    data_requirements: "稳智 RPS 种子（data/rps-seed-latest.json，逐日递进）",
   },
   {
-    key: "sector_rps_120", zh: "板块RPS120", category: "板块与概念", source: "kline", verified: false,
-    description: "同 sector_rps_50：需逐日板块指数历史，不造数",
-    data_requirements: "板块指数行情", implemented: false, status: "pending_dependency",
+    key: "sector_rps_120", zh: "行业整体RPS_120", category: "板块与概念", source: "snapshot", verified: false,
+    description: "行业整体 RPS_120（稳智同名字段口径）：把行业当整体，在所有行业里按近 120 日涨幅排名取百分位。数据=稳智种子最新交易日快照（data/rps-seed-latest.json），非本地 K线重算",
+    data_requirements: "稳智 RPS 种子（data/rps-seed-latest.json，逐日递进）",
   },
   {
-    key: "in_sector_rps_50", zh: "个股在板块RPS50", category: "板块与概念", source: "kline", verified: false,
-    description: "需板块成分映射+板块内逐日排名，当前无该历史数据 → 不实现",
-    data_requirements: "板块成分映射", implemented: false, status: "pending_dependency",
+    key: "in_sector_rps_50", zh: "行业RPS_50", category: "板块与概念", source: "snapshot", verified: false,
+    description: "行业 RPS_50（稳智同名字段口径）：该股在所属行业内部，按近 50 日相对强度排名的百分位（与个股 rps_50 的组内 spearman≈0.998）。数据=稳智种子最新交易日快照",
+    data_requirements: "稳智 RPS 种子（data/rps-seed-latest.json，逐日递进）",
   },
   {
-    key: "in_sector_rps_120", zh: "个股在板块RPS120", category: "板块与概念", source: "kline", verified: false,
-    description: "同 in_sector_rps_50：需板块成分映射历史数据",
-    data_requirements: "板块成分映射", implemented: false, status: "pending_dependency",
+    key: "in_sector_rps_120", zh: "行业RPS_120", category: "板块与概念", source: "snapshot", verified: false,
+    description: "行业 RPS_120（稳智同名字段口径）：该股在所属行业内部，按近 120 日相对强度排名的百分位。数据=稳智种子最新交易日快照",
+    data_requirements: "稳智 RPS 种子（data/rps-seed-latest.json，逐日递进）",
   },
   {
     key: "concept_rps_50", zh: "概念RPS50", category: "板块与概念", source: "kline", verified: false,
-    description: "需概念指数历史+成分映射 → 数据缺，不实现",
+    description: "需概念指数历史+成分映射 → 数据缺，不实现。注：稳智 field-registry 无概念RPS字段（仅 sector/in_sector 系列），故亦无种子来源",
     data_requirements: "概念指数+成分", implemented: false, status: "pending_dependency",
   },
   {
     key: "concept_rps_120", zh: "概念RPS120", category: "板块与概念", source: "kline", verified: false,
-    description: "同 concept_rps_50",
+    description: "同 concept_rps_50：稳智无同名字段，无种子来源",
     data_requirements: "概念指数+成分", implemented: false, status: "pending_dependency",
   },
   {
@@ -482,6 +514,30 @@ export const FACTOR_FIELD_DEFS: FactorFieldDef[] = [
     key: "bidding_premium_score", zh: "竞价溢价评分", category: "共振与竞价", source: "snapshot", verified: false,
     description: "需竞价逐笔数据；且无公式原文 → 双重缺失，不猜测",
     data_requirements: "竞价逐笔数据", implemented: false, status: "pending_dependency",
+  },
+  // ---- 超级共振（稳智口径，反推自 156 只真实命中；详见 worklog / memory 2026-09-26）----
+  // 类型层 100% 精确：趋势起航=gauss_entry 且 非 zsb_trigger；主力拉升=zsb_trigger 且 非 gauss_entry；
+  // ★强力共振★=两者同时。信号层稳智另有一层未公开过滤（gauss_entry=1 全市场 198 只里仅 125 只入选），
+  // 本地无法还原 → 本地 super_resonance_signal 是其「上界」（会含少数稳智未计入的），不冒充稳智读数。
+  {
+    key: "super_resonance_signal", zh: "★超级共振信号★", category: "共振与竞价", source: "kline", verified: false,
+    description: "高斯入场(gauss_entry) 与 主力触发(zsb_trigger) 任一命中即 1；类型由两者组合决定。注：稳智对该信号另有一层未公开过滤，本地结果为其上界",
+    formula: "super_resonance_signal = (gauss_entry=1 OR zsb_trigger=1) ? 1 : 0",
+  },
+  {
+    key: "super_resonance_trend", zh: "共振:趋势起航", category: "共振与竞价", source: "kline", verified: false,
+    description: "稳智 super_resonance_type='趋势起航'：高斯入场且未触发主力",
+    formula: "gauss_entry=1 AND zsb_trigger=0",
+  },
+  {
+    key: "super_resonance_main", zh: "共振:主力拉升", category: "共振与竞价", source: "kline", verified: false,
+    description: "稳智 super_resonance_type='主力拉升'：主力触发且未高斯入场",
+    formula: "zsb_trigger=1 AND gauss_entry=0",
+  },
+  {
+    key: "super_resonance_force", zh: "共振:强力共振", category: "共振与竞价", source: "kline", verified: false,
+    description: "稳智 super_resonance_type='★强力共振★'（其标签未列此值）：高斯入场与主力触发同时命中",
+    formula: "gauss_entry=1 AND zsb_trigger=1",
   },
   {
     key: "super_resonance_week", zh: "周线共振", category: "共振与竞价", source: "kline", verified: false,
@@ -896,6 +952,14 @@ export interface MetaLike {
   pe?: number; pb?: number; marketCap?: number; floatCap?: number;
   turnover?: number; amount?: number; changePct?: number; volumeRatio?: number;
   amplitude?: number; mainNet?: number; // mainNet: 元
+  /** 行业整体 RPS_50（稳智种子快照，见 data/rps-seed-latest.json） */
+  sectorRps50?: number;
+  /** 个股在所属行业内部的 RPS_50（稳智种子快照） */
+  inSectorRps50?: number;
+  /** 行业整体 RPS_120（稳智种子快照） */
+  sectorRps120?: number;
+  /** 个股在所属行业内部的 RPS_120（稳智种子快照） */
+  inSectorRps120?: number;
 }
 
 export interface BarsLike {
@@ -1176,6 +1240,32 @@ export function candlePatternCalc(o: Series, h: Series, l: Series, c: Series): (
   return out;
 }
 
+/**
+ * 早晨之星（三K反转形态；candle_morning_star 的纯函数实现）。
+ * 本项目定义（与 candlePatternCalc 的其它形态一样，阈值是项目级约定，不冒充通达信公式）：
+ *   t-2 阴线：c < o 且实体 > 0；
+ *   t-1 星线：实体 ≤ 0.3 × t-2 实体，且整根 K 线落在 t-2 实体下方（h[t-1] < c[t-2]）；
+ *   t   阳线：c > o，且收盘站上 t-2 实体中点（(o[t-2]+c[t-2])/2）。
+ * 缺读数 → 该日 0（布尔因子不成立），不参与筛选；与 candlePatternCalc 的「无匹配 → null」口径不同，
+ * 因为那是「标签」，这是「是否成立」。
+ */
+export function morningStarCalc(o: Series, h: Series, c: Series): number[] {
+  const out: number[] = new Array(c.length).fill(0);
+  for (let t = 2; t < c.length; t++) {
+    const o0 = o[t - 2], c0 = c[t - 2], o1 = o[t - 1], c1 = c[t - 1], h1 = h[t - 1], o2 = o[t], c2 = c[t];
+    if (o0 === null || c0 === null || o1 === null || c1 === null || h1 === null || o2 === null || c2 === null) continue;
+    const body0 = o0 - c0;                       // t-2 阴线实体（必须为正）
+    if (body0 <= 0) continue;
+    const body1 = Math.abs(c1 - o1);             // t-1 星线实体
+    if (body1 > body0 * 0.3) continue;
+    if (h1 >= c0) continue;                      // 星线须落在 t-2 实体下方
+    if (c2 <= o2) continue;                      // t 须为阳线
+    if (c2 <= (o0 + c0) / 2) continue;           // 收盘须站上 t-2 实体中点
+    out[t] = 1;
+  }
+  return out;
+}
+
 // 由子集日K + 快照元数据构建因子面板（含快照常数列，便于统一取值；历史匹配时只用 kline 字段）
 export function buildFieldPanel(symbols: string[], barsList: BarsLike[][], metas: (MetaLike | undefined)[]): KPanel {
   const dateSet = new Set<string>();
@@ -1201,6 +1291,8 @@ export function buildFieldPanel(symbols: string[], barsList: BarsLike[][], metas
   }
   // ret（当日涨跌幅 %）
   const cArr = fields.get("c")!;
+  // 收盘价（kline 因子）：供「近N日涨幅」等 rolling 条件使用；与内部 c 同序列
+  fields.set("close", cArr);
   const oArr = fields.get("o")!;
   fields.set("ret", cArr.map((s, si) => s.map((v, t) => {
     const prev = t > 0 ? s[t - 1] : null;
@@ -1218,6 +1310,10 @@ export function buildFieldPanel(symbols: string[], barsList: BarsLike[][], metas
     amplitude: m?.amplitude ?? null,
     amount_yi: m?.amount != null ? m.amount / 1e8 : null,
     main_net_yi: m?.mainNet != null ? m.mainNet / 1e8 : null,
+    sector_rps_50: m?.sectorRps50 ?? null,
+    sector_rps_120: m?.sectorRps120 ?? null,
+    in_sector_rps_50: m?.inSectorRps50 ?? null,
+    in_sector_rps_120: m?.inSectorRps120 ?? null,
   });
   for (const key of Object.keys(snapOf(undefined))) {
     fields.set(key, symbols.map((_, si) => {
@@ -1477,6 +1573,32 @@ export function buildFieldPanel(symbols: string[], barsList: BarsLike[][], metas
   // VWAP 体系
   fields.set("vwap30", symbols.map((_, si) => vwapCalc(cArr[si], v[si], amt[si], 30).vwap));
   fields.set("market_cost_60", symbols.map((_, si) => vwapCalc(cArr[si], v[si], amt[si], 60).vwap));
+  // 站上60日成本线：当日收盘 ≥ market_cost_60（与 above_cost_20 同口径，周期换成60日）
+  fields.set("above_cost_60", symbols.map((_, si) => {
+    const cost = fields.get("market_cost_60")![si];
+    return cArr[si].map((c, t) => {
+      const w = cost[t];
+      return c === null || w === null ? null : (c >= w ? 1 : 0);
+    });
+  }));
+  // 突破60日成本线：与 break_cost_20 同一口径（当日站上、前一日没站上 = 首次上穿），成本线换成 60 日
+  fields.set("break_cost_60", (() => {
+    const cost = fields.get("market_cost_60")!;
+    const above = symbols.map((_, si) => cArr[si].map((c, t) => {
+      const w = cost[si][t];
+      return c === null || w === null ? null : (c >= w ? 1 : 0);
+    }));
+    return above.map((s) => s.map((x, t) => (t > 0 && x === 1 && s[t - 1] === 0 ? 1 : 0)));
+  })());
+  // K线形态数值化：把 candlePatternCalc 的字符串标签 / morningStarCalc 的三K形态暴露成可筛选布尔字段。
+  // 只取 0/1，不把标签编码成数字（不做假接入）；缺读数按 0（形态不成立）处理。
+  {
+    const hArr = fields.get("h")!;
+    const lArr = fields.get("l")!;
+    const labels = symbols.map((_, si) => candlePatternCalc(oArr[si], hArr[si], lArr[si], cArr[si]));
+    fields.set("candle_bullish_engulf", labels.map((s) => s.map((x) => (x === "看涨吞没" ? 1 : 0))));
+    fields.set("candle_morning_star", symbols.map((_, si) => morningStarCalc(oArr[si], hArr[si], cArr[si])));
+  }
   const vwapFulls = symbols.map((_, si) => vwapFullCalc(v[si], amt[si]));
   fields.set("vwap_full", vwapFulls);
   const vfSlope3 = vwapFulls.map((s) => pctChange(s, 3));
@@ -1495,13 +1617,38 @@ export function buildFieldPanel(symbols: string[], barsList: BarsLike[][], metas
       : (cv > pw && vol > mv * 1.5 ? 1 : 0);
   })));
   // 高斯通道信号
-  fields.set("gauss_entry", symbols.map((_, si) => crossUp(cArr[si], gausses[si].mid)));
+  const gaussEntry = symbols.map((_, si) => crossUp(cArr[si], gausses[si].mid));
+  fields.set("gauss_entry", gaussEntry);
   fields.set("gauss_exit", symbols.map((_, si) => crossUp(gausses[si].mid, cArr[si])));
   fields.set("gauss_overheat_warn", symbols.map((_, si) => gausses[si].upper.map((u, t) => {
     const cv = cArr[si][t], vol = v[si][t], mv = vma20[si][t];
     return u === null || cv === null || vol === null || mv === null || mv <= 0 ? null
       : (cv >= u && vol > mv * 1.5 ? 1 : 0);
   })));
+  // 超级共振（稳智口径反推）：类型 = 高斯入场 × 主力触发 的组合，信号 = 任一命中。
+  // 依赖 gauss_entry(上) 与 zsb_trigger(庄家宝段) 两个已算序列，这里只做组合，不引入新参数。
+  const srSignal: Series[] = [], srTrend: Series[] = [], srMain: Series[] = [], srForce: Series[] = [];
+  for (let si = 0; si < symbols.length; si++) {
+    const ge = gaussEntry[si], zt = zsbTrigger[si];
+    const sig: Series = new Array(T).fill(null);
+    const trend: Series = new Array(T).fill(null);
+    const main: Series = new Array(T).fill(null);
+    const force: Series = new Array(T).fill(null);
+    for (let t = 0; t < T; t++) {
+      const g = ge[t], z = zt[t];
+      if (g === null || z === null) continue;
+      const isG = g === 1, isZ = z === 1;
+      sig[t] = isG || isZ ? 1 : 0;
+      trend[t] = isG && !isZ ? 1 : 0;
+      main[t] = isZ && !isG ? 1 : 0;
+      force[t] = isG && isZ ? 1 : 0;
+    }
+    srSignal.push(sig); srTrend.push(trend); srMain.push(main); srForce.push(force);
+  }
+  fields.set("super_resonance_signal", srSignal);
+  fields.set("super_resonance_trend", srTrend);
+  fields.set("super_resonance_main", srMain);
+  fields.set("super_resonance_force", srForce);
   // 缠论简化中枢（10日区间）
   const cz10 = symbols.map((_, si) => czRangeSignals(h[si], l[si], cArr[si], 10));
   fields.set("cz_active", cz10.map((m) => m.active));

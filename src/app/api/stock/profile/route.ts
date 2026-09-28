@@ -4,8 +4,11 @@ import { NextResponse } from "next/server";
 import { quantBootstrap, } from "@/lib/quant/bootstrap";
 import { getProvider } from "@/lib/quant/data/index";
 import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
+import { fetchMcpStockBasic, fetchMcpStockNews } from "@/lib/quant/data/mcp-provider";
 import { tdxQuotes, tdxDepth, tdxTradesMoney } from "@/lib/desk/tdx";
 import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, symbolToSecid } from "@/lib/desk/em";
+// R20 主力净额第三档备胎（通达信当日逐笔自算）
+import { mainNetSelfNote, tdxMainNetOf } from "@/lib/desk/fund-flow";
 import { fetchBoardRowsRescued } from "@/lib/desk/board-rescue";
 import { marketSession, shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import { computeSentiment, evalLimitSnapshot } from "@/lib/quant/screener/sentiment";
@@ -99,9 +102,12 @@ export async function GET(request: Request) {
   }
 
   // 5) 资金流：东财 14 日主力净额（断源时新浪日度净额备胎，source 三元如实分标）
+  //    R20 第三档：前两条源都没通时，用通达信当日逐笔自算一个出来——
+  //    自算只有当日一点（没有历史序列），所以 days 只放当日、并挂「自算」出身，不冒充东财序列。
   const secid = symbolToSecid(symbol);
   const detail = secid ? await fetchDetailReal(secid).catch(() => null) : null;
-  if (!detail) missing.push("主力资金流（东财主力资金明细与新浪备胎两条源都没通）");
+  const selfFlow = detail ? null : await tdxMainNetOf(symbol, meta?.amount ?? null).catch(() => null);
+  if (!detail && !selfFlow) missing.push("主力资金流（资金明细、新浪日度净额、通达信逐笔自算三条源都没通）");
 
   // 6) 板块：行业 + 板块涨幅榜排名
   //    R8：走带同花顺兜底的入口——东财断源日也有净额真数可标；注意同花顺行业名与
@@ -115,15 +121,21 @@ export async function GET(request: Request) {
     if (row && boards) sector = {
       name: row.name, changePct: row.changePct, rank: boards.indexOf(row) + 1,
       mainYi: row.fundsMissing ? null : row.main, count: boards.length,
-      source: fromThs ? "同花顺行业资金流榜（东财断源兜底，净额口径）" : "东财行业资金榜",
+      source: fromThs ? "同花顺行业资金流榜（净额=流入−流出口径）" : "行业资金榜",
     };
   }
   if (!sector) missing.push("板块强度（行业未匹配到榜单）");
 
-  // 7) 新闻：宏观快讯可得；个股新闻无数据源 → 暂缺
+  // 7) 新闻：宏观快讯可得；个股新闻用 MCP（get_news_data）补齐
   const news = await fetchNewsReal(8).catch(() => null);
   if (!news) missing.push("宏观快讯");
-  missing.push("个股新闻（无个股级新闻数据源）");
+  const code6 = symbol.split(".")[0];
+  const stockNewsRes = await fetchMcpStockNews(code6, 6).catch(() => null);
+  if (!stockNewsRes) missing.push("个股新闻（MCP get_news_data 未返回或上游不可用）");
+
+  // 7b) 公司概况：MCP get_stock_basic_info（静态表，稳定可用）
+  const basicRes = await fetchMcpStockBasic(code6).catch(() => null);
+  if (!basicRes) missing.push("公司概况（MCP get_stock_basic_info 未返回）");
 
   // 8) 市场风险（共用情绪计算，universe 走缓存，开销小）
   let risk: { level: string; triggers: string[] } | null = null;
@@ -168,15 +180,29 @@ export async function GET(request: Request) {
           todayYi: detail.days.at(-1)?.value ?? null,
           spark: detail.spark, days: detail.days,
         },
-        source: detail.source === "sina" ? "新浪资金流向日度净额（东财断源备胎·口径≈主力净流入）" : "东财主力资金日明细", status: "LIVE",
+        source: detail.source === "sina" ? "新浪资金流向日度净额（口径≈主力净流入）" : "主力资金日明细", status: "LIVE",
+      } : selfFlow ? {
+        data: {
+          todayYi: selfFlow.mainNetYi,
+          superBigYi: selfFlow.superBigYi,
+          bigYi: selfFlow.bigYi,
+          ratioPct: selfFlow.ratioPct,
+          sampleTicks: selfFlow.sampleTicks,
+          spark: [], days: [],
+        },
+        source: "通达信当日逐笔自算（主力净额主源）",
+        note: mainNetSelfNote(selfFlow),
+        status: statusLive,
       } : null,
       tech: bars.length >= 60 ? { data: tech, source: "腾讯日K · 本机指标计算（未验证因子）", status: "HISTORICAL" } : null,
       probability: winProb ? { data: winProb, source: "腾讯日K · 历史条件概率引擎", note: "条件：站上MA20 且 站上20日成本线（K线口径）", status: "HISTORICAL" } : null,
       sector: sector ? { data: sector, source: sector.source, status: "LIVE" } : null,
       news: news ? { data: news.slice(0, 6), source: "东财7x24/新浪 · 宏观快讯", status: "LIVE" } : null,
+      stock_news: stockNewsRes ? { data: stockNewsRes.data, source: stockNewsRes.source, status: "LIVE" } : null,
+      basic: basicRes ? { data: basicRes.data, source: basicRes.source, status: "HISTORICAL" } : null,
       risk: risk ? { data: risk, source: "全A快照风险引擎", status: "LIVE" } : null,
     },
     missing,
     source_note: "以上所有数据来自真实数据源，缺失块已显式列出（不冒充实数）",
-  }, { headers: { "Cache-Control": "no-store" } });
+  }, { headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=600" } });
 }

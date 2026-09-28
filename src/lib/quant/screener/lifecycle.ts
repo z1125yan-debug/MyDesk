@@ -9,8 +9,8 @@
 //   2) 复核通过后，按「整天」逐日 deleteMany；
 //   3) 删完再 count 一次，把「库里现在还剩多少」如实返回。
 // 任何一步失败都直接抛出，调用方（route）不得吞异常继续删。
-import fs from "node:fs";
-import path from "node:path";
+import fs from "fs";
+import path from "path";
 import type { PrismaClient } from "@prisma/client";
 import type { DetailTable, DayBucket, ExportRow, LifecyclePlan } from "./lifecycle-core";
 

@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { fetchNewsWindowForDate, type BoardRow } from "@/lib/desk/em";
 import { fetchBoardRowsRescued } from "@/lib/desk/board-rescue";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";

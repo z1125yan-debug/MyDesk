@@ -9,8 +9,8 @@
 // 取数层照抄结论，页面/引擎不得各自再解释一遍。
 import type { ObservationKind } from "../screener/datastatus-core.ts";
 
-/** 两条真实通道：通达信直连网关（快、带量额）与腾讯日K（慢、口径稳定） */
-export type BarChannel = "tdx" | "tencent";
+/** 三条真实通道：通达信直连网关（快、带量额）、腾讯日K（慢、口径稳定）、新浪日K（补北交所） */
+export type BarChannel = "tdx" | "tencent" | "sina";
 
 export interface BarAttempt {
   symbol: string;

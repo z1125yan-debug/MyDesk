@@ -39,17 +39,17 @@ function Chip({ row }: { row: PanelRow }) {
   const cls = row.provenance
     ? PROV_TONE[row.provenance]
     : "border-border bg-accent/40 text-muted-foreground";
-  return <span className={`shrink-0 rounded border px-1 py-px text-[9.5px] leading-4 ${cls}`}>{panelBadgeText(row)}</span>;
+  return <span className={`shrink-0 rounded border px-1 py-px text-[10.5px] leading-4 ${cls}`}>{panelBadgeText(row)}</span>;
 }
 
 function RowList({ rows }: { rows: PanelRow[] }) {
   return (
     <div className="space-y-1.5">
       {rows.map((r) => (
-        <div key={r.label} className="rounded-xl border border-border/60 bg-white/[0.02] px-2.5 py-2">
+        <div key={r.label} className="rounded-xl border border-border/60 bg-overlay px-2.5 py-2">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="shrink-0 text-[11.5px] text-muted-foreground">{r.label}</span>
-            <span className={`break-all text-right text-[12.5px] font-medium ${valueTone(r.value)}`}>{r.value}</span>
+            <span className="shrink-0 text-[12.5px] text-muted-foreground">{r.label}</span>
+            <span className={`break-all text-right text-[13.5px] font-medium ${valueTone(r.value)}`}>{r.value}</span>
           </div>
         </div>
       ))}
@@ -130,8 +130,8 @@ export default function ContextPanel({ symbol, basis, intent, steps, warning, on
     <div className="flex h-full min-h-0 w-full flex-col rounded-xl border border-border bg-card">
       <div className="flex items-start justify-between gap-2 border-b border-border px-3 py-2.5">
         <div className="min-w-0">
-          <div className="text-[13px] font-semibold">行情与依据</div>
-          <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+          <div className="text-[14px] font-semibold">行情与依据</div>
+          <div className="mt-0.5 text-[12px] leading-4 text-muted-foreground">
             {symbol ? <span className="font-mono text-sky-300">{symbol}</span> : <span>本轮没有具体个股</span>}
           </div>
         </div>
@@ -154,73 +154,73 @@ export default function ContextPanel({ symbol, basis, intent, steps, warning, on
         {symbol ? (
           <>
             <section>
-              <div className="mb-1.5 text-[12px] font-medium text-foreground/80">实时行情</div>
-              {pending && <div className="text-[11.5px] text-muted-foreground">正在获取…</div>}
+              <div className="mb-1.5 text-[13px] font-medium text-foreground/80">实时行情</div>
+              {pending && <div className="text-[12.5px] text-muted-foreground">正在获取…</div>}
               {!pending && quoteRows && <RowList rows={quoteRows} />}
-              {!pending && !quoteRows && <div className="text-[11.5px] text-amber-300">暂时取不到行情。</div>}
+              {!pending && !quoteRows && <div className="text-[12.5px] text-amber-300">暂时取不到行情。</div>}
             </section>
             <section>
-              <div className="mb-1.5 text-[12px] font-medium text-foreground/80">技术面</div>
-              {pending ? <div className="text-[11.5px] text-muted-foreground">正在计算…</div> : <RowList rows={techRows ?? []} />}
+              <div className="mb-1.5 text-[13px] font-medium text-foreground/80">技术面</div>
+              {pending ? <div className="text-[12.5px] text-muted-foreground">正在计算…</div> : <RowList rows={techRows ?? []} />}
             </section>
           </>
         ) : (
-          <div className="rounded-lg border border-border/70 bg-accent/20 px-2.5 py-2 text-[11px] leading-5 text-muted-foreground">
+          <div className="rounded-lg border border-border/70 bg-accent/20 px-2.5 py-2 text-[12px] leading-5 text-muted-foreground">
             这一轮问的不是某一只票，行情快照没有对象可取。下面是本轮的取数记录与判定依据。
           </div>
         )}
 
         <section>
-          <div className="mb-1.5 flex items-center justify-between text-[12px] font-medium text-foreground/80">
+          <div className="mb-1.5 flex items-center justify-between text-[13px] font-medium text-foreground/80">
             <span>数据出处</span>
-            {counts.total > 0 && <span className="text-[11px] text-muted-foreground">{counts.ok}/{counts.total} 已获取</span>}
+            {counts.total > 0 && <span className="text-[12px] text-muted-foreground">{counts.ok}/{counts.total} 已获取</span>}
           </div>
           {srcRows.length ? (
             <div className="space-y-1.5">
               {srcRows.map((s) => (
-                <div key={`${s.step}-${s.tool}`} className="rounded-xl border border-border/60 bg-white/[0.02] px-2.5 py-1.5">
-                  <div className="flex flex-wrap items-baseline gap-1.5 text-[11.5px]">
+                <div key={`${s.step}-${s.tool}`} className="rounded-xl border border-border/60 bg-overlay px-2.5 py-1.5">
+                  <div className="flex flex-wrap items-baseline gap-1.5 text-[12.5px]">
                     <span className={s.status === "ok" ? "text-emerald-300" : s.status === "missing" || s.status === "stale" ? "text-amber-300" : s.status === "error" ? "text-red-300" : "text-sky-300"}>
                       {s.statusText}
                     </span>
                     <span className="text-foreground/90">{s.label}</span>
                   </div>
-                  {s.reason && <div className="mt-0.5 text-[10.5px] leading-4 text-muted-foreground/85">{s.reason}</div>}
+                  {s.reason && <div className="mt-0.5 text-[11.5px] leading-4 text-muted-foreground/85">{s.reason}</div>}
                 </div>
               ))}
             </div>
           ) : (
-            <div className="rounded-xl border border-border/60 bg-white/[0.02] px-2.5 py-2 text-[11.5px] leading-5 text-muted-foreground">
+            <div className="rounded-xl border border-border/60 bg-overlay px-2.5 py-2 text-[12.5px] leading-5 text-muted-foreground">
               本轮回答主要基于你给的描述和已有的行情。
             </div>
           )}
         </section>
 
         <section>
-          <div className="mb-1.5 text-[12px] font-medium text-foreground/80">判断依据</div>
+          <div className="mb-1.5 text-[13px] font-medium text-foreground/80">判断依据</div>
           <RowList rows={evidence} />
         </section>
 
         <section>
           <div className="mb-1.5 flex items-center justify-between gap-1.5">
-            <span className="text-[12px] font-medium text-foreground/80">综合结论</span>
+            <span className="text-[13px] font-medium text-foreground/80">综合结论</span>
             <button onClick={fetchDecision} disabled={!symbol || !!dec?.busy}
-              className="rounded-full border border-border/70 px-2.5 py-1 text-[11px] text-muted-foreground hover:border-sky-400/40 hover:text-sky-200 disabled:opacity-40">
+              className="rounded-full border border-border/70 px-2.5 py-1 text-[12px] text-muted-foreground hover:border-sky-400/40 hover:text-sky-200 disabled:opacity-40">
               {dec?.busy ? "计算中…" : dec ? "刷新" : "查看"}
             </button>
           </div>
-          {decState && <div className={dec?.error ? "text-[11.5px] leading-5 text-amber-300" : "text-[11.5px] leading-5 text-muted-foreground"}>{decState}</div>}
+          {decState && <div className={dec?.error ? "text-[12.5px] leading-5 text-amber-300" : "text-[12.5px] leading-5 text-muted-foreground"}>{decState}</div>}
           {!decState && !dec?.busy && decSummary && <DecisionReadout s={decSummary} />}
         </section>
 
         {symbol && onOpenSymbol && (
           <div className="flex flex-wrap gap-1.5 border-t border-border/70 pt-2">
             <button onClick={() => onOpenSymbol(symbol, "analysis")}
-              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[10.5px] text-muted-foreground hover:border-sky-500/40 hover:text-sky-300">
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11.5px] text-muted-foreground hover:border-sky-500/40 hover:text-sky-300">
               <ExternalLink size={11} /> 看 K 线
             </button>
             <button onClick={() => onOpenSymbol(symbol, "profile")}
-              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[10.5px] text-muted-foreground hover:border-sky-500/40 hover:text-sky-300">
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11.5px] text-muted-foreground hover:border-sky-500/40 hover:text-sky-300">
               <ExternalLink size={11} /> 打开完整结论卡
             </button>
           </div>
@@ -234,32 +234,32 @@ export default function ContextPanel({ symbol, basis, intent, steps, warning, on
 function DecisionReadout({ s }: { s: DecisionSummary }) {
   return (
     <div className="space-y-1.5">
-      <div className="rounded-lg border border-border/70 bg-accent/20 px-2 py-1.5 text-[11px] leading-5">{s.headline}</div>
+      <div className="rounded-lg border border-border/70 bg-accent/20 px-2 py-1.5 text-[12px] leading-5">{s.headline}</div>
       <div className="rounded-lg border border-border/70 px-2 py-1.5">
-        <div className="text-[10px] font-medium text-muted-foreground">主要判断依据</div>
-        <ul className="mt-0.5 space-y-0.5 text-[10.5px] leading-4">
+        <div className="text-[11px] font-medium text-muted-foreground">主要判断依据</div>
+        <ul className="mt-0.5 space-y-0.5 text-[11.5px] leading-4">
           {s.basis.map((b, i) => <li key={i}>· {b}</li>)}
         </ul>
       </div>
       <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-2 py-1.5">
-        <div className="text-[10px] font-medium text-amber-300/90">核心风险点</div>
-        <ul className="mt-0.5 space-y-0.5 text-[10.5px] leading-4">
+        <div className="text-[11px] font-medium text-amber-300/90">核心风险点</div>
+        <ul className="mt-0.5 space-y-0.5 text-[11.5px] leading-4">
           {s.risk.map((r, i) => <li key={i}>· {r}</li>)}
         </ul>
       </div>
       <div className="space-y-1">
         {s.sources.map((src) => (
-          <div key={src.id} className="flex flex-wrap items-baseline gap-1.5 text-[10px]">
+          <div key={src.id} className="flex flex-wrap items-baseline gap-1.5 text-[11px]">
             <span className={`shrink-0 rounded border px-1 py-px leading-4 ${src.used ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}>
               {src.used ? "已取到" : "本次未取到"}
             </span>
             <span className="text-foreground/90">{src.label}</span>
             <span className="text-muted-foreground/85">{src.detail}</span>
-            {src.as_of && <span className="font-mono text-[9.5px] text-muted-foreground">{src.as_of}</span>}
+            {src.as_of && <span className="font-mono text-[10.5px] text-muted-foreground">{src.as_of}</span>}
           </div>
         ))}
       </div>
-      <div className="text-[9.5px] leading-4 text-muted-foreground/85">
+      <div className="text-[10.5px] leading-4 text-muted-foreground/85">
         结论参考日 {s.tradeDate}（取数时刻 {s.asOf}）{s.subjectName ? `｜股票名称来自当日全A快照：${s.subjectName}` : "｜股票名称本次未取到，不拿代码凑"}
         {s.excludedCount > 0 && `｜有 ${s.excludedCount} 个维度未计入加权（权重已从分母拿掉，不是按 0 平均）`}
       </div>

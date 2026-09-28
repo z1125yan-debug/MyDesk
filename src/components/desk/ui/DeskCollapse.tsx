@@ -32,10 +32,10 @@ export function DeskCollapse(props: {
     " " + (props.className ?? "");
   const trigger =
     "group flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors " +
-    (props.triggerClassName ?? "text-[12.5px] font-medium text-muted-foreground hover:text-foreground");
+    (props.triggerClassName ?? "text-[13.5px] font-medium text-muted-foreground hover:text-foreground");
   const content =
     "border-t border-border/60 px-4 py-3 " +
-    (props.contentClassName ?? "text-[12.5px] leading-relaxed text-muted-foreground");
+    (props.contentClassName ?? "text-[13.5px] leading-relaxed text-muted-foreground");
   return (
     <Collapsible open={props.open} onOpenChange={props.onOpenChange} defaultOpen={props.defaultOpen} className={root}>
       <CollapsibleTrigger className={trigger}>
@@ -46,7 +46,7 @@ export function DeskCollapse(props: {
           aria-hidden
         />
         <span className="min-w-0 flex-1">{props.title}</span>
-        {props.hint && <span className="ml-auto shrink-0 text-[11px] opacity-70">{props.hint}</span>}
+        {props.hint && <span className="ml-auto shrink-0 text-[12px] opacity-70">{props.hint}</span>}
       </CollapsibleTrigger>
       <CollapsibleContent className={content}>
         {props.children}

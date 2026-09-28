@@ -1,10 +1,14 @@
 // GET /api/pool/list — 候选池列表
 import { NextResponse } from "next/server";
+import { ttlCache, invalidateServerCache, DEFAULT_TTL_MS } from "@/lib/quant/server-cache";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  return ttlCache("pool/list", DEFAULT_TTL_MS, () => getHandler());
+}
+async function getHandler() {
   const pools = await db.candidatePool.findMany({
     orderBy: { createdAt: "desc" },
   });

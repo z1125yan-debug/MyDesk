@@ -4,6 +4,8 @@ import { persist } from "zustand/middleware";
 import type {
   PageKey, WatchItem, TrackerPlan, HistoryEntry, ChatMsg, AiSettings, McpServerConfig,
 } from "./types";
+// 值导入：PAGE_TITLES 是 page 落盘时的白名单（存档被手改成不存在的页名 ⇒ 收敛回默认页，避免白屏）
+import { PAGE_TITLES } from "./types";
 import {
   appendMessage as appendToSession, emptySession, migrateLegacyChats,
   pruneStaleSessions as pruneStaleCore,
@@ -11,6 +13,7 @@ import {
   upsertSession, type ChatMessage, type ChatSession,
 } from "./chat-core";
 import type { ChatHorizon, ChatMode } from "./modes";
+import { sanitizeHold, type HoldCtx } from "./hold-core";
 // P14：自选分组的三个纯操作（建/删/移）住在零 IO 纯核里，store 只做接线——行为可直接 node --test
 import { addGroupCore, removeGroupCore, moveWatchCore } from "./watchlist-group-core";
 // R3c：导航重定向表住在 nav-core 纯核里，store.go 只是照表收口——菜单/递棒/旧 hash 共用一条裁决
@@ -37,9 +40,32 @@ export interface FrozenPool {
   asOf: string;          // 交易日
   universe: string;
   conditions: { field: string; op: string; value: number | string }[];
-  source: string;        // 产生方式（AI扫描/因子选股/手工）
+  source: string;        // 产生方式（AI扫描/因子选股/手工/AI优选）
   rows: { symbol: string; name: string; close: number | null; changePct: number | null; score?: number; reason?: string }[];
   nextVerify?: { date: string; results: Record<string, { open: number; high: number; low: number; close: number; ret1d: number | null }> };
+  /** 2026-09-26 稳智「AI优选」对齐：建池时按稳智模板拼好的问句——「再次前往AI」原样重发，不重拼 */
+  prompt?: string;
+  /** 展示用标签（策略名 · N只 · 交易日），对齐稳智 `candidate_pool_label` */
+  label?: string;
+}
+
+/**
+ * 2026-09-26 稳智「AI优选」对齐：选股工作台把「冻结候选池 + 拼好的问句 + 所选周期」交给对话页。
+ *
+ * 与 `pendingAsk` 的关键区别：**pendingAsk 是立即发送**（落地页点一下卡片就发出去）；
+ * 本交接是**预填不发送**——对齐稳智 /screener「创建候选池并前往稳智AI」的行为：
+ * 跳过去之后 `B.value = prompt`，用户自己点发送（稳智源码实证：onMounted 只赋值、不 submit）。
+ *
+ * 一次性交接、不进 partialize：刷新后还替用户预填一段问句会莫名其妙（与 pendingAsk 同纪律）。
+ */
+export interface AiPoolHandoff {
+  poolId: string;
+  /** 候选池徽章文案（对齐稳智 candidate_pool_label） */
+  label: string;
+  /** 预填进输入框的问句（稳智 5 行模板 + 本地候选清单） */
+  prompt: string;
+  /** 所选周期收敛到本地口径（稳智 3 档 → 本地 ChatHorizon，映射见 ScreenerWorkbench） */
+  horizon: ChatHorizon;
 }
 
 interface DeskState {
@@ -74,6 +100,13 @@ interface DeskState {
    */
   assistantHorizon: ChatHorizon | null;
   /**
+   * 持仓上下文（标的 / 成本价 / 仓位 / 建仓日期）。null＝没填过，一个字都不注入。
+   * 放 store 而不是页面 useState：composer 上填一次之后，这一页的每一轮追问都要带同一份，
+   * 否则第二句「那现在要不要减」就退回成没有成本、不知道拿了多久的泛泛之谈。
+   * 八张卡的持仓卡填完也会写回这里（同一份，不是第二套）。
+   */
+  holdCtx: HoldCtx | null;
+  /**
    * P7-⑨⑤：智能助手页当前是「对话分析」还是「奇门解盘」。持久化，刷新后停在原模式。
    * 与 assistantMode（回答风格）互不相干：前者决定右栏画哪一套，后者只影响对话端点的口径。
    */
@@ -90,6 +123,11 @@ interface DeskState {
    */
   pendingAsk: string | null;
   /**
+   * 2026-09-26 稳智「AI优选」对齐：选股工作台冻结候选池后，把「池 + 问句 + 周期」交给对话页预填。
+   * 与 pendingAsk 的差别见 AiPoolHandoff 的注释（那个是立即发，这个是预填不发）。一次性、不进 partialize。
+   */
+  aiPoolHandoff: AiPoolHandoff | null;
+  /**
    * P7-⑧②：对话正文点了某个板块名之后，板块榜页要展开哪一块（存 BK 代码）。
    * 一次性交接、不进 partialize：和 pendingAsk 同理，刷新后还替用户展开一块会莫名其妙。
    */
@@ -99,6 +137,12 @@ interface DeskState {
    * 与 focusSector 同类：一次性交接、读完即清、不进 partialize（刷新后还自动开一轮板块选股会莫名其妙）。
    */
   scanBoard: { code: string; name: string; kind: "industry" | "concept" } | null;
+  /**
+   * P48：板块页点板块名 → 量化因子选股页的一棒（对齐稳智 /sectors 点板块名开 /screener?sector=）。
+   * 选股页挂载后据此把一条 `sector_concept like <关键词>` 条件加进「已选条件」并自动筛一轮。
+   * 与 scanBoard 同类：一次性交接、读完即清、不进 partialize。
+   */
+  screenerHandoff: { sectorLike: string; kind: "industry" | "concept" } | null;
 
   go: (p: PageKey) => void;
   toggleSidebar: () => void;
@@ -109,8 +153,13 @@ interface DeskState {
   /** 请 AI 选股页把股票池切到该板块成分（跳页联动用），读完即清 */
   setScanBoard: (b: { code: string; name: string; kind: "industry" | "concept" } | null) => void;
   takeScanBoard: () => { code: string; name: string; kind: "industry" | "concept" } | null;
+  /** P48：请量化因子选股页预置一条板块/概念条件（跳页联动用），读完即清 */
+  setScreenerHandoff: (h: { sectorLike: string; kind: "industry" | "concept" } | null) => void;
+  takeScreenerHandoff: () => { sectorLike: string; kind: "industry" | "concept" } | null;
   setAssistantMode: (m: ChatMode) => void;
   setAssistantHorizon: (h: ChatHorizon | null) => void;
+  /** 整份替换持仓上下文；传 null / 空对象 = 清空（之后每轮都不再带持仓条件） */
+  setHoldCtx: (h: HoldCtx | null) => void;
   setDeskMode: (m: DeskMode) => void;
   setDebugPanel: (v: boolean) => void;
   addWatch: (w: WatchItem) => void;
@@ -130,6 +179,14 @@ interface DeskState {
   askInAssistant: (content: string) => void;
   /** 对话页取走待发送的那一句：取一次就清掉，刷新页面不会重发 */
   takePendingAsk: () => string | null;
+  /**
+   * 2026-09-26 AI优选：把冻结好的候选池交给对话页（跳 copilot + 一次性交接）。
+   * 顺带把用户刚选的周期写进 assistantHorizon——发送时 use-chat 现读它进请求（对齐稳智 payload 的 trading_horizon）；
+   * 也让 composer 的周期选择器如实显示这一次的周期，用户发之前还能改。
+   */
+  askAiWithPool: (h: AiPoolHandoff) => void;
+  /** 对话页取走 AI优选 交接：取一次就清掉（预填完即消费，刷新不重填） */
+  takeAiPoolHandoff: () => AiPoolHandoff | null;
   newSession: () => string;
   switchSession: (id: string) => void;
   dropSession: (id: string) => void;
@@ -196,7 +253,7 @@ export const useDesk = create<DeskState>()(
   persist(
     (set, get) => ({
       // P7-⑪ 任务1：默认落 AI 决策对话（旧默认 aihome 页已并入对话，hash `#/aihome` 仍兼容直达）
-      page: "copilot",
+      page: "market",
       sidebarCollapsed: false,
       focusSymbol: "000001.SH",
       watchlist: [
@@ -226,11 +283,14 @@ export const useDesk = create<DeskState>()(
       frozenPools: [],
       assistantMode: "decision",
       assistantHorizon: null,
+      holdCtx: null,
       deskMode: "chat",
       debugPanel: false,
       pendingAsk: null,
+      aiPoolHandoff: null,
       focusSector: null,
       scanBoard: null,
+      screenerHandoff: null,
 
       // R3c 双入口合并（用户拍板「合并成一条」）：导航目标先过 nav-core 重定向表收口在这一处——
       // go("aiscan") 自动落 quant 门户（主 Tab 挂的就是 AiScanPage 本体），页面侧调用方一个字不用改。
@@ -249,8 +309,16 @@ export const useDesk = create<DeskState>()(
         if (b) set({ scanBoard: null });
         return b;
       },
+      setScreenerHandoff: (h) => set({ screenerHandoff: h }),
+      takeScreenerHandoff: () => {
+        const h = get().screenerHandoff;
+        if (h) set({ screenerHandoff: null });
+        return h;
+      },
       setAssistantMode: (m) => set({ assistantMode: m }),
       setAssistantHorizon: (h) => set({ assistantHorizon: h }),
+      // 空对象也按「没填」存 null：不往请求体里塞一个四个字段全空的壳
+      setHoldCtx: (h) => set({ holdCtx: h && Object.keys(h).length ? h : null }),
       setDeskMode: (m) => set({ deskMode: m }),
       setDebugPanel: (v) => set({ debugPanel: v === true }),
       addWatch: (w) => set((s) => (s.watchlist.some((x) => x.symbol === w.symbol) ? s : { watchlist: [w, ...s.watchlist] })),
@@ -277,12 +345,32 @@ export const useDesk = create<DeskState>()(
         const question = content.trim();
         // 空正文不交接：跳过去看到一个空会话，比留在原页更让人困惑（也不动页）
         if (!question) return;
+        // 2026-09-27 用户实测：从 AI 首页提问会**接在上一次那条旧会话后面**，问几轮下来上下文越堆越长，
+        // 模型既慢又贵，翻回去还找不到本轮从哪儿开始。口径改成「入口决定语义」：
+        //   · 跨页交接（首页 / 扫描页 / 选股台）＝ 开一轮新对话；
+        //   · 侧栏「最近」点某条旧会话 ＝ 回到那条继续（switchSession，不经过这里）；
+        //   · 对话页自己的输入框 ＝ 就在当前会话里续问（AssistantPage.submit，也不经过这里）。
+        // newSession() 自带「当前会话是空的就复用」，所以连着问不会刷出一排空壳会话。
+        get().newSession();
         set({ pendingAsk: question, page: "copilot" });
       },
       takePendingAsk: () => {
         const pending = get().pendingAsk;
         if (pending) set({ pendingAsk: null });
         return pending;
+      },
+      askAiWithPool: (h) => {
+        // 空问句不交接：跳过去看到一个空输入框，比留在原页更让人困惑（与 askInAssistant 同口径）
+        if (!h?.prompt.trim()) return;
+        // 与 askInAssistant 同一条语义：从选股台交接过来的是「一个新问题」，不该续在旧会话尾巴上。
+        get().newSession();
+        // 跳对话页 + 一次性交接；顺带把这次选的周期落到 assistantHorizon（发送时现读，见 use-chat 的 extra）
+        set({ aiPoolHandoff: h, assistantHorizon: h.horizon, page: "copilot" });
+      },
+      takeAiPoolHandoff: () => {
+        const h = get().aiPoolHandoff;
+        if (h) set({ aiPoolHandoff: null });
+        return h;
       },
       // 已有空会话时不重复创建：连着点「新会话」不该刷出一排空壳
       newSession: () => {
@@ -377,7 +465,12 @@ export const useDesk = create<DeskState>()(
         };
       },
       partialize: (s) => ({
-        page: s.page,
+        // 2026-09-26 用户实测修正：page **落盘**（原来不落盘，理由是「稳智同款：打开默认进大盘情绪」）。
+        // 用户的实际诉求相反——「重新打开应停在我上次那一页，而不是每次都回大盘情绪」。
+        // 优先级：URL 带 #/xxx 时 hash 优先（AppShell 的 hash 同步 effect 会 go(hash 页)）；
+        // 无 hash（桌面端冷启动就是根地址）时用这份存档恢复。
+        // 白名单收敛：存档被手改成不存在的页名时回 market——否则 AppShell 一个分支都不匹配 ⇒ 白屏。
+        page: (PAGE_TITLES as Record<string, string | undefined>)[s.page] ? s.page : "market",
         sidebarCollapsed: s.sidebarCollapsed,
         focusSymbol: s.focusSymbol,
         watchlist: s.watchlist,
@@ -395,6 +488,9 @@ export const useDesk = create<DeskState>()(
         // P11：与 assistantMode 同类的长期偏好；白名单收敛——存档被手改成别的字符串时落回 null（未选），
         // 而不是落回某个周期：没选过的人刷新后不该莫名带上短线口径。
         assistantHorizon: s.assistantHorizon === "short" || s.assistantHorizon === "mid" || s.assistantHorizon === "long" ? s.assistantHorizon : null,
+        // 持仓上下文与 assistantMode 同类（长期偏好，刷新后还在）。落盘前过一遍白名单清洗：
+        // 存档被手改成乱值时收敛成 null，绝不让一个「openDate: 昨天」进请求体。
+        holdCtx: sanitizeHold(s.holdCtx),
         // 只落盘合法的两个值：存档被手改成别的字符串时写回时收敛成 chat，页面也只认 "qimen" 一种特例
         deskMode: s.deskMode === "qimen" ? "qimen" : "chat",
         // P8-⑤：与 assistantMode 同类的长期偏好——只认真布尔，坏值收敛成关（默认关是细则 §5-2 的拍板项）

@@ -62,19 +62,20 @@ test("R2a-⑤ 接线钉：端点/客户端/页面三层同吃这份纯核，趋�
   assert.ok(api.includes("/api/market/trend"), "客户端有 fetchTrend 一条口");
   const mk = readSrc("src/components/desk/pages/MarketPage.tsx");
   assert.ok(mk.includes("loadTrend(trendFrom, trendTo)"), "日期范围进请求：加载按钮按所选区间重取");
-  assert.ok(mk.includes("void loadTrend()"), "首屏自动带默认窗口（近 90 天），成交额监控卡不用点按钮也有数");
-  // P15-R2b 口径迁移：逐日沉淀管线已部署，「管线未建」的说法随文案退役；
-  // 不变量没动——没跑出第一批前 chip 仍是「暂无数据」+ 明说不拿快照猜新低，攒够前只报进度不出数。
-  assert.ok(mk.includes("低5日 暂无数据") && mk.includes("拿今天快照猜新低"), "第一批沉淀没出来前：明说没有，不拿快照猜新低");
-  assert.ok(mk.includes("攒中") && mk.includes("/5"), "沉淀中显示真实进度 N/5，不提前出假数");
-  assert.ok(mk.includes("大盘情绪（5日线占比）趋势") && mk.includes("不拿别的东西冒充趋势"), "5日线占比图攒不够就如实空置");
-  assert.ok(mk.includes("setTrendError(String((e as Error).message || e))"), "趋势失败落自己的小告警——不打掉情绪主体，也不共用页面级 error");
+  assert.ok(mk.includes("void loadTrend(trendFrom, trendTo)"), "首屏自动带默认窗口（近 90 天），成交额监控卡不用点按钮也有数");
+  // 趋势失败落自己的小告警——不打掉情绪主体，也不共用页面级 error（setError 只管情绪快照）
+  assert.ok(mk.includes("setTrendError(String((e as Error).message || e))"), "趋势失败落自己的小告警——不打掉情绪主体");
+  // 宽度（5日线占比）独立链路：固定 30 天、与成交额 90 天解耦，攒不够就空置不画假线
+  assert.ok(mk.includes("fetchBreadth(30)"), "宽度走独立沉淀链路（30 天窗口）");
+  assert.ok(mk.includes('breadthState: EChartState = breadthBusy && bMain.length < 2 ? "loading" : bMain.length >= 2 ? "ok" : "empty"'), "宽度不足 2 点就不画（loading/empty 不假线）");
 });
 
-test("R2a-⑥ 取数层：东财 kline 主机顺序与字段口径（成交额换算亿、60s 小缓存）", () => {
+test("R2a-⑥ 取数层：主源通达信（带成交额）/ 备源腾讯（仅 close，amountYi 留 NaN 不冒充），元→亿换算 + 60s 小缓存", () => {
   const trend = readSrc("src/lib/quant/screener/market-trend.ts");
-  assert.ok(/const HOSTS = \[[^\]]*push2his[^\]]*push2delay[^\]]*\]/.test(trend), "HOSTS 数组里 push2his 优先、delay 次之（delay 对指数返回空是实测）——钉的是数组字面量不是全文出现顺序，注释先提到 delay 不该让钉误伤");
-  assert.ok(trend.includes("f51,f53,f57"), "取日期/收盘/成交额三列");
+  assert.ok(trend.includes("tdxDayBars"), "主源：eltdx 通达信网关（本地 ~30ms，指数日K 自带 amount 成交额）");
+  assert.ok(trend.includes("fetchIndexDayBars"), "统一出口函数名收口（页面/端点都吃这一份）");
   assert.ok(/\/\s*1e8/.test(trend), "元 → 亿在取数层换算完，纯核只见亿（容忍 `/ 1e8` 的空格写法）");
-  assert.ok(trend.includes("MEMO_MS"), "进程内小缓存：来回切页不打穿东财");
+  assert.ok(trend.includes("ifzq.gtimg.cn"), "备源：腾讯 ifzq 日K 兜底（网关挂/超时自动降级）");
+  assert.ok(trend.includes("amountYi: NaN"), "腾讯对指数的量字段是成交量不是成交额——amountYi 留 NaN，不冒充真实成交额（硬算会画错 20 倍量级）");
+  assert.ok(trend.includes("MEMO_MS"), "进程内小缓存：来回切页不打穿上游");
 });

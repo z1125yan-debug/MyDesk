@@ -26,6 +26,8 @@ import { tdxQuotes, tdxDepth, tdxTradesMoney } from "./tdx";
 import { callTool as mcpCallTool, listServers, startServer } from "./mcp-manager";
 import { suffixOf } from "./intent-core";
 import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, symbolToSecid } from "./em";
+// R20 主力净额第三档备胎（通达信逐笔自算）：东财/新浪都没通时顶上
+import { mainNetSelfNote, tdxMainNetOf } from "./fund-flow";
 // R10 扩容：个股新闻/公告 + 公司名解析（em.ts 在不动清单里，本模块内部复用它的 searchReal，不改它一行）
 import { resolveStockName, fetchStockNews, fetchStockAnnouncements } from "./stock-news";
 import { fetchBoardRowsRescued } from "./board-rescue";
@@ -40,6 +42,9 @@ import { listLatestFactors } from "@/lib/quant/store";
 import { registerStrategyRunners, type BacktestPayload } from "@/lib/quant/jobs/runners/strategy-jobs";
 import { getJob, startJob } from "@/lib/quant/jobs/registry";
 import { experimentFingerprint } from "@/lib/quant/research/experiments";
+// P35 稳智对齐：工具 → Agent Loop 阶段（phase_key）的真实归属。只引类型，不引运行时代码，
+// 不新增依赖环（agent-phases-core 只 type-import chat-core）。
+import type { PhaseKey } from "./agent-phases-core";
 
 /** 一次工具调用能看到的请求级上下文（只有本机存档才有的东西走这里传，不查库） */
 export interface ToolCtx {
@@ -125,7 +130,7 @@ async function toolSectorRank(args: { kind?: string; size?: number }): Promise<u
   if (!rows || !rows.length) return { missing: `${kind}板块资金榜暂无数据（东财接口失败，同花顺兜底亦无返回）` };
   return {
     数据源: fromThs
-      ? "同花顺板块资金流榜（东财断源兜底：净额=流入−流出，非东财主力拆分口径）"
+      ? "同花顺板块资金流榜（净额=流入−流出口径，非主力拆分口径）"
       : "东财板块资金榜（主力净流入排序）",
     板块: rows.map((r, i) => ({
       排名: i + 1, 名称: r.name, 涨跌幅: r.changePct,
@@ -146,6 +151,11 @@ async function toolStockSnapshot(args: { symbol: string }): Promise<unknown> {
   const q = (await tdxQuotes([symbol]).catch(() => null))?.get(symbol)
     ?? ((await fetchQuotesReal([symbol]).catch(() => []))[0] ?? null);
   if (!q && !meta) return { missing: `${symbol} 快照暂无数据` };
+  // R20：全 A 快照（腾讯批量）不带 mainNet，这一栏常年是 null。快照里没有就去通达信逐笔自算，
+  // 算不出仍留 null——「净额为 0」和「没读到」是两件事，不补 0。
+  const selfNet = meta?.mainNet == null
+    ? await tdxMainNetOf(symbol, meta?.amount ?? null).catch(() => null)
+    : null;
   return {
     symbol,
     ...resolvedNote(r),
@@ -156,7 +166,10 @@ async function toolStockSnapshot(args: { symbol: string }): Promise<unknown> {
     换手率: meta?.turnover ?? null, 量比: meta?.volumeRatio ?? null,
     市盈率TTM: meta?.pe ?? null, 市净率: meta?.pb ?? null,
     总市值亿: meta?.marketCap != null ? meta.marketCap / 1e8 : null,
-    主力净额亿: meta?.mainNet != null ? meta.mainNet / 1e8 : null,
+    // R20：全 A 快照里 mainNet 常年为空（腾讯批量快照不带这个字段），这一栏就一直显示 null。
+    // 现在兜一条通达信逐笔自算：能算出就给数并标注「自算」，算不出仍留 null（不补 0）。
+    主力净额亿: meta?.mainNet != null ? meta.mainNet / 1e8 : selfNet?.mainNetYi ?? null,
+    主力净额口径: meta?.mainNet != null ? "东财全A快照 f62" : selfNet ? mainNetSelfNote(selfNet) : null,
     行业: meta?.industry ?? null,
     数据源: "通达信网关/腾讯快照 + 东财榜单接口",
   };
@@ -238,12 +251,29 @@ async function toolStockFundFlow(args: { symbol: string }): Promise<unknown> {
   const symbol = r.symbol;
   const secid = symbolToSecid(symbol);
   const detail = secid ? await fetchDetailReal(secid).catch(() => null) : null;
-  if (!detail) return { missing: "主力资金流暂无数据（东财主力资金明细与新浪备胎两条源都没通）" };
+  // R20 第三档：东财 + 新浪都没通时，用通达信当日逐笔自算一个主力净额顶上。
+  // 自算只有当日、没有历史序列，所以「近 14 日」那一栏如实留空，不拿当日值去填历史。
+  if (!detail) {
+    const self = await tdxMainNetOf(symbol).catch(() => null);
+    if (!self) return { missing: "主力资金流暂无数据（东财主力资金明细、新浪备胎、通达信逐笔自算三条源都没通）" };
+    return {
+      symbol,
+      ...resolvedNote(r),
+      数据源: "通达信当日逐笔自算（东财/新浪两条源都没通时的第三档）",
+      口径说明: mainNetSelfNote(self),
+      今日主力净额亿: self.mainNetYi,
+      超大单净额亿: self.superBigYi,
+      大单净额亿: self.bigYi,
+      净占比: self.ratioPct,
+      近14日: null,
+      近14日说明: "自算只覆盖当日逐笔，历史序列无法自造（东财/新浪那两条源都没通）",
+    };
+  }
   return {
     symbol,
     ...resolvedNote(r),
     数据源: detail.source === "sina"
-      ? "新浪资金流向日度净额（东财断源时的备胎；口径≈主力净流入，与东财主力净额不完全等价，转述时须注明是新浪口径）"
+      ? "新浪资金流向日度净额（口径≈主力净流入，与通达信逐笔自算的主力净额不完全等价，转述时须注明是新浪口径）"
       : "东财主力资金日明细",
     今日主力净额亿: detail.days.at(-1)?.value ?? null,
     近14日: detail.days.map((d) => ({ 日期: d.date, 主力净额亿: d.value })),
@@ -833,33 +863,50 @@ export interface ChatTool {
    */
   fn: (args: any, ctx?: ToolCtx) => Promise<unknown>;
   params: Record<string, any>;
+  /**
+   * P35 稳智对齐：这个工具**真实归属**的 Agent Loop 阶段（对齐稳智 agentStepTimeline 的
+   * phase_key 常量——稳智也是按工具本身归属标 phase_key，不是按文案猜）。
+   *
+   *   - local_data   获取行情与市场数据（快照/盘口/资金/K线/情绪/板块）
+   *   - external_data 核查新闻与公开信息（新闻/公告）
+   *   - research     综合分析（因子筛选/回测/历史概率/候选池）
+   *
+   * 只可能是这三值：工具不会归到 intent/skills/answer（那三阶段分别靠意图徽章、
+   * 步骤存在、消息流判定，不是"某一步骤行"）。路由（模型自取）与自动调度（系统预取）
+   * 两条链路都读它填 step.phase_key，同一工具只归一个阶段，不会一边说"行情"一边说"分析"。
+   *
+   * 可选：动态注册的第三方工具允许不声明（没标就回落到 label 语义映射，不硬编）。
+   * 内置工具一律显式标注（p35-wz-phase-key 钉测卡住"漏标"）。
+   */
+  phase?: PhaseKey;
 }
 
 export const TOOLS: ChatTool[] = [
-  { name: "market_sentiment", desc: "大盘情绪：情绪温度(0-100)/涨跌家数/涨停/跌停/成交额/主力净额/风险等级", fn: toolMarketSentiment, params: { type: "object", properties: {} } },
-  { name: "sector_rank", desc: "行业/概念板块资金榜（按主力净流入排序）", fn: toolSectorRank, params: { type: "object", properties: { kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number" } } } },
-  { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业；symbol 可传代码或公司简称（简称经东财搜索解析，解析结果如实标注）", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
-  { name: "stock_depth", desc: "个股五档盘口（通达信网关）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
-  { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标）", fn: toolStockTrades, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
-  { name: "stock_kline_summary", desc: "个股技术状态：均线/MACD/KDJ/RSI/VWAP/RPS + 历史条件概率", fn: toolStockKline, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
-  { name: "stock_fund_flow", desc: "个股近14日主力资金净额（东财）", fn: toolStockFundFlow, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] } },
-  { name: "market_news", desc: "最新宏观/市场快讯", fn: toolMarketNews, params: { type: "object", properties: { limit: { type: "number" } } } },
+  { name: "market_sentiment", desc: "大盘情绪：情绪温度(0-100)/涨跌家数/涨停/跌停/成交额/主力净额/风险等级", fn: toolMarketSentiment, params: { type: "object", properties: {} }, phase: "local_data" },
+  { name: "sector_rank", desc: "行业/概念板块资金榜（按主力净流入排序）", fn: toolSectorRank, params: { type: "object", properties: { kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number" } } }, phase: "local_data" },
+  { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业；symbol 可传代码或公司简称（简称经东财搜索解析，解析结果如实标注）", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "stock_depth", desc: "个股五档盘口（通达信网关）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标）", fn: toolStockTrades, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "stock_kline_summary", desc: "个股技术状态：均线/MACD/KDJ/RSI/VWAP/RPS + 历史条件概率", fn: toolStockKline, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "stock_fund_flow", desc: "个股近14日主力资金净额（东财）", fn: toolStockFundFlow, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "market_news", desc: "最新宏观/市场快讯", fn: toolMarketNews, params: { type: "object", properties: { limit: { type: "number" } } }, phase: "external_data" },
   // R10 扩容：个股自己的消息面。谈个股结论必须引它，宏观快讯（market_news）替代不了——
   // 3014 实测「问中国海油答美国地产商」就是拿宏观快讯冒充个股消息面的事故现场。
-  { name: "stock_news", desc: "个股新闻+公告（这只票自己的消息面）：symbol 可传代码或公司简称（简称自动经东财搜索解析并如实标注）；新闻按时间倒序、公告含栏目标签", fn: toolStockNews, params: { type: "object", properties: { symbol: { type: "string" }, limit: { type: "number" } }, required: ["symbol"] } },
+  { name: "stock_news", desc: "个股新闻+公告（这只票自己的消息面）：symbol 可传代码或公司简称（简称自动经东财搜索解析并如实标注）；新闻按时间倒序、公告含栏目标签", fn: toolStockNews, params: { type: "object", properties: { symbol: { type: "string" }, limit: { type: "number" } }, required: ["symbol"] }, phase: "external_data" },
   // R10 通达信三件：只进模型自取清单，不进自动调度预取表（同 P13 candidate_pool 先例）——
   // tdx-mcp 冷启动要拉起 Python 进程（首调 ~4s），预取环里每轮都等它不值；模型要核对盘口/量能再调。
-  { name: "tdx_market_overview", desc: "通达信指数概况：上证/深证/创业板/科创50/北证50 最新点位+成交额+涨跌家数（交易所直连快照，与东财口径互为交叉核对；无资金流读数）", fn: toolTdxMarketOverview, params: { type: "object", properties: {} } },
-  { name: "tdx_quotes", desc: "通达信个股实时快照（最多20只）：现价/涨跌幅/成交额/内外盘/买一卖一盘口/服务器时间；看盘口挂单与量能用它，资金流向仍用 stock_fund_flow", fn: toolTdxQuotes, params: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } }, required: ["symbols"] } },
-  { name: "tdx_kline", desc: "通达信日K（不复权，5~60根）：开高低收+量额+区间涨跌幅，用于核对东财K线或看近期走势", fn: toolTdxKline, params: { type: "object", properties: { symbol: { type: "string" }, days: { type: "number" } }, required: ["symbol"] } },
-  { name: "factor_screener", desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录；不给 conditions 时按系统默认活跃池跑（返回里会如实标注是默认口径）", fn: toolFactorScreener, params: { type: "object", properties: { conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string", enum: ["=", ">=", ">", "<=", "<", "!="] }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } }, limit: { type: "number" } } } },
-  { name: "candidate_pool", desc: "读取已冻结候选池（择优素材，池序不是推荐）：pool_id 形如 2026-09-22-全A-001（AI 选股页冻结后给的池号）；不带 pool_id 会列出最近的池", fn: toolCandidatePool, params: { type: "object", properties: { pool_id: { type: "string" } } } },
-  { name: "historical_probability", desc: "个股历史条件概率：conditions 中的 field 必须来自因子目录", fn: toolHistoricalProbability, params: { type: "object", properties: { symbol: { type: "string" }, conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string" }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } } }, required: ["symbol", "conditions"] } },
-  { name: "watchlist_overview", desc: "自选股实时总览（清单取自用户本机存档，行情现取）", fn: toolWatchlistOverview, params: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } } } },
+  { name: "tdx_market_overview", desc: "通达信指数概况：上证/深证/创业板/科创50/北证50 最新点位+成交额+涨跌家数（交易所直连快照，与东财口径互为交叉核对；无资金流读数）", fn: toolTdxMarketOverview, params: { type: "object", properties: {} }, phase: "local_data" },
+  { name: "tdx_quotes", desc: "通达信个股实时快照（最多20只）：现价/涨跌幅/成交额/内外盘/买一卖一盘口/服务器时间；看盘口挂单与量能用它，资金流向仍用 stock_fund_flow", fn: toolTdxQuotes, params: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } }, required: ["symbols"] }, phase: "local_data" },
+  { name: "tdx_kline", desc: "通达信日K（不复权，5~60根）：开高低收+量额+区间涨跌幅，用于核对东财K线或看近期走势", fn: toolTdxKline, params: { type: "object", properties: { symbol: { type: "string" }, days: { type: "number" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "factor_screener", desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录；不给 conditions 时按系统默认活跃池跑（返回里会如实标注是默认口径）", fn: toolFactorScreener, params: { type: "object", properties: { conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string", enum: ["=", ">=", ">", "<=", "<", "!="] }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } }, limit: { type: "number" } } }, phase: "research" },
+  { name: "candidate_pool", desc: "读取已冻结候选池（择优素材，池序不是推荐）：pool_id 形如 2026-09-22-全A-001（AI 选股页冻结后给的池号）；不带 pool_id 会列出最近的池", fn: toolCandidatePool, params: { type: "object", properties: { pool_id: { type: "string" } } }, phase: "research" },
+  { name: "historical_probability", desc: "个股历史条件概率：conditions 中的 field 必须来自因子目录", fn: toolHistoricalProbability, params: { type: "object", properties: { symbol: { type: "string" }, conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string" }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } } }, required: ["symbol", "conditions"] }, phase: "research" },
+  { name: "watchlist_overview", desc: "自选股实时总览（清单取自用户本机存档，行情现取）", fn: toolWatchlistOverview, params: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } } }, phase: "local_data" },
   {
     name: "run_backtest",
     desc: "因子组合历史回测（真实引擎计算）：factors 只能取提示词里「可回测因子白名单」的 factorKey，禁止自写表达式；区间不足 240 交易日或因子不在白名单会被拒绝",
     fn: toolRunBacktest,
+    phase: "research",
     params: {
       type: "object",
       properties: {
@@ -905,6 +952,17 @@ export const BACKTEST_READY = TOOL_NAMES.includes("run_backtest");
 
 export function findTool(name: string): ChatTool | undefined {
   return TOOLS.find((t) => t.name === name);
+}
+
+/**
+ * P35 稳智对齐：工具名 → Agent Loop 阶段（phase_key）的真实映射，单一出处。
+ *
+ * 路由（模型自取的 step）与自动调度（系统预取的 step）都调它填 phase_key——
+ * 同一个工具在两条链路上只会归到同一个阶段。未登记或未标注的工具返回 null，
+ * 前端回落到 label 语义映射（classifyStep），**不硬编一个阶段冒充事实**。
+ */
+export function phaseOfTool(name: string): PhaseKey | null {
+  return findTool(name)?.phase ?? null;
 }
 
 /** 因子目录一行（提示词与自动调度都要用同一份，写两遍迟早对不上） */

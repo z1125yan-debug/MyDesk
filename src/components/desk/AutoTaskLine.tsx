@@ -34,9 +34,9 @@ export function AutoTaskLine({ kind, refreshKey = 0 }: { kind: "radar" | "events
   useEffect(() => { void load(); }, [load, refreshKey]);
 
   if (error) {
-    return <div className="text-[10.5px] text-muted-foreground">后台任务状态：读取失败（{error}）</div>;
+    return <div className="text-[11.5px] text-muted-foreground">后台任务状态：读取失败（{error}）</div>;
   }
-  if (!st) return <div className="text-[10.5px] text-muted-foreground">后台任务状态：读取中…</div>;
+  if (!st) return <div className="text-[11.5px] text-muted-foreground">后台任务状态：读取中…</div>;
 
   const sum = st.today_summary.find((s) => s.kind === kind);
   const runs = st.today_runs.filter((r) => r.kind === kind);
@@ -73,7 +73,7 @@ export function AutoTaskLine({ kind, refreshKey = 0 }: { kind: "radar" | "events
       : `已确认 ${cur.done_keys} 条键${cur.unmatched_keys ? `、未命中记录 ${cur.unmatched_keys} 条` : ""}（${bjTime(cur.updated_at)}）→ 下一次自动执行按增量口径，只写新增与内容变化的行（手动点「立即扫描」仍按全量重刷）`;
 
   return (
-    <div className="text-[12px] text-muted-foreground">
+    <div className="text-[13px] text-muted-foreground">
       {!st.enabled || !st.running
         ? "收盘后会自动扫描一次。"
         : autoDone

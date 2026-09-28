@@ -215,7 +215,10 @@ const MINUTE_TF: Partial<Record<Timeframe, string>> = {
   m1: "m1", m5: "m5", m15: "m15", m30: "m30", m60: "m60",
 };
 
-interface TcRow extends Array<string | number> {}
+// 腾讯日 K 的一行是「不定长数组」，元素只可能是字符串或数字。
+// 原来这里是个空接口（`extends Array` 但不加任何成员）——空接口等价于父类型，
+// 既触发 no-empty-object-type，也没带来任何语义，直接用类型别名即可。
+type TcRow = Array<string | number>;
 
 function parseDayRows(rows: TcRow[]): Bar[] {
   const out: Bar[] = [];

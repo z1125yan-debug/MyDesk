@@ -11,7 +11,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL, FOLD_HEADERS, GATEWAY_PLACEHOLDER_KEY, LLM_ENV_KEYS,
-  TEXT_BAD_BASE, TEXT_OFFICIAL_NO_KEY, foldHistoryForGateway, gatewayUnreachableText,
+  MAX_UPSTREAM_TIMEOUT_MS, MIN_UPSTREAM_TIMEOUT_MS,
+  TEXT_BAD_BASE, TEXT_OFFICIAL_NO_KEY, clampUpstreamTimeoutMs, foldHistoryForGateway, gatewayUnreachableText,
   isLanBaseUrl, resolveServerLlm, shouldRetryNonStream,
 } from "../../src/lib/llm/model-config-core.ts";
 import {
@@ -139,6 +140,50 @@ test("网关连不上要说病根：指向启动命令与 .env 出路，不写�
   const t = gatewayUnreachableText("http://localhost:7861/v1");
   assert.match(t, /start\.py/);
   assert.match(t, /LLM_BASE_URL/);
+});
+
+// ---------- 上游超时钳位（流式 / 非流式一份口径） ----------
+//
+// 背景：非流式 callOpenAI 原来写死 45s、完全不读请求体的 timeout_ms，事件理解这类结构化长生成
+// （客户端传 120s）永远撞不到 120s，45s 一到就被判「连接上游超时」——「AI理解今日事件」点不动的根因之一。
+// 这两条钉住：钳位口径是纯函数可回测；客户端确实把 timeoutMs 透传到了请求体。
+
+test("上游超时钳位：只认 >=10s 的显式值，钳在 [10s,600s]，其余回落各自默认", () => {
+  assert.equal(clampUpstreamTimeoutMs(120000, 45000), 120000);
+  assert.equal(clampUpstreamTimeoutMs("120000", 45000), 120000);
+  assert.equal(clampUpstreamTimeoutMs(9000, 45000), 45000, "低于 10s 视为没给，不替调用方缩短超时");
+  assert.equal(clampUpstreamTimeoutMs(999999, 45000), MAX_UPSTREAM_TIMEOUT_MS);
+  assert.equal(clampUpstreamTimeoutMs(undefined, 45000), 45000);
+  assert.equal(clampUpstreamTimeoutMs(NaN, 120000), 120000);
+  assert.equal(clampUpstreamTimeoutMs("abc", 120000), 120000);
+  assert.equal(MIN_UPSTREAM_TIMEOUT_MS, 10000);
+  assert.equal(MAX_UPSTREAM_TIMEOUT_MS, 600000);
+});
+
+test("非流式调用把客户端 timeoutMs 透传给 /api/ai/proxy（事件理解 120s 才能生效）", async () => {
+  const { aiChatPlain } = await import("../../src/lib/desk/ai.ts");
+  const orig = globalThis.fetch;
+  const seen: { url: string; body: Record<string, unknown> }[] = [];
+  globalThis.fetch = (async (url: unknown, init?: { body?: string }) => {
+    const u = String(url);
+    if (u.includes("/api/llm/config")) return new Response(JSON.stringify({ available: true }), { status: 200 });
+    seen.push({ url: u, body: JSON.parse(init?.body ?? "{}") });
+    return new Response(JSON.stringify({ content: "ok" }), { status: 200 });
+  }) as unknown as typeof fetch;
+  try {
+    const ai = { provider: "custom", baseUrl: "https://example.com/v1", apiKey: "k", model: "m" };
+    await aiChatPlain(ai as never, [{ role: "user", content: "hi" }], { timeoutMs: 300000, maxTokens: 8192 });
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].url, "/api/ai/proxy");
+    assert.equal(seen[0].body.timeout_ms, 300000, "不带这个键，服务端永远撞不到长超时（45s/120s 就断）");
+    assert.equal(seen[0].body.max_tokens, 8192, "批量结构化输出要显式拉大生成预算（默认 2048 会截断 JSON）");
+    // 不传 timeoutMs/maxTokens 时一个都不塞：不给服务端凭空加口径
+    await aiChatPlain(ai as never, [{ role: "user", content: "hi" }]);
+    assert.equal("timeout_ms" in seen[1].body, false);
+    assert.equal("max_tokens" in seen[1].body, false);
+  } finally {
+    globalThis.fetch = orig;
+  }
 });
 
 // ---------- 50 框架：条数、原文、分层 ----------

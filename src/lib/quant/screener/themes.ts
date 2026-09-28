@@ -159,12 +159,16 @@ export async function discoverThemes(opts?: { force?: boolean }): Promise<ThemeD
   const inputs: ThemeScoreInput[] = [];
   let klineFail = 0;
   let memberFail = 0;
-  for (const r of probe) {
+  // P15-R12 优化：14 个 probe 并行 await（原来串行 for-await 是慢点）
+  const probed = await Promise.all(probe.map(async (r) => {
     const [diff, streakPct, streakIn] = await Promise.all([
       diffusionOf(r.code, r._kind),
       boardDayStreak(r.secid || `90.${r.code}`),
       inflowStreak(r.secid || `90.${r.code}`),
     ]);
+    return { r, diff, streakPct, streakIn };
+  }));
+  for (const { r, diff, streakPct, streakIn } of probed) {
     if (diff === null) memberFail++;
     if (streakPct === null) klineFail++;
     inputs.push({

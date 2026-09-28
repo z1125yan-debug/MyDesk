@@ -303,16 +303,59 @@ test("applyEvent：delta 累加、step 按序号覆盖状态、done 定稿、err
   const done = applyEvent(m, { type: "done", data: { fullText: "最终全文" } });
   assert.equal(done.content, "最终全文");
   assert.equal(done.streaming, false);
+  // P23：error 事件携带 error_code，applyEvent 用 friendlyErrorMessage 映射成用户可读文案
+  // 没传 error_code 时兜底到 unknown（"请求出错，请稍后重试"）
   const errored = applyEvent(m, { type: "error", data: { message: "上游 502" } });
   assert.equal(errored.content, m.content, "已有正文不能被错误事件清空");
-  assert.ok(errored.warning!.includes("已中断：上游 502"));
+  assert.ok(errored.warning!.includes("已中断：请求出错，请稍后重试"), "P23：warning 用映射后的文案而非原始 message");
   assert.equal(errored.streaming, false);
   // 一个字都没有时，error 必须有可见说明，而不是留个空气泡
-  const empty = applyEvent(msg("assistant", "", { streaming: true }), { type: "error", data: { message: "上游 502" } });
-  assert.ok(empty.content.includes("上游 502"));
+  const empty = applyEvent(msg("assistant", "", { streaming: true }), { type: "error", data: { message: "上游 502", error_code: "upstream_error" } });
+  assert.ok(empty.content.includes("AI 服务异常，请稍后重试"), "P23：空正文时显示映射文案");
+  assert.ok(!empty.content.includes("502"), "P23：不暴露原始 message 给正常用户");
   // 已有部分正文时 delta 空串不该改变内容
   const partial = applyEvent(applyEvent(msg("assistant", "已有半句"), { type: "error", data: { message: "断了" } }), { type: "delta", data: { content: "" } });
   assert.equal(partial.content, "已有半句");
+});
+
+test("applyEvent：error_code 映射生效（P23 稳智对齐）", () => {
+  // 带 error_code 时，文案用映射表
+  const withCode = applyEvent(
+    msg("assistant", "", { streaming: true }),
+    { type: "error", data: { message: "upstream 502", error_code: "upstream_error" } },
+  );
+  assert.ok(withCode.content.includes("AI 服务异常，请稍后重试"));
+  assert.ok(!withCode.content.includes("502"));
+
+  // ai_not_configured
+  const notConfig = applyEvent(
+    msg("assistant", "", { streaming: true }),
+    { type: "error", data: { message: "Bifrost 未启动", error_code: "ai_not_configured" } },
+  );
+  assert.ok(notConfig.content.includes("AI 服务暂不可用"));
+
+  // model_timeout
+  const timeout = applyEvent(
+    msg("assistant", "", { streaming: true }),
+    { type: "error", data: { message: "request timed out", error_code: "model_timeout" } },
+  );
+  assert.ok(timeout.content.includes("AI 服务繁忙"));
+
+  // rate_limit_exceeded
+  const rateLimit = applyEvent(
+    msg("assistant", "", { streaming: true }),
+    { type: "error", data: { message: "429 too many", error_code: "rate_limit_exceeded" } },
+  );
+  assert.ok(rateLimit.content.includes("请求过于频繁"));
+});
+
+test("applyEvent：未知 error_code 兜底到 unknown 文案（P23）", () => {
+  // 后端发了新码或拼写错，前端不 crash，用 unknown 兜底
+  const unknown = applyEvent(
+    msg("assistant", "", { streaming: true }),
+    { type: "error", data: { message: "some new error", error_code: "some_new_code" } },
+  );
+  assert.ok(unknown.content.includes("请求出错"));
 });
 
 test("settleRunningSteps：中断后不留永远转圈的步骤", () => {

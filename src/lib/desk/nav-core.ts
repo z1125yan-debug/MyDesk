@@ -39,49 +39,42 @@ export interface MenuEntry {
   legacyPages?: PageKey[];
 }
 
-/** 顺序即视觉顺序（对齐稳智左栏从左到右/从上到下的排列） */
+/** 顺序即视觉顺序（对齐稳智左栏 HTML 实际排列：大盘情绪→量化因子选股→行业→行情→自选→LLM分析→奇门遁甲→稳智AI→订阅） */
 export const MENU: MenuEntry[] = [
   { id: "market", label: "大盘情绪", key: "market" },
   {
+    // S3 稳智复刻：量化选股收敛为单一工作台（条件卡组+筛选+AI 优选+策略）；旧研究台/因子库等仍可 hash 直达
     id: "quant",
-    label: "量化选股",
-    children: [
-      { key: "quant", label: "AI 选股 · 研究台" },
-      { key: "screener", label: "因子选股 · 历史" },
-      { key: "factorlab", label: "因子库 · 测试台" },
-      { key: "pool", label: "候选池" },
-      { key: "radar", label: "主动发现" },
-      { key: "problab", label: "历史概率" },
-    ],
+    label: "量化因子选股",
+    key: "aiscreener",
+    legacyPages: ["quant", "screener", "factorlab", "pool", "radar", "problab"],
   },
-  {
-    id: "sectors",
-    label: "行业板块",
-    children: [
-      { key: "sectors", label: "行业 · 概念资金流" },
-      { key: "themes", label: "主线热点" },
-      { key: "themeoverview", label: "主题血缘总览" },
-    ],
-  },
+  // 2026-09-25 用户拍板：对齐稳智——「行业」是单项直达（稳智 index="/sectors"，无子菜单）。
+  { id: "sectors", label: "行业", key: "sectors" },
   {
     id: "quotes",
     label: "行情",
     children: [
+      // 2026-09-25：新增「个股行情」页（稳智 /overview 复刻）作为本组首页——点「行情」即进此页
+      { key: "quotes", label: "个股行情" },
       { key: "allstocks", label: "全A 列表" },
       { key: "history", label: "历史行情" },
       { key: "profile", label: "个股画像" },
       { key: "risk", label: "风险监控" },
       { key: "board", label: "数据看板" },
-      { key: "dashboard", label: "市场总览" },
     ],
   },
   // 对方把「自选」单列一级（第 5 位），照做——它不是行情的子集，是每天打开的那一页
   { id: "watch", label: "自选", key: "tracker" },
-  // P15-R18 用户指示「把全球雷达事件找出来塞进去」：事件雷达每天要读，不该藏在 legacy 横幅后面，
-  // 提回一级项摆在选择之后（和「自选」同一档：都是打开就读的页），不再走 legacyPages。
-  { id: "events", label: "全球事件雷达", key: "events" },
-  { id: "ai", label: "AI 对话", key: "copilot", legacyPages: ["aihome", "analysis", "research", "agent"] },
+  // P15-R18 全球事件雷达：本地特色（稳智无对位），保留在自选和 LLM 分析之间——每天要读的一级页。
+  { id: "events", label: "事件雷达", key: "events" },
+  // P26 稳智对齐：稳智顺序是「自选 → LLM分析 → 奇门遁甲 → 稳智AI」。
+  // LLM 分析不是纯 AI 对话，是带顶部 5 Tab 的门户工作台（LlmAnalysisPage）。
+  // legacyPages 保留——旧的 #/analysis / #/research / #/agent 三个 hash 依然可达（AppShell 分支不删）。
+  { id: "assistant", label: "LLM分析", key: "llmportal", legacyPages: ["analysis", "research", "agent"] },
   { id: "qimen", label: "奇门遁甲", key: "qimen" },
+  // 稳智左栏倒数第 2 位是「稳智AI」——本地改叫「AI分析」（2026-09-25 用户拍板）。
+  { id: "ai", label: "AI分析", key: "aihome" },
 ];
 
 /** 底部系统区（对方「订阅账号与点数」的对应位）：不散回主菜单 */
@@ -91,9 +84,32 @@ export const SYSTEM_ITEMS: MenuLeaf[] = [
 ];
 
 /**
+ * 从菜单移除、只留 hash 直达的页（2026-09-25 用户拍板）：
+ * 稳智把「主题热点」放在 LLM分析（/settings）的 Tab 里，不是独立菜单项——本地这两页也从菜单拿掉，
+ * 页面本体不删，靠 #/themes、#/themeoverview 直达。group 只用于「进来时高亮哪一组」；不画菜单、不挂横幅。
+ */
+export const HIDDEN_PAGES: { key: PageKey; group: string }[] = [
+  { key: "themes", group: "assistant" },
+  { key: "themeoverview", group: "assistant" },
+  // 2026-09-25：用户要求把「行情」组下的「市场总览」从菜单删掉——页面本体不删，仍可 #/dashboard 直达
+  { key: "dashboard", group: "quotes" },
+  // 2026-09-26 用户实测修正：对话本体（copilot / AssistantPage）**不占菜单位**（「AI分析」一级项落的是落地页 aihome），
+  // 但它是 AI分析 这条血缘线上的页——登记在此只为「在哪一组高亮 + 登记一处不重不漏」，
+  // 不是 legacy（进来不挂横幅），也不再被任何重定向劫持（见下面 ROUTE_REDIRECTS 的改动说明）。
+  { key: "copilot", group: "ai" },
+];
+
+/**
  * 路由重定向：旧 PageKey 仍在（AppShell 分支、types.ts 枚举一个不删），但导航时收口到统一入口。
  * aiscan → quant：门户主 Tab 挂的就是 AiScanPage 本体，两者本是同一份实现，
  * 用户拍板「合并成一条」——菜单不再单列「全A 实时选股」，点它/递棒过来都落门户。
+ *
+ * ⚠️ 2026-09-26 用户实测修正：**删除** `copilot → llmportal` 这条重定向。
+ * 它当初的理由是「LLM 分析门户的第 5 个 Tab 就是 AI 对话」，但门户（LlmAnalysisPage）的 5 个 Tab
+ * 是 主题热点/研究池/板块全景看板/个股评估矩阵/产业链研报分析——**根本没有 AI 对话 Tab**。
+ * 后果：落地页发送（askInAssistant→copilot）、最近会话、概览卡、小窗「在助手页继续」四条路
+ * 全被弹到「LLM分析」，而唯一消费 pendingAsk 的 AssistantPage 永远不挂载 ⇒ **那句话被静默吞掉**。
+ * 现在 copilot 就是对话本体，直达；「点哪个菜单就是哪个菜单」。
  */
 export const ROUTE_REDIRECTS: Partial<Record<PageKey, PageKey>> = {
   aiscan: "quant",
@@ -142,6 +158,12 @@ const { GROUP_OF, LEGACY_OF } = (() => {
     const targetGroup = groupOf.get(to) ?? legacyOf.get(to);
     if (!targetGroup) throw new Error(`nav-core 口径错误：${from} 重定向到未登记的 ${to}`);
     groupOf.set(from, targetGroup);
+  }
+  // 隐藏页：登记一处（防漏页对账），归属给指定组做高亮；不画菜单、不挂横幅。
+  for (const h of HIDDEN_PAGES) {
+    take(h.key, "HIDDEN_PAGES");
+    if (!MENU.some((e) => e.id === h.group)) throw new Error(`nav-core 口径错误：HIDDEN_PAGES 的 ${h.key} 归属组 ${h.group} 不存在`);
+    groupOf.set(h.key, h.group);
   }
   return { GROUP_OF: groupOf, LEGACY_OF: legacyOf };
 })();

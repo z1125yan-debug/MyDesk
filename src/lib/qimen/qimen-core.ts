@@ -55,6 +55,8 @@ export const TEXT_OUT_OF_RANGE = `起局年份超出开源库实测可用区间 
   + `（库自称支持 ${LIB_YEAR_ADVERTISED_MIN}–${LIB_YEAR_ADVERTISED_MAX}，但两端的整年因为它要取前后一年的冬至而算不出来）`;
 export const TEXT_LUNAR_MISSING = "农历本次未取到（运行环境缺中文 ICU 数据，不影响干支与九宫）";
 export const TEXT_CENTER_HOST_MISSING = "本次未在开源库输出里找到中宫地盘干的寄宫（不猜一个宫位顶上）";
+/** 本命盘要求完整的出生时空，出生日期/时间留空＝没有根，不能退回到「现在」起局 */
+export const TEXT_MISSING_BIRTH = "本命盘需要完整的出生时间（年/月/日/时）：出生日期与出生时间都不能留空";
 
 /**
  * 中宫寄宫规则文案：**寄到哪个宫由库的输出实算**，这里只负责把它说出来。
@@ -187,6 +189,37 @@ export const QUESTION_TYPES: QuestionType[] = [
 export function normalizeQuestionType(v: unknown): QuestionType {
   const key = typeof v === "string" ? v.trim() : "";
   return QUESTION_TYPES.find((q) => q.value === key || q.label === key) ?? QUESTION_TYPES[QUESTION_TYPES.length - 1];
+}
+
+// ---------- 起局模式（时家问事盘 / 年家本命盘） ----------
+
+/**
+ * 两种盘共用一套九宫渲染与解盘通道，只是「用什么时刻、按哪套奇门」不同：
+ *  - shijia（时家问事盘）：任务书原始口径，用问事/当前时点起局，method="时家"，走问题类型白名单；
+ *  - nianjia（年家本命盘）：用出生时空起局，method="年家"（开源库原生支持），以年命为用神，
+ *    看终身格局。两者都是传统术数推演，不声称准确性，也不接任何扣费/远程接口。
+ */
+export type QimenMode = "shijia" | "nianjia";
+
+/** 本命盘没有「问什么事」，解盘侧重改为「年命+年家局数」；不塞进 QUESTION_TYPES 白名单（那是为时家问事准备的） */
+export const NATAL_QUESTION_TYPE: QuestionType = {
+  value: "natal",
+  label: "本命格局",
+  hint: "问的是命主终身格局，以年命（年柱天干）为用神，重点看年家局数、值符值使与年干落宫",
+};
+
+/**
+ * 年家奇门的库实现说明——按开源库 0.1.0 的**实测行为**如实标注，不替它背书。
+ * 实测（1990 与 2026 全年逐日，365+365 个样本）：
+ *  - 节气名恒为「立春」：年家以立春为岁首，与快照里的真实节气（芒种/大雪等）无关；
+ *  - 局数在同一年内固定（1990 庚午年恒为五局、2026 丙午年恒为二局），阴阳遁按冬夏至翻转；
+ * 这三条是观测结果不是我们定的规则，所以按库本次输出原样说出，
+ * 并明确「各家派别年家取法不一」——不把库的一家之言说成权威口径。
+ */
+export function nianjiaImplementationNote(termName: string): string {
+  return `年家奇门为开源库 ${LIB_VERSION} 的实现，本次按库的实际输出如实给出：节气名恒显示「${termName}」`
+    + `（年家以立春为岁首，与快照里的真实节气无关），局数在同一年内固定、阴阳遁按冬夏至翻转。`
+    + `各家派别年家取法不一，此处不与权威历书互相背书。`;
 }
 
 // ---------- 真太阳时（纯算术） ----------
@@ -524,6 +557,8 @@ export interface AdaptInput {
   trueSolar: TrueSolarTime;
   questionType: QuestionType;
   lateZiHourMode: string;
+  /** 起局模式：shijia=时家问事 / nianjia=年家本命。决定 provenance.method 与 cast_from 的措辞 */
+  mode: QimenMode;
   /** 服务端时间戳，只能来自 shanghaiStamp() */
   computedAt: string;
   /** 节气交接临近提示（service 用库的 getSolarTerms 算好传进来；没有就不提示） */
@@ -558,6 +593,7 @@ export function adaptChart(inp: AdaptInput): QimenOutcome {
   const hostCenter = hostsCenterPalace(r.diPan);
   const hostQin = qinPalace(r.jiuXing);
   const hourEntry = snap.hours[inp.hourIndex];
+  const natal = inp.mode === "nianjia";
 
   const palaces: QimenPalace[] = PALACE_KEYS.map((k) => {
     const p = Number(k);
@@ -586,6 +622,8 @@ export function adaptChart(inp: AdaptInput): QimenOutcome {
   const warnings: string[] = [];
   if (!snap.lunarDate) warnings.push(TEXT_LUNAR_MISSING);
   if (hostCenter === null) warnings.push(TEXT_CENTER_HOST_MISSING);
+  // 年家本命盘：把库的年家实现口径如实说出来（节气名恒为立春、局数年内固定），不替它背书
+  if (natal) warnings.push(nianjiaImplementationNote(r.juShu.jieQiName));
   if (inp.trueSolar.enabled && inp.trueSolar.hourPillarChanged) {
     warnings.push(
       `真太阳时校正把时柱从 ${inp.trueSolar.beijingHourPillar ?? "？"} 改成了 ${res.info.siZhu.time}`
@@ -639,15 +677,18 @@ export function adaptChart(inp: AdaptInput): QimenOutcome {
       provenance: {
         engine: `${LIB_NAME}（本地计算，未调用任何外部接口）`,
         engine_version: LIB_VERSION,
-        method: "时家奇门",
+        method: natal ? "年家奇门" : "时家奇门",
         rules: [
           `真太阳时校正：${inp.trueSolar.enabled ? `开启（东经 ${inp.trueSolar.longitude}°，合计偏移 ${inp.trueSolar.offsetMinutes.toFixed(1)} 分钟）` : "关闭（按北京时间起局）"}`,
           `时区：${DEFAULT_TIMEZONE}`,
           centerRuleText(palaces.find((p) => p.hosts_center) ?? null),
           `晚子时口径：${inp.lateZiHourMode === "next-day" ? "次日起日柱" : "当日起日柱（库默认）"}`,
+          natal
+            ? "年家奇门：以出生年份定局，盘根为出生四柱、以年命为用神，看终身格局参考"
+            : "时家奇门：以问事/当前时辰定局，看眼下这件事的趋势与用神状态",
           "节气由开源库本地解析近似算出（lite 版），与紫金山天文台公布值相差分钟级",
         ],
-        cast_from: `按${inp.trueSolar.enabled ? "真太阳时" : "北京时间"} ${formatWallClock(inp.cast)} 起局`,
+        cast_from: `${natal ? "以出生时空 " : `按${inp.trueSolar.enabled ? "真太阳时" : "北京时间"} `}${formatWallClock(inp.cast)} 起局`,
         computed_at: inp.computedAt,
       },
       warnings,
@@ -796,4 +837,101 @@ export function parseInterpretation(text: string): Interpretation {
 /** 界面上一句话说明「这块数据从哪来」，与项目里其它面板的出处口径一致 */
 export function provenanceLine(chart: QimenChart): string {
   return `${chart.provenance.engine} v${chart.provenance.engine_version} · ${chart.provenance.method} · ${chart.provenance.cast_from} · 生成于 ${chart.provenance.computed_at}`;
+}
+
+// ---------- 起局结果智能引导 / 古法原盘说明（确定性文本，不调模型、不碰外部接口） ----------
+
+/**
+ * 起局结果智能引导：对齐稳智「按现在起局 / 中宫寄宫」的 4 种组合引导文案。
+ * 不替模型下结论——只根据「是否按当前时点起局」与「中宫是否寄宫」这两件事实，
+ * 给出一段口径提醒，避免用户把单盘当成硬结论。
+ *
+ * @param usedNow 本次起局时日期/时间是否留空（留空＝服务端用当前北京时间，非浏览器时钟）
+ * @param chart   盘面（判断是否中宫寄宫只看 palace.hosts_center，不靠字符串匹配）
+ */
+export function buildGuidance(usedNow: boolean, chart: QimenChart): string {
+  const centerHosted = chart.chart.palaces.some((p) => p.hosts_center);
+  // 年家本命盘：根在出生时空，看终身格局，不是「当前时点问事」，引导口径要换一套
+  if (chart.provenance.method.includes("年家")) {
+    return "这是以你出生时空起的年家本命盘：盘根是出生四柱、以年命为用神，看的是终身格局与大运走向的参考，不是某一时点的问事盘。本命盘同样只是传统术数推演，重要决定请结合现实一起判断。";
+  }
+  if (usedNow && centerHosted) {
+    return "本次结果按你当前时点起局（日期/时间为空＝服务端用当前北京时间），适合看眼下趋势；若要做重要决定，建议结合现实情况一起参考。";
+  }
+  if (usedNow) {
+    return "本次结果按你当前时点起局（日期/时间为空＝服务端用当前北京时间），更适合看眼下状态和短期趋势。";
+  }
+  if (centerHosted) {
+    return "这次盘面结构稍特殊（中宫地盘干寄于承宫），建议把它当作方向参考，不要只靠单条结论做决定。";
+  }
+  return "这份结果更适合作为方向参考，重要决定建议结合现实情况一起判断。";
+}
+
+/** 明清古法奇门通行口径里的三吉门 / 三凶门（仅做事实归类，不断言吉凶结论） */
+const DOOR_AUSPICIOUS = ["开", "休", "生"];
+const DOOR_INAUSPICIOUS = ["死", "惊", "伤"];
+
+/**
+ * 古法原盘说明：把盘面**确定性**地文字化成一版「明清古法奇门通行口径」的底稿，
+ * 与 AI 解读分层展示（AI 解读走模型通道、见 QimenPanel 的 InterpretCard）。
+ * 只写盘面里真实存在的字（中宫无星门神就写「无」），不补默认值、不替模型下结论。
+ */
+export function buildClassicalText(chart: QimenChart): string {
+  const c = chart.chart;
+  const g = chart.ganzhi;
+  const cal = chart.calendar;
+  const tst = cal.true_solar_time;
+  const palaces = [...c.palaces].sort((a, b) => a.palace - b.palace);
+
+  const lines: string[] = [];
+  lines.push(`【局式】${c.dun_type}${c.ju_number}局（${c.yuan}），旬首${c.xunshou}，值符${c.zhifu}、值使${c.zhishi}；${c.kong_kind}：${c.kong}。`);
+  lines.push(`【四柱】${g.year}年 ${g.month}月 ${g.day}日 ${g.hour}时（日旬${g.day_xun}，时旬${g.hour_xun}）；节气${cal.solar_term}。`);
+  lines.push(`【起局】${chart.provenance.cast_from}${tst.enabled ? `，真太阳时校正后 ${tst.corrected}（偏移 ${tst.offsetMinutes.toFixed(1)} 分）` : ""}。`);
+  lines.push("");
+  lines.push("【九宫】按洛书顺布（每宫列 天盘干/地盘干 · 九星 · 八门 · 八神）：");
+  for (const p of palaces) {
+    const stems = `${p.sky_stems.join("") || "—"}/${p.earth_stems.join("") || "—"}`;
+    const markers = [...p.day_marker, ...p.hour_marker];
+    lines.push(
+      `${p.palace}宫 ${p.name}（${p.direction}）：${stems}；${p.star || "（无）"}；${p.door || "（无）"}；${p.god || "（无）"}`
+      + (p.hosts_center ? "；承中宫地盘干" : "")
+      + (p.hosts_sky_center ? "；禽芮同宫，承中宫天盘干" : "")
+      + (p.is_center ? "；中宫无星门神" : "")
+      + (markers.length ? `；${markers.join("")}` : ""),
+    );
+  }
+  const ausp = palaces.filter((p) => DOOR_AUSPICIOUS.includes(p.door)).map((p) => `${p.name}（${p.door}）`);
+  const inausp = palaces.filter((p) => DOOR_INAUSPICIOUS.includes(p.door)).map((p) => `${p.name}（${p.door}）`);
+  lines.push("");
+  lines.push(`【吉门】三吉门（开/休/生）落：${ausp.join("、") || "无"}。`);
+  lines.push(`【凶门】三凶门（死/惊/伤）落：${inausp.join("、") || "无"}。`);
+  // 年家本命盘：点出年命（年柱天干）与「以年命为用神」的定性，不替模型下结论
+  if (chart.provenance.method.includes("年家")) {
+    const yearGan = g.year.charAt(0);
+    lines.push("");
+    lines.push(`【年命】年柱 ${g.year}，年命为「${yearGan}」：本命盘以年命为用神，盘面为出生格局，作终身参考（传统术数推演，非事实、非投资建议）。`);
+  }
+  return lines.join("\n");
+}
+
+/** 起局输入回显：把用户提交的真实字段原样列出（与盘面事实分离，单独成「输入」一栏） */
+export interface CastInputEcho {
+  mode: QimenMode;
+  date: string;
+  time: string;
+  city: string;
+  questionTypeLabel: string;
+  trueSolarTime: boolean;
+}
+
+export function buildInputEchoLines(input: CastInputEcho): { k: string; v: string }[] {
+  const natal = input.mode === "nianjia";
+  return [
+    { k: natal ? "出生日期" : "日期", v: input.date || "（空＝按当前北京时间起局）" },
+    { k: natal ? "出生时间" : "时间", v: input.time || "（空＝按当前北京时间起局）" },
+    { k: natal ? "出生地" : "城市", v: input.city },
+    ...(natal ? [] : [{ k: "问题类型", v: input.questionTypeLabel }]),
+    { k: "真太阳时校正", v: input.trueSolarTime ? "开启" : "关闭" },
+    { k: "起局口径", v: natal ? "年家奇门 · 本地开源引擎（本命盘）" : "时家奇门 · 本地开源引擎" },
+  ];
 }

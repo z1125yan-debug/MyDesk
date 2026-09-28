@@ -26,15 +26,24 @@ function intent(question: string, extra: Partial<Intent> = {}): Intent {
 
 // ---------- ③ 注册表本体 ----------
 
-test("内置技能表形状：13 个工具、plan 覆盖 6 个自动调度场景（P10 起含选股；R10 扩容加个股消息面）", () => {
+test("内置技能表形状：13 个工具、plan 覆盖 6 个自动调度场景（P10 起含选股；个股分析含盘口与逐笔）", () => {
   assert.equal(BUILTIN_SKILLS.length, 13, "与 chat-tools TOOLS 的注册项数一致（多了/少了都要两边同步改）");
   // 口径迁移（P10 择优轮，用户裁定改口径）：本条原钉「深水区与选股类工具不进自动调度
   // （预取＝替用户猜条件、每轮多打接口）」——factor_screener 按 aiwuchuan「候选池→择优」
-  // 链路改为预取（抽不到的条件走默认活跃池并如实标注，不再替用户猜）；其余四个冷工具原样。
-  for (const cold of ["stock_depth", "stock_trades", "historical_probability", "run_backtest"]) {
+  // 链路改为预取（抽不到的条件走默认活跃池并如实标注，不再替用户猜）。
+  for (const cold of ["historical_probability", "run_backtest"]) {
     assert.ok(BUILTIN_SKILLS.find((s) => s.name === cold), `${cold} 仍在技能表里（模型可自取）`);
     assert.ok(!BUILTIN_SKILLS.find((s) => s.name === cold)!.plan?.length, `${cold} 不参与自动调度`);
   }
+  // 口径迁移（用户实测「数据侧有五档盘口，AI 分析里永远没有」）：stock_depth / stock_trades
+  // 从「只给模型自取」改为个股分析场景自动预取——实测模型一次都不会自己调，该到的数必须替它到齐。
+  // 但两者都不标 required：网关没起时留 missing，不拖住这一轮、也不触发补跑。
+  for (const warm of ["stock_depth", "stock_trades"]) {
+    const sk = BUILTIN_SKILLS.find((s) => s.name === warm);
+    assert.ok(sk?.plan?.some((e) => e.scene === "stock_analysis" && e.spread === "per_symbol" && e.args === "symbol"), `${warm} 逐只进个股分析预取`);
+    assert.ok(!sk?.plan?.some((e) => e.required), `${warm} 不是必读项：取不到留 missing，不触发补跑`);
+  }
+  assert.ok(!SKILLS.requiredToolsForScene("stock_analysis").has("stock_depth"), "盘口是增强项，缺口不触发补跑整轮");
   const fs = BUILTIN_SKILLS.find((s) => s.name === "factor_screener");
   assert.ok(fs?.plan?.some((e) => e.scene === "screener" && e.args === "screener_pool"), "选股场景现跑候选池");
   assert.ok(!SKILLS.requiredToolsForScene("screener").has("factor_screener"), "候选池不是必读项：池挂了走 missing 留痕，不触发补跑整池");
@@ -67,12 +76,13 @@ test("注册新技能即生效：entriesForScene / requiredToolsForScene / prefe
   };
   assert.deepEqual(reg.register(skill), { ok: true });
   const r = planDispatch({ intent: intent("688256 怎么看", { scene: "stock_analysis", symbol: "688256.SH", symbols: ["688256.SH"] }) }, reg);
-  assert.deepEqual(r.calls.map((c) => c.tool), ["stock_snapshot", "stock_kline_summary", "stock_fund_flow", "stock_news", "dragon_tiger_board"],
-    "per_symbol 四件套照旧逐只成组，once 新项排在后面——加技能不改调度代码");
+  // 个股分析预取自本轮起是六件套（快照/盘口/逐笔/日K/资金流/个股消息），四件套的旧断言已过时
+  assert.deepEqual(r.calls.map((c) => c.tool), ["stock_snapshot", "stock_depth", "stock_trades", "stock_kline_summary", "stock_fund_flow", "stock_news", "dragon_tiger_board"],
+    "per_symbol 六件套照旧逐只成组，once 新项排在后面——加技能不改调度代码");
   assert.ok(reg.requiredToolsForScene("stock_analysis").has("dragon_tiger_board"));
   // 默认表看不到新技能：注册作用域跟着实例走，单例不被测试污染
   const plain = planDispatch({ intent: intent("688256 怎么看", { scene: "stock_analysis", symbol: "688256.SH", symbols: ["688256.SH"] }) });
-  assert.deepEqual(plain.calls.map((c) => c.tool), ["stock_snapshot", "stock_kline_summary", "stock_fund_flow", "stock_news"]);
+  assert.deepEqual(plain.calls.map((c) => c.tool), ["stock_snapshot", "stock_depth", "stock_trades", "stock_kline_summary", "stock_fund_flow", "stock_news"]);
 });
 
 test("坏注册被如实拒绝：重名、缺描述、空名、指向不存在的场景，一律回原因不静默吞", () => {
@@ -104,8 +114,9 @@ test("toolsForScene 也走注册表：换一份 prefers 表，推荐工具就跟
 test("场景级参数在表里不在代码里：个股分析 symbol_max=3，全局上限 5 仍兜底", () => {
   const many = ["1.SH", "2.SH", "3.SH", "4.SH", "5.SH", "6.SH"];
   const analysis = planDispatch({ intent: intent("1 2 3 4 5 6 怎么看", { scene: "stock_analysis", symbols: many }) });
-  // R10 扩容：每只票的预取从三件套变四件套（+stock_news 消息面），上限 3 只的口径不变
-  assert.equal(analysis.calls.length, DISPATCH_ANALYSIS_MAX * 4, "分析场景按场景上限展开，不是全局上限");
+  // R10 扩容 + 本轮盘口/逐笔：每只票的预取从三件套变六件套
+  // （+stock_news 消息面、+stock_depth 五档、+stock_trades 逐笔），上限 3 只的口径不变
+  assert.equal(analysis.calls.length, DISPATCH_ANALYSIS_MAX * 6, "分析场景按场景上限展开，不是全局上限");
   const quote = planDispatch({ intent: intent("现价", { scene: "quote", symbols: many }) });
   assert.equal(quote.calls.length, DISPATCH_MAX_SYMBOLS);
   assert.ok(quote.skipped.some((s) => s.includes(`只取前 ${DISPATCH_MAX_SYMBOLS} 个`)));

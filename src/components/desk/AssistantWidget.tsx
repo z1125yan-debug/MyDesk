@@ -17,6 +17,10 @@ import Markdown from "./Markdown";
 import SceneBadge from "./SceneBadge";
 import StepTimeline from "./StepTimeline";
 import ChatBacktestCards from "./ChatBacktestCards";
+import WzDecisionWidget from "./WzDecisionWidget";
+import ThinkingPlaceholder from "./ThinkingPlaceholder";
+import FollowUpChips from "./ui/FollowUpChips";
+import { followUpBody } from "@/lib/desk/followups-core";
 
 const CHIPS = ["关键位在哪", "多周期趋势总结", "现在适合进场吗", "给我一个风控清单"];
 
@@ -87,15 +91,15 @@ export default function AssistantWidget({
             <Bot size={14} className="text-white" />
           </div>
           <div className="min-w-0">
-            <div className="text-[13px] font-semibold">智能助手 · 随问</div>
-            <div className="truncate text-[10.5px] text-muted-foreground">
+            <div className="text-[14px] font-semibold">智能助手 · 随问</div>
+            <div className="truncate text-[11.5px] text-muted-foreground">
               {session?.title} · {session?.stock ?? focusSymbol} · {toolsOn ? "工具调用端点" : "纯对话端点（该服务商无工具环）"}
             </div>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <button onClick={() => { newSession(); }}
-            className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground">
+            className="rounded-md border border-border px-2 py-1 text-[12px] text-muted-foreground hover:text-foreground">
             新会话
           </button>
           {/* 会话记录本来就共享：这里只是把那页铺满，不是「换一条链重问一遍」 */}
@@ -113,12 +117,12 @@ export default function AssistantWidget({
       <div className="desk-scroll flex-1 space-y-3 overflow-y-auto px-3.5 py-3">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <div className="text-[13px] font-medium">问点什么吧</div>
-            <div className="text-[11.5px] text-muted-foreground">上下文自动带入当前图表品种与行情</div>
+            <div className="text-[14px] font-medium">问点什么吧</div>
+            <div className="text-[12.5px] text-muted-foreground">上下文自动带入当前图表品种与行情</div>
             <div className="flex max-w-[300px] flex-wrap justify-center gap-1.5 pt-1">
               {CHIPS.map((q) => (
                 <button key={q} onClick={() => submit(q)} disabled={!configured}
-                  className="rounded-full border border-border px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
+                  className="rounded-full border border-border px-2.5 py-1 text-[12.5px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
                   {q}
                 </button>
               ))}
@@ -128,17 +132,30 @@ export default function AssistantWidget({
         {messages.map((m) => (
           <div key={m.id} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
             {m.role === "user" ? (
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-sky-500/90 px-3 py-2 text-[12.5px] leading-5 text-white">
+              <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-sky-500/90 px-3 py-2 text-[13.5px] leading-5 text-white">
                 {m.content}
               </div>
             ) : (
-              <div className="max-w-[92%] rounded-lg border border-border bg-background/70 px-3 py-2 text-[12.5px] leading-5">
+              /* wz-compact：浮窗只有 380px 宽，同一套稳智排版收到 14px/1.7、框交给浮窗自己那张卡
+                 （度量本体在 globals.css 的 .wz-compact 段，这里只挂类名） */
+              <div className="wz-compact max-w-[92%] rounded-lg border border-border bg-background/70 px-3 py-2">
                 <SceneBadge intent={m.intent} />
-                {/* 与小窗外的助手页同一种可点正文：点代码切 K 线品种，点板块跳板块榜 */}
-                <Markdown content={m.content} sectors={sectors} onLink={openLink} />
-                {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-[6px] translate-y-0.5 animate-pulse bg-sky-400" />}
+                {/* 与小窗外的助手页同一种可点正文：点代码切 K 线品种，点板块跳板块榜；
+                    还没有正文时（刚发出那几秒）画稳智同款「🧠 深度思考中 / ⚡ 快速分析中」占位 */}
+                {m.streaming && !m.content ? (
+                  <ThinkingPlaceholder />
+                ) : (
+                  <>
+                    <Markdown content={followUpBody(m.content)} sectors={sectors} onLink={openLink} />
+                    {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-[6px] translate-y-0.5 animate-pulse bg-sky-400" />}
+                    {/* 与小窗外的对话页同一份推荐芯片（同一处画法、同一条解析），点了直接发问 */}
+                    <FollowUpChips content={m.content} streaming={m.streaming} onAsk={(q) => submit(q)} />
+                  </>
+                )}
+                {m.wzDecision && <WzDecisionWidget signal={m.wzDecision} />}
                 <StepTimeline steps={m.steps} warning={m.warning} streaming={m.streaming}
-                  intent={m.intent} debug={m.debug} debugOn={debugPanel} />
+                  intent={m.intent} debug={m.debug} debugOn={debugPanel}
+                  message={{ content: followUpBody(m.content), streaming: m.streaming }} />
                 {/* 与小窗外的助手页同一份回测卡：同一个任务在两个入口看到的数字必须来自同一处渲染 */}
                 <ChatBacktestCards steps={m.steps} />
               </div>
@@ -146,7 +163,7 @@ export default function AssistantWidget({
           </div>
         ))}
         {!configured && (
-          <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+          <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[12px] text-amber-300">
             未配置 AI 接口，且服务端 .env 模型通道也不可用：到「设置 → AI 接口」填写，或启动本地豆包网关（见 worklog P7-⑩）。
           </div>
         )}
@@ -157,7 +174,7 @@ export default function AssistantWidget({
       <div className="flex flex-wrap gap-1.5 border-t border-border px-3 pt-2">
         {CHIPS.map((q) => (
           <button key={q} onClick={() => submit(q)} disabled={busy || !configured}
-            className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
+            className="rounded-full border border-border px-2 py-0.5 text-[12px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
             {q}
           </button>
         ))}
@@ -167,7 +184,7 @@ export default function AssistantWidget({
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
           placeholder={configured ? "问智能助手…（流式，可停止）" : "先去设置配置 AI 接口"}
           disabled={!configured}
-          className="h-9 flex-1 rounded-md border border-border bg-background px-3 text-[12.5px] outline-none focus:border-sky-500/60 disabled:opacity-60" />
+          className="h-9 flex-1 rounded-md border border-border bg-background px-3 text-[13.5px] outline-none focus:border-sky-500/60 disabled:opacity-60" />
         {busy ? (
           <button onClick={stop} title="停止本次回答（保留已生成的部分）"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20">

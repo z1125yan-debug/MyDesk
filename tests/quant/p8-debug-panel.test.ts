@@ -19,8 +19,8 @@ const readSrc = (rel: string) => readFileSync(new URL(`../../${rel}`, import.met
 
 // ---------- 流契约：五类不变 + 可选键 ----------
 
-test("五类帧白名单一字未扩；seq 只在顶层出现，data 形状不掺 seq（网关/旧客户端按 type 分发零感知）", () => {
-  assert.deepEqual([...STREAM_EVENT_TYPES], ["step", "delta", "warning", "done", "error"]);
+test("八类帧白名单（P24 加了 stage，P26 加了 block_started/finished）；seq 只在顶层出现，data 形状不掺 seq（网关/旧客户端按 type 分发零感知）", () => {
+  assert.deepEqual([...STREAM_EVENT_TYPES], ["step", "stage", "block_started", "block_finished", "delta", "warning", "done", "error"]);
   const ev = { type: "delta", data: { content: "x" } } as const;
   const bare = JSON.parse(encodeStreamEvent(ev).replace(/^data: /, "").trim());
   assert.deepEqual(Object.keys(bare).sort(), ["data", "type"], "不传 seq 时帧与改造前逐字节同形");
@@ -176,10 +176,11 @@ test("debug 只认布尔 true（与网关 enable_kairo_engine 同一严格度）
 
 test("P7-⑫ 锚点不丢：时间线标题与 foot 长文案逐字未动；状态文案改由单一出处供给；调试三段只在 debugOn 下组装", () => {
   const tl = readSrc("src/components/desk/StepTimeline.tsx");
-  // P15 口径迁移：标题从「工作过程 · N 步」改为稳智式收口措辞（跑完=「AI 已完成分析 · 共 N 步」，
-  // 流中=「正在分析 · 已走完 N 步」）。钉的是「标题必须带步数、不许含糊」这个不变量，不是旧文案本身。
-  assert.match(tl, /AI 已完成分析 · 共 \$\{steps\?\.length \?\? 0\} 步/, "收口标题原文");
-  assert.match(tl, /正在分析 · 已走完 \$\{steps\?\.length \?\? 0\} 步/, "进行时标题原文");
+  // P18 稳智对齐：标题从 P15 的「AI 已完成分析 · 共 N 步」升级为稳智式顶部大字
+  // （agentPhasesHeadline：answer done→"✅ 结论已形成"；active→"🧭 正在进行：xxx"；error→"⚠️ 失败"），
+  // 后面跟"共 N 步"作副数据。钉的是「标题必须带步数、不许含糊」这个不变量。
+  assert.match(tl, /agentPhasesHeadline\(phases\)/, "顶部大字来自 agent-phases-core 单一出处");
+  assert.match(tl, /\{" · "\}已完成 \{steps\?\.length \?\? 0\} 步/, "副数据仍带步数（P56 稳智口径）");
   assert.match(tl, /以上是本次真实调用过的步骤；标「缺数据」表示接口这次没给值，不是数值为 0/, "foot 长文案原文在位");
   assert.match(tl, /const STATUS_META: Record<StepInfo\["status"\], \{ icon: typeof Loader2; tone: string \}>/, "STATUS_META 只留图标与色");
   assert.equal(/text: "/.test(tl.split("const STATUS_META")[1].split("};")[0]), false, "组件内不再自带状态文案（否则就是第二个出处）");

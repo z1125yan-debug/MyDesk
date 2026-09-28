@@ -220,7 +220,7 @@ test("客户端续传链：水位去重在 applyEvent 之前；顺序是「续�
   assert.match(uc, /resumeSince > 0/, "门槛：服务端真认了挂底（收到过带 seq 帧）才续");
   assert.match(uc, /resumeGaveUp = true/, "gone：只 warning 收口，挡掉后面的兜底");
   assert.match(uc, /不自动重问。/, "拍板点 1 原话进界面文案");
-  assert.match(uc, /runRef: closed \? undefined : \{ id: run, lastSeq \}/, "刷新后的续传锚点随收口清除");
+  assert.match(uc, /runRef: closed \? undefined : \{ id: run, lastSeq, createdAt: msg\.runRef\?\.createdAt \}/, "刷新后的续传锚点随收口清除（P31 加 createdAt 保留原值）");
   assert.match(uc, /action: "stop", run/, "停止按钮显式通知服务端取消（挂底轮断连已不再自动取消）");
 });
 

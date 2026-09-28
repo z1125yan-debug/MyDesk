@@ -8,11 +8,13 @@
 //    模型改了 title 也不影响落库值。
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   AI_FIELDS, AI_JOBS, DERIVED_FIELDS, FACT_FIELDS, IMPACT_DIRECTIONS, IMPACT_SCOPES, IMPORTANCE_LEVELS,
   INTERPRET_PROMPT_VERSION, REQUIRED_INTERPRET_FIELDS, STATUS_TEXT,
   buildEventInterpretPrompt, clampEnum, evidenceGrounded, extractJsonArray, fieldCompleteness,
   findProbabilityClaims, interpretLayeringNote, interpretationStatusOf, layerSplitOf, mappingAgreement,
+  mergeRawArrays,
   normalizeConfidence, parseEventInterpretations, renderInterpretationTrace, statusDataLayer,
   stripProbabilityClaims, summarizeInterpretations, symbolGrounded,
   type EventFact, type EventInterpretation,
@@ -212,23 +214,21 @@ test("P6-B 证据必须能在原始标题里找到：无出处的 evidence 剔�
   assert.ok(itp.violations.some((v) => /evidence/.test(v)));
 });
 
-test("P6-B 标的必须有出处：标题与该行既有名称之外的，降级为 hypothesized_symbols 并写进 unknowns", () => {
+test("P6-B 标的必须有出处：标题与该行既有名称之外的一律剔除（不保留 AI 猜的标的）", () => {
   const withCo = fact({ title: "中国船舶：签订约 10 亿元订单 交付在即", related_names: ["航运"] });
   assert.equal(symbolGrounded("中国船舶", withCo), true, "标题里出现的公司名有出处");
   assert.equal(symbolGrounded("航运", fact()), true, "该行入库时已关联的板块名同样算出处");
   assert.equal(symbolGrounded("中船防务", fact()), false, "标题与既有名称里都没有 = AI 猜的");
   assert.equal(symbolGrounded("", fact()), false);
   const r = parseEventInterpretations(
-    JSON.stringify([goodEntry({ affected_symbols: ["中国船舶", "中国海油"] })]),
+    JSON.stringify([goodEntry({ affected_symbols: ["中国船舶", "中国海油"], hypothesized_symbols: ["中船防务"] })]),
     [withCo],
   );
   const itp = r.items[0];
   assert.deepEqual(itp.affected_symbols, ["中国船舶"]);
-  assert.deepEqual(itp.dropped.symbols, ["中国海油"]);
-  assert.deepEqual(itp.hypothesized_symbols, ["中国海油"], "不删除，降级成 AI 假设留档");
-  assert.ok(itp.unknowns.some((u) => u.includes("中国海油") && u.includes("没有出处")));
-  assert.match(renderInterpretationTrace(itp), /AI 假设标的（无出处，未验证）/);
-  assert.ok(itp.violations.some((v) => /hypothesized_symbols/.test(v)));
+  assert.deepEqual(itp.dropped.symbols.slice().sort(), ["中国海油", "中船防务"].slice().sort(), "猜的标的一律剔除并留痕");
+  assert.deepEqual(itp.hypothesized_symbols, [], "不再保留 AI 猜的标的（用户明确不要「假设/猜的」）");
+  assert.ok(itp.violations.some((v) => /不得猜标的/.test(v)));
 });
 
 test("P6-B 模型回传的 title/source 与库内不一致时按库内原文保留，并记违规（AI 不得改写事件）", () => {
@@ -359,13 +359,18 @@ test("P6-B 提示词只喂真实入库事件，并把两条禁令原文写进去
   assert.match(prompt, /禁止输出任何概率数字/);
   assert.match(prompt, /不是股票涨跌概率/);
   assert.match(prompt, /evidence 里的每条都必须是从该条 title 原样摘出/);
-  assert.match(prompt, /mappedSectors=军工、航运/);
-  assert.match(prompt, /relatedNames=航运、军工/);
-  assert.ok(!prompt.includes("relatedNames=,"), "没有关联名称时不写空字段");
+  assert.match(prompt, /不许凭行业常识猜股票名/, "禁止猜标的的硬规则要在提示词里");
+  // event_id 自带 | 与标题：用竖线分隔字段时模型会在第二个 | 处截断 id → 提示词改用 JSON 行承载，
+  // 并加一条「逐字符一致」的硬规则（这条 pin 锁住那次「整批被当发明事件拒收」的回归）。
+  assert.match(prompt, /逐字符一致/, "event_id 必须照抄的硬规则要在提示词里");
+  assert.ok(prompt.includes('"event_id":"evt_1"'), "event_id 以 JSON 字符串原样给出");
+  assert.ok(prompt.includes('"mappedSectors":["军工","航运"]'), "映射板块按 JSON 数组给出");
+  assert.ok(prompt.includes('"relatedNames":["航运","军工"]'), "关联名称按 JSON 数组给出");
+  assert.ok(!prompt.includes('"relatedNames":[]'), "没有关联名称时不写空字段");
   // 第二条没命中映射表：提示词里不得为它凭空造出映射字段
-  assert.equal(prompt.split("mappedSectors=").length - 1, 1);
-  assert.match(prompt, /fundCheck\(扩散阶段\)/);
-  assert.ok(!prompt.includes("fundCheck()"), "没有资金验证时不写空字段");
+  assert.equal(prompt.split('"mappedSectors"').length - 1, 1);
+  assert.ok(prompt.includes('"fundCheck":"扩散阶段：'), "资金验证按 JSON 字符串给出");
+  assert.ok(!prompt.includes('"fundCheck":""'), "没有资金验证时不写空字段");
 });
 
 test("P6-B 提示词把 8 项工作与输出字段列全（模型只能按结构回答）", () => {
@@ -398,6 +403,47 @@ test("P6-B 一批真实形状的解释：好的留下、越界的逐条留痕，
     assert.equal(itp.title, f.title);
     for (const e of itp.evidence) assert.ok(f.title.includes(e));
   }
+});
+
+test("P6-B 分批合并：多批 JSON 数组按字符串拼成一份（兼容 ```json 包裹与前后说明文字）", () => {
+  const a = '```json\n[{"event_id":"e1","summary":"s1"}]\n```';
+  const b = '结果：[{"event_id":"e2","summary":"s2"}] 供参考';
+  const parsed = JSON.parse(mergeRawArrays([a, b])) as { event_id: string }[];
+  assert.deepEqual(parsed.map((x) => x.event_id), ["e1", "e2"]);
+  // 空批 / 无法识别的段跳过，不产生数组里的逗号空洞
+  assert.equal(mergeRawArrays([]), "[]");
+  assert.equal(mergeRawArrays(["没有数组", "[]"]), "[]");
+  assert.deepEqual(JSON.parse(mergeRawArrays(['[{"a":1}]', "坏批"])), [{ a: 1 }]);
+});
+
+test("P6-B 事件理解页：当天有缓存只读缓存（不重复调模型），状态条铺满 + 分批进度条", () => {
+  const page = readFileSync(new URL("../../src/components/desk/pages/EventsPage.tsx", import.meta.url), "utf8");
+  const orch = readFileSync(new URL("../../src/lib/desk/event-interpret.ts", import.meta.url), "utf8");
+  // 缓存命中就不调模型：runAi 里 todayCached 分支直接 return，不落到 runEventInterpretation
+  assert.match(page, /const todayCached = !!interp && interp\.counts\.rows > 0 && interp\.counts\.stale === 0/);
+  assert.match(page, /直接读缓存，未重复调用模型/);
+  assert.match(page, /重新理解/, "缓存命中时仍保留强制重跑入口");
+  // 分批 + 进度（铺满整宽 + 进度条宽度按百分比）
+  assert.match(orch, /DEFAULT_INTERPRET_CHUNK/);
+  assert.match(orch, /onProgress/);
+  assert.match(page, /正在分批理解：第 \{progress\.done\}\/\{progress\.total\} 批/);
+  assert.match(page, /w-full rounded-xl border border-fuchsia-500\/25/, "解释层状态条要铺满整宽");
+  assert.match(page, /style=\{\{ width: `\$\{progressPct\}%` \}\}/, "进度条按百分比铺满");
+  // 内容区不再限宽（用户要求铺满，左右不留空）
+  assert.match(page, /className="w-full space-y-4 px-6 py-4"/, "事件页内容区铺满整宽");
+  assert.ok(!page.includes("mx-auto max-w-5xl"), "事件页不再用居中限宽容器");
+});
+
+test("P6-B 最近事件窗口：列表与 AI 理解共用跨日窗口（最近一天不足 20 条自动补更早的日子）", () => {
+  const win = readFileSync(new URL("../../src/lib/quant/screener/event-window.ts", import.meta.url), "utf8");
+  const evRoute = readFileSync(new URL("../../src/app/api/events/route.ts", import.meta.url), "utf8");
+  const svc = readFileSync(new URL("../../src/lib/quant/screener/event-interpret.ts", import.meta.url), "utf8");
+  assert.match(win, /EVENT_WINDOW_MIN = 20/, "窗口下限 20（不满二十条补更早的日子）");
+  assert.match(win, /orderBy: \{ asOf: "desc" \}/, "日期按新→旧");
+  assert.match(evRoute, /recentEventWindow\(\)/, "列表（/api/events）用窗口");
+  assert.match(evRoute, /window_dates/, "列表回传窗口日期，页面才能标出每条属于哪天");
+  // AI 理解（提示词 + 读回）用同一窗口：看到什么就理解什么
+  assert.match(svc, /recentEventWindow\(\)/, "loadEventFacts / loadInterpretations 走同一窗口");
 });
 
 test("P6-B 空批次不报错也不产出（库里当天 0 行是真实状态，不是失败）", () => {

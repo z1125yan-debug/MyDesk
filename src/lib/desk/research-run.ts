@@ -45,10 +45,11 @@ export interface ResearchRunResult {
 /**
  * @param ai 客户端设置里的 AI 配置（含 Key，只用于本次请求头）
  * @param opts.question 研究问题；留空则由服务端按默认问题组装，并如实记进 missing
+ * @param opts.scope    研究范围标签；当前后端只接受 "market"，其它值会被服务端 400（见 research-core RESEARCH_SCOPES）
  */
 export async function runMarketResearch(
   ai: AiSettings,
-  opts: { question?: string } = {},
+  opts: { question?: string; scope?: string } = {},
 ): Promise<ResearchRunResult> {
   const base: ResearchRunResult = {
     ok: false, status: RESEARCH_NOT_RUN_STATUSES.ai_unconfigured, message: "", model: ai.model || "未配置",
@@ -64,7 +65,7 @@ export async function runMarketResearch(
 
   let prompt: ResearchPromptClient;
   try {
-    prompt = await fetchResearchPrompt({ question: opts.question });
+    prompt = await fetchResearchPrompt({ question: opts.question, scope: opts.scope });
   } catch (e) {
     // 台账为空的 422/ok=false 也走这里：把服务端给的原因原话留给页面，不换成「网络错误」
     return { ...base, status: RESEARCH_NOT_RUN_STATUSES.no_evidence, message: String((e as Error).message || e) };

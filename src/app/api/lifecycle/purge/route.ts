@@ -9,7 +9,7 @@
 //
 // 不做的事：不挂调度器（没有「到点自动删」）、不改 task_run/scan_cursor（授权范围只有明细行）、
 // 不宣称一键回滚（恢复只能按导出文件的列名重新写回，restore_note 里就是这么写的）。
-import path from "node:path";
+import path from "path";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";

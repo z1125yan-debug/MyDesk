@@ -1,29 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
-	 viewBox="0 0 30 30" style="enable-background:new 0 0 30 30;" xml:space="preserve">
-<defs>
-  <style type="text/css">
-    .st194{fill:#2D2D2D;stroke:#FFFFFF;stroke-width:0.6317;stroke-miterlimit:10;}
-    .st23{fill:#FFFFFF;}
-
-    .z-breathe {
-      animation: breathe 2.5s ease-in-out infinite;
-    }
-
-    @keyframes breathe {
-      0%, 100% { opacity: 0.7; }
-      50% { opacity: 1; }
-    }
-  </style>
-</defs>
-
-<g>
-  <path class="st194" d="M24.51,28.51H5.49c-2.21,0-4-1.79-4-4V5.49c0-2.21,1.79-4,4-4h19.03c2.21,0,4,1.79,4,4v19.03
-    C28.51,26.72,26.72,28.51,24.51,28.51z"/>
-  <g class="z-breathe">
-    <path class="st23" d="M15.47,7.1l-1.3,1.85c-0.2,0.29-0.54,0.47-0.9,0.47h-7.1V7.09C6.16,7.1,15.47,7.1,15.47,7.1z"/>
-    <polygon class="st23" points="24.3,7.1 13.14,22.91 5.7,22.91 16.86,7.1"/>
-    <path class="st23" d="M14.53,22.91l1.31-1.86c0.2-0.29,0.54-0.47,0.9-0.47h7.09v2.33H14.53z"/>
+<!--
+  2026-09-23 换图标（用户附图 imagef8c6a346 + "完全占满"要求）：
+  黑色立方体 Z 字撑满整个圆角方形。之前四周留白太多显得空。
+  现在立方体的三个面（顶面/左面/右面）拼成一个 32x32 满铺的正投影立方体，
+  外框用 clipPath 做 7px 圆角，与浏览器标签 / 侧栏品牌区的形状一致。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <clipPath id="rounded">
+      <rect width="32" height="32" rx="7" ry="7"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#rounded)">
+    <!-- 底衬（黑色，保证 clipPath 之外没露白） -->
+    <rect width="32" height="32" fill="#111418"/>
+    <!-- 顶面：受光最深灰 -->
+    <polygon points="0,8 16,2 32,8 16,14" fill="#2a2e35"/>
+    <!-- 右侧面：暗一档，模拟阴影 -->
+    <polygon points="32,8 32,24 16,30 16,14" fill="#1a1e24"/>
+    <!-- 左侧面：中间调 -->
+    <polygon points="0,8 16,14 16,30 0,24" fill="#16191e"/>
+    <!-- Z 字母：白描边、粗一档、圆角端点 -->
+    <path d="M8,16 L24,16 L10,24 L24,24"
+          fill="none" stroke="#ffffff" stroke-width="2.6"
+          stroke-linejoin="round" stroke-linecap="round"/>
   </g>
-</g>
 </svg>

@@ -16,6 +16,8 @@ import type { ThsBoardRow } from "@/lib/desk/ths";
 export interface RescueRow extends BoardRow {
   /** 同花顺资金流兜底榜（R8）：main 是净额真数，但 ratio/superBig/big 无对等拆分 ⇒ 消费方显「—」不报 0 */
   breakdownMissing?: boolean;
+  /** P15-R12 数据源标记：em（东财真值）/ ths（同花顺净额）/ mcp（MCP 板块涨幅榜，无资金拆分） */
+  origin?: "em" | "ths" | "mcp";
 }
 
 /** 同花顺原始行 → 板块榜行（对话/台账/事件验证用的形状与页面 RankRow 同构） */

@@ -10,6 +10,7 @@ import { fetchBoardReal } from "@/lib/desk/em";
 import { fetchThsBoards, thsToRankRow } from "@/lib/desk/ths";
 import { tdxMainFlowUniverse, type TdxMainFlowRow } from "@/lib/desk/tdx";
 import { pickMainFlowSide, type MainFlow } from "@/lib/quant/screener/tdx-flow-core";
+import { latestTradeDate } from "@/lib/desk/trade-date";
 
 export const dynamic = "force-dynamic";
 
@@ -43,11 +44,13 @@ export async function GET(req: Request) {
   const kindParam = url.searchParams.get("kind") ?? "industry";
   const kind = (KINDS.has(kindParam) ? kindParam : "industry") as Kind;
   const dir = url.searchParams.get("dir") === "out" ? "out" : "in";
-  const asOf = new Date().toISOString(); // 本机取数完成时刻（页面用来回答「这是哪天的数」）
+  const asOf = new Date().toISOString(); // 本机取数完成时刻（回答「我们什么时候取的」，不是「这是哪天的数」）
+  // 「这是哪天的数」由 tradeDate 回答：行情源给的最近交易日（休市日补上，页面才不会把 15:32 读成今天的行情）
+  const tradeDate = await latestTradeDate().catch(() => null);
   try {
     const rows = await fetchBoardReal(kind, dir);
     if (rows?.length && !rows.every((r) => r.fundsMissing)) {
-      return NextResponse.json({ rows, source: "em", asOf });
+      return NextResponse.json({ rows, source: "em", asOf, tradeDate });
     }
     // 东财这条路没有可用读数：按榜的种类往下递棒，递不到就如实 null
     const needThs = kind === "industry" || kind === "concept"; // 地域仍无对等榜——缺就是缺
@@ -58,7 +61,7 @@ export async function GET(req: Request) {
         : ths.filter((r) => r.netYi < 0).sort((a, b) => a.netYi - b.netYi)
       ).slice(0, 30);
       if (picked.length) {
-        return NextResponse.json({ rows: picked.map(thsToRankRow), source: "ths", asOf });
+        return NextResponse.json({ rows: picked.map(thsToRankRow), source: "ths", asOf, tradeDate });
       }
     }
     if (kind === "stock") {
@@ -75,13 +78,13 @@ export async function GET(req: Request) {
           return src?.flow ? [tdxToRankRow(src, i + 1, src.flow)] : [];
         });
         if (out.length) {
-          return NextResponse.json({ rows: out, source: "tdx", asOf, quoteTime: univ.asOf || null });
+          return NextResponse.json({ rows: out, source: "tdx", asOf, tradeDate, quoteTime: univ.asOf || null });
         }
       }
     }
     // 递棒到底没有可用来源： rows 原样带回（可能是东财给的腾讯涨幅占位榜），由页面显式声明缺失
-    return NextResponse.json({ rows: rows ?? null, source: null, asOf });
+    return NextResponse.json({ rows: rows ?? null, source: null, asOf, tradeDate });
   } catch {
-    return NextResponse.json({ rows: null, error: "数据源暂不可用", asOf });
+    return NextResponse.json({ rows: null, error: "数据源暂不可用", asOf, tradeDate });
   }
 }

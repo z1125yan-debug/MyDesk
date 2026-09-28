@@ -17,7 +17,7 @@ import { HistoryBar } from "../HistoryBar";
 import { InterpretationCard, interpretKey } from "../EventInterpretation";
 import { useDesk } from "@/lib/desk/store";
 import { aiReady } from "@/lib/desk/ai";
-import { RUN_STATUS_TEXT, runEventInterpretation, type RunStatus } from "@/lib/desk/event-interpret";
+import { RUN_STATUS_TEXT, runEventInterpretation, type InterpretProgress, type RunStatus } from "@/lib/desk/event-interpret";
 import {
   fetchEvents, scanEvents, scanResultNote, fetchEventsHistory, fetchInterpretations,
   type EventHistoryItemClient, type EventItemClient, type HistoryRespClient, type InterpretLoadClient,
@@ -47,6 +47,8 @@ export default function EventsPage() {
   // 数据来源标注：页面展示的始终是 global_event 库行（GET 读当日；POST 扫描后回读同一天的库行），
   // 不是实时快讯流，故徽章不得写 LIVE（REAL_DATA_ONLY：徽章口径必须等于真实数据链）。
   const [origin, setOrigin] = useState<"db" | "scan">("db");
+  const [windowDates, setWindowDates] = useState<string[]>([]); // 「今天」视图的跨日窗口（新→旧）
+  const [supplemented, setSupplemented] = useState(false);       // true = 今天不足 20 条、自动补了更早的日子
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [taskTick, setTaskTick] = useState(0); // 手动扫描后自增 → 任务状态条重读 task_run
@@ -65,12 +67,14 @@ export default function EventsPage() {
   const [runStatus, setRunStatus] = useState<RunStatus | "">("");
   const [runNote, setRunNote] = useState("");
   const [runMissing, setRunMissing] = useState<string[]>([]);
+  const [progress, setProgress] = useState<InterpretProgress | null>(null); // 分批进度（点「AI 理解」时逐批更新）
 
   const load = useCallback(async () => {
     setError("");
     try {
       const j = await fetchEvents();
       setItems(j.items); setAsOf(j.as_of); setOrigin("db");
+      setWindowDates(j.window_dates ?? []); setSupplemented(!!j.supplemented);
       setMissing([]); setUnmatched(null);
     } catch (e) { setError(String((e as Error).message || e)); }
   }, []);
@@ -106,6 +110,7 @@ export default function EventsPage() {
     try {
       const j = await scanEvents();
       setItems(j.items); setAsOf(j.trade_date); setMissing(j.missing ?? []); setUnmatched(j.unmatched ?? null);
+      setWindowDates(j.trade_date ? [j.trade_date] : []); setSupplemented(false); // 扫描写的是单日：窗口收成那一天
       setScanNote(scanResultNote("events", j.mode, j.delta));
       setOrigin("scan");
       setView("today"); // 扫描写的是今天：不把今天的结果摆成历史某天的归档
@@ -113,11 +118,25 @@ export default function EventsPage() {
     finally { setBusy(false); setTaskTick((t) => t + 1); setMetaTick((t) => t + 1); void loadInterps(); }
   };
 
+  // 当天是否已有「未过期」的解释：有就直接读缓存、不再重复调模型（用户要求）。
+  // 过时（stale>0）说明事件行被重扫刷新过、解释对不上了，这种情况仍要重跑。
+  const todayCached = !!interp && interp.counts.rows > 0 && interp.counts.stale === 0;
+  const progressPct = progress ? Math.round((progress.done / Math.max(1, progress.total)) * 100) : 0;
+
   // P6-B 一次点击的完整链路（模型只在客户端被调用；服务端负责事实与校验）
-  const runAi = async () => {
-    setAiRunning(true); setError(""); setRunNote(""); setRunMissing([]);
+  // force=true 时才强制重跑模型（「重新理解」按钮）；否则当天有缓存就只读缓存。
+  const runAi = async (force = false) => {
+    setError(""); setRunNote(""); setRunMissing([]); setProgress(null);
+    if (!force && todayCached) {
+      setRunStatus("");
+      setRunNote(`今日已有 ${interp!.counts.rows} 条解释且未过期：直接读缓存，未重复调用模型（要重跑点旁边「重新理解」）。`);
+      await loadInterps();
+      return;
+    }
+    setAiRunning(true);
     try {
-      const r = await runEventInterpretation(ai, { limit: 20 });
+      // 分批调模型（默认每批 6 条）：AMD 免费档约 8~10s/条，分批后能边跑边显示进度
+      const r = await runEventInterpretation(ai, { limit: 20, onProgress: (p) => setProgress(p) });
       setRunStatus(r.status);
       setRunNote(r.message);
       setRunMissing(r.missing);
@@ -125,7 +144,7 @@ export default function EventsPage() {
       setRunStatus("AI_FAILED");
       setRunNote(String((e as Error).message || e));
     } finally {
-      setAiRunning(false);
+      setAiRunning(false); setProgress(null);
       void loadInterps(); // 读回服务端落库后的口径（含 stale/orphan/self_check），页面不自己算
     }
   };
@@ -141,11 +160,11 @@ export default function EventsPage() {
   }, [interp]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-6 py-4">
+    <div className="w-full space-y-4 px-6 py-4">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Globe2 size={18} className="text-sky-400" /> 全球事件雷达</div>
-          <div className="text-[11px] text-muted-foreground">快讯关键词映射 → 板块资金验证 · 未命中映射的新闻不入库 · 交易日收盘后由服务进程内的调度器自动扫描一次，也可点「扫描今日」· 历史按留档日只读回看<br />列表是事件事实（库里当日行）；「AI 理解」只对这些已入库事件做分类/摘要/映射/影响解释，属「AI 解释」层，不发现新事件、不产概率</div>
+          <div className="text-[12px] text-muted-foreground">快讯关键词映射 → 板块资金验证 · 未命中映射的新闻不入库 · 交易日收盘后由服务进程内的调度器自动扫描一次，也可点「扫描今日」· 历史按留档日只读回看<br />列表是事件事实（库里当日行）；「AI 理解」只对这些已入库事件做分类/摘要/映射/影响解释，属「AI 解释」层，不发现新事件、不产概率</div>
         </div>
         <div className="flex items-center gap-2">
           {view === "today" && asOf && (
@@ -160,17 +179,25 @@ export default function EventsPage() {
             className="flex items-center gap-1 rounded-md bg-sky-500 px-2.5 py-1.5 text-xs text-white hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40">
             {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 扫描今日
           </button>
-          <button onClick={runAi} disabled={aiRunning || busy || view === "history" || !items.length}
+          <button onClick={() => void runAi(false)} disabled={aiRunning || busy || view === "history" || !items.length}
             title={
               view === "history"
                 ? "历史视图只读回看：AI 理解针对当天入库的事件，请先切回「今天」"
-                : items.length
-                  ? "把今天已入库的真实事件交给本机配置的模型做结构化理解（模型原文交回服务端按库内事实复校验后才落库）"
-                  : "今天没有已入库事件：没有真实事件就没有可理解的东西，本步骤不会去猜一条新闻"
+                : !items.length
+                  ? "今天没有已入库事件：没有真实事件就没有可理解的东西，本步骤不会去猜一条新闻"
+                  : todayCached
+                    ? "今日已有未过期的解释：点击只读缓存，不重复调用模型"
+                    : "把今天已入库的真实事件交给本机配置的模型做结构化理解（模型原文交回服务端按库内事实复校验后才落库）"
             }
             className="flex items-center gap-1 rounded-md border border-fuchsia-500/40 bg-fuchsia-500/10 px-2.5 py-1.5 text-xs text-fuchsia-300 hover:bg-fuchsia-500/20 disabled:cursor-not-allowed disabled:opacity-40">
-            {aiRunning ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} AI 理解今日事件
+            {aiRunning ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {todayCached ? "AI 理解今日事件（读缓存）" : "AI 理解今日事件"}
           </button>
+          {view === "today" && todayCached && !aiRunning && (
+            <button onClick={() => void runAi(true)} title="忽略缓存，重新调用模型理解一遍"
+              className="text-[12px] text-muted-foreground underline underline-offset-2 hover:text-foreground">
+              重新理解
+            </button>
+          )}
         </div>
       </div>
       <HistoryBar
@@ -181,16 +208,21 @@ export default function EventsPage() {
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
       {view === "today" && <AutoTaskLine kind="events" refreshKey={taskTick} />}
       {view === "today" && scanNote && (
-        <div className="text-[10.5px] text-muted-foreground">
+        <div className="text-[11.5px] text-muted-foreground">
           {scanNote}；手动「扫描今日」按全量重刷当日事件；收盘后的自动扫描在当日已有成功游标时按增量写入——窗口内没有新快讯就不写库、也不再请求板块榜，已入库事件的资金验证保持首次扫描时的数值。
         </div>
       )}
-      {view === "today" && unmatched !== null && <div className="text-[11px] text-muted-foreground">未映射快讯 {unmatched} 条（已忽略，未编造产业链）</div>}
+      {view === "today" && supplemented && (
+        <div className="text-[12.5px] text-amber-300/90">
+          今天事件不足 20 条：已自动补上更早的日子（{windowDates.join("、")}），本页共 {items.length} 条（每条自带所属日期）。
+        </div>
+      )}
+      {view === "today" && unmatched !== null && <div className="text-[12px] text-muted-foreground">未映射快讯 {unmatched} 条（已忽略，未编造产业链）</div>}
       {view === "today" && !items.length && !busy && <div className="text-xs text-muted-foreground">尚无入库事件：等待收盘后自动任务，或点击「扫描今日」。</div>}
 
-      {/* P6-B 解释层状态条：这一层的口径全部来自服务端返回，页面只转述 */}
-      <div className="rounded-xl border border-fuchsia-500/25 bg-card/40 px-3 py-2">
-        <div className="flex flex-wrap items-center gap-2">
+      {/* P6-B 解释层状态条：这一层的口径全部来自服务端返回，页面只转述。铺满整宽 + 字号放大（可读性） */}
+      <div className="w-full rounded-xl border border-fuchsia-500/25 bg-card/40 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <SourceBadge
             status={!aiReady(ai) ? "本次未取到" : "AI_INTERPRETATION"}
             source={
@@ -201,29 +233,44 @@ export default function EventsPage() {
             time={interp?.probed_at?.slice(0, 16)}
           />
           {interp && (
-            <span className="text-[10.5px] text-muted-foreground">
+            <span className="text-[14px] text-muted-foreground">
               已落库 {interp.counts.rows} 条：已解释 {interp.counts.interpreted} · 部分可用 {interp.counts.partial} · 不可用 {interp.counts.rejected}
               {interp.counts.stale > 0 && <span className="text-amber-300"> · 过时 {interp.counts.stale}</span>}
               {interp.counts.orphan > 0 && <span className="text-amber-300"> · 原事件行已不在 {interp.counts.orphan}</span>}
               {interp.counts.violations > 0 && <span className="text-amber-300"> · 校验违规 {interp.counts.violations}</span>}
               {interp.counts.hypothesis_symbols > 0 && <span className="text-amber-300"> · 假设提及的股票 {interp.counts.hypothesis_symbols}</span>}
-              {interpBusy && <Loader2 size={10} className="ml-1 inline animate-spin" />}
+              {interpBusy && <Loader2 size={12} className="ml-1 inline animate-spin" />}
             </span>
           )}
           {interp?.available_dates.length ? (
-            <span className="ml-auto text-[10px] text-muted-foreground">可回看日期：{interp.available_dates.map((d) => `${d.date}(${d.rows})`).join(" ")}</span>
+            <span className="ml-auto text-[13.5px] text-muted-foreground">可回看日期：{interp.available_dates.map((d) => `${d.date}(${d.rows})`).join(" ")}</span>
           ) : null}
         </div>
-        {interp && <div className="mt-1 text-[10px] leading-relaxed text-muted-foreground/90">{interp.layering}</div>}
-        {runStatus && (
-          <div className={`mt-1 text-[10.5px] ${runStatus === "INTERPRETED" ? "text-emerald-300" : /AI_|NO_EVENTS|REJECTED/.test(runStatus) ? "text-amber-300" : "text-muted-foreground"}`}>
-            本次「AI 理解」：{RUN_STATUS_TEXT[runStatus]}{runNote ? ` —— ${runNote}` : ""}
+        {interp && <div className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground/90">{interp.layering}</div>}
+        {aiRunning && progress && (
+          <div className="mt-3">
+            <div className="flex items-center justify-between gap-3 text-[15px] font-semibold text-fuchsia-300">
+              <span>
+                正在分批理解：第 {progress.done}/{progress.total} 批（已覆盖约 {progress.eventsDone}/{progress.eventsTotal} 条
+                {progress.failed ? ` · 失败 ${progress.failed} 批` : ""}）
+              </span>
+              <span className="tabular-nums">{progressPct}%</span>
+            </div>
+            <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-fuchsia-500/15">
+              <div className="h-full rounded-full bg-fuchsia-500 transition-all duration-500" style={{ width: `${progressPct}%` }} />
+            </div>
+            <div className="mt-2 text-[13px] text-muted-foreground">每批约 1 分钟，跑完自动读回落库结果</div>
+          </div>
+        )}
+        {(runStatus || runNote) && (
+          <div className={`mt-2 text-[14px] ${runStatus === "INTERPRETED" ? "text-emerald-300" : /AI_|NO_EVENTS|REJECTED/.test(runStatus) ? "text-amber-300" : "text-muted-foreground"}`}>
+            本次「AI 理解」：{runStatus ? RUN_STATUS_TEXT[runStatus] : ""}{runNote ? `${runStatus ? " —— " : ""}${runNote}` : ""}
           </div>
         )}
         {(runMissing.length > 0 || interp?.missing.length)
-          ? <div className="mt-1 text-[10px] text-muted-foreground/80">缺失口径：{[...runMissing, ...(interp?.missing ?? [])].join("；")}</div>
+          ? <div className="mt-2 text-[13px] text-muted-foreground/80">缺失口径：{[...runMissing, ...(interp?.missing ?? [])].join("；")}</div>
           : null}
-        {interp && <div className="mt-0.5 text-[9.5px] text-muted-foreground/70">读库依据：{interp.basis}</div>}
+        {interp && <div className="mt-1.5 text-[12.5px] text-muted-foreground/70">读库依据：{interp.basis}</div>}
       </div>
 
       {view === "today" && (
@@ -234,12 +281,12 @@ export default function EventsPage() {
               <div key={ev.id} className={`rounded-xl border bg-card px-4 py-3 ${LEVEL_TONE[ev.level] ?? "border-border"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="text-sm font-medium">{ev.title}</div>
-                  <div className="shrink-0 text-[10.5px]">{ev.time} · {ev.level}</div>
+                  <div className="shrink-0 text-[11.5px]">{supplemented && ev.date ? `${ev.date} ` : ""}{ev.time} · {ev.level}</div>
                 </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">{ev.category} · 映射 {(ev.mappedSectors ?? []).join("、") || "—"}</div>
-                <div className="mt-1 text-[11px]">阶段 <b>{ev.stage || ev.fundCheck?.stage}</b> · {ev.fundCheck?.note}</div>
+                <div className="mt-1 text-[12px] text-muted-foreground">{ev.category} · 映射 {(ev.mappedSectors ?? []).join("、") || "—"}</div>
+                <div className="mt-1 text-[12px]">阶段 <b>{ev.stage || ev.fundCheck?.stage}</b> · {ev.fundCheck?.note}</div>
                 {!!ev.fundCheck?.boards?.length && (
-                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                  <div className="mt-2 flex flex-wrap gap-2 text-[12px]">
                     {ev.fundCheck.boards.map((b) => (
                       <span key={b.name} className="rounded border border-border px-2 py-0.5">
                         {b.name} <PctText value={b.changePct} /> · {b.mainYi >= 0 ? "+" : ""}{b.mainYi.toFixed(1)}亿 · 第{b.rank}
@@ -249,7 +296,7 @@ export default function EventsPage() {
                 )}
                 {/* 上面是事实（global_event 库行），下面这条才是 AI 解释：分块显示，不并进同一行文案 */}
                 {itp ? <InterpretationCard itp={itp} /> : (
-                  <div className="mt-1.5 text-[10px] text-muted-foreground/70">本条还没有 AI 理解：解释只在点「AI 理解今日事件」时产生，缺失就写缺失。</div>
+                  <div className="mt-1.5 text-[11px] text-muted-foreground/70">本条还没有 AI 理解：解释只在点「AI 理解今日事件」时产生，缺失就写缺失。</div>
                 )}
               </div>
             );
@@ -268,20 +315,20 @@ export default function EventsPage() {
             <div key={ev.id} className={`rounded-xl border bg-card px-4 py-3 ${LEVEL_TONE[ev.level] ?? "border-border"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="text-sm font-medium">{ev.title}</div>
-                <div className="shrink-0 text-[10.5px]">{ev.time || "时间未记录"} · {ev.level || "级别未记录"}</div>
+                <div className="shrink-0 text-[11.5px]">{ev.time || "时间未记录"} · {ev.level || "级别未记录"}</div>
               </div>
-              <div className="mt-1 text-[10.5px] text-muted-foreground">
+              <div className="mt-1 text-[11.5px] text-muted-foreground">
                 事件类型 {ev.category || "未记录"} · 留档日 {ev.as_of} · 来源 {ev.source || "未记录（库里该行没有来源）"}
               </div>
-              <div className="mt-1 text-[11px] text-muted-foreground">
+              <div className="mt-1 text-[12px] text-muted-foreground">
                 产业链映射：{ev.mapped_sectors.length ? ev.mapped_sectors.join("、") : "未命中映射表（入库时即为空，未编造板块）"}
                 {ev.related_stocks.length > 0 && <> · 关联股票 {ev.related_stocks.join("、")}</>}
               </div>
-              <div className="mt-1 text-[11px]">
+              <div className="mt-1 text-[12px]">
                 资金验证阶段 <b>{ev.stage || ev.fund_check?.stage || "未记录"}</b> · {String(ev.fund_check?.note ?? "该行未存资金验证说明")}
               </div>
               {!!(ev.fund_check?.boards as { name: string; changePct: number; mainYi: number; rank: number }[] | undefined)?.length && (
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                <div className="mt-2 flex flex-wrap gap-2 text-[12px]">
                   {(ev.fund_check.boards as { name: string; changePct: number; mainYi: number; rank: number }[]).map((b) => (
                     <span key={b.name} className="rounded border border-border px-2 py-0.5">
                       {b.name} <PctText value={b.changePct} /> · {b.mainYi >= 0 ? "+" : ""}{b.mainYi.toFixed(1)}亿 · 第{b.rank}
@@ -289,20 +336,20 @@ export default function EventsPage() {
                   ))}
                 </div>
               )}
-              <div className="mt-1.5 text-[10px] text-muted-foreground/80">
+              <div className="mt-1.5 text-[11px] text-muted-foreground/80">
                 首次入库 {bjTime(ev.created_at)}（北京）
                 {!!ev.broken_columns.length && <span className="ml-1 text-amber-300">字段无法解析：{ev.broken_columns.join("、")}（按缺失处理，未当作空值）</span>}
               </div>
               {/* 历史归档同样可以带解释层：读的是 event_interpretation 里那天的快照，与事实分块显示；没有快照就写没有 */}
               {itp ? <InterpretationCard itp={itp} /> : (
-                <div className="mt-1.5 text-[10px] text-muted-foreground/70">本条没有 AI 理解：该日解释层为空（只在点「AI 理解今日事件」时产出，缺失就写缺失，不补默认解释）。</div>
+                <div className="mt-1.5 text-[11px] text-muted-foreground/70">本条没有 AI 理解：该日解释层为空（只在点「AI 理解今日事件」时产出，缺失就写缺失，不补默认解释）。</div>
               )}
             </div>
             );
           })}
         </div>
       )}
-      {view === "today" && !!missing.length && <div className="text-[10.5px] text-muted-foreground/80">{missing.join("；")}</div>}
+      {view === "today" && !!missing.length && <div className="text-[11.5px] text-muted-foreground/80">{missing.join("；")}</div>}
     </div>
   );
 }

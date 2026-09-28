@@ -6,8 +6,29 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-overlay: var(--overlay);
+  --color-overlay-strong: var(--overlay-strong);
+  /* P51 稳智字体对齐：原值指向从未定义的 --font-geist-*（本仓没有 next/font，
+     等于 font-sans / font-mono 工具类一直在发一个未定义变量、被浏览器当无效值丢掉）。
+     现在直接接到稳智实测字体栈（见 :root 里的 --wz-* 注释）。 */
+  --font-sans: var(--wz-sans);
+  --font-mono: var(--wz-mono);
+
+  /* 字号刻度对齐稳智（源码实证 aiwuchuan :root）：
+     --font-title:32px / --font-h1:24px / --font-h2:20px / --font-h3:16px / --font-body:14px / --font-small:13px
+     本项目原本比稳智小一档 → 把标准字号整体上调一档（text-xs 12→13、text-sm 14→15 …）。
+     页面里写死的 text-[Npx] 已在源码层统一 +1px，两边口径一致。 */
+  --text-xs: 13px;
+  --text-xs--line-height: 1.45;
+  --text-sm: 15px;
+  --text-sm--line-height: 1.5;
+  --text-base: 17px;
+  --text-base--line-height: 1.55;
+  --text-lg: 19px;
+  --text-lg--line-height: 1.5;
+  --text-xl: 22px;
+  --text-2xl: 26px;
+  --text-3xl: 32px;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -37,6 +58,8 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-surface-foreground: var(--surface-foreground);
+  --color-surface: var(--surface);
   --radius-sm: calc(var(--radius) - 6px);
   --radius-md: calc(var(--radius) - 3px);
   --radius-lg: var(--radius);
@@ -52,10 +75,30 @@
 :root {
   --radius: 0.875rem;
 
+  /* ---- P51 稳智字体栈（aiwuchuan 源码实证，全站无 webfont：@font-face 为空，纯系统字体）----
+     body / .msg-content[data-v-a3f294f6]：
+       -apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Hiragino Sans GB,Microsoft YaHei,sans-serif
+     本仓原栈多插了 "SF Pro Display"/"SF Pro Text"（在装了 SF Pro 的机器上会抢在 Segoe UI 前面命中），
+     句尾还多 "Helvetica Neue",Arial —— 与稳智不是同一套，这里逐项对齐掉。
+     .ai-execution-strip（执行条）用的是另一套：ui-sans-serif 打头、多了 Helvetica Neue / Arial。
+     .msg.md-table（表格类消息）走 ui-monospace 打头的等宽栈。 */
+  --wz-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --wz-strip: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --wz-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* P18 主题适配：overlay/overlay-strong 给卡片浮层用。
+     浅色主题 → 黑低透明（在白底上画出卡片浮层）；深色主题 → 白低透明（保持原效果）。
+     原来 50+ 处 bg-white/[0.0X] 硬编码，切到浅色主题下几乎不可见——现在统一走这个变量。 */
+  --overlay: oklch(0.21 0.015 250 / 0.04);         /* 对应原 bg-white/[0.02]~[0.04] */
+  --overlay-strong: oklch(0.21 0.015 250 / 0.07);  /* 对应原 bg-white/[0.05]~[0.08] */
+
   --background: oklch(0.99 0.001 250);
   --foreground: oklch(0.21 0.015 250);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.21 0.015 250);
+  /* 吸顶表头等「必须不透明」的表面：不能用 --card（暗色下是半透明白，滚动时会透底） */
+  --surface: oklch(1 0 0);
+  --surface-foreground: oklch(0.21 0.015 250);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.21 0.015 250);
   --primary: oklch(0.58 0.18 256);
@@ -90,9 +133,17 @@
   --background: oklch(0 0 0);
   --foreground: oklch(0.97 0.004 250);
 
+  /* P18 深色主题下 overlay = 白低透明（保持原 bg-white/[0.0X] 效果） */
+  --overlay: oklch(1 0 0 / 0.035);
+  --overlay-strong: oklch(1 0 0 / 0.07);
+
   /* 面板：用「白度」分层，避免发灰发蓝的终端感 */
   --card: oklch(1 0 0 / 0.035);
   --card-foreground: oklch(0.97 0.004 250);
+  /* 吸顶表头等「必须不透明」的表面：纯黑底上叠一层实心深灰，
+     否则用半透明的 --card 做表头背景时，滚动内容会从表头底下透出来（用户反馈的「网上滑会透」）。 */
+  --surface: oklch(0.17 0.006 250);
+  --surface-foreground: oklch(0.97 0.004 250);
   --popover: oklch(0.13 0.006 250);
   --popover-foreground: oklch(0.97 0.004 250);
 
@@ -125,8 +176,7 @@
   --sidebar-foreground: oklch(0.78 0.008 250);
   --sidebar-primary: oklch(0.64 0.17 256);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(1 0 0 / 0.06);
-  --sidebar-accent-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(1 0 0 / 0.06);  --sidebar-accent-foreground: oklch(0.99 0 0);
   --sidebar-border: oklch(1 0 0 / 0.07);
   --sidebar-ring: oklch(0.64 0.17 256 / 55%);
 }
@@ -145,11 +195,13 @@
 }
 
 /* ===== 全局 ===== */
+/* P51 稳智字体对齐：与 aiwuchuan body 逐项一致（见 :root --wz-sans 注释）。
+   原来那串里的 "SF Pro Display"/"SF Pro Text" 已删——稳智没有这两个，
+   留着只会在装了 SF Pro 的机器上单方面改变字面。 */
 html, body {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
-    "Helvetica Neue", Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -226,6 +278,19 @@ main::-webkit-scrollbar-thumb:hover, aside::-webkit-scrollbar-thumb:hover,
 }
 .apple-fade-in { animation: appleFadeIn 0.45s ease both; }
 .apple-slide-up { animation: appleSlideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Hello 问候语逐字跳动入场：每字母从左侧飞入 + 弹一下。
+   每个字母用独立 span 承载 animation-delay，实现从左到右的波纹跳动。 */
+@keyframes helloPop {
+  0%   { opacity: 0; transform: translateX(-40px) translateY(6px) scale(0.6); }
+  60%  { opacity: 1; transform: translateX(4px) translateY(-3px) scale(1.08); }
+  100% { opacity: 1; transform: translateX(0)    translateY(0)    scale(1); }
+}
+.hello-letter {
+  display: inline-block;
+  opacity: 0;
+  animation: helloPop 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
 .apple-stagger > * { animation: appleSlideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .apple-stagger > *:nth-child(1) { animation-delay: 0.02s; }
 .apple-stagger > *:nth-child(2) { animation-delay: 0.06s; }
@@ -233,3 +298,448 @@ main::-webkit-scrollbar-thumb:hover, aside::-webkit-scrollbar-thumb:hover,
 .apple-stagger > *:nth-child(4) { animation-delay: 0.14s; }
 .apple-stagger > *:nth-child(5) { animation-delay: 0.18s; }
 .apple-stagger > *:nth-child(6) { animation-delay: 0.22s; }
+
+/* S3 量化选股条件卡「跳动」入场：回弹过冲 + 上滑，比 slide-up 更醒目 */
+@keyframes cardBounceIn {
+  0% { opacity: 0; transform: translateY(36px) scale(0.94); }
+  60% { opacity: 1; transform: translateY(-8px) scale(1.015); }
+  80% { transform: translateY(4px) scale(0.998); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.card-bounce-in { animation: cardBounceIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* 稳智同款：鼠标悬停条件卡时该卡跳动一下 */
+.factor-card:hover { animation: cardBounceIn 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* 原生下拉全局深色化：修「自定义条件下拉是白底透的」 */
+select { color-scheme: dark; }
+select option { background-color: #16181d; color: #e5e7eb; }
+
+/* ============================================================
+   稳智同款：执行过程 / 步骤时间线 / 思考占位 / 正文排版
+   源码实证 aiwuchuan /ai-matrix：AiMatrixHome-*.css（.ai-execution-* / .ai-step-* /
+   .stream-placeholder / .mode-thinking-chip / .msg-content）+ agentStepTimeline-*.js（状态文案与耗时口径）。
+   只搬视觉度量，深色主题沿用本仓 --muted-foreground / overlay 变量，不引稳智的浅色底。
+   ============================================================ */
+
+/* ---- P51 稳智字体栈 / P61 正文度量（两份稳智源码实测，度量以 ai-matrix 正文渲染层为准）----
+   P51 抄的是 AiMatrixHome 的「消息容器」：流式中 16/1.82、最终态 15/1.78 + letter-spacing .1px。
+   P61（2026-09-27 用户：「标题放大，回答有个框，现在密密麻麻看着有点难受」）改抄
+   ai-matrix-content-DW5S8amy.css 的正文渲染层：
+     .stream-content / .msg-content { font-size:16px; line-height:1.82; font-variant-numeric:tabular-nums }
+   → 收口后不再回落 15px（顺带消掉「流式→定稿字号跳一下」的抖动），并补上稳智的数字等宽。
+   度量本体全在这一段里，组件只挂类名（本仓纪律：一处定义）。 */
+.wz-msg {
+  font-family: var(--wz-sans);
+  font-size: 16px;
+  line-height: 1.82;
+  letter-spacing: 0.1px;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+.wz-stream {
+  font-size: 16px;
+  line-height: 1.82;
+  margin: 0;
+}
+.wz-user-bubble {
+  /* P62：稳智的提问是一张占满阅读栏的圆角卡、15px（AiMatrixHome 那 14px 是窄气泡态），
+     我们原来 14px + max-w-80% 右贴，看起来像「备注」不像「问题」。 */
+  font-size: 15px;
+  line-height: 1.75;
+}
+/* 执行条（远程 .ai-execution-strip 自带 font-family，ui-sans-serif 打头那套） */
+.wz-strip {
+  font-family: var(--wz-strip);
+}
+
+/* ---- P62 阅读栏：稳智是「居中窄栏 + 正文裸排」----
+   2026-09-27 用户拿稳智截图复核：「回答有个框」指的是**表格卡 / 执行条 / 输入卡**这三处有框，
+   正文段落本身在稳智里**没有框**（第二张图「主力资金表多日为空值或 0…」就是裸文本压黑底）。
+   P61 那版给每条散段画了一张框、外面又套一张回答大框 → 三层框叠加，用户原话「这样好看吗？」= 不好看。
+   所以这一版：正文一律无框，只把栏宽收成稳智那种居中窄栏（一行 40~48 个汉字）。 */
+.wz-col {
+  width: 100%;
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+/* ---- P61/P62 Markdown 排版：稳智正文度量逐条抄（ai-matrix-content-DW5S8amy.css）----
+   p{line-height:1.82;margin:0 0 20px} / ul,ol{margin:0 0 22px;padding-left:1.55em} / li{margin:10px 0}
+   h1..h6{margin:34px 0 16px;font-weight:650;line-height:1.4}：h1 22px(-.01em)、h2 19px、h3 17px
+   —— 标题是「一行加粗字」，不是色带、也不是卡头（稳智那屏：📌 一句话定性 / 🔗 板块与市场环境）。
+   table{font-size:15px;line-height:1.65}：th,td{padding:11px 16px;border-bottom:1px solid var(--ai-rule);
+     min-width:6em;text-align:left}，thead th 底色 muted/600 —— 表格外层那张圆角卡是稳智**少数有框**的地方之一。
+   pre{border-radius:14px;padding:12px 14px;font-size:14.8px;line-height:1.64} / hr{margin:28px 0}
+   P62 删掉的：.ai-content-block 那套「每段一张框」——稳智实测正文根本没用它，是我们上一轮抄错了层。 */
+.wz-md {
+  font-family: var(--wz-sans);
+}
+.wz-md > * { margin: 0 0 20px; }
+.wz-md > *:last-child { margin-bottom: 0; }
+.wz-md p { line-height: 1.82; }
+.wz-md li { margin: 10px 0; }
+.wz-md ul { list-style: disc; padding-left: 1.55em; }
+.wz-md ol { list-style: decimal; padding-left: 1.55em; }
+.wz-md pre {
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-size: 14.8px;
+  line-height: 1.64;
+  overflow-x: auto;
+  background: var(--accent);
+}
+.wz-md hr { margin: 28px 0; border-color: var(--border); }
+.wz-md code { border-radius: 4px; background: var(--accent); padding: 1px 4px; }
+.wz-md strong { font-weight: 650; color: var(--foreground); }
+/* 引用块：稳智没画框，这里只留一条左竖条 + 弱色，够区分「口径说明」就够了 */
+.wz-md blockquote {
+  border-left: 2px solid var(--muted-foreground);
+  padding-left: 14px;
+  color: var(--muted-foreground);
+}
+
+/* 标题：稳智把标题留在框外，字号按 h1/h2/h3 分档，字重 650 */
+.wz-h {
+  margin: 34px 0 16px;
+  font-weight: 650;
+  line-height: 1.4;
+  color: var(--foreground);
+}
+.wz-md > .wz-h:first-child { margin-top: 0; }
+.wz-h1 { font-size: 22px; letter-spacing: -0.01em; }
+.wz-h2 { font-size: 19px; }
+.wz-h3 { font-size: 17px; }
+
+/* 表格：稳智少数「该有框」的地方之一——外面一张圆角卡，卡内 15px/1.65、格内 11x16、只画横线 */
+.wz-table-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--overlay);
+  padding: 4px 6px;
+}
+.wz-table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  font-size: 15px;
+  line-height: 1.65;
+  font-variant-numeric: tabular-nums;
+}
+.wz-table th,
+.wz-table td {
+  padding: 11px 16px;
+  min-width: 6em;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.wz-table thead th {
+  background: var(--muted);
+  font-weight: 600;
+}
+.wz-table tbody tr:hover { background: var(--overlay); }
+
+/* ---- P61/P62 随问浮窗的同一套排版收到小尺寸 ----
+   浮窗只有 380px 宽、自己已经是一张描边卡：正文 14px/1.7、块间距 12px、标题 16/15/14、表格 13px。
+   P62 起正文本来就没框，这里不再需要「拆第二层框」那几条。 */
+.wz-compact { font-size: 14px; line-height: 1.7; }
+.wz-compact .wz-md > * { margin-bottom: 12px; }
+.wz-compact .wz-md li { margin: 4px 0; }
+.wz-compact .wz-md .wz-h { margin: 16px 0 8px; }
+.wz-compact .wz-h1 { font-size: 16px; letter-spacing: 0; }
+.wz-compact .wz-h2 { font-size: 15px; }
+.wz-compact .wz-h3 { font-size: 14px; }
+.wz-compact .wz-table { font-size: 13px; }
+.wz-compact .wz-table th,
+.wz-compact .wz-table td { padding: 6px 8px; min-width: 4em; }
+
+/* ============================================================
+   P63 产业链研报「纸面」排版 —— 度量只写在这里，组件只挂类名
+   ------------------------------------------------------------
+   尺子来自稳智 aiwuchuan.com 产业链研报页的 getComputedStyle 实测
+   （类名 .industry-report-*，2026-09-27 取值），抄的是**骨架与度量**：
+   顶栏渐变条 → 英文眉标 → 「研」徽标 + kicker + 大标题 → 分隔线 → 元信息行 → 正文。
+   内容（标题文案、数据读数、结论）一律来自我们自己的接口，不抄对方答案。
+   对方那侧的 h1 在正文里把大标题又重复了一遍（hero 一次、body 一次），
+   那是它的瑕疵 —— 我们的渲染器一开始就剥掉正文首个 H1，不跟。
+   ============================================================ */
+.rp-paper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  padding: 24px 18px 28px;
+  background: linear-gradient(180deg, var(--overlay-strong) 0%, var(--overlay) 100%);
+}
+@media (min-width: 768px) {
+  .rp-paper { padding: 26px 26px 34px; }
+}
+/* 顶栏：稳智 4px 高、999px 圆角、蓝色从左到右淡出 */
+.rp-topbar {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary) 0%, var(--ring) 42%, transparent 100%);
+}
+/* 眉标：稳智 11px / 字距 2.64px / 全大写 / 灰蓝 */
+.rp-coverline {
+  margin-top: 18px;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 2.64px;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.rp-hero { display: flex; align-items: flex-start; gap: 14px; margin-top: 12px; }
+/* 徽标：稳智 56×56、16px 圆角、28px/800 蓝底渐变 */
+.rp-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border-radius: 16px;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--primary);
+  background: linear-gradient(135deg, color-mix(in oklab, var(--primary) 14%, transparent) 0%, var(--overlay) 100%);
+}
+.rp-hero-main { min-width: 0; flex: 1; }
+/* kicker：稳智 12px / 字距 2.4px */
+.rp-kicker {
+  font-size: 12px;
+  letter-spacing: 2.4px;
+  color: var(--muted-foreground);
+}
+/* 大标题：稳智 28px / 1.16 / 800 / 字距 -0.56px */
+.rp-title {
+  margin-top: 8px;
+  font-size: 28px;
+  line-height: 1.16;
+  font-weight: 800;
+  letter-spacing: -0.56px;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+/* 分隔线：稳智 2px 高蓝色渐隐 */
+.rp-divider {
+  height: 2px;
+  margin-top: 16px;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--primary) 42%, transparent) 0%, var(--ring) 40%, transparent 76%);
+}
+/* 元信息行：稳智 13px、gap 14px、下边框 .8px（生成时间 / 视图 / 交易观察日 三格） */
+.rp-subline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 12px 0 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.rp-subline strong { color: var(--foreground); font-weight: 600; }
+/* 正文读列：研报是长文，1040px 封顶居中（比对话页 880px 宽一档，因为正文有嵌套列表和小标题） */
+.rp-body {
+  max-width: 1040px;
+  margin-inline: auto;
+  padding-top: 22px;
+  font-family: var(--wz-sans);
+  font-size: 16px;
+  line-height: 1.9;
+  color: var(--foreground);
+}
+.rp-body > * { margin: 0 0 18px; }
+.rp-body > *:last-child { margin-bottom: 0; }
+/* 章节标题：稳智 h2 23px/800 + 4.8px 蓝竖条 + 左内边距 14px + 上下 34/18 */
+.rp-h {
+  margin: 34px 0 18px;
+  padding: 14px 0;
+  font-weight: 800;
+  line-height: 1.35;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+.rp-h2 {
+  font-size: 23px;
+  border-left: 4px solid var(--primary);
+  padding-left: 14px;
+}
+.rp-body > .rp-h:first-child { margin-top: 0; }
+/* 主线小标题：稳智 h3 18px/800 + 下内边距 10px */
+.rp-h3 {
+  margin: 28px 0 14px;
+  padding-bottom: 10px;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.45;
+  color: var(--foreground);
+  border-bottom: 1px solid var(--border);
+}
+.rp-h4 { margin: 20px 0 10px; font-size: 16px; font-weight: 700; color: var(--foreground); }
+.rp-body p { line-height: 1.9; }
+.rp-body strong { font-weight: 700; color: var(--foreground); }
+/* 列表：稳智 ul 左内边距 26px（原生 disc）、li 15px/1.9 */
+.rp-body ul { list-style: disc; padding-left: 26px; }
+.rp-body ol { list-style: decimal; padding-left: 26px; }
+.rp-body li { margin: 8px 0; font-size: 15px; line-height: 1.9; color: color-mix(in oklab, var(--foreground) 88%, var(--muted-foreground)); }
+.rp-body li > ul, .rp-body li > ol { margin-top: 6px; }
+/* 引用块：稳智 blockquote 4px 蓝竖条 + 左内边距 20px + 上下 18px（研报的「关联新闻」靠它） */
+.rp-quote {
+  margin: 18px 0;
+  padding: 6px 0;
+  border-left: 4px solid color-mix(in oklab, var(--primary) 60%, var(--muted-foreground));
+  padding-left: 20px;
+  color: var(--muted-foreground);
+  font-size: 15px;
+  line-height: 1.85;
+}
+.rp-body hr { margin: 28px 0 0; border: 0; border-top: 1px solid var(--border); }
+.rp-body code { border-radius: 4px; background: var(--accent); padding: 1px 5px; font-family: var(--wz-mono); font-size: 0.92em; }
+/* 研报正文禁用表格是 prompt 的硬纪律，但历史留档里可能还有：给一套与对话页一致的表格卡度量 */
+.rp-body .wz-table-card { margin: 18px 0; }
+.rp-body .wz-table { font-size: 14px; line-height: 1.7; }
+/* 强调行（`**综合判断**：…` 这类整行加粗）：稳智没有这一档，按 h4 强度落在正文与 h3 之间 */
+.rp-strong-line { font-size: 16px; font-weight: 700; line-height: 1.9; color: var(--foreground); }
+
+
+/* 执行过程容器：远程 .ai-execution-strip（近黑实底 + 细描边 + 12px 圆角 + 16/20 内边距） */
+.ai-execution-strip {
+  border-radius: 12px;
+  border: 1px solid oklch(1 0 0 / 0.08);
+  background: oklch(1 0 0 / 0.03);
+  padding: 16px 20px;
+}
+:root:not(.dark) .ai-execution-strip {
+  background: oklch(0.97 0 0 / 1);
+  border-color: oklch(0 0 0 / 0.1);
+}
+.ai-execution-title { font-size: 16px; font-weight: 600; transition: color 0.18s; }
+.ai-execution-summary { color: var(--muted-foreground); font-size: 13px; }
+
+/* 步骤列表：远程 .ai-step-list（4px 行距 + 420px 上限可滚） */
+.ai-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 420px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* 单个步骤：远程 .ai-step —— 16px 图标列 + 内容列，gap8 / padding9-10 / 14px/1.55 / 14px 圆角 */
+.ai-step {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  border-radius: 14px;
+  padding: 9px 10px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.ai-step-icon { text-align: center; font-size: 14px; line-height: 1.5; }
+/* 活跃步骤图标脉冲：远程 .ai-step.is-active .ai-step-icon（ai-step-pulse 1.4s） */
+.ai-step.is-active .ai-step-icon { animation: aiStepPulse 1.4s ease-in-out infinite; }
+.ai-step-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ai-step-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ai-step-label { font-weight: 600; word-break: break-word; }
+.ai-step.is-pending .ai-step-label { color: var(--muted-foreground); font-weight: 500; }
+.ai-step-status { color: var(--muted-foreground); white-space: nowrap; font-size: 13px; }
+.ai-step-duration {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0.85;
+  font-size: 12px;
+}
+.ai-step-detail { color: var(--muted-foreground); word-break: break-word; font-size: 13px; line-height: 1.6; }
+
+/* 正在执行：远程 .ai-step-live-progress —— 38px 的 2px 流动条 + 文案 */
+.ai-step-live-progress {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 7px;
+  min-width: 0;
+  color: var(--muted-foreground);
+  opacity: 0.8;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+.ai-step-live-track {
+  position: relative;
+  flex: 0 0 38px;
+  height: 2px;
+  border-radius: 999px;
+  background: oklch(0.62 0.012 250 / 0.28);
+  overflow: hidden;
+}
+.ai-step-live-track > span {
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  border-radius: inherit;
+  background: currentColor;
+  animation: aiProgressTrack 1.8s ease-in-out infinite;
+}
+.ai-step-live-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 单行流动进度：远程 .flow-hero-track / .flow-hero-fill（AiMatrixFlowExecutionCard，flow-card 的 hero）。
+   本项目把它收进执行过程条的一行里——左侧实时文案、右侧百分比 + 渐变流动条。
+   远程口径：track 半透明底 / fill 蓝→绿渐变 / 运行中 background-position 无限流动。 */
+.flow-hero-track {
+  position: relative;
+  flex: 0 0 64px;
+  height: 6px;
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.1);
+  overflow: hidden;
+}
+:root:not(.dark) .flow-hero-track { background: oklch(0 0 0 / 0.08); }
+.flow-hero-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, oklch(0.66 0.16 250), oklch(0.74 0.14 165));
+  transition: width 0.3s;
+}
+.flow-hero-fill.is-running {
+  background-size: 200% 100%;
+  animation: flowProgressRunning 1.5s linear infinite;
+}
+
+/* 思考占位：远程 .stream-placeholder（14px/1.6）+ .flow-pulse/.flow-wait */
+.stream-placeholder {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.stream-placeholder .flow-pulse { display: inline-block; animation: flowFlip 1.1s ease-in-out infinite; }
+.stream-placeholder .flow-wait { display: inline-block; opacity: 0.4; }
+
+/* 深度思考胶囊：远程 .mode-thinking-chip（18px 高 / 6px 圆角 / 11px 字） */
+.mode-thinking-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1;
+  background: oklch(0.64 0.17 256 / 0.16);
+  color: oklch(0.80 0.10 256);
+}
+
+@keyframes aiStepPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes aiProgressTrack {
+  0% { opacity: 0.45; transform: translateX(-115%); }
+  50% { opacity: 1; }
+  100% { opacity: 0.45; transform: translateX(260%); }
+}
+@keyframes flowFlip { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(180deg); } }
+/* 远程 flow-progress-running：靠 background-position 平移做出「流动」 */
+@keyframes flowProgressRunning { 0% { background-position: 200% 0; } 100% { background-position: 0 0; } }

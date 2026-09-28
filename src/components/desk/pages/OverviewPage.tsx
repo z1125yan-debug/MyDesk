@@ -63,11 +63,11 @@ export default function OverviewPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-5">
+    <div className="w-full space-y-5 p-5">
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-xl font-bold">总览</h1>
-          <p className="mt-1 text-[12.5px] text-muted-foreground">
+          <p className="mt-1 text-[13.5px] text-muted-foreground">
             自选行情卡片 · {sourceLabel} · 涨跌幅为当日 · {poll.open ? `交易时段每 ${poll.interval}s 自动刷新` : `A股${poll.sessionLabel}，自动刷新已暂停`}
           </p>
         </div>
@@ -76,7 +76,7 @@ export default function OverviewPage() {
 
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {loading && !data.cards.length && (
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-4 text-[12.5px] text-muted-foreground">
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-4 text-[13.5px] text-muted-foreground">
             <Loader2 size={14} className="animate-spin text-sky-400" /> 正在获取行情…
           </div>
         )}
@@ -87,15 +87,15 @@ export default function OverviewPage() {
               <div key={quote.symbol} className="group rounded-xl border border-border bg-card p-4">
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="text-[13.5px] font-medium">{wname}</div>
-                    <div className="font-mono text-[11px] text-muted-foreground">{quote.symbol}</div>
+                    <div className="text-[14.5px] font-medium">{wname}</div>
+                    <div className="font-mono text-[12px] text-muted-foreground">{quote.symbol}</div>
                   </div>
                   <button
                     onClick={() => removeWatch(quote.symbol)}
-                    className="text-[11px] text-muted-foreground opacity-0 transition-opacity hover:text-rose-400 group-hover:opacity-100"
+                    className="text-[12px] text-muted-foreground opacity-0 transition-opacity hover:text-rose-400 group-hover:opacity-100"
                   >移除</button>
                 </div>
-                <div className="mt-4 text-[12.5px] text-muted-foreground">行情暂不可用（数据源断开或停牌）</div>
+                <div className="mt-4 text-[13.5px] text-muted-foreground">行情暂不可用（数据源断开或停牌）</div>
               </div>
             );
           }
@@ -104,46 +104,46 @@ export default function OverviewPage() {
             <div key={quote.symbol} className="group rounded-xl border border-border bg-card p-4 transition-colors hover:border-sky-500/40">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="text-[13.5px] font-medium">{wname}</div>
-                  <div className="font-mono text-[11px] text-muted-foreground">{quote.symbol}</div>
+                  <div className="text-[14.5px] font-medium">{wname}</div>
+                  <div className="font-mono text-[12px] text-muted-foreground">{quote.symbol}</div>
                 </div>
                 <button
                   onClick={() => removeWatch(quote.symbol)}
-                  className="text-[11px] text-muted-foreground opacity-0 transition-opacity hover:text-rose-400 group-hover:opacity-100"
+                  className="text-[12px] text-muted-foreground opacity-0 transition-opacity hover:text-rose-400 group-hover:opacity-100"
                 >移除</button>
               </div>
               <div className="mt-2.5 flex items-end justify-between">
                 <div>
-                  <div className="font-mono text-[22px] font-bold leading-6 tabular-nums">{quote.price.toFixed(2)}</div>
-                  <div className={"mt-0.5 font-mono text-[12.5px] " + (up ? "text-rose-400" : "text-emerald-400")}>
-                    {up ? "+" : ""}{quote.changePct.toFixed(2)}%<span className="ml-1 text-[10.5px] text-muted-foreground">当日</span>
+                  <div className="font-mono text-[23px] font-bold leading-6 tabular-nums">{quote.price.toFixed(2)}</div>
+                  <div className={"mt-0.5 font-mono text-[13.5px] " + (up ? "text-rose-400" : "text-emerald-400")}>
+                    {up ? "+" : ""}{quote.changePct.toFixed(2)}%<span className="ml-1 text-[11.5px] text-muted-foreground">当日</span>
                   </div>
                   {quote.data_status === "DEMO" && (
-                    <div className="mt-0.5 text-[10.5px] text-amber-300">演示品种 · 不是实时行情</div>
+                    <div className="mt-0.5 text-[11.5px] text-amber-300">演示品种 · 不是实时行情</div>
                   )}
                 </div>
                 {quote.series.length > 1 && <Sparkline data={quote.series} up={up} width={110} height={38} />}
               </div>
               <button
                 onClick={() => { useDesk.getState().setFocusSymbol(quote.symbol); go("analysis"); }}
-                className="mt-3 w-full rounded-md border border-border py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300"
+                className="mt-3 w-full rounded-md border border-border py-1.5 text-[13px] text-muted-foreground transition-colors hover:border-sky-500/40 hover:text-sky-300"
               >去分析 →</button>
             </div>
           );
         })}
 
         <div className="rounded-xl border border-dashed border-border bg-card/50 p-4">
-          <div className="text-[13px] font-medium text-muted-foreground">添加自选</div>
+          <div className="text-[14px] font-medium text-muted-foreground">添加自选</div>
           <div className="mt-2.5 space-y-2">
             <input value={sym} onChange={(e) => { setSym(e.target.value); setAddError(""); }}
               onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
               placeholder="代码/名称/拼音，如 688256 或 寒武纪"
-              className="h-8 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[12px] outline-none focus:border-sky-500/60" />
+              className="h-8 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[13px] outline-none focus:border-sky-500/60" />
             <button onClick={submit}
-              className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-sky-500/90 text-[12.5px] font-medium text-white hover:bg-sky-500">
+              className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-sky-500/90 text-[13.5px] font-medium text-white hover:bg-sky-500">
               <Plus size={14} /> 搜索并添加
             </button>
-            {addError && <div className="text-[11px] text-amber-300">{addError}</div>}
+            {addError && <div className="text-[12px] text-amber-300">{addError}</div>}
           </div>
         </div>
       </div>
@@ -162,8 +162,8 @@ export default function OverviewPage() {
                 <Icon size={19} />
               </div>
               <div>
-                <div className="text-[13.5px] font-medium">{c.title}</div>
-                <div className="text-[12px] text-muted-foreground">{c.desc}</div>
+                <div className="text-[14.5px] font-medium">{c.title}</div>
+                <div className="text-[13px] text-muted-foreground">{c.desc}</div>
               </div>
             </button>
           );

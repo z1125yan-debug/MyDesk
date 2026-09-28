@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ProxyAgent, fetch as undiciFetch, type RequestInit as UndiciInit } from "undici";
 import {
   injectSceneContext, type ChatRequestMessage, type ContextMsg, type StepInfo,
+  type WzDecisionPayload,
 } from "@/lib/desk/chat-core";
 import { contractWarningOf, prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
 import { TOOLS, findTool, type ToolCtx } from "@/lib/desk/chat-tools";
@@ -21,14 +22,28 @@ import {
 import { RUNS } from "@/lib/desk/run-bus";
 import { debugFramesFromSteps } from "@/lib/desk/debug-core";
 import { asChatMode, asHorizon, HORIZON_NOTES, MODE_NOTES } from "@/lib/desk/modes";
+import { HOLD_USAGE_NOTE } from "@/lib/desk/hold-core";
+import { holdNoteOf } from "@/lib/desk/hold-note";
+import { FOLLOWUP_NOTE } from "@/lib/desk/followups-core";
+// R20 说人话 / 说两面：与 /api/ai/chat、客户端 assistantSystemPrompt 共用同一份
+import { PLAIN_AND_BALANCED_NOTE } from "@/lib/desk/plain-talk";
+import { runWzIntentClassifier } from "@/lib/desk/intent-llm-fetch";
 import {
-  foldHistoryForGateway, gatewayUnreachableText, isLanBaseUrl, shouldRetryNonStream,
+  clampUpstreamTimeoutMs, foldHistoryForGateway, gatewayUnreachableText, isLanBaseUrl, shouldRetryNonStream,
   GATEWAY_BRAIN_BRIEF, type ServerLlmChannel,
 } from "@/lib/llm/model-config-core";
 import { getServerLlm } from "@/lib/llm/model-config";
+// P55 输出边界护栏：这条路由此前一条护栏都没接（chat route 那份被源码钉钉住不动），
+// 实测上游把注入的快讯行/周期口径/行情快照整段抄回正文、原样流给用户（2026-09-27 截图事故）。
+// 判定链与 /api/ai/chat 的 createHeadGuard 同口径（head-guard-core 共享版）。
+import { createHeadGuard } from "@/lib/desk/head-guard-core";
+import { stripScaffoldEcho, SCAFFOLD_ONLY_NOTICE } from "@/lib/desk/answer-guard-core";
+import { detectRepetition, degenWarning, type DegenVerdict } from "@/lib/desk/degen-core";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// 长报告流式生成可能跑 3-5 分钟（产业链研报 ~6000 字）；自托管 Node 不强制这个值，
+// 但平台化部署（如 Vercel）会按它掐断，所以跟 streamTimeoutMs 的上限对齐到 600s。
+export const maxDuration = 600;
 
 // 通用境外 AI 代理：支持 OpenAI 兼容 / Anthropic 原生 / Gemini 原生
 // Key 仅通过请求头传递，不落盘、不打日志。
@@ -70,6 +85,11 @@ interface ProxyBody {
    * 只在带 scene 的对话轮生效、先过 asHorizon 白名单；没带/认不出＝未选，一个字都不注入。
    */
   horizon?: string;
+  /**
+   * 持仓条件（标的/成本价/仓位/建仓日期）。与 /api/ai/chat 的 body.hold 同一份口径：
+   * 只在带 scene 的对话轮生效、先过 hold-core 的白名单清洗；没带/认不出＝一个字都不注入。
+   */
+  hold?: unknown;
   /**
    * P8-⑥：客户端生成的本轮留底号（外部输入，非空字符串才认）。带上＝这轮进 RunBus，
    * 断线/刷新后可按序号续传；且断连不再取消上游（grace=跑完或显式停止）——细则 §5-3 拍板项。
@@ -179,16 +199,17 @@ function splitSystem(messages: MsgIn[]): { system: string; turns: MsgIn[] } {
   return { system, turns };
 }
 
-async function callOpenAI(base: string, key: string, model: string, messages: MsgIn[], agent: ProxyAgent | null) {
+async function callOpenAI(base: string, key: string, model: string, messages: MsgIn[], agent: ProxyAgent | null, maxTokens = 2048, ms = 45000) {
   const url = apiBase(base) + "/v1/chat/completions";
   const res = await upstream(
     url,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages, max_tokens: 2048 }),
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
     },
     agent,
+    ms,
   );
   const json = await jsonOf(res);
   if (!res.ok) throw new Error(json?.error?.message || `上游 ${res.status}`);
@@ -201,8 +222,9 @@ async function callOpenAI(base: string, key: string, model: string, messages: Ms
  * 让界面写明「本机节奏展示」，不能把一次拿全画成逐字流。
  */
 async function callOpenAIStream(
-  base: string, key: string, model: string, messages: MsgIn[], agent: ProxyAgent | null,
-  emit: (ev: StreamEvent) => void, signal?: AbortSignal,
+  base: string, key: string, model: string, messages: MsgIn[], agent: ProxyAgent | null, maxTokens = 2048,  emit: (ev: StreamEvent) => void, signal?: AbortSignal, timeoutMs = 120_000,
+  /** P55：护栏判到重复死循环时把上游 body 掐掉，不再白烧到超时（q2 实测同一句刷 440 次） */
+  shouldStop?: () => boolean,
 ): Promise<string> {
   const url = apiBase(base) + "/v1/chat/completions";
   const res = await upstream(
@@ -210,10 +232,10 @@ async function callOpenAIStream(
     {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages, max_tokens: 2048, stream: true }),
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, stream: true }),
     },
     agent,
-    120_000,
+    timeoutMs,
   );
   const ct = res.headers.get("content-type");
   if (!isEventStream(ct)) {
@@ -233,6 +255,8 @@ async function callOpenAIStream(
   if (body) {
     for await (const chunk of body) {
       if (signal?.aborted) { try { body.destroy?.(); } catch { /* 已断开 */ } break; }
+      // P55：退化判定命中就掐上游——护栏不再转发循环尾巴，上游也没必要继续烧
+      if (shouldStop?.()) { try { body.destroy?.(); } catch { /* 已断开 */ } break; }
       for (const f of scanner.push(decoder.decode(chunk as Uint8Array, { stream: true }))) {
          
         const errText = frameError(f.data);
@@ -356,6 +380,8 @@ function sseResponse(run: (emit: (ev: StreamEvent) => void) => Promise<void>, ru
   });
 }
 
+let maxTokens = 2048;
+
 export async function POST(req: NextRequest) {
   let body: ProxyBody | null = null;
   // 给最外层 catch 用的两份信息：非流式分支的网关连不上也要指到「先启动网关」这个病根
@@ -393,7 +419,32 @@ export async function POST(req: NextRequest) {
     const provider = serverChannel ? "openai" : clientProvider;
 
     body = (await req.json().catch(() => null)) as ProxyBody | null;
+    // 长报告（产业链研报等）需要更大的生成预算：由请求体传入，默认 2048
+    maxTokens = Number((body as { max_tokens?: number } | null)?.max_tokens) > 0 ? Number((body as { max_tokens?: number }).max_tokens) : 2048;
+    // 长报告（产业链研报等）生成时间可达 3-5 分钟，会超过流式路径原本写死的 120s 上游超时。
+    // 只认请求体里的正整数，钳在 [10s, 600s]；没带/认不出就维持 120s —— 对话轮行为一字不变。
+    const rawTimeoutMs = Number((body as { timeout_ms?: number } | null)?.timeout_ms);
+    // 流式与非流式共用同一份钳位口径（见 model-config-core.clampUpstreamTimeoutMs）。
+    // 非流式 callOpenAI 原来写死 45s、完全不读请求体的 timeout_ms：事件理解这类结构化长生成
+    // 客户端传了 120s，却因为这里漏接而被 45s 掐断（谎称「连接上游超时」）。默认仍 45s
+    // （不动其它非流式调用方的行为），只有显式带 timeout_ms 的（如事件理解）才拉长。
+    const streamTimeoutMs = clampUpstreamTimeoutMs(rawTimeoutMs, 120_000);
+    const nonStreamTimeoutMs = clampUpstreamTimeoutMs(rawTimeoutMs, 45_000);
     const messages = body?.messages ?? [];
+    // P55：本轮用户原话（含注入的快照后缀——客户端把行情快照/快讯拼在最后一条 user 件里），
+    // 交给护栏做「回显行」比对：上游把注入的快讯行/周期口径/行情快照抄回正文时按回显剥掉。
+    const lastUserEcho = (() => {
+      const u = [...messages].reverse().find((m) => m.role === "user");
+      const base = u && typeof u.content === "string" && u.content.trim() ? [u.content] : [];
+      // P55-B：模式/周期口径是服务端注入的（不在客户端消息里），同样进回显语料（与 /api/ai/chat 同口径）
+      if (body?.scene) {
+        const md = MODE_NOTES[asChatMode(body.mode)];
+        const hz = asHorizon(body.horizon);
+        if (md?.trim()) base.push(md);
+        if (hz) base.push(HORIZON_NOTES[hz]);
+      }
+      return base;
+    })();
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: "messages 为空" }, { status: 400 });
     }
@@ -448,7 +499,34 @@ export async function POST(req: NextRequest) {
     // P11 持仓周期：与风格件同一消费路（只认带 scene 的对话轮）、同一张表（modes.ts）、同一道白名单门。
     // 没选就是一个字都不加——「未选」不能被解释成任何周期口径。
     const horizon = body?.scene ? asHorizon(body.horizon) : null;
-    const styleNote = [modeNote, horizon ? HORIZON_NOTES[horizon] : ""].filter(Boolean).join("\n");
+    // P17-① 稳智对齐：LLM 兜底分类器 —— 规则引擎判 general 时才让 LLM 出来补决策信号。
+    // 只对带 scene 的对话轮生效，与 styleNote 同口径；无 scene 时一个字都不注入（研究页/自检不吃）。
+    // 分类失败（超时/解析失败/JSON 无效）静默降级，绝不让用户因为 LLM 挂了看不到常规回答。
+    const wzDecisionBlock = await runWzIntentClassifier({
+      enabled: !!body?.scene,
+      horizon,
+      lastUser: [...messages].reverse().find((m) => m.role === "user"),
+      prevScene: body?.scene?.prevScene,
+      model,
+      baseUrl,
+      apiKey,
+      agent,
+      signal: req.signal,
+    });
+    // P59 追问推荐：与 /api/ai/chat 同一条收尾纪律（同一常量，两端不各写一份）。
+    // 口径跟 modeNote 完全一致：只认带 scene 的对话轮，研究页/自检那种一次一问的转发不掺。
+    // 持仓那一句同口径进 styleNote：它和周期一样是「长期条件」，不是某一句的问题。
+    const holdNote = body?.scene ? await holdNoteOf(body.hold) : null;
+    // R20 说人话 / 说两面：与 modeNote 同一口径（只认带 scene 的对话轮，研究页/自检不掺），
+    // 与 /api/ai/chat、客户端直连那份同一常量（@/lib/desk/plain-talk）。
+    const styleNote = [
+      modeNote,
+      horizon ? HORIZON_NOTES[horizon] : "",
+      holdNote?.line ?? "",
+      holdNote ? HOLD_USAGE_NOTE : "",
+      body?.scene ? PLAIN_AND_BALANCED_NOTE : "",
+      body?.scene ? FOLLOWUP_NOTE : "",
+    ].filter(Boolean).join("\n");
     // ---------- R14 网关文本协议工具环（开关口径与身份卡同门：gateway + 带 scene 的对话轮） ----------
     // 官方 API 模式在 /api/ai/chat 有真 function-call 环，不需要也不该再套一层文本环；
     // 一次一问的转发调用（研究页/自检）不吃协议卡，自然也没有请求块。
@@ -522,7 +600,10 @@ export async function POST(req: NextRequest) {
       // 官方 API 模式有真工具环，对它说「你没有工具」就是谎话；一次一问的转发调用（研究页/自检）
       // 不吃场景提示词，也不该被交易纪律污染（与上面 styleNote 同口径）。
       const brief: MsgIn[] = serverChannel?.mode === "gateway" && body?.scene ? [{ role: "system", content: GATEWAY_BRAIN_BRIEF }] : [];
-      const out: MsgIn[] = [...brief, ...(styleNote ? [{ role: "system" as const, content: styleNote }] : []), ...merged];
+      // P17-①：稳智决策信号块跟在 styleNote 之后、身份卡之后——先立身份、再讲风格/周期、
+      // 然后摆"参考口径"，最后是场景提示词与数据块。顺序稳定，模型能一眼看到参考结论。
+      const wzNote: MsgIn[] = wzDecisionBlock.block.length ? [{ role: "system" as const, content: wzDecisionBlock.block.join("\n") }] : [];
+      const out: MsgIn[] = [...brief, ...(styleNote ? [{ role: "system" as const, content: styleNote }] : []), ...wzNote, ...merged];
       // R14 协议卡紧跟身份卡：先立「你没有工具」的身份，再讲唯一例外怎么走——
       // 只在文本环开着的轮次附加，环没接线的轮次一个字都不多插（那张卡说了也不成立）。
       return gatewayLoop ? [out[0], { role: "system" as const, content: gatewayFetchLoopBrief(fetchCatalog) }, ...out.slice(1)] : out;
@@ -532,7 +613,12 @@ export async function POST(req: NextRequest) {
     // 流式：只有 OpenAI 兼容协议有逐字能力。其余服务商走整体返回，
     // 客户端会因为拿不到 event-stream 而如实登记「本机节奏」。
     if (wantStream && openaiCompat) {
-      return sseResponse(async (emit) => {
+      return sseResponse(async (rawEmit) => {
+        // P55：所有出帧都过头部护栏（判定链与 /api/ai/chat 的 sseResponse 同口径）。
+        // 护栏只拦 delta；step/stage/warning/error 原样放行，done.fullText 以本层累计为准。
+        const guard = createHeadGuard(rawEmit, { echoes: lastUserEcho });
+        const emit = guard.emit;
+        try {
         let turn: SceneTurn | null = null;
         try {
           turn = await prepare(emit);
@@ -565,14 +651,16 @@ export async function POST(req: NextRequest) {
         // 一轮模型调用：流式逐帧外发；文本环开着时过一道过滤器（协议块不上屏）。
         // 返回值是整轮原文（含块）——解析一律用原文，过滤器只管展示。
         const callRoundStream = async (raw: MsgIn[], filter: FetchStreamFilter | null): Promise<string> =>
-          await callOpenAIStream(baseUrl, apiKey, model, foldForSend(raw), agent, (ev) => {
+          await callOpenAIStream(baseUrl, apiKey, model, foldForSend(raw), agent, maxTokens, (ev) => {
             if (ev.type === "delta" && filter) {
               const piece = filter.push(ev.data.content ?? "");
               if (piece) emitCounted({ type: "delta", data: { content: piece } });
             } else {
               emitCounted(ev);
             }
-          }, runId ? undefined : req.signal);
+          }, runId ? undefined : req.signal, streamTimeoutMs,
+          // P55：护栏判到重复死循环就掐上游（不再白烧到 60s 超时）
+          () => guard.isDegenerate());
         /**
          * R14 流式多轮驱动：回答→（若发请求）执行→回料→续答，最多 MAX_FETCH_ROUNDS 轮。
          * 返回用户看到的全部正文（各轮请求块之前文字的拼接）；超上限的新请求不执行、如实 warning。
@@ -610,7 +698,7 @@ export async function POST(req: NextRequest) {
           const cw = turn ? contractWarningOf(turn, content) : null;
           if (cw) emit({ type: "warning", data: { text: cw } });
           emitDebugSteps();
-          emit({ type: "done", data: { fullText: content, ...(turn ? { intent: turn.badge } : {}), ...doneDebug() } });
+          emit({ type: "done", data: { fullText: content, ...(turn ? { intent: turn.badge } : {}), ...(wzDecisionBlock.signal ? { wzDecision: wzDecisionBlock.signal } : {}), ...doneDebug() } });
         } catch (e) {
           const raw = (e as Error).message || "";
           // 任务书「网关不支持 SSE 自动切轮询，不直接报错」的落地形态：对同一上游补发一次
@@ -620,7 +708,7 @@ export async function POST(req: NextRequest) {
           //（屏幕没字但工具已跑过的事实 filter 反映不出来，看 steps 才准）。
           if (shouldRetryNonStream(raw, emittedDelta || (loop?.steps.length ?? 0) > 0)) {
             try {
-              const c2raw = await callOpenAI(baseUrl, apiKey, model, foldForSend(baseRaw), agent);
+              const c2raw = await callOpenAI(baseUrl, apiKey, model, foldForSend(baseRaw), agent, maxTokens, nonStreamTimeoutMs);
               const c2Parsed = parseFetchRequests(String(c2raw ?? ""));
               const c2 = c2Parsed.preText;
               if (c2) {
@@ -634,7 +722,7 @@ export async function POST(req: NextRequest) {
                 if (cw2) emit({ type: "warning", data: { text: cw2 } });
                 emit({ type: "delta", data: { content: c2 } });
                 emitDebugSteps();
-                emit({ type: "done", data: { fullText: c2, ...(turn ? { intent: turn.badge } : {}), ...doneDebug() } });
+                emit({ type: "done", data: { fullText: c2, ...(turn ? { intent: turn.badge } : {}), ...(wzDecisionBlock.signal ? { wzDecision: wzDecisionBlock.signal } : {}), ...doneDebug() } });
                 return;
               }
             } catch { /* 保持下面按原始流式错误说话 */ }
@@ -647,6 +735,10 @@ export async function POST(req: NextRequest) {
                 : proxyErrorMessage(e),
             },
           });
+        }
+        } finally {
+          // 收尾兜底：run 结束仍没决定过就补一次（整篇都是脚手架时换兜底话术）
+          try { guard.flush(); } catch { /* 护栏自身不许把关流拖挂 */ }
         }
       }, runId);
     }
@@ -674,7 +766,7 @@ export async function POST(req: NextRequest) {
       let raw = withSceneRaw(turn);
       let outAll = "";
       for (;;) {
-        const roundText = String(await callOpenAI(baseUrl, apiKey, model, foldForSend(raw), agent) ?? "");
+        const roundText = String(await callOpenAI(baseUrl, apiKey, model, foldForSend(raw), agent, maxTokens, nonStreamTimeoutMs) ?? "");
         const parsed = parseFetchRequests(roundText);
         outAll += parsed.preText;
         if (!parsed.markerFound) break;
@@ -690,18 +782,30 @@ export async function POST(req: NextRequest) {
       content = outAll;
     } else {
       // openai / deepseek / moonshot / openrouter / ollama / custom 全部 OpenAI 兼容
-      content = await callOpenAI(baseUrl, apiKey, model, upstreamMessages, agent);
+      content = await callOpenAI(baseUrl, apiKey, model, upstreamMessages, agent, maxTokens, nonStreamTimeoutMs);
     }
 
     if (!content) return NextResponse.json({ error: `上游未返回内容${via}` }, { status: 502 });
+    // P55 输出边界护栏（非流式同口径）：剥回显/脚手架开头 + 判重复死循环，与 /api/ai/chat 的 JSON 路一条判据。
+    // 命中即留痕（并进 warning），不静默丢内容；整篇都是脚手架时换兜底话术。
+    // 就地重写 content（p15/p8 钉住「契约核对三处都吃 content」的形状，口径不变）。
+    const pg = stripScaffoldEcho(content, { echoes: lastUserEcho });
+    content = pg.text || (pg.stripped ? SCAFFOLD_ONLY_NOTICE : content);
+    const pdg = detectRepetition(content);
+    if (pdg.degenerate) content = pdg.kept || "模型这一轮陷进了重复输出（没有产出可用的正文），已截断；请重试一次。";
+    const guardWarn = [
+      pg.stripped ? "已过滤模型复述的内部信号字段、自述与思维链，正文从结论开始。" : "",
+      pdg.degenerate ? degenWarning(pdg) : "",
+    ].filter(Boolean).join("；");
     const steps: StepInfo[] = [...(turn?.steps ?? []), ...loopSteps];
     // P8-②：非流式同样核一遍契约引用；只并进 warning 字段，content 一个字符都不动（风险点 4）
     const contractWarn = turn ? contractWarningOf(turn, content) : null;
-    const warn = [sceneFailure ? `本轮未做场景自动取数：${sceneFailure}` : "", cappedWarn, contractWarn ?? ""].filter(Boolean).join("；");
+    const warn = [sceneFailure ? `本轮未做场景自动取数：${sceneFailure}` : "", cappedWarn, guardWarn, contractWarn ?? ""].filter(Boolean).join("；");
     return NextResponse.json({
       content,
       // 非流式没有 step 事件可走，徽章与步骤只能随 JSON 一起回（客户端把它们并成同一种时间线）
       ...(turn ? { intent: turn.badge } : {}),
+      ...(wzDecisionBlock.signal ? { wzDecision: wzDecisionBlock.signal } : {}),
       ...(steps.length ? { steps } : {}),
       ...(warn ? { warning: warn } : {}),
     });
@@ -716,10 +820,29 @@ export async function POST(req: NextRequest) {
 function proxyErrorMessage(e: unknown): string {
   const raw = (e as Error).message || "代理请求失败";
   if (/timeout|abort/i.test(raw)) return "连接上游超时（境外网络可能需要中转或代理）";
-  if (/\b403\b/.test(raw)) return "上游拒绝访问 403（地域限制未绕过，请检查代理是否可用）";
+  // 403 不等于「地域限制」：限额/配额/权限不足也会回 403。原来一句话全推给「代理没绕过地域限制」，
+  // 把用户往错误方向带（真病根常是限流或 Key/模型名不匹配）。这里按上游原文分流。
+  if (/\b403\b/.test(raw)) {
+    if (/rate|limit|quota|frequency|too many|频率|限流|额度|配额/i.test(raw)) {
+      return "上游拒绝 403（请求被限流或额度/配额不足，请稍后重试或更换模型通道）";
+    }
+    return "上游拒绝访问 403（可能是地域限制或上游拒收；若已走代理仍失败，请核对 Key 与模型名是否匹配）";
+  }
   if (/\b401\b/.test(raw)) return "鉴权失败 401（请检查 API Key 与模型名是否匹配）";
   if (/fetch failed|ECONNREFUSED|ECONNRESET|UND_ERR/i.test(raw)) {
     return "无法连接上游（本机代理未开或网络不通，可在设置里指定代理地址）";
   }
   return raw;
 }
+
+// ---------- P19-② 稳智 LLM 意图分类器（共享模块） ----------
+// 分类器的网络调用逻辑抽到 @/lib/desk/intent-llm-fetch：
+// 让 /api/ai/proxy 和 /api/ai/chat 走同一份 prompt、同一份解析、同一份超时纪律——
+// 三个入口（助手页 / 小窗 / AI 交易员页）看到的决策卡必须来自同一次 LLM 判定，
+// 否则用户在不同页问同一句会得到不同的决策信号。
+//
+// 调用规则（与 P17-① 时代一致）：
+//   - 只对带 scene 的对话轮生效（研究页/事件理解/自检那类「一次一问」不吃 LLM 分类）；
+//   - 6 秒超时静默降级：分类器挂了就返回空，主回答链路照旧，不让用户等第二次超时；
+//   - 解析失败静默降级：LLM 输出的 JSON 不合契约就当没判过，绝不让用户看到坏 JSON 泄漏进提示词；
+//   - LLM 请求体不带 history——分类器不需要上下文，只要本轮 user 那一句话就够，省 token。

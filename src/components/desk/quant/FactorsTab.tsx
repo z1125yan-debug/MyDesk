@@ -83,7 +83,7 @@ export function FactorsTab() {
     <div className="space-y-3 pt-3">
       <div className="flex flex-wrap items-center gap-2">
         <select
-          className="h-8 rounded-md border border-border bg-background px-2 text-[13px]"
+          className="h-8 rounded-md border border-border bg-background px-2 text-[14px]"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
         >
@@ -93,33 +93,33 @@ export function FactorsTab() {
           ))}
         </select>
         <Button size="sm" variant="outline" onClick={() => setShowAdd(!showAdd)}>{showAdd ? "收起录入" : "+ 手动录入因子"}</Button>
-        <span className="text-[11.5px] text-muted-foreground">共 {factors.length} 个因子（每键显示最新版本；insert-only 版本化，禁止覆盖）</span>
+        <span className="text-[12.5px] text-muted-foreground">共 {factors.length} 个因子（每键显示最新版本；insert-only 版本化，禁止覆盖）</span>
       </div>
 
       {showAdd && (
         <Card>
           <CardContent className="grid grid-cols-1 gap-2 py-3 md:grid-cols-2">
-            <input className="h-8 rounded-md border border-border bg-background px-2 text-[13px]" placeholder="factorKey（如 my_alpha_1）" value={form.factorKey} onChange={(e) => setForm({ ...form, factorKey: e.target.value })} />
-            <input className="h-8 rounded-md border border-border bg-background px-2 text-[13px]" placeholder="名称" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <select className="h-8 rounded-md border border-border bg-background px-2 text-[13px]" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+            <input className="h-8 rounded-md border border-border bg-background px-2 text-[14px]" placeholder="factorKey（如 my_alpha_1）" value={form.factorKey} onChange={(e) => setForm({ ...form, factorKey: e.target.value })} />
+            <input className="h-8 rounded-md border border-border bg-background px-2 text-[14px]" placeholder="名称" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <select className="h-8 rounded-md border border-border bg-background px-2 text-[14px]" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
               {["Price", "Volume", "Momentum", "Trend", "Reversal", "Volatility", "Fundamental", "Microstructure", "AI_Discovered"].map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-            <input className="h-8 rounded-md border border-border bg-background px-2 font-mono text-[13px]" placeholder="表达式，如 zscore(roc(c, 20))" value={form.expression} onChange={(e) => setForm({ ...form, expression: e.target.value })} />
+            <input className="h-8 rounded-md border border-border bg-background px-2 font-mono text-[14px]" placeholder="表达式，如 zscore(roc(c, 20))" value={form.expression} onChange={(e) => setForm({ ...form, expression: e.target.value })} />
             <div className="flex items-center gap-2 md:col-span-2">
               <Button size="sm" disabled={busy} onClick={() => void addFactor()}>{busy ? "提交中…" : "提交（自动审计未来函数/白名单）"}</Button>
-              <span className="text-[11px] text-muted-foreground">可用字段 o h l c v amount ret turnover cap pe pb；函数 ref ma std sum max min delta roc corr rank zscore minmax winsor abs sign log neg add sub mul div</span>
+              <span className="text-[12px] text-muted-foreground">可用字段 o h l c v amount ret turnover cap pe pb；函数 ref ma std sum max min delta roc corr rank zscore minmax winsor abs sign log neg add sub mul div</span>
             </div>
           </CardContent>
         </Card>
       )}
 
       {factors.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-[13px] text-muted-foreground">因子库为空。先在「因子挖掘」Tab 跑一次挖掘，或手动录入。</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-[14px] text-muted-foreground">因子库为空。先在「因子挖掘」Tab 跑一次挖掘，或手动录入。</CardContent></Card>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-[12px]">
+          <table className="w-full text-[13px]">
             <thead className="bg-card text-muted-foreground">
               <tr>
                 <th className="px-2 py-1.5 text-left font-normal">因子</th>
@@ -140,20 +140,20 @@ export function FactorsTab() {
                 <tr key={f.id} className="border-t border-border/60 align-top">
                   <td className="px-2 py-1.5">
                     <div className="font-mono">{f.factorKey}</div>
-                    <div className="text-[10.5px] text-muted-foreground">{f.name} · v{f.version} · {f.dataSource}</div>
+                    <div className="text-[11.5px] text-muted-foreground">{f.name} · v{f.version} · {f.dataSource}</div>
                   </td>
                   <td className="px-2 py-1.5">{f.category}</td>
-                  <td className="px-2 py-1.5"><Badge variant="outline" className={"text-[10.5px] " + (STATUS_STYLE[f.status] ?? "")}>{f.status}</Badge></td>
+                  <td className="px-2 py-1.5"><Badge variant="outline" className={"text-[11.5px] " + (STATUS_STYLE[f.status] ?? "")}>{f.status}</Badge></td>
                   <td className="px-2 py-1.5 text-right font-mono">{pct(f.metrics.ic, 1)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{pct(f.metrics.rankIc, 1)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{f.metrics.icIr?.toFixed(2) ?? "-"}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{pct(f.metrics.longShortReturn, 0)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{f.metrics.stability != null ? f.metrics.stability.toFixed(2) : "-"}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{pct(f.metrics.turnover, 0)}</td>
-                  <td className="max-w-52 truncate px-2 py-1.5 font-mono text-[11px]" title={f.expression}>{f.expression}</td>
+                  <td className="max-w-52 truncate px-2 py-1.5 font-mono text-[12px]" title={f.expression}>{f.expression}</td>
                   <td className="px-2 py-1.5">
                     <select
-                      className="h-7 rounded border border-border bg-background px-1 text-[11px]"
+                      className="h-7 rounded border border-border bg-background px-1 text-[12px]"
                       value={f.status}
                       onChange={(e) => void changeStatus(f.id, e.target.value as FactorStatus)}
                     >

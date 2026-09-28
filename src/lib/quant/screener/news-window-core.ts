@@ -31,6 +31,14 @@ export const NEWS_PAGE_SIZE = 100;
  */
 export const NEWS_MAX_PAGES = 8;
 
+/**
+ * 多日窗口的翻页上限（P65 实测校准）：2026-09-14~09-27 逐日条数是 302~838 条/日
+ * ——不是注释里原先估的 400~500，周末也有 196~333 条，池子只保留最近约 14 天（8000 条到底）。
+ * 所以「最近 3 个交易日」≈ 2400~2900 条 ≈ 24~29 页，8 页根本不够；给 40 页留余量。
+ * 单日窗口仍走 NEWS_MAX_PAGES：日内扫描是从当天往回翻，8 页覆盖得住，且翻多了白花钱。
+ */
+export const NEWS_MAX_PAGES_MULTI = 40;
+
 /** showTime 的日期位；形状不认就返回 ""（空串＝这条不进窗口，也不猜） */
 export function newsDateOf(showTime: string): string {
   const s = String(showTime ?? "").trim();
@@ -61,6 +69,20 @@ export function shouldFetchMore(rows: NewsRawRow[], tradeDate: string): boolean 
   return lastDate === tradeDate;
 }
 
+/**
+ * 多日窗口（P65）还要不要往前翻：判据从「末行仍是目标日」换成「末行还没走出目标区间的最早一天」。
+ *
+ * 为什么不能沿用 shouldFetchMore：研报要的是「最近 3 个交易日」这种区间，而抓取发生在区间之后。
+ * 用 === 的话，第一页末行是 09-26（比目标日 09-24 新）→ 直接判「跨到别的日子了」停手，
+ * 一页就收，永远取不到 09-24。日内实时扫描（目标日=今天，不可能出现更新的行）两种判据等价，
+ * 所以 fetchNewsWindowForDate 的老行为不受影响。
+ */
+export function shouldFetchMoreUntil(rows: NewsRawRow[], oldestDate: string): boolean {
+  if (!rows.length || rows.length < NEWS_PAGE_SIZE) return false;
+  const lastDate = newsDateOf(rows[rows.length - 1].showTime);
+  return !!lastDate && lastDate >= oldestDate;
+}
+
 export interface NewsWindowResult {
   /** 目标交易日内、按上游给定顺序（新→旧）去重后的快讯 */
   items: NewsLiteRow[];
@@ -79,8 +101,32 @@ export interface NewsWindowResult {
  * → 坏行丢弃并分别计数。计数一并返回，页面/日志要说「看了 480 条、其中当日 452 条」时不用再算一遍。
  */
 export function pickNewsWindow(pages: NewsRawRow[][], tradeDate: string): NewsWindowResult {
+  const d = pickNewsDays(pages, [tradeDate]);
+  return {
+    items: d.perDay[tradeDate] ?? [],
+    fetchedRows: d.fetchedRows,
+    offDay: d.offDay,
+    duplicated: d.duplicated,
+    dropped: d.dropped,
+  };
+}
+
+export interface NewsDaysResult {
+  /** 按目标交易日分桶（键一定存在，没翻到就是空数组）；桶内保持上游新→旧的顺序 */
+  perDay: Record<string, NewsLiteRow[]>;
+  fetchedRows: number;
+  offDay: number;
+  duplicated: number;
+  dropped: number;
+}
+
+/** 多日版收窗口：判定与单日版完全同一套（同日过滤 → code 去重 → 坏行丢弃并计数），只是按天分桶。
+ *  pickNewsWindow 就是它的单日包装，两条路径不会各自漂移。 */
+export function pickNewsDays(pages: NewsRawRow[][], tradeDates: string[]): NewsDaysResult {
+  const want = new Set(tradeDates);
+  const perDay: Record<string, NewsLiteRow[]> = {};
+  for (const d of tradeDates) perDay[d] = [];
   const seen = new Set<string>();
-  const items: NewsLiteRow[] = [];
   let fetchedRows = 0;
   let offDay = 0;
   let duplicated = 0;
@@ -94,7 +140,7 @@ export function pickNewsWindow(pages: NewsRawRow[][], tradeDate: string): NewsWi
         dropped++; // 没有标题就没法映射，日期认不出就不敢算进当天——丢掉但计数，不静默
         continue;
       }
-      if (date !== tradeDate) {
+      if (!want.has(date)) {
         offDay++;
         continue;
       }
@@ -110,8 +156,8 @@ export function pickNewsWindow(pages: NewsRawRow[][], tradeDate: string): NewsWi
         dropped++;
         continue;
       }
-      items.push({ time, title });
+      perDay[date].push({ time, title });
     }
   }
-  return { items, fetchedRows, offDay, duplicated, dropped };
+  return { perDay, fetchedRows, offDay, duplicated, dropped };
 }

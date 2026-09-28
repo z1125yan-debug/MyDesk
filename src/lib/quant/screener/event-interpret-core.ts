@@ -153,11 +153,14 @@ const RULES: string[] = [
   "事件是系统从真实快讯入库的既有事实：你不得新增事件、不得改写标题、不得补充标题里没有发生的事。",
   "你只做八件事：分类、摘要、实体提取、行业/主题映射、潜在影响方向、影响范围、重要性解释、指出需要进一步验证的数据。",
   "evidence 里的每条都必须是从该条 title 原样摘出的连续文字（用于回溯），不要写你自己知道的外部信息。",
-  "affected_symbols 只列 title 里确实出现的公司/标的名称，或 mappedSectors/relatedNames 里已有的名称；你另外想到的标的写进 hypothesized_symbols（那属于猜测，会被标成未验证）。",
+  "affected_symbols 只列 title 里确实出现的公司/标的名称，或 mappedSectors/relatedNames 里已有的名称；不要提出任何其它标的（不许凭行业常识猜股票名），hypothesized_symbols 一律给空数组。",
   "禁止输出任何概率数字：不许写「上涨概率 80%」「明天涨停概率」这类表述。confidence 是你对自己这段解释的把握度（0 到 1 的小数），不是股票涨跌概率。",
   "历史统计与回测结论只能来自系统给你的数据，你自己不产概率、不产收益预测。",
   "impact_direction 只能取 利好/利空/双向/中性/未知；impact_scope 只能取 个股/板块/行业/主题/产业链/市场整体/海外/未知；importance 只能取 高/中/低/无法判断。",
   "拿不准的写进 unknowns，并把它转成 follow_up_queries（该去查什么数据），不要用「通常」「一般」填补。",
+  // event_id 形如 ev|21:18|标题，自身就含 | —— 用 | 分隔字段时模型会在第二个 | 处截断（实测只回 ev|21:18，
+  // 被服务端按「AI 发明事件」整批拒收）。所以下面的事件行改用 JSON 承载，并在规则里点名必须逐字照抄。
+  "event_id 必须与给你的值**逐字符一致**（整串照抄，包含其中的 | 与标题文字）：截断、改写或用标题代替都会被服务端拒收。",
   "只输出 JSON 数组，不要解释文字、不要 markdown 代码块之外的内容。每个对象必须包含 event_id 与上述字段。",
 ];
 
@@ -166,18 +169,20 @@ const RULES: string[] = [
  * 刻意不把标题之外的任何推断塞进提示词——否则模型会把它当原文引用回来。
  */
 export function buildEventInterpretPrompt(facts: EventFact[]): string {
+  // 事件行改用 JSON（而不是 `event_id=… | time=…` 的竖线分隔）：event_id 自带 | 与标题，
+  // 竖线格式会让模型在第二个 | 处截断 id，导致整批被「AI 不得发明事件」拒收。JSON 的引号让边界无歧义。
   const lines = facts.map((f, i) => {
-    const parts = [
-      `event_id=${f.event_id}`,
-      `time=${f.published_at || "未记录"}`,
-      `level=${f.level || "未记录"}`,
-      `category=${f.category || "未记录"}`,
-      `title=${f.title}`,
-    ];
-    if (f.mapped_sectors.length) parts.push(`mappedSectors=${f.mapped_sectors.join("、")}`);
-    if (f.related_names.length) parts.push(`relatedNames=${f.related_names.join("、")}`);
-    if (f.fund_note) parts.push(`fundCheck(${f.stage || "未记阶段"})=${f.fund_note}`);
-    return `${i + 1}. ${parts.join(" | ")}`;
+    const row: Record<string, string | string[]> = {
+      event_id: f.event_id,
+      time: f.published_at || "未记录",
+      level: f.level || "未记录",
+      category: f.category || "未记录",
+      title: f.title,
+    };
+    if (f.mapped_sectors.length) row.mappedSectors = f.mapped_sectors;
+    if (f.related_names.length) row.relatedNames = f.related_names;
+    if (f.fund_note) row.fundCheck = `${f.stage || "未记阶段"}：${f.fund_note}`;
+    return `${i + 1}. ${JSON.stringify(row)}`;
   });
   return [
     `你是行情事件理解层。下面 ${facts.length} 条事件已经由系统从真实快讯入库（来源见每条自带字段），现在对它们逐条做结构化理解。`,
@@ -188,7 +193,7 @@ export function buildEventInterpretPrompt(facts: EventFact[]): string {
     "【输出 JSON 数组，每个对象字段】",
     OUTPUT_FIELDS.join(", "),
     "",
-    "【本批真实事件】",
+    "【本批真实事件】（每行一条 JSON；event_id 原样整串照抄，不要截断或改写）",
     ...lines,
     "",
     "【数据纪律】",
@@ -364,6 +369,24 @@ export function extractJsonArray(text: string): unknown[] | null {
   }
 }
 
+/**
+ * 把多批模型原文（各自是 JSON 数组）在**字符串层面**并成一个数组：只取每段最外层 `[ ]` 之间的
+ * 内容再逗号连接，不解析语义、不判对错（校验仍在服务端）。客户端分批调模型后用它拼回一份。
+ * 纯函数（零依赖），node --test 可直跑。
+ */
+export function mergeRawArrays(raws: string[]): string {
+  const parts: string[] = [];
+  for (const r of raws) {
+    const cleaned = String(r ?? "").replace(/```json|```/g, "").trim();
+    const s = cleaned.indexOf("[");
+    const e = cleaned.lastIndexOf("]");
+    if (s === -1 || e <= s) continue;
+    const inner = cleaned.slice(s + 1, e).trim();
+    if (inner) parts.push(inner);
+  }
+  return `[${parts.join(",")}]`;
+}
+
 export interface ParseResult {
   items: EventInterpretation[];
   /** 本批真实事件里没能拿到解释的（模型漏答/答了不存在的 id），页面必须逐条显示，不许静默变少 */
@@ -441,12 +464,13 @@ export function parseEventInterpretations(
       if (symbolGrounded(s, fact)) symbolsOut.push(s);
       else dropped.symbols.push(s);
     }
-    // 没有出处的标的不删除、也不留在 affected_symbols：单列成 AI 假设，读者一眼看得出哪一层
-    const hypothesized = [...new Set([...strArr(o.hypothesized_symbols), ...dropped.symbols])];
-    if (dropped.symbols.length) {
-      violations.push(`${dropped.symbols.length} 个标的在标题与既有映射里都没有出处，已移到 hypothesized_symbols（AI_HYPOTHESIS，未验证）`);
-      const note = `AI 猜的这几个标的本批事件里没有出处：${dropped.symbols.join("、")}`;
-      if (!unknownsOut.includes(note)) unknownsOut.push(note);
+    // 用户明确不要「假设/猜的标的」：没有出处的一律剔除（模型另填的 hypothesized 也一并剔），
+    // 不再降级成假设层展示；猜过什么仍进 violations + dropped 留痕，可回看、但不进结果。
+    const guessed = [...new Set([...strArr(o.hypothesized_symbols), ...dropped.symbols])];
+    dropped.symbols = guessed;
+    const hypothesized: string[] = [];
+    if (guessed.length) {
+      violations.push(`${guessed.length} 个标的在标题与既有映射里都没有出处，已剔除（AI 不得猜标的）：${guessed.join("、")}`);
     }
 
     const confidence = normalizeConfidence(o.confidence);

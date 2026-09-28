@@ -10,7 +10,7 @@ import {
 
 const readSrc = (p: string) => readFileSync(new URL(p, new URL("../../", import.meta.url)), "utf8");
 
-test("P15-① 分类器按关键词命中九类，优先级由定义顺序定（多类词取先命中）", () => {
+test("P15-① 分类器按关键词命中分类，优先级由定义顺序定（多类词取先命中）", () => {
   assert.equal(classifyHeading("风险提示"), "risk");
   assert.equal(classifyHeading("仓位与买点"), "action");
   assert.equal(classifyHeading("资金与量能"), "capital");
@@ -20,8 +20,16 @@ test("P15-① 分类器按关键词命中九类，优先级由定义顺序定（
   assert.equal(classifyHeading("消息与催化"), "event");
   assert.equal(classifyHeading("结论"), "decision");
   assert.equal(classifyHeading("数据口径"), "note");
-  // 「风险与操作计划」同时命中两类：定义顺序 risk 在前 → risk（与稳智分类器同纪律）
-  assert.equal(classifyHeading("风险与操作计划"), "risk");
+  // P21：结论契约四类固定前缀排在最前，抢在通用关键词之前命中
+  assert.equal(classifyHeading("核心判断"), "conclusion");
+  assert.equal("🎯 核心判断", "🎯 核心判断");
+  assert.equal(classifyHeading("关注清单"), "watchlist");
+  assert.equal(classifyHeading("失效条件"), "invalidation");
+  assert.equal(classifyHeading("执行计划"), "plan");
+  // 「风险与操作计划」同时命中 plan 和 risk：P21 起 plan 排在 risk 前，先命中 plan
+  assert.equal(classifyHeading("风险与操作计划"), "plan");
+  // 「风险提示」单独命中 risk（不含"操作"/"计划"字样）
+  assert.equal(classifyHeading("风险提示"), "risk");
 });
 
 test("P15-② 认不出不硬凑：空/超长/无关键词一律 null（普通标题渲染）", () => {
@@ -79,11 +87,12 @@ test("P15-⑤ 卡后接卡：下一张卡开始时前一张收口，正文不串
 test("P15-⑥ 接线钉：渲染层只吃纯核一份定义，提示词带「翻译成白话/数字带解读」口径", () => {
   const md = readSrc("src/components/desk/Markdown.tsx");
   assert.ok(md.includes("splitBlocks"), "渲染层用纯核切块");
+  assert.ok(md.includes("splitBlocks"), "渲染层用纯核切块");
   assert.ok(md.includes("SECTION_EMOJI"), "emoji 出处在纯核，界面不另抄");
-  assert.ok(!md.includes("function ModuleHeading"), "旧标题色带画法退役（只画卡头）");
-  assert.ok(md.includes("rounded-xl border"), "小节整段包卡（稳智 .decision-card 观感）");
-  // 用户口径「做成同款灰卡」：钉死统一描边底色 + 九类分色表不得回潮（分类只出 emoji 与成卡）
-  assert.ok(md.includes("border-border/80") && md.includes("bg-accent/40"), "同款灰卡：中性描边+浅灰卡头");
+  assert.ok(!md.includes("function ModuleHeading"), "旧标题色带画法退役");
+  // P15 当时钉的是「同款灰卡」（rounded-xl border + border-border/80 + bg-accent/40 三件套）。
+  // 2026-09-27 P62 用户拿稳智截图复核后**明确推翻**这条：稳智正文没有卡壳，小节标题只是正文流里一行加粗字。
+  // 卡壳一拆，「九类不分色」这条纪律由「压根不给小节上色」自动满足，所以这里只保留反分色钉，不再钉灰卡三件套。
   assert.ok(!md.includes("const MODULES"), "分色配置表已退役，颜色不再按小节种类漂");
   const ai = readSrc("src/lib/desk/ai.ts");
   assert.ok(ai.includes("翻译成白话"), "客户端提示词：白话复述");
@@ -91,15 +100,27 @@ test("P15-⑥ 接线钉：渲染层只吃纯核一份定义，提示词带「翻
   const route = readSrc("src/app/api/ai/chat/route.ts");
   assert.ok(route.includes("翻译成白话"), "工具环提示词同源要求");
   const tl = readSrc("src/components/desk/StepTimeline.tsx");
-  assert.ok(tl.includes("AI 已完成分析 · 共"), "步骤条收口措辞对齐");
+  // P18 稳智对齐：标题不再是"AI 已完成分析 · 共"，改成稳智式顶部大字（agentPhasesHeadline），
+  // 后面接"已完成 N 步"作副数据。钉的是"标题带步数 + 顶部大字来自单一出处"这个不变量。
+  assert.ok(tl.includes("agentPhasesHeadline"), "顶部大字来自 agent-phases-core 单一出处");
+  assert.ok(tl.includes('已完成 {steps?.length ?? 0} 步'), "标题必须带步数、不许含糊（P56 稳智口径：已完成 N 步）");
   assert.ok(tl.includes("步缺数据"), "缺数据照样挂标题上：收口不等于瞒");
 });
 
-test("P15-⑦ 定义完整性：九类都有 emoji 与至少一个关键词，键集与渲染层 MODULES 对齐", () => {
-  assert.equal(SECTION_DEFS.length, 9);
+test("P15-⑦ 定义完整性：13 类（9 类通用 + 4 类结论契约）都有 emoji 与至少一个关键词，键集与渲染层 MODULES 对齐", () => {
+  assert.equal(SECTION_DEFS.length, 13);
   for (const d of SECTION_DEFS) {
     assert.ok(d.emoji.length > 0, `${d.kind} 必须有 emoji`);
     assert.ok(d.words.length > 0, `${d.kind} 必须有关键词`);
     assert.equal(SECTION_EMOJI[d.kind], d.emoji);
   }
+  // P21 结论契约四类必须在（对齐稳智口径）
+  const kinds = SECTION_DEFS.map((d) => d.kind);
+  for (const k of ["conclusion", "watchlist", "invalidation", "plan"]) {
+    assert.ok(kinds.includes(k as any), `P21 结论契约缺 ${k}`);
+  }
+  // 结论契约四类必须排在通用类之前（否则关键词会被 risk/action 抢走）
+  const planIdx = kinds.indexOf("plan" as any);
+  const riskIdx = kinds.indexOf("risk" as any);
+  assert.ok(planIdx < riskIdx, "plan 必须在 risk 之前，否则「操作计划」会被归成 risk");
 });
