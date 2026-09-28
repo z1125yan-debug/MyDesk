@@ -406,13 +406,19 @@ function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cro
         })}
         {d.industryChain.financial && (
           <>
-            <p className="mt-1.5 text-xs leading-relaxed text-zinc-400">
-              行业财务快照（{d.industryChain.financial.period ?? "报告期未知"} · 市值前8加权 · 样本 {d.industryChain.financial.sampled ?? 0}/{d.industryChain.financial.total ?? 0} 家）：
-              利润同比 {fmt(d.industryChain.financial.earnings_yoy)} · 订单(合同负债)同比 {fmt(d.industryChain.financial.orders_yoy)} ·
-              存货同比 {fmt(d.industryChain.financial.inventory_yoy)} · 资本开支同比 {fmt(d.industryChain.financial.capex_yoy)}
-            </p>
-            {d.industryChain.financial.interpret && (
-              <p className="mt-1 text-xs leading-relaxed text-zinc-200">{d.industryChain.financial.interpret}</p>
+            {d.industryChain.financial.reading ? (
+              <>
+                <p className="mt-1.5 text-sm font-medium leading-relaxed text-zinc-100">
+                  行业财务快照｜{d.industryChain.financial.reading.headline}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-300">{d.industryChain.financial.reading.body}</p>
+              </>
+            ) : (
+              <p className="mt-1.5 text-xs leading-relaxed text-zinc-400">
+                行业财务快照（{d.industryChain.financial.period ?? "报告期未知"} · 市值前8加权 · 样本 {d.industryChain.financial.sampled ?? 0}/{d.industryChain.financial.total ?? 0} 家）：
+                利润同比 {fmt(d.industryChain.financial.earnings_yoy)} · 订单(合同负债)同比 {fmt(d.industryChain.financial.orders_yoy)} ·
+                存货同比 {fmt(d.industryChain.financial.inventory_yoy)} · 资本开支同比 {fmt(d.industryChain.financial.capex_yoy)}
+              </p>
             )}
           </>
         )}

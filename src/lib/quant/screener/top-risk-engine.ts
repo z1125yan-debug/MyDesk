@@ -284,7 +284,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
           period: [fundamentals.earnings_period, fundamentals.orders_period, fundamentals.inventory_period, fundamentals.capex_period].filter(Boolean).sort().slice(-1)[0] ?? null,
           sampled: fundamentals.sampled ?? null,
           total: fundamentals.total ?? null,
-          interpret: interpretFundamentals(fundamentals),
+          reading: readFundamentals(fundamentals),
         }
       : null,
     note: chainAvailable
@@ -409,45 +409,110 @@ function buildConclusion(
   }主要风险：${pro.slice(0, 3).join("、") || "无明显"}；反向信号：${counter.slice(0, 2).join("、") || "暂无——各路读数同向走弱，没有像样的反向证据"}。综合看${stage === "趋势健康" ? "暂无需警示" : stage === "趋势内回撤" ? "偏回调、观察确认窗口" : "需重点跟踪"}。`;
 }
 
-// ── 行业财务快照的人话解读（用户 2026-09-29：'这些数据说明了什么？'）──
-// 三个同比数字合起来讲一个故事：赚不赚钱（利润）→ 需求旺不旺（合同负债=订单）→
-// 货卖不卖得动（存货 vs 订单的相对速度）。只描述状态，不给买卖建议。
-export function interpretFundamentals(fin: {
+// ── 行业财务快照的人话解读 v2（用户 2026-09-29 给了完整范式：标题句 + 正文段落）──
+// 范式要点：①标题直接说结论（"利润翻倍，订单增长超140%，企业提前备货"）；②正文交代
+// 截止日期/样本/三个数字；③点出"订单增速高于利润增速=手里有未来业务"；④诚实标注
+// "订单增长≠利润一定增长"、库存积压风险；⑤资本开支缺失要说明"无法判断是否在扩产"。
+export interface FundamentalsReading {
+  headline: string;
+  body: string;
+}
+
+const signed = (v: number): string => `${v >= 0 ? "+" : ""}${r1(v)}%`;
+
+function earningsWord(e: number): string {
+  if (e >= 100) return "利润翻倍";
+  if (e >= 30) return `利润大增(${signed(e)})`;
+  if (e >= 10) return `利润稳增(${signed(e)})`;
+  if (e > -10) return "利润基本持平";
+  if (e > -30) return `利润下滑(${signed(e)})`;
+  return `利润大幅恶化(${signed(e)})`;
+}
+function ordersWord(o: number): string {
+  if (o >= 100) return "订单增长超一倍";
+  if (o >= 50) return "订单增长超五成";
+  if (o >= 20) return `订单较快增长(${signed(o)})`;
+  if (o >= 0) return "订单平稳";
+  if (o > -30) return `订单萎缩(${signed(o)})`;
+  return `订单大幅萎缩(${signed(o)})`;
+}
+function inventoryWord(inv: number, o: number | null): string {
+  if (o != null && inv - o > 30) return "库存明显积压";
+  if (o != null && o >= inv && o >= 20) return "企业在提前备货";
+  if (inv >= 0) return "存货温和增加";
+  return "库存在去化";
+}
+
+export function readFundamentals(fin: {
   earnings_yoy?: number | null;
   orders_yoy?: number | null;
   inventory_yoy?: number | null;
-}): string | null {
+  capex_yoy?: number | null;
+  period?: string | null;
+  earnings_period?: string | null;
+  orders_period?: string | null;
+  inventory_period?: string | null;
+  capex_period?: string | null;
+  sampled?: number | null;
+  total?: number | null;
+}): FundamentalsReading | null {
   const e = fin.earnings_yoy ?? null;
   const o = fin.orders_yoy ?? null;
   const inv = fin.inventory_yoy ?? null;
-  if (e == null && o == null && inv == null) return null;
-  const boom = (e != null && e >= 30) || (o != null && o >= 50);
-  const weak = (e != null && e <= -10) || (o != null && o <= -30);
-  const overall = boom ? "行业整体处于高景气" : weak ? "行业景气在走弱" : "行业整体平稳";
-  const parts: string[] = [];
-  if (e != null) {
-    if (e >= 100) parts.push(`利润翻倍还不止（+${r1(e)}%），行业在高速赚钱`);
-    else if (e >= 30) parts.push(`利润大增（+${r1(e)}%）`);
-    else if (e >= 10) parts.push(`利润稳增（+${r1(e)}%）`);
-    else if (e > -10) parts.push(`利润基本持平（${e >= 0 ? "+" : ""}${r1(e)}%）`);
-    else if (e > -30) parts.push(`利润明显下滑（${r1(e)}%）`);
-    else parts.push(`利润大幅恶化（${r1(e)}%）`);
+  const capex = fin.capex_yoy ?? null;
+  if (e == null && o == null && inv == null && capex == null) return null;
+  const period = fin.period ?? [fin.earnings_period, fin.orders_period, fin.inventory_period, fin.capex_period].filter(Boolean).sort().slice(-1)[0] ?? null;
+
+  const words: string[] = [];
+  if (e != null) words.push(earningsWord(e));
+  if (o != null) words.push(ordersWord(o));
+  if (inv != null && o != null) words.push(inventoryWord(inv, o));
+  else if (inv != null) words.push(inv >= 0 ? "存货增加" : "库存去化");
+  const headline = `头部${fin.sampled ?? "?"}家公司${words.join("，")}`;
+
+  // 正文
+  const bodyParts: string[] = [];
+  const strength = (e != null && e >= 10) || (o != null && o >= 20) ? "整体表现强劲" : (e != null && e <= -10) || (o != null && o <= -30) ? "整体承压" : "表现平稳";
+  const nums: string[] = [];
+  if (e != null) nums.push(`利润增长${r1(e)}%`);
+  if (o != null) nums.push(`订单/合同负债增长${r1(o)}%`);
+  if (inv != null) nums.push(`存货增长${r1(inv)}%`);
+  bodyParts.push(
+    `截至${period ?? "最新报告期"}，市值排名前${fin.sampled ?? 8}的行业龙头${strength}：${nums.join("，")}。`,
+  );
+  const meaning: string[] = [];
+  if (e != null && e >= 10) meaning.push("行业当前盈利明显改善");
+  else if (e != null && e <= -10) meaning.push("行业盈利明显恶化");
+  if (o != null && e != null && o >= e && o >= 20) {
+    meaning.push("订单/合同负债增速甚至高于利润增速，说明增长不完全是过去订单结算带来的，企业手里还有较多的未来业务储备");
+  } else if (o != null && o >= 20) {
+    meaning.push("未来订单储备在快速增加");
+  } else if (o != null && o <= -30) {
+    meaning.push("需求端订单明显萎缩");
   }
-  if (o != null) {
-    if (o >= 50) parts.push(`下游在抢着下单（合同负债+${r1(o)}%，需求很旺）`);
-    else if (o >= 10) parts.push(`订单在增加（合同负债+${r1(o)}%）`);
-    else if (o > -10) parts.push(`订单平稳（合同负债${o >= 0 ? "+" : ""}${r1(o)}%）`);
-    else if (o > -30) parts.push(`订单在萎缩（合同负债${r1(o)}%）`);
-    else parts.push(`订单大幅萎缩（合同负债${r1(o)}%），需求转弱`);
+  if (inv != null && o != null && inv >= 20 && o >= 20) {
+    meaning.push("企业也在提前增加库存以应对后续需求");
   }
-  if (inv != null) {
-    if (o != null && inv - o > 30) parts.push(`但存货涨得比订单快（+${r1(inv)}%），要防货压在手里卖不动`);
-    else if (o != null && o >= inv && o >= 0) parts.push(`存货跟着订单一起备（+${r1(inv)}%），属于正常备货、不是滞销`);
-    else if (inv >= 0) parts.push(`存货小幅增加（+${r1(inv)}%）`);
-    else parts.push(`存货在去化（${r1(inv)}%），压力不大`);
+  if (meaning.length) bodyParts.push(`数据表明，${meaning.join("，")}。`);
+  // 风险提示：订单≠利润、库存是双刃剑
+  const risk: string[] = [];
+  if (o != null && o >= 20 && inv != null && inv >= 20) {
+    risk.push("需要提醒的是，订单增长不等于最终利润一定增长：如果后续订单兑现顺利、库存被顺利消化，当前的备货就是好事；但如果需求不及预期，偏高的库存增速反而可能变成压力");
+  } else if (inv != null && o != null && inv - o > 30) {
+    risk.push("存货增速明显快于订单，如果需求没有跟上，库存积压会侵蚀后续利润");
   }
-  if (!parts.length) return null;
-  return `${overall}——${parts.join("；")}。`;
+  if (risk.length) bodyParts.push(`${risk.join("；")}。`);
+  // 资本开支
+  if (capex == null) {
+    bodyParts.push("资本开支数据暂缺，因此暂时无法判断行业是正在同步大规模扩产，还是主要靠现有产能消化需求。");
+  } else if (capex >= 30) {
+    bodyParts.push(`资本开支同比大增(${signed(capex)})，行业在同步扩产，需留意未来供给是否过剩。`);
+  } else if (capex <= -20) {
+    bodyParts.push(`资本开支在收缩(${signed(capex)})，行业扩产意愿谨慎。`);
+  } else {
+    bodyParts.push(`资本开支基本持平(${signed(capex)})，扩产节奏温和。`);
+  }
+  return { headline, body: bodyParts.join("") };
 }
 
 // ── 产业周期健康度（Phase2 路线①解锁）──

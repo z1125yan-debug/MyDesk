@@ -49,7 +49,7 @@ export interface SectorTopRisk {
       period: string | null;
       sampled: number | null;
       total: number | null;
-      interpret: string | null;
+      reading: { headline: string; body: string } | null;
     } | null;
     note: string;
   };
