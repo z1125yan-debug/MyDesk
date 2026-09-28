@@ -14,7 +14,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
-import { shanghaiDate } from "@/lib/desk/session";
+import { marketSession, shanghaiDate } from "@/lib/desk/session";
+// P64 数据时效：行情最新交易日（盘前已按 trade-date.ts 的新口径退到上一交易日）
+import { resolveTradeDate } from "@/lib/desk/trade-date";
 import { TOOLS, FACTOR_KEYS, findTool, phaseOfTool, type ToolCtx } from "@/lib/desk/chat-tools";
 import { backtestClaimWarning } from "@/lib/desk/backtest-core";
 import { contractWarningOf, prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
@@ -97,14 +99,26 @@ function systemPrompt(
   horizon: ChatHorizon | null,
   focusSymbol?: string,
   hold?: { line?: string; note?: string } | null,
+  trade?: { tradeDate: string; sessionLabel: string; fromMarketData: boolean } | null,
 ): string {
   // 服务端日期只走 shanghaiDate()：new Date() 直接格式化在跨时区机器上会把今天算错一天
   const today = shanghaiDate();
+  // P64 数据时效（2026-09-29 事故后补）：此前只注入「今天是 X」，没注入「行情最新到哪天」——
+  // 模型只能拿工具返回的 trade_date，而盘中/盘前那根是「今天」的未完成占位，于是把 09-28 收盘
+  // 数据标成了「截至 2026-09-29」。这里把「行情最新交易日 + 今天什么时段」显式交给模型，
+  // 让它开头先说清「数据截至 X」（稳智同款），不许把「今天」当成已有数据。
+  const dataNote = trade
+    ? `【数据时效·必须遵守】现在是 ${today}（${trade.sessionLabel}）；行情/情绪等市场数据最新到 ${trade.tradeDate}` +
+      `${trade.fromMarketData ? "（行情源给的最近交易日）" : "（日历推算，未经行情源确认）"}。` +
+      `凡涉及行情的问题，开头必须交代「数据截至 ${trade.tradeDate}」；今天未开盘时最新数据就是上一交易日收盘，` +
+      `绝不许把「今天」当成已有数据、也不许说「截至今天」。`
+    : "";
   // 风格句的正文在 modes.ts 的 MODE_NOTES 一处定义：纯对话端点（/api/ai/proxy）现在也消费
   // mode，两条链路查同一张表，不会出现「chip 同名、两端口径不同」的漂移。
   // P11 持仓周期同纪律：HORIZON_NOTES 同址同表；没选就一个字都不注入（未选≠中线）。
   return [
     `你是 MyDesk 的 AI 交易员分析引擎。今天是 ${today}。${MODE_NOTES[mode]}`,
+    dataNote,
     horizon ? HORIZON_NOTES[horizon] : "",
     focusSymbol ? `用户当前关注标的：${focusSymbol}。` : "",
     // 持仓条件（标的/成本/仓位/建仓日期）：由 composer 小窗或持仓卡填出，随请求带来。
@@ -604,6 +618,10 @@ export async function POST(req: NextRequest) {
   // 持仓那一句：需要真实交易日历才能算「已持有几个交易日」，所以在这里算好再递给 systemPrompt
   // （日历取不到就只报建仓日期，不报天数——见 hold-core.heldTradeDays 的 null 语义）。
   const holdNote = await holdNoteOf(body?.hold);
+  // P64 数据时效：resolveTradeDate 已按新口径在盘前退到上一交易日；session 给「未开盘/交易中/已收盘」标签。
+  // 两者都取不到时降级为 null（dataNote 为空），不阻断对话。
+  const tradeMeta = await resolveTradeDate().catch(() => null);
+  const sessionMeta = marketSession();
   const lastUserEcho = [
     typeof lastUser?.content === "string" && lastUser.content.trim() ? lastUser.content : "",
     MODE_NOTES[mode],
@@ -617,7 +635,7 @@ export async function POST(req: NextRequest) {
   // 场景层自己出错时用它把原因带到响应里：这轮照样要回答，但不能让用户以为「只是没取到数据」
   let sceneFailure: string | null = null;
 
-  const baseMessages: ContextMsg[] = [{ role: "system", content: systemPrompt(mode, horizon, body?.focusSymbol, holdNote) }, ...history];
+  const baseMessages: ContextMsg[] = [{ role: "system", content: systemPrompt(mode, horizon, body?.focusSymbol, holdNote, tradeMeta ? { tradeDate: tradeMeta.date, sessionLabel: sessionMeta.label, fromMarketData: tradeMeta.fromMarketData } : null) }, ...history];
   // 交给工具调用环时换成 Record 形状：它还要往同一批消息里追加 tool_calls / tool_call_id
   const buildMessages = (turn: SceneTurn | null): Record<string, unknown>[] =>
     injectSceneContext(baseMessages, turn ?? {}, (role, content) => ({ role, content })).map((m) => ({ ...m }));
