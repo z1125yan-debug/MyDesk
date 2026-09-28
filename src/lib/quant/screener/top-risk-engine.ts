@@ -288,15 +288,14 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
         }
       : null,
     note: chainAvailable
-      ? (metricsAvailable > 0
-          ? "节点价格=对应商品期货的月均价（真实行情）。"
-          : "产业链节点暂无对应的商品期货（这类环节没有可交易的代表品，宁缺毋假）。") +
-        (finAvail > 0
-          ? "行业财务=成分股三表聚合（市值前8加权），已参与健康度计分。"
-          : "行业财务快照待聚合脚本回补，产业层暂不参与打分。")
+      ? metricsAvailable > 0
+        ? finAvail > 0
+          ? "" // 财务解读正文已把数据来源讲清，不再重复
+          : "产业链节点的价格，来自对应商品期货的真实月均价；行业财务快照待聚合脚本回补。"
+        : "这个板块的产业链环节没有对应的商品期货可对照，节点价格暂缺。"
       : finAvail > 0
-        ? "这个板块不是典型的『上游原料→中游制造→下游』链条结构，所以没建商品产业链映射；但行业财务快照已从成分股财报聚合出来，参与健康度计分。"
-        : "这个板块暂未建产业链映射，财务聚合也没有可用样本 → 产业层不参与打分。",
+        ? "" // 未建映射但财务已接入：matched 标签已说明，不重复
+        : "这个板块暂未建产业链映射，财务聚合也没有可用样本，产业层不参与打分。",
   };
 
   // ── 证据（财务分量按数据说话：有真实财报就给判断，不给模糊的"数据不足"）──
@@ -388,25 +387,47 @@ function buildConclusion(
 ): string {
   const mcS = r1(mc);
   const leadS = r1(leader);
-  const stagePhrase =
+  // 第一句：按阶段直接给判断（用户 2026-09-29 范式）
+  const opening =
     stage === "趋势反转"
-      ? `已跌破60日趋势，趋势破坏`
+      ? "顶部信号已确认，趋势正在破坏。"
       : stage === "顶部形成中"
-        ? `顶部风险上升，进入确认窗口`
+        ? "已出现顶部苗头，进入观察确认期。"
         : stage === "下行延续"
-          ? `处长期下行趋势（60日${r1(cur.prevChange60)}%），属下行延续而非顶部`
+          ? "当前没有顶部信号——板块处在长期下行趋势里，下跌属于趋势本身的延续。"
           : stage === "趋势内回撤"
-            ? `仍在上升趋势内，属回调`
-            : `趋势健康`;
-  const structPhrase =
+            ? "暂时没有顶部信号，这属于上升趋势中的正常回调。"
+            : "当前尚未出现明确的顶部确认信号。";
+  // 今日白话描述
+  const dirWord = mc <= 0 ? `下跌${r1(-mc)}%` : `上涨${r1(mc)}%`;
+  const leadPhrase =
     leader < mc
-      ? `龙头跌幅(${leadS}%)大于板块(${mcS}%)，核心资产转弱`
-      : `龙头(${leadS}%)抗跌强于板块(${mcS}%)，核心未破`;
-  const rsPhrase = rs < 0 ? `相对全市场走弱(${r1(rs)}%)` : `相对全市场抗跌(${r1(rs)}%)`;
-  const posPhrase = `（20日${r1(cur.prevChange20)}% / 60日${r1(cur.prevChange60)}% / 距MA60 ${r1(cur.distMA60)}%）`;
-  return `${sector}今日${mcS}%，${stagePhrase}；${structPhrase}，${rsPhrase}${posPhrase}。当前判为「${topTypeLabel}」。${
-    counter.includes("产业层数据不足(无法确认基本面恶化)") ? `产业层数据不足：${chainNote} ` : ""
-  }主要风险：${pro.slice(0, 3).join("、") || "无明显"}；反向信号：${counter.slice(0, 2).join("、") || "暂无——各路读数同向走弱，没有像样的反向证据"}。综合看${stage === "趋势健康" ? "暂无需警示" : stage === "趋势内回撤" ? "偏回调、观察确认窗口" : "需重点跟踪"}。`;
+      ? `龙头跌得更狠（${leadS}% 对板块${mcS}%），核心资产转弱`
+      : `龙头（${leadS}%）相对板块表现略强，核心资产尚未破位`;
+  const rsPhrase =
+    rs < 0
+      ? `但板块相对全市场持续走弱（20日${r1(cur.prevChange20)}% / 60日${r1(cur.prevChange60)}% / 距MA60 ${r1(cur.distMA60)}%）`
+      : `相对全市场也占优（20日${r1(cur.prevChange20)}% / 60日${r1(cur.prevChange60)}% / 距MA60 ${r1(cur.distMA60)}%）`;
+  const body = `${sector}今日${dirWord}，板块短线${mc <= -3 ? "明显偏弱" : mc <= 0 ? "走势偏弱" : "表现活跃"}；${leadPhrase}。${rsPhrase}。`;
+  const risks = `主要风险：${pro.slice(0, 3).join("、") || "无明显"}。`;
+  const counters = `反向信号：${counter.slice(0, 2).join("；") || "暂无——各路读数同向走弱，没有像样的反向证据"}。`;
+  // 综合判断：按阶段给收尾
+  const verdict =
+    stage === "趋势反转"
+      ? "顶部信号已触发，需要重点跟踪后续走势。"
+      : stage === "顶部形成中"
+        ? "风险信号在积累，观察 3–5 日能否收复。"
+        : stage === "下行延续"
+          ? "技术面偏弱来自长期下行趋势本身，不构成新的顶部预警；重点看能否止跌企稳。"
+          : stage === "趋势内回撤"
+            ? "属正常回调范围，观察 3–5 日能否收复跌幅。"
+            : pro.length
+              ? "当前风险信号存在，但尚未形成需要升级警示的组合信号。"
+              : "各路读数平稳，暂无需特别关注。";
+  const finDisclaimer = counter.includes("产业层数据不足(无法确认基本面恶化)")
+    ? "另外，这个板块的产业层数据还没接通，基本面变化暂时无法确认。"
+    : "";
+  return `${opening}${body}${finDisclaimer}${risks}${counters}综合判断：${verdict}`;
 }
 
 // ── 行业财务快照的人话解读 v2（用户 2026-09-29 给了完整范式：标题句 + 正文段落）──
@@ -416,6 +437,10 @@ function buildConclusion(
 export interface FundamentalsReading {
   headline: string;
   body: string;
+  /** 怎么看：三个数字各自的含义 */
+  look: string;
+  /** 需要注意：订单≠利润、库存双刃剑、资本开支缺失说明 */
+  caution: string;
 }
 
 const signed = (v: number): string => `${v >= 0 ? "+" : ""}${r1(v)}%`;
@@ -429,16 +454,16 @@ function earningsWord(e: number): string {
   return `利润大幅恶化(${signed(e)})`;
 }
 function ordersWord(o: number): string {
-  if (o >= 100) return "订单增长超一倍";
-  if (o >= 50) return "订单增长超五成";
-  if (o >= 20) return `订单较快增长(${signed(o)})`;
-  if (o >= 0) return "订单平稳";
-  if (o > -30) return `订单萎缩(${signed(o)})`;
-  return `订单大幅萎缩(${signed(o)})`;
+  if (o >= 100) return "合同负债增长超一倍";
+  if (o >= 50) return `合同负债增长超五成(${signed(o)})`;
+  if (o >= 20) return `合同负债增长较快(${signed(o)})`;
+  if (o >= 0) return "合同负债平稳";
+  if (o > -30) return `合同负债萎缩(${signed(o)})`;
+  return `合同负债大幅萎缩(${signed(o)})`;
 }
 function inventoryWord(inv: number, o: number | null): string {
   if (o != null && inv - o > 30) return "库存明显积压";
-  if (o != null && o >= inv && o >= 20) return "企业在提前备货";
+  if (o != null && o >= inv && o >= 20) return "企业提前备货";
   if (inv >= 0) return "存货温和增加";
   return "库存在去化";
 }
@@ -467,52 +492,63 @@ export function readFundamentals(fin: {
   if (e != null) words.push(earningsWord(e));
   if (o != null) words.push(ordersWord(o));
   if (inv != null && o != null) words.push(inventoryWord(inv, o));
-  else if (inv != null) words.push(inv >= 0 ? "存货增加" : "库存去化");
+  else if (inv != null) words.push(inv >= 0 ? "库存同步增加" : "库存在去化");
   const headline = `头部${fin.sampled ?? "?"}家公司${words.join("，")}`;
 
-  // 正文
-  const bodyParts: string[] = [];
-  const strength = (e != null && e >= 10) || (o != null && o >= 20) ? "整体表现强劲" : (e != null && e <= -10) || (o != null && o <= -30) ? "整体承压" : "表现平稳";
+  // 正文：只报数字与总体状态
+  const strength = (e != null && e >= 10) || (o != null && o >= 20) ? "整体盈利明显改善" : (e != null && e <= -10) || (o != null && o <= -30) ? "整体承压" : "表现平稳";
   const nums: string[] = [];
-  if (e != null) nums.push(`利润增长${r1(e)}%`);
-  if (o != null) nums.push(`订单/合同负债增长${r1(o)}%`);
+  if (e != null) nums.push(`利润同比增长${r1(e)}%`);
+  if (o != null) nums.push(`合同负债增长${r1(o)}%`);
   if (inv != null) nums.push(`存货增长${r1(inv)}%`);
-  bodyParts.push(
-    `截至${period ?? "最新报告期"}，市值排名前${fin.sampled ?? 8}的行业龙头${strength}：${nums.join("，")}。`,
-  );
-  const meaning: string[] = [];
-  if (e != null && e >= 10) meaning.push("行业当前盈利明显改善");
-  else if (e != null && e <= -10) meaning.push("行业盈利明显恶化");
-  if (o != null && e != null && o >= e && o >= 20) {
-    meaning.push("订单/合同负债增速甚至高于利润增速，说明增长不完全是过去订单结算带来的，企业手里还有较多的未来业务储备");
-  } else if (o != null && o >= 20) {
-    meaning.push("未来订单储备在快速增加");
-  } else if (o != null && o <= -30) {
-    meaning.push("需求端订单明显萎缩");
+  const body = `截至${period ?? "最新报告期"}，市值排名前${fin.sampled ?? 8}的行业龙头${strength}：${nums.join("，")}。`;
+
+  // 怎么看：三个数字各自的含义
+  const lookParts: string[] = [];
+  if (e != null) {
+    if (e >= 10) lookParts.push(`利润同比增长${r1(e)}%，说明当前盈利能力明显改善`);
+    else if (e > -10) lookParts.push(`利润基本持平（${r1(e)}%），盈利没有明显变化`);
+    else lookParts.push(`利润同比${r1(e)}%，盈利在恶化`);
   }
-  if (inv != null && o != null && inv >= 20 && o >= 20) {
-    meaning.push("企业也在提前增加库存以应对后续需求");
+  if (o != null && e != null && o > e && o >= 20) {
+    lookParts.push(`合同负债增速（${r1(o)}%）高于利润增速，表明未来业务储备也在快速增加`);
+  } else if (o != null) {
+    if (o >= 20) lookParts.push(`合同负债增长${r1(o)}%，表明客户订单/预付款在增加，需求不弱`);
+    else if (o > -10) lookParts.push("合同负债基本平稳，需求没有明显变化");
+    else lookParts.push(`合同负债下降${r1(-o)}%，表明新增需求在走弱`);
   }
-  if (meaning.length) bodyParts.push(`数据表明，${meaning.join("，")}。`);
-  // 风险提示：订单≠利润、库存是双刃剑
-  const risk: string[] = [];
-  if (o != null && o >= 20 && inv != null && inv >= 20) {
-    risk.push("需要提醒的是，订单增长不等于最终利润一定增长：如果后续订单兑现顺利、库存被顺利消化，当前的备货就是好事；但如果需求不及预期，偏高的库存增速反而可能变成压力");
-  } else if (inv != null && o != null && inv - o > 30) {
-    risk.push("存货增速明显快于订单，如果需求没有跟上，库存积压会侵蚀后续利润");
+  if (inv != null) {
+    if (o != null && inv - o > 30) lookParts.push(`存货涨得比合同负债快（+${r1(inv)}%），要警惕货压在手里卖不动`);
+    else if (inv >= 10) lookParts.push("存货同步增长，反映企业正在提前备货以应对后续需求");
+    else if (inv >= 0) lookParts.push("存货小幅增加，备货节奏温和");
+    else lookParts.push("存货在下降，企业没有囤货意愿");
   }
-  if (risk.length) bodyParts.push(`${risk.join("；")}。`);
-  // 资本开支
+  const look = lookParts.length ? lookParts.join("；") + "。" : "";
+
+  // 需要注意：订单≠利润、库存双刃剑、资本开支
+  const cautions: string[] = [];
+  if (o != null && inv != null && inv - o > 30) {
+    cautions.push("存货增速明显快于订单（合同负债），如果需求没有跟上，库存积压会侵蚀后续利润");
+  } else if (o != null) {
+    cautions.push(
+      inv != null
+        ? "合同负债增长并不等于未来利润一定增长：如果后续订单顺利兑现、库存顺利消化，当前备货有利于承接需求；反之，若需求不及预期，较快的库存增长可能转化为经营压力"
+        : "合同负债增长并不等于未来利润一定增长，订单能否顺利兑现仍需跟踪",
+    );
+  } else if (inv != null && inv >= 30) {
+    cautions.push("存货增速偏高，若需求跟不上，库存积压会侵蚀后续利润");
+  }
   if (capex == null) {
-    bodyParts.push("资本开支数据暂缺，因此暂时无法判断行业是正在同步大规模扩产，还是主要靠现有产能消化需求。");
+    cautions.push("资本开支数据暂缺，因此暂时无法判断行业是否正在同步大规模扩产");
   } else if (capex >= 30) {
-    bodyParts.push(`资本开支同比大增(${signed(capex)})，行业在同步扩产，需留意未来供给是否过剩。`);
+    cautions.push(`资本开支同比大增(${signed(capex)})，行业在同步扩产，需留意未来供给是否过剩`);
   } else if (capex <= -20) {
-    bodyParts.push(`资本开支在收缩(${signed(capex)})，行业扩产意愿谨慎。`);
+    cautions.push(`资本开支在收缩(${signed(capex)})，行业扩产意愿谨慎`);
   } else {
-    bodyParts.push(`资本开支基本持平(${signed(capex)})，扩产节奏温和。`);
+    cautions.push(`资本开支基本持平(${signed(capex)})，扩产节奏温和`);
   }
-  return { headline, body: bodyParts.join("") };
+  const caution = cautions.length ? cautions.join("。") + "。" : "";
+  return { headline, body, look, caution };
 }
 
 // ── 产业周期健康度（Phase2 路线①解锁）──
