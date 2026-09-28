@@ -243,6 +243,47 @@ async function main() {
   }
   archive.days[tradeDate] = day;
 
+  // 自算「前期涨幅」序列：用每个行业逐日 medianChange 链式还原价位，
+  // 算 prevChange5/20/60/120 + 距20日高点回撤 + 距MA60距离，写回每一天（含今日）。
+  // 让快照自包含——引擎直接读，今天也有前期涨幅，不再依赖 python 回补字段。
+  const series = {}; // 行业名 -> [{date, mc}]
+  for (const [d, dd] of Object.entries(archive.days)) {
+    for (const ind of dd.industries || []) {
+      (series[ind.name] ||= []).push({ date: d, mc: ind.medianChange });
+    }
+  }
+  for (const arr of Object.values(series)) arr.sort((a, b) => (a.date < b.date ? -1 : 1));
+  for (const [name, arr] of Object.entries(series)) {
+    const L = []; // 链式价位指数
+    for (let i = 0; i < arr.length; i++) {
+      const mc = arr[i].mc;
+      const valid = mc != null && isFinite(mc);
+      L.push(valid ? (i ? L[i - 1] : 1) * (1 + mc / 100) : (i ? L[i - 1] : 1));
+      const prev = (w) => (i < w || !valid ? null : r2((L[i] / L[i - w] - 1) * 100));
+      const dh = () => {
+        if (i < 19 || !valid) return null;
+        let mx = -Infinity;
+        for (let k = i - 19; k <= i; k++) mx = Math.max(mx, L[k]);
+        return r2((L[i] / mx - 1) * 100);
+      };
+      const ma = () => {
+        if (i < 59 || !valid) return null;
+        let s = 0;
+        for (let k = i - 59; k <= i; k++) s += L[k];
+        return r2((L[i] / (s / 60) - 1) * 100);
+      };
+      const tgt = (archive.days[arr[i].date].industries || []).find((x) => x.name === name);
+      if (tgt) {
+        tgt.prevChange5 = prev(5);
+        tgt.prevChange20 = prev(20);
+        tgt.prevChange60 = prev(60);
+        tgt.prevChange120 = prev(120);
+        tgt.distFromHigh20 = dh();
+        tgt.distMA60 = ma();
+      }
+    }
+  }
+
   fs.mkdirSync(path.dirname(ARCHIVE_PATH), { recursive: true });
   fs.writeFileSync(ARCHIVE_PATH, JSON.stringify(archive, null, 2), "utf8");
 
