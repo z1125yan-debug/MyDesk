@@ -34,7 +34,7 @@ interface QuoteRow {
 
 const BATCH = 30; // /api/market/quote 单次上限（既有路由 slice(0,30)）
 
-const selectCls = "h-7 rounded-md border border-border bg-background px-2 text-[12px]";
+const selectCls = "h-7 rounded-md border border-border bg-background px-2 text-[13px]";
 
 export default function WatchlistPage() {
   const go = useDesk((s) => s.go);
@@ -107,7 +107,7 @@ export default function WatchlistPage() {
   const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? id;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-6 py-4">
+    <div className="w-full space-y-4 px-6 py-4">
       {/* P15-R3c 血缘收口：标题块/分组工具条/表卡三块散摆收成一张卡——
           工具条是本卡的控制面板，表是它的正文，不该各套各的边框。交易计划区仍是独立一页逻辑，留在卡外。 */}
       <LineageCard
@@ -128,7 +128,7 @@ export default function WatchlistPage() {
       >
         {/* P14 分组工具条：过滤下拉 + 新建组 + （选中某组时）删组。组是本机管理视图，不是数据源 */}
         <LineageSection title="自选列表" hint="分组是本机管理视图 · 删组退回未分组不丢票" divided={false}>
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-[12px]">
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
         <select className={selectCls} value={groupFilter} onChange={(e) => { setGroupFilter(e.target.value); setExpanded(null); }}
           title="按分组过滤自选列表（只影响视图，不动任何成员关系）">
           <option value="all">全部（{watchlist.length}）</option>
@@ -141,12 +141,12 @@ export default function WatchlistPage() {
           onChange={(e) => setNewGroup(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") createGroup(); }} />
         <button onClick={createGroup} disabled={!newGroup.trim()}
-          className="rounded-md border border-border px-2 py-1 text-[12px] hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-40">建组</button>
+          className="rounded-md border border-border px-2 py-1 text-[13px] hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-40">建组</button>
         {groups.some((g) => g.id === groupFilter) && (
           <button
             onClick={() => { const id = groupFilter; setGroupFilter("all"); removeWatchGroup(id); }}
             title="删除该组：组内股票全部退回未分组，不会删掉任何自选"
-            className="rounded-md border border-border px-2 py-1 text-[12px] text-muted-foreground hover:border-rose-500/40 hover:text-rose-300">
+            className="rounded-md border border-border px-2 py-1 text-[13px] text-muted-foreground hover:border-rose-500/40 hover:text-rose-300">
             删组（股票退回未分组）
           </button>
         )}
@@ -207,7 +207,7 @@ export default function WatchlistPage() {
                     <td className="px-3 py-1.5">
                       {r.spark && r.spark.length > 1
                         ? <Sparkline data={r.spark} up={(r.changePct ?? 0) >= 0} width={90} height={22} />
-                        : <span className="text-[10px] text-muted-foreground">—</span>}
+                        : <span className="text-[11px] text-muted-foreground">—</span>}
                     </td>
                     <td className="px-3 py-1.5">
                       <div className="flex items-center gap-1">
@@ -230,11 +230,11 @@ export default function WatchlistPage() {
                             <span className="text-muted-foreground">今高 <NumText value={r.high ?? null} /></span>
                             <span className="text-muted-foreground">今低 <NumText value={r.low ?? null} /></span>
                             <span className="text-muted-foreground">成交额 {r.amountYi != null ? `${r.amountYi.toFixed(1)} 亿` : "—"}</span>
-                            <span className="text-[10.5px] text-muted-foreground/80">分时口径（报价接口随带分时线 · 日K请看完整分析页）</span>
+                            <span className="text-[11.5px] text-muted-foreground/80">分时口径（报价接口随带分时线 · 日K请看完整分析页）</span>
                             <button onClick={() => openAnalysis(r.symbol)} className="text-sky-400 hover:underline">打开完整分析 →</button>
                           </div>
                         ) : (
-                          <span className="text-[12px] text-muted-foreground">
+                          <span className="text-[13px] text-muted-foreground">
                             分时线暂无数据（报价源未返回该票分时，不以直线冒充）
                             <button onClick={() => openAnalysis(r.symbol)} className="ml-2 text-sky-400 hover:underline">打开完整分析 →</button>
                           </span>

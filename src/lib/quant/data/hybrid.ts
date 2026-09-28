@@ -7,11 +7,14 @@
 // 调用方改用 fetchBarsHybridTracked，把 outcomeWarning 写进 warnings —— 不再让一次限流伪装成「不符合条件」。
 import { tdxDayBars, type TdxDailyBar } from "@/lib/desk/tdx";
 import { getProvider } from "./index";
+import { sinaDayBars } from "./sina-kline";
 import type { BarsLike } from "../factors/fields.ts";
 import { classifyBarOutcome, type BarAttempt, type BarOutcome } from "./hybrid-core.ts";
 
 const TDX_MIN_BARS = 20;
 const CIRCUIT_FAILS = 8;
+/** 腾讯日K对北交所（.BJ）实测只返回 1 根 → 低于这个根数就再试新浪源 */
+const TC_MIN_BARS = 5;
 
 export interface HybridResult {
   bars: Map<string, BarsLike[]>;
@@ -55,22 +58,45 @@ export async function fetchBarsHybridTracked(
     }
     if (!bars || bars.length < TDX_MIN_BARS) {
       // 腾讯兜底（慢 ~250ms/只，但接口口径稳定）
+      let tcBars: BarsLike[] = [];
       try {
         const m = await provider.getBars({ symbols: [sym], tf: "day", asOf, lookback });
-        const tcBars = (m.get(sym) ?? []) as BarsLike[];
-        out.set(sym, tcBars);
-        const attempt: BarAttempt = { symbol: sym, channel: "tencent", ok: true, count: tcBars.length };
-        outcomes.push(classifyBarOutcome(attempt));
-        continue;
-      } catch (e) {
-        out.set(sym, []);
-        const attempt: BarAttempt = {
-          symbol: sym, channel: "tencent", ok: false, count: 0,
-          error: `通达信与腾讯两条K线通道均未取到：${(e as Error)?.message ?? "请求失败"}`,
-        };
-        outcomes.push(classifyBarOutcome(attempt));
-        continue;
+        tcBars = (m.get(sym) ?? []) as BarsLike[];
+      } catch {
+        tcBars = [];
       }
+      // 第三级兜底：新浪日K。
+      // 触发条件：腾讯也没拿到足够根数（北交所实测只有 1 根）——没有它，
+      // 北交所 344 只股票的 K线类字段（形态/趋势压力线/均线）会整列为 null。
+      if (tcBars.length < TC_MIN_BARS) {
+        try {
+          const sb = await sinaDayBars(sym, count);
+          const real = sb.filter((b) => b.date <= asOf).slice(-lookback);
+          if (real.length >= TC_MIN_BARS) {
+            out.set(sym, real);
+            outcomes.push(classifyBarOutcome({ symbol: sym, channel: "sina", ok: true, count: real.length }));
+            continue;
+          }
+          // 新浪也不够 → 保留腾讯拿到的（哪怕是 1 根），但如实记录为数据不足
+          out.set(sym, tcBars);
+          outcomes.push(classifyBarOutcome({ symbol: sym, channel: "sina", ok: false, count: real.length, error: `新浪日K仅 ${real.length} 根，不足 ${TC_MIN_BARS} 根` }));
+          continue;
+        } catch (e) {
+          out.set(sym, tcBars);
+          if (tcBars.length) {
+            outcomes.push(classifyBarOutcome({ symbol: sym, channel: "tencent", ok: true, count: tcBars.length }));
+          } else {
+            outcomes.push(classifyBarOutcome({
+              symbol: sym, channel: "sina", ok: false, count: 0,
+              error: `通达信、腾讯、新浪三条K线通道均未取到：${(e as Error)?.message ?? "请求失败"}`,
+            }));
+          }
+          continue;
+        }
+      }
+      out.set(sym, tcBars);
+      outcomes.push(classifyBarOutcome({ symbol: sym, channel: "tencent", ok: true, count: tcBars.length }));
+      continue;
     }
     const real = bars.filter((b) => b.date <= asOf).slice(-lookback) as BarsLike[];
     out.set(sym, real);

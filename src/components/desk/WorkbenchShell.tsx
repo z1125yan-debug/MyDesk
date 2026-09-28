@@ -15,7 +15,7 @@ export default function WorkbenchShell(props: { children: React.ReactNode }) {
   const back = legacyReturnTarget(page);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 border-b border-border/60 bg-sky-400/[0.07] px-5 py-2.5 text-[12.5px] text-sky-200/90">
+      <div className="flex items-center gap-2 border-b border-border/60 bg-sky-400/[0.07] px-5 py-2.5 text-[13.5px] text-sky-200/90">
         <MessageSquareReply size={14} aria-hidden />
         这类问题直接在对话里问就行，AI 会自动选好分析框架。
         {back && (

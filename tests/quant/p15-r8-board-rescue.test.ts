@@ -95,9 +95,9 @@ test("占位 0 不装真数：对话工具腾讯行报 null、台账资金排序
 });
 
 test("出身标签跟着真实来源走：同花顺批次不写东财 source（对话/台账/画像/事件四处）", () => {
-  assert.match(read("src/lib/desk/chat-tools.ts"), /同花顺板块资金流榜（东财断源兜底：净额=流入−流出，非东财主力拆分口径）/);
+  assert.match(read("src/lib/desk/chat-tools.ts"), /同花顺板块资金流榜（净额=流入−流出口径，非主力拆分口径）/);
   assert.match(read("src/lib/quant/screener/agent-tools.ts"), /同花顺板块资金流榜（东财断源兜底，本机直连；净额=流入−流出）/);
-  assert.match(read("src/app/api/stock/profile/route.ts"), /同花顺行业资金流榜（东财断源兜底，净额口径）/);
+  assert.match(read("src/app/api/stock/profile/route.ts"), /同花顺行业资金流榜（净额=流入−流出口径）/);
   // 事件链路：换源信息经 fetchBoardContext 的 missing 自报（验证台按同花顺净额口径核对）
   assert.match(read("src/lib/quant/screener/events.ts"), /板块资金为同花顺净额榜（流入−流出）/);
 });

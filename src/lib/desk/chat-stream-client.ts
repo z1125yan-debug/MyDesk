@@ -6,8 +6,12 @@
 // 结果仍然是真的，只是没有逐字节奏 —— 这里如实返回 usedStream:false，由界面改成本机节奏并写明原因。
 import type { AiSettings } from "./types";
 import type { StepInfo } from "./chat-core";
-import { aiRequestHeaders, ensureServerLlm } from "./ai";
-import { asStreamIntent, chatRequestBody, decodeStreamEvent, isEventStream, type StreamEvent, type StreamStep } from "./chat-stream-core";
+// 值导入带 .ts 后缀（仓库口径）：不带后缀 node --test 解析不到，纯层行为就只能字符串钉。
+import { safeCut, typewriterSlices } from "./chat-core.ts";
+import { aiRequestHeaders, ensureServerLlm } from "./ai.ts";
+import { asStreamIntent, chatRequestBody, decodeStreamEvent, isEventStream, type StreamEvent, type StreamStep } from "./chat-stream-core.ts";
+
+export { safeCut, typewriterSlices };
 
 export const CHAT_ENDPOINTS = {
   /** AI 交易员：带真实数据工具调用，因此有 step 事件 */
@@ -61,8 +65,12 @@ function createFeeder(state: FeedState, onEvent: (ev: StreamEvent) => void) {
   };
 }
 
-/** 读干一条 SSE 响应体：帧以空行分隔、只认 data: 行、尾部残帧照旧交出（协议口径见 chat-stream-core.createSseScanner） */
-async function pumpEventStream(body: ReadableStream<Uint8Array>, feed: (data: string) => void): Promise<void> {
+/**
+ * 读干一条 SSE 响应体：帧以空行分隔、只认 data: 行、尾部残帧照旧交出（协议口径见 chat-stream-core.createSseScanner）。
+ * 导出给研报流式生成复用（`LlmAnalysisPage.streamReport`）——同一份帧切分逻辑不该有第二份实现，
+ * 否则哪天协议口径一改，两处必有一处漂。
+ */
+export async function pumpEventStream(body: ReadableStream<Uint8Array>, feed: (data: string) => void): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
@@ -200,20 +208,24 @@ function mergeSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
 /**
  * 本机节奏：把整体返回的全文按帧画出，用于「上游没流式」时的展示。
  * 调用方必须先收到 warning 事件再用它 —— 节奏是本机的，这句话得说在前面。
+ *
+ * 帧长由纯层按「还剩多少没吐」分档（稳智 flushAnswer/Cr 同口径）：
+ * 固定小步长配长文会把整段回放拖到十几秒（用户以为卡住），短文又显得一格一格蹦。
  */
 export async function playTypewriter(
   text: string,
   put: (partial: string) => void,
   opts: { sliceChars?: number; tickMs?: number; maxFrames?: number; shouldStop?: () => boolean } = {},
 ): Promise<void> {
-  const size = Math.max(1, opts.sliceChars ?? 4);
-  const tick = Math.max(0, opts.tickMs ?? 18);
-  const maxFrames = Math.max(1, opts.maxFrames ?? 240);
-  const step = Math.max(size, Math.ceil(text.length / maxFrames));
-  for (let i = step; i < text.length; i += step) {
-    if (opts.shouldStop?.()) return;
-    put(text.slice(0, i));
+  const base = Math.max(0, opts.tickMs ?? 18);
+  const slices = typewriterSlices(text, { sliceChars: opts.sliceChars ?? 4, maxSlices: opts.maxFrames ?? 240 });
+  for (const frame of slices) {
+    if (opts.shouldStop?.()) return; // 停止 = 就地收手：不再多画一帧，也不补全文（用户要看到的就是停在这儿）
+    put(frame);
+    // 稳智 Mr() 的「后台减速」那一半：标签页看不见时不必一帧一帧刷（每帧都是一次 React 重排）。
+    // 前台间隔不照抄它的 96ms——我们的整段回放在收口后才开始，慢了就看着像"卡在半路"。
+    const hidden = typeof document !== "undefined" && document.hidden;
+    const tick = hidden ? base * 4 : base;
     if (tick) await new Promise((r) => setTimeout(r, tick));
   }
-  put(text);
 }

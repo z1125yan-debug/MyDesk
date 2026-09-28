@@ -26,6 +26,8 @@ import {
   fetchThemes, fetchRisk, fetchEvents,
   type ThemeDiscoveryClient, type ThemeRowClient, type RiskClient, type EventItemClient,
 } from "@/lib/desk/quant-api";
+// R20：主力净额该显示哪个数（全A快照 vs 通达信自算子集）的取舍规则在一处
+import { mainNetDisplay } from "@/lib/desk/main-net-core";
 
 const ROLE_LABEL: Record<string, string> = { main: "主线", sub: "次主线", rotation: "轮动/跟风", watch: "观察" };
 const ROLE_BADGE: Record<string, string> = {
@@ -38,7 +40,7 @@ const roleLabel = (r: string) => ROLE_LABEL[r] ?? r;
 
 function roleBadge(r: string) {
   return (
-    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${ROLE_BADGE[r] ?? ROLE_BADGE.watch}`}>
+    <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${ROLE_BADGE[r] ?? ROLE_BADGE.watch}`}>
       {roleLabel(r)}
     </span>
   );
@@ -52,7 +54,7 @@ const VERDICT_BADGE: Record<ThemeMetrics["verdict"], string> = {
   watch: "bg-zinc-500/10 text-muted-foreground border-border",
 };
 function verdictBadge(v: ThemeMetrics["verdict"]) {
-  return <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${VERDICT_BADGE[v]}`}>{VERDICT_LABEL[v]}</span>;
+  return <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${VERDICT_BADGE[v]}`}>{VERDICT_LABEL[v]}</span>;
 }
 
 /** 有值就显示，没值/为 null 一律显「暂无数据」——不补 0、不画横杠蒙人 */
@@ -150,6 +152,9 @@ export default function ThemeOverviewPage() {
     go("aiscan");
   };
 
+  // R20：主力净额显示哪一源的哪个数——派生量，不新造事实
+  const themeMainNet = mainNetDisplay(risk);
+
   const envTone: SectionTone = !risk
     ? "info"
     : /高风险/.test(risk.risk.level) ? "danger"
@@ -157,11 +162,11 @@ export default function ThemeOverviewPage() {
         : "success";
 
   return (
-    <div className="mx-auto max-w-6xl space-y-3 px-6 py-4">
+    <div className="w-full space-y-3 px-6 py-4">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Layers size={18} className="text-sky-400" /> 主题血缘总览</div>
-          <div className="text-[11px] text-muted-foreground">左边选主题，右边按血缘读完整一条：市场环境 → 主题入口 → 关键数字 → 理由 → 新闻 → 分层结论 · 规则版不接大模型</div>
+          <div className="text-[12px] text-muted-foreground">左边选主题，右边按血缘读完整一条：市场环境 → 主题入口 → 关键数字 → 理由 → 新闻 → 分层结论 · 规则版不接大模型</div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <LiveStamp poll={poll} iso={data?.as_of ?? ""} />
@@ -188,7 +193,7 @@ export default function ThemeOverviewPage() {
               className="w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-2 text-xs outline-none focus:border-sky-500/50"
             />
           </div>
-          <div className="mt-1 px-0.5 text-[10.5px] text-muted-foreground">
+          <div className="mt-1 px-0.5 text-[11.5px] text-muted-foreground">
             {busy && !data ? "加载主题榜…" : `共 ${allThemes.length} 个发现主题${query ? ` · 匹配 ${filtered.length}` : ""}`}
           </div>
           <div className="desk-scroll mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
@@ -210,14 +215,14 @@ export default function ThemeOverviewPage() {
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="min-w-0 truncate text-sm font-medium">{t.name}</span>
-                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground" title="P15-R5 主题热度：RPS/扩散/资金/涨幅/连涨 榜内分位加权，缺项剔除重归一（规则分，非稳智黑箱分）">热度 {t.heat}</span>
+                    <span className="shrink-0 font-mono text-[12px] text-muted-foreground" title="P15-R5 主题热度：RPS/扩散/资金/涨幅/连涨 榜内分位加权，缺项剔除重归一（规则分，非稳智黑箱分）">热度 {t.heat}</span>
                   </div>
                   <div className="mt-1 flex items-center gap-1.5">
                     {roleBadge(t.role)}
                     {verdictBadge(t.verdict)}
-                    <span className="text-[10px] text-muted-foreground">{t.code}</span>
+                    <span className="text-[11px] text-muted-foreground">{t.code}</span>
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10.5px] text-muted-foreground">
+                  <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11.5px] text-muted-foreground">
                     <span>主力 <NumText value={fundsMissing ? null : t.mainYi} digits={1} suffix="亿" /></span>
                     <span>当日涨幅 <PctText value={t.changePct} /></span>
                     <span>流入 {t.streakInflow ?? "—"}日</span>
@@ -236,7 +241,7 @@ export default function ThemeOverviewPage() {
               <span className="flex flex-wrap items-center gap-2">
                 <span>{selected.name}</span>
                 {roleBadge(selected.role)}
-                <span className="text-[11px] font-normal text-muted-foreground">{selected.code}{selected.kind ? ` · ${selected.kind === "industry" ? "行业" : "概念"}` : ""}</span>
+                <span className="text-[12px] font-normal text-muted-foreground">{selected.code}{selected.kind ? ` · ${selected.kind === "industry" ? "行业" : "概念"}` : ""}</span>
               </span>
             }
             note={`按血缘顺序读这一条主题。数据出身：${data?.source.provider ?? "—"}；${data?.trade_date ?? ""} 快照。`}
@@ -271,11 +276,11 @@ export default function ThemeOverviewPage() {
                     <StatCard label="炸板率" value={risk.break_rate == null ? "—" : `${risk.break_rate.toFixed(0)}%`} title="封板后炸板比例，触板为0时无值" />
                     <StatCard label="成交额" value={risk.amount_known > 0 ? `${risk.amount_total_yi.toFixed(0)}亿` : "暂无数据"} title={risk.amount_known > 0 ? "全A快照成交额合计（当日抓到的家数口径）" : "成交额一家都没抓到，合计0不等于0亿"} />
                   </div>
-                  <div className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                    个股中位涨跌 <PctText value={risk.median_pct} /> · 主力净额合计 <NumText value={risk.main_net_sum_yi} digits={0} suffix=" 亿" />
+                  <div className="mt-2 text-[12px] leading-5 text-muted-foreground">
+                    个股中位涨跌 <PctText value={risk.median_pct} /> · 主力净额合计 {themeMainNet ? <span title={themeMainNet.hint}><NumText value={themeMainNet.value} digits={0} suffix=" 亿" />{themeMainNet.selfComputed ? "（自算）" : ""} <span className="opacity-70">{themeMainNet.label}</span></span> : "暂无数据"}
                     {risk.missing.length > 0 && <span className="ml-1">（缺失：{risk.missing.join("；")}）</span>}
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
                     <span className="text-muted-foreground">AI 综述：暂无（本页不自动触发研究，规则版只拼真实读数）。</span>
                     <button onClick={() => go("research")} className="inline-flex items-center gap-1 text-sky-300 hover:underline">
                       去 AI 市场研究生成 <ArrowRight size={11} />
@@ -294,18 +299,18 @@ export default function ThemeOverviewPage() {
                 <StatCard label="证据置信" value={`${selected.confidence}（${selected.confidenceLabel}）`} toneClass={selected.confidence >= 70 ? "text-emerald-400" : selected.confidence >= 40 ? "text-sky-300" : "text-muted-foreground"} title={`P15-R5 置信 = 证据一致度×数据齐全度（${selected.confidenceNote}）。缺源越多、信号越反相，分越低——把断源变成看得见的扣分，不是预测准确率。`} />
                 <StatCard label="次日过热/背离" value={`${selected.risk}（${selected.riskLabel}）`} toneClass={selected.risk >= 60 ? "text-red-400" : selected.risk >= 35 ? "text-amber-400" : "text-emerald-400"} title="P15-R5 规则读数：涨幅过陡/连涨高位/涨价但主力流出/全市场炸板率/涨幅高扩散弱 加权。只是「追高风险有多大」的透明读数，不等于明日涨跌概率。" />
                 <StatCard label="规则分" value={selected.score.toFixed(1)} title="规则引擎加权分：RPS/扩散/资金连续/价量同向；用于主线/次主线分层判定" />
-                <StatCard label="今日主力净额" value={fundsMissing ? "暂无数据" : numOr(selected.mainYi, (n) => `${n.toFixed(1)} 亿`)} toneClass={fundsMissing ? "text-muted-foreground" : selected.mainYi > 0 ? "text-red-400" : selected.mainYi < 0 ? "text-emerald-400" : ""} title={fundsMissing ? "东财板块榜断源、腾讯兜底榜不含资金读数：主力是占位 0 不是实数，显暂无" : "板块主力净流入(亿)"} />
+                <StatCard label="今日主力净额" value={fundsMissing ? "暂无数据" : numOr(selected.mainYi, (n) => `${n.toFixed(1)} 亿`)} toneClass={fundsMissing ? "text-muted-foreground" : selected.mainYi > 0 ? "text-red-400" : selected.mainYi < 0 ? "text-emerald-400" : ""} title={fundsMissing ? "当前这份板块榜不含资金读数：主力是占位 0 不是实数，显暂无" : "板块主力净流入(亿)"} />
                 <StatCard label="今日涨幅" value={numOr(selected.changePct, (n) => `${n.toFixed(2)}%`)} toneClass={selected.changePct > 0 ? "text-red-400" : selected.changePct < 0 ? "text-emerald-400" : ""} title="板块当日涨跌幅" />
                 <StatCard label="榜内 RPS" value={numOr(selected.rps, (n) => n.toFixed(0))} title="行业+概念合并榜内涨幅百分位（非全市场）" />
                 <StatCard label="内部扩散度" value={selected.diffusion == null ? "暂无数据" : `${(selected.diffusion * 100).toFixed(0)}%`} title="板块成分中上涨家数占比；成分快照无返回时为暂无" />
                 <StatCard label="连续资金流入" value={numOr(selected.streakInflow, (n) => `${n} 日`)} title="主力连续净流入天数" />
                 <StatCard label="连续强势" value={numOr(selected.streakPct, (n) => `${n} 日`)} title="板块指数连续收涨天数（东财板块日K）" />
               </div>
-              <div className="mt-2 space-y-1 text-[11px] leading-5 text-muted-foreground">
+              <div className="mt-2 space-y-1 text-[12px] leading-5 text-muted-foreground">
                 <div><span className="text-foreground/80">热度计入项：</span>{selected.heatParts.join(" · ")}</div>
                 <div><span className="text-foreground/80">风险主要来源：</span>{selected.riskParts.join(" · ")}</div>
               </div>
-              <div className="mt-2 rounded-lg border border-border/70 bg-card/40 px-2.5 py-1.5 text-[11px] leading-5 text-muted-foreground">
+              <div className="mt-2 rounded-lg border border-border/70 bg-card/40 px-2.5 py-1.5 text-[12px] leading-5 text-muted-foreground">
                 以下参考维度本页无数据源，不臆测、不拿相近字段顶替：
                 <span className="text-foreground/80"> 3日资金 · 3日涨跌 · 站上MA20占比（主题口径）· 人气集中度</span>
                 <span className="ml-1">（热度/置信/次日风险已改为上方 P15-R5 透明规则读数）</span>
@@ -315,14 +320,14 @@ export default function ThemeOverviewPage() {
             {/* 4 · 全字段展开 */}
             <LineageSection title="全字段展开" hint="该主题本次真实读数">
               <DeskCollapse title="展开该主题的全部已知字段与缺失口径" defaultOpen={false} hint="供核对，不新增判定">
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px] sm:grid-cols-3">
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[13px] sm:grid-cols-3">
                   {[
                     ["代码", selected.code],
                     ["归属", selected.kind === "industry" ? "行业" : selected.kind === "concept" ? "概念" : "暂无数据"],
                     ["角色", roleLabel(selected.role)],
                     ["规则分", selected.score.toFixed(1)],
                     ["今日涨幅", `${selected.changePct.toFixed(2)}%`],
-                    ["今日主力净额", fundsMissing ? "暂无数据（板块资金断源）" : `${selected.mainYi.toFixed(1)} 亿`],
+                    ["今日主力净额", fundsMissing ? "暂无数据（该榜不含资金读数）" : `${selected.mainYi.toFixed(1)} 亿`],
                     ["榜内RPS", selected.rps.toFixed(0)],
                     ["内部扩散度", selected.diffusion == null ? "暂无数据" : `${(selected.diffusion * 100).toFixed(0)}%`],
                     ["连续强势", selected.streakPct == null ? "暂无数据" : `${selected.streakPct} 日`],
@@ -334,7 +339,7 @@ export default function ThemeOverviewPage() {
                     </div>
                   ))}
                 </dl>
-                <div className="mt-2 text-[11px] text-muted-foreground/80">
+                <div className="mt-2 text-[12px] text-muted-foreground/80">
                   口径：{data?.missing.join("；") || "无额外缺失登记"}
                 </div>
               </DeskCollapse>
@@ -343,7 +348,7 @@ export default function ThemeOverviewPage() {
             {/* 5 · 判定理由 */}
             <LineageSection title="判定理由" tone="info">
               {selected.reasons.length ? (
-                <ul className="space-y-1 text-[12.5px] leading-6">
+                <ul className="space-y-1 text-[13.5px] leading-6">
                   {selected.reasons.map((r, i) => (
                     <li key={i} className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sky-400/70" /><span>{r}</span></li>
                   ))}
@@ -359,8 +364,8 @@ export default function ThemeOverviewPage() {
                 <div className="space-y-1.5">
                   {themeNews.map((e) => (
                     <div key={e.id} className="rounded-lg border border-border/70 bg-card/40 px-2.5 py-1.5">
-                      <div className="text-[12.5px] leading-5">{e.title}</div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10.5px] text-muted-foreground">
+                      <div className="text-[13.5px] leading-5">{e.title}</div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
                         <span>{e.time}</span>
                         {e.level && <span className="rounded border border-border px-1">{e.level}</span>}
                         {e.category && <span className="rounded border border-border px-1">{e.category}</span>}
@@ -368,7 +373,7 @@ export default function ThemeOverviewPage() {
                       </div>
                     </div>
                   ))}
-                  <div className="text-[10.5px] text-muted-foreground/80">命中方式：事件的板块标签 / 标题 包含「{selected.name}」，属关键词反查，非该主题专属新闻流。</div>
+                  <div className="text-[11.5px] text-muted-foreground/80">命中方式：事件的板块标签 / 标题 包含「{selected.name}」，属关键词反查，非该主题专属新闻流。</div>
                 </div>
               ) : (
                 <div className="text-xs text-muted-foreground">本次事件雷达里没有关键词命中「{selected.name}」的记录（不代表没有消息，只代表当前抓取窗口内无匹配）。</div>
@@ -377,22 +382,22 @@ export default function ThemeOverviewPage() {
 
             {/* 7 · 分层与策略结论 */}
             <LineageSection title="分层与策略结论" tone={selected.verdict === "avoid" ? "danger" : selected.verdict === "rising" ? "success" : selected.role === "main" ? "warning" : "info"}>
-              <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+              <div className="flex flex-wrap items-center gap-2 text-[13.5px]">
                 <span>方向判定：</span>
                 {verdictBadge(selected.verdict)}
                 {roleBadge(selected.role)}
                 <span className="text-muted-foreground">热度 {selected.heat} · 置信 {selected.confidence} · 次日风险 {selected.risk}</span>
               </div>
-              <div className="mt-1 text-[11.5px] leading-5 text-muted-foreground">{selected.verdictReason}。</div>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11.5px]">
+              <div className="mt-1 text-[12.5px] leading-5 text-muted-foreground">{selected.verdictReason}。</div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12.5px]">
                 <span className="text-muted-foreground">本榜可关注方向（≤3，不凑数）：</span>
                 {risingDirs.length ? risingDirs.map((r) => (
                   <button key={r.code} onClick={() => setSelectedCode(r.code)} className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300 hover:bg-emerald-500/20">
-                    {r.name} <span className="font-mono text-[10px] opacity-80">热度{r.heat}</span>
+                    {r.name} <span className="font-mono text-[11px] opacity-80">热度{r.heat}</span>
                   </button>
                 )) : <span className="text-muted-foreground">今日无达标方向（热度/置信/风险未同时过线，不硬凑）</span>}
               </div>
-              <div className="mt-2 text-[11px] leading-5 text-muted-foreground">
+              <div className="mt-2 text-[12px] leading-5 text-muted-foreground">
                 口径：这里的「可关注/回避/观察」和热度/置信/次日风险，全是本页
                 <span className="text-foreground/80"> 透明规则引擎的读数</span>
                 （阈值 + 榜内分位加权，每项可回溯，非投资建议）。它是对稳智「可追/回避/次日风险」那套不公开算法的

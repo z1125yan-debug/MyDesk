@@ -121,18 +121,21 @@ export async function fetchQuoteCards(symbols: string[]): Promise<QuoteCardsResu
   return { cards, source: realOk ? (demo.length ? "mixed" : "real") : "demo" };
 }
 
+export type MacdSeries = { dif: (number | null)[]; dea: (number | null)[]; bar: (number | null)[] };
+
 export async function fetchCandlesFor(
   symbol: string,
   tf: string,
-): Promise<{ candles: Candle[]; source: "real" | "demo" }> {
+  fq: "qfq" | "hfq" | "none" = "qfq",
+): Promise<{ candles: Candle[]; source: "real" | "demo"; macd?: MacdSeries | null }> {
   if (!isDemoSymbol(symbol)) {
     try {
       const r = await fetch(
-        `/api/market/kline?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(tf)}`,
+        `/api/market/kline?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(tf)}&fq=${fq}`,
       );
       const j = await r.json();
       if (Array.isArray(j.candles) && j.candles.length > 10) {
-        return { candles: j.candles, source: "real" };
+        return { candles: j.candles, source: "real", macd: j.macd ?? null };
       }
     } catch {
       // 回退演示
@@ -151,7 +154,8 @@ export async function fetchCandlesFor(
 export interface BoardFetch {
   rows: SectorRow[];
   origin: "em" | "ths" | "tdx" | null; // 出身：东财官方 / 同花顺兜底 / 通达信逐笔自算 / 没拿到
-  asOf: string;      // 本机取数完成时刻（ISO），回答「这是什么时候的数」
+  asOf: string;      // 本机取数完成时刻（ISO），回答「我们什么时候取的」
+  tradeDate: string | null; // 最近交易日 YYYY-MM-DD（行情源给的），回答「这是哪天的数」
   quoteTime: string | null; // 行情侧时刻 HH:MM:SS（通达信快照给的），拿不到为 null
 }
 
@@ -164,10 +168,11 @@ export async function fetchBoardRows(kind: BoardKind, dir: "in" | "out"): Promis
       rows: Array.isArray(j.rows) ? (j.rows as SectorRow[]) : [],
       origin,
       asOf: typeof j.asOf === "string" ? j.asOf : "",
+      tradeDate: typeof j.tradeDate === "string" && j.tradeDate ? j.tradeDate : null,
       quoteTime: typeof j.quoteTime === "string" && j.quoteTime ? j.quoteTime : null,
     };
   } catch {
-    return { rows: [], origin: null, asOf: "", quoteTime: null };
+    return { rows: [], origin: null, asOf: "", tradeDate: null, quoteTime: null };
   }
 }
 

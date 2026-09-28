@@ -221,10 +221,10 @@ export default function AiScanPage() {
   const openProfile = (symbol: string) => { setFocusSymbol(symbol); go("profile"); };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 px-6 py-4">
+    <div className="w-full space-y-4 px-6 py-4">
       <div>
         <div className="text-lg font-bold">AI 实时选股</div>
-        <div className="text-[11px] text-muted-foreground">
+        <div className="text-[12px] text-muted-foreground">
           扫描全A → 流动性 → 量价/资金/技术条件 → 历史胜率统计 · 所有数据来自真实接口 · 不构成投资建议
           {result?.factor_verify ? ` · 本次涉及 ${result.factor_verify.enabled} 因子，${result.factor_verify.unverified} 未验证` : " · 因子验证状态见「因子实验室」"}
         </div>
@@ -246,16 +246,16 @@ export default function AiScanPage() {
         </button>
         {/* P12-②：股票池是当前池的明示——从板块页「去选股」进来时不加说明，用户会以为筛的是全A */}
         {typeof universe !== "string" && universe.kind !== "watchlist" && (
-          <span className="flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-[12px] text-sky-300">
+          <span className="flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-[13px] text-sky-300">
             当前股票池：{universeLabel} 板块成分
-            <button onClick={() => void scan("all_a", "全A")} className="text-[11px] text-muted-foreground hover:text-sky-300">× 回全A</button>
+            <button onClick={() => void scan("all_a", "全A")} className="text-[12px] text-muted-foreground hover:text-sky-300">× 回全A</button>
           </span>
         )}
       </div>
 
       {/* 自然语言选股 */}
       <div className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-2 text-[12px] font-semibold text-foreground/80">AI 自然语言选股</div>
+        <div className="mb-2 text-[13px] font-semibold text-foreground/80">AI 自然语言选股</div>
         <div className="flex items-center gap-2">
           <input
             value={nl}
@@ -268,11 +268,11 @@ export default function AiScanPage() {
             <Bot size={14} /> 解析为条件
           </button>
         </div>
-        {condSource && <div className="mt-1.5 text-[10.5px] text-muted-foreground">条件来源：{condSource} · 字段白名单校验，AI 不能创造不存在的字段</div>}
+        {condSource && <div className="mt-1.5 text-[11.5px] text-muted-foreground">条件来源：{condSource} · 字段白名单校验，AI 不能创造不存在的字段</div>}
         {conds.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {conds.map((c, i) => (
-              <span key={i} className="flex items-center gap-1 rounded-full border border-sky-500/50 bg-sky-500/10 px-2.5 py-0.5 text-[11px] text-sky-300">
+              <span key={i} className="flex items-center gap-1 rounded-full border border-sky-500/50 bg-sky-500/10 px-2.5 py-0.5 text-[12px] text-sky-300">
                 {c.field} {c.op} {String(c.value)}
                 <button onClick={() => setConds((cs) => cs.filter((_, k) => k !== i))}>×</button>
               </span>
@@ -320,7 +320,7 @@ export default function AiScanPage() {
 
       {/* 漏斗 */}
       {result && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-[11.5px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-[12.5px] text-muted-foreground">
           <span>漏斗：</span>
           <Step n={result.funnel.universe} label={`${universeLabel}股票池`} />
           <Arrow /> <Step n={result.funnel.snapshot_pass} label="快照口径粗筛（剔除ST/停牌）" />
@@ -336,7 +336,7 @@ export default function AiScanPage() {
           <span className="font-semibold">以下条件在当前数据源没有任何真实读数，本次没有按它们筛选：</span>
           {result.unavailable_fields!.map((g) => g.zh).join("、")}
           <div className="mt-0.5 text-amber-200/70">
-            这是数据缺口（东财资金数据断源兜底期该字段全市场缺失），不是「没有股票符合条件」。
+            这是数据缺口（主力净额走通达信逐笔自算，只覆盖成交额靠前的票，该字段不是全市场可读），不是「没有股票符合条件」。
             可改用涨跌幅/成交额/换手/RPS 等当前可得的口径重新筛选。
           </div>
         </div>
@@ -344,7 +344,7 @@ export default function AiScanPage() {
       {result?.warnings
         .filter((w) => !(result.unavailable_fields ?? []).some((g) => w.includes(`「${g.zh}」`)))
         .map((w, i) => (
-        <div key={i} className="rounded bg-amber-500/5 px-2.5 py-1.5 text-[10.5px] text-amber-300/90">⚠ {w}</div>
+        <div key={i} className="rounded bg-amber-500/5 px-2.5 py-1.5 text-[11.5px] text-amber-300/90">⚠ {w}</div>
       ))}
 
       {/* 结果表（文档 二十八 列） */}
@@ -364,7 +364,7 @@ export default function AiScanPage() {
                 return (
                   <tr key={r.symbol} onClick={() => openProfile(r.symbol)} className="cursor-pointer border-b border-border/40 hover:bg-sky-500/5">
                     <td className="px-3 py-1.5 font-mono">{r.symbol}</td>
-                    <td className="px-3 py-1.5">{r.name}{r.industry ? <span className="ml-1 text-[10px] text-muted-foreground">{r.industry}</span> : null}</td>
+                    <td className="px-3 py-1.5">{r.name}{r.industry ? <span className="ml-1 text-[11px] text-muted-foreground">{r.industry}</span> : null}</td>
                     <td className="px-3 py-1.5 text-right"><NumText value={r.close} /></td>
                     <td className="px-3 py-1.5 text-right"><PctText value={r.change_pct} /></td>
                     <td className="px-3 py-1.5 text-right"><NumText value={r.values.amount_yi} digits={1} /></td>
@@ -377,7 +377,7 @@ export default function AiScanPage() {
                     <td className="px-3 py-1.5 text-right"><Win v={h(1)?.win_rate} n={h(1)?.sample_size} /></td>
                     <td className="px-3 py-1.5 text-right"><Win v={h(5)?.win_rate} n={h(5)?.sample_size} /></td>
                     <td className="px-3 py-1.5 text-right"><Win v={h(20)?.win_rate} n={h(20)?.sample_size} /></td>
-                    <td className="px-3 py-1.5 text-[10px] text-muted-foreground">{conds.map((c) => `${c.field}${c.op}${c.value}`).join(" + ") || "—"}{r.win_prob?.sample_ok === false ? " ·样本不足" : ""}</td>
+                    <td className="px-3 py-1.5 text-[11px] text-muted-foreground">{conds.map((c) => `${c.field}${c.op}${c.value}`).join(" + ") || "—"}{r.win_prob?.sample_ok === false ? " ·样本不足" : ""}</td>
                   </tr>
                 );
               })}
@@ -392,10 +392,10 @@ export default function AiScanPage() {
       {/* 已冻结候选池 */}
       {frozenPools.length > 0 && (
         <div className="rounded-xl border border-border bg-card p-4">
-          <div className="mb-2 text-[12px] font-semibold text-foreground/80">已冻结候选池（冻结后原始结果不被覆盖；次日自动验证属 P1）</div>
+          <div className="mb-2 text-[13px] font-semibold text-foreground/80">已冻结候选池（冻结后原始结果不被覆盖；次日自动验证属 P1）</div>
           <div className="space-y-1.5">
             {frozenPools.map((p) => (
-              <div key={p.id} className="flex flex-wrap items-center gap-2 rounded bg-accent/30 px-3 py-1.5 text-[11.5px]">
+              <div key={p.id} className="flex flex-wrap items-center gap-2 rounded bg-accent/30 px-3 py-1.5 text-[12.5px]">
                 <span className="font-mono text-sky-300">{p.id}</span>
                 <span className="text-muted-foreground">{p.createdAt} · {p.universe} · {p.rows.length} 只</span>
                 <span className="text-muted-foreground/70">{p.rows.slice(0, 5).map((r) => r.name).join("、")}{p.rows.length > 5 ? "…" : ""}</span>
@@ -420,7 +420,7 @@ function Win({ v, n }: { v?: number | null; n?: number }) {
   if (v === null || v === undefined) return <span className="text-muted-foreground">—</span>;
   return (
     <span className={v >= 55 ? "text-red-500" : v >= 50 ? "text-foreground" : "text-emerald-500"}>
-      {v.toFixed(0)}%<span className="ml-0.5 text-[9px] text-muted-foreground">({n})</span>
+      {v.toFixed(0)}%<span className="ml-0.5 text-[10px] text-muted-foreground">({n})</span>
     </span>
   );
 }

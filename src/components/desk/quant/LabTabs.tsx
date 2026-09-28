@@ -10,7 +10,7 @@ import { jobLookupVerdict, type JobLookup } from "@/lib/desk/backtest-core";
 // P13 门户轮：因子 pill 中文化（展示换脸、协议不换——选择串仍是 key@version[，权重，方向]）
 import { groupFactorsByCategory, pillLabel, pillTitle, type PillFactor } from "@/lib/quant/screener/factor-pill-core";
 
-const inputCls = "h-8 rounded-md border border-border bg-background px-2 text-[13px]";
+const inputCls = "h-8 rounded-md border border-border bg-background px-2 text-[14px]";
 
 interface JobView {
   id: string; kind: string; status: string; progress: number; stage: string; message: string; error: string;
@@ -73,14 +73,14 @@ export function JobPanel({ job, extra }: { job: JobView | null; extra?: React.Re
     <Card>
       <CardHeader className="pb-1">
         <CardTitle className="flex items-center gap-2 text-sm">
-          任务 <span className="font-mono text-[11px] text-muted-foreground">{job.id}</span>
-          <Badge variant="outline" className="text-[11px]">{job.status}</Badge>
-          <span className="ml-auto text-[11.5px] text-muted-foreground">{job.stage || job.message}</span>
+          任务 <span className="font-mono text-[12px] text-muted-foreground">{job.id}</span>
+          <Badge variant="outline" className="text-[12px]">{job.status}</Badge>
+          <span className="ml-auto text-[12.5px] text-muted-foreground">{job.stage || job.message}</span>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         <Progress value={job.progress} className="h-2" />
-        {job.error && <div className="text-[12px] text-red-300">失败原因：{job.error}</div>}
+        {job.error && <div className="text-[13px] text-red-300">失败原因：{job.error}</div>}
         {extra}
       </CardContent>
     </Card>
@@ -106,18 +106,18 @@ function FactorPillGrid({ factors, isSelected, onToggle, emptyText }: {
   onToggle: (f: PillFactor) => void;
   emptyText?: string;
 }) {
-  if (!factors.length) return <span className="text-[12px] text-muted-foreground">{emptyText ?? "因子库为空"}</span>;
+  if (!factors.length) return <span className="text-[13px] text-muted-foreground">{emptyText ?? "因子库为空"}</span>;
   return (
     <div className="space-y-1.5">
       {groupFactorsByCategory(factors).map((g) => (
         <div key={g.category || "none"} className="flex flex-wrap items-start gap-1.5">
-          <span className="w-16 shrink-0 pt-1.5 text-right text-[10.5px] text-muted-foreground/80">{g.label}</span>
+          <span className="w-16 shrink-0 pt-1.5 text-right text-[11.5px] text-muted-foreground/80">{g.label}</span>
           <span className="flex flex-wrap gap-1.5">
             {g.factors.map((f) => {
               const active = isSelected(f);
               return (
                 <Badge key={`${f.factorKey}@${f.version}`} variant="outline" title={pillTitle(f)}
-                  className={"cursor-pointer text-[11px] " + (active ? "border-sky-500/50 bg-sky-500/15 text-sky-200" : "")}
+                  className={"cursor-pointer text-[12px] " + (active ? "border-sky-500/50 bg-sky-500/15 text-sky-200" : "")}
                   onClick={() => onToggle(f)}>
                   {pillLabel(f)}<span className="ml-1 opacity-60">v{f.version}</span>
                 </Badge>
@@ -146,7 +146,7 @@ export function BacktestJobCard({ job }: { job: JobView | null }) {
   } | null;
   return (
     <JobPanel job={job} extra={metrics && (
-      <div className="grid grid-cols-3 gap-2 text-[12px] md:grid-cols-6">
+      <div className="grid grid-cols-3 gap-2 text-[13px] md:grid-cols-6">
         <div>年化 <b>{pct(metrics.annualReturn)}</b></div>
         <div>Sharpe <b>{num(metrics.sharpe)}</b></div>
         <div>Sortino <b>{num(metrics.sortino)}</b></div>
@@ -217,31 +217,31 @@ export function BacktestTab() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">组合回测（佣金/印花税/滑点/涨跌停/停牌/量与流动性约束 + Walk-forward/OOS）</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-2 md:grid-cols-3">
-          <label className="text-[11.5px] text-muted-foreground">数据源
+          <label className="text-[12.5px] text-muted-foreground">数据源
             <select className={inputCls + " mt-1 w-full"} value={source} onChange={(e) => setSource(e.target.value)}>
               <option value="demo">demo 演示</option>
               <option value="em">em 真实行情</option>
               <option value="mcp">mcp (china-stock-mcp)</option>
             </select>
           </label>
-          <label className="text-[11.5px] text-muted-foreground">取前 {topN} 只
+          <label className="text-[12.5px] text-muted-foreground">取前 {topN} 只
             <input type="range" min={3} max={30} value={topN} onChange={(e) => setTopN(+e.target.value)} className="mt-2 w-full" />
           </label>
-          <label className="text-[11.5px] text-muted-foreground">调仓周期 {rebalance} 日
+          <label className="text-[12.5px] text-muted-foreground">调仓周期 {rebalance} 日
             <input type="range" min={1} max={20} value={rebalance} onChange={(e) => setRebalance(+e.target.value)} className="mt-2 w-full" />
           </label>
-          <label className="text-[11.5px] text-muted-foreground">回测长度 {periodDays} 日
+          <label className="text-[12.5px] text-muted-foreground">回测长度 {periodDays} 日
             <input type="range" min={80} max={400} step={20} value={periodDays} onChange={(e) => setPeriodDays(+e.target.value)} className="mt-2 w-full" />
           </label>
-          <label className="text-[11.5px] text-muted-foreground">样本股票 {maxSymbols}
+          <label className="text-[12.5px] text-muted-foreground">样本股票 {maxSymbols}
             <input type="range" min={20} max={200} step={10} value={maxSymbols} onChange={(e) => setMaxSymbols(+e.target.value)} className="mt-2 w-full" />
           </label>
-          <label className="flex items-end gap-2 text-[11.5px] text-muted-foreground">
+          <label className="flex items-end gap-2 text-[12.5px] text-muted-foreground">
             <input type="checkbox" checked={validate} onChange={(e) => setValidate(e.target.checked)} />
             启用 Walk-forward/OOS 验证
           </label>
           <div className="md:col-span-3">
-            <div className="text-[11.5px] text-muted-foreground">选择因子（可多选；格式 key@version,权重,方向）</div>
+            <div className="text-[12.5px] text-muted-foreground">选择因子（可多选；格式 key@version,权重,方向）</div>
             <div className="mt-1">
               <FactorPillGrid
                 factors={factors}
@@ -319,26 +319,26 @@ export function SelectionTab() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">选股引擎（实时与历史回放共用同一实现）</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-2 md:grid-cols-3">
-          <label className="text-[11.5px] text-muted-foreground">数据源
+          <label className="text-[12.5px] text-muted-foreground">数据源
             <select className={inputCls + " mt-1 w-full"} value={source} onChange={(e) => setSource(e.target.value)}>
               <option value="demo">demo 演示</option>
               <option value="em">em 真实行情</option>
               <option value="mcp">mcp (china-stock-mcp)</option>
             </select>
           </label>
-          <label className="flex items-end gap-2 text-[12px]">
+          <label className="flex items-end gap-2 text-[13px]">
             <input type="checkbox" checked={replay} onChange={(e) => setReplay(e.target.checked)} />历史回放模式
           </label>
           {replay && (
-            <label className="text-[11.5px] text-muted-foreground">回放日期（早于今天）
+            <label className="text-[12.5px] text-muted-foreground">回放日期（早于今天）
               <input type="date" className={inputCls + " mt-1 w-full"} value={asOf} onChange={(e) => setAsOf(e.target.value)} />
             </label>
           )}
-          <label className="text-[11.5px] text-muted-foreground">取前 {topN} 只
+          <label className="text-[12.5px] text-muted-foreground">取前 {topN} 只
             <input type="range" min={3} max={30} value={topN} onChange={(e) => setTopN(+e.target.value)} className="mt-2 w-full" />
           </label>
           {replay && (
-            <label className="text-[11.5px] text-muted-foreground">未来窗口 {horizon} 日
+            <label className="text-[12.5px] text-muted-foreground">未来窗口 {horizon} 日
               <input type="range" min={1} max={20} value={horizon} onChange={(e) => setHorizon(+e.target.value)} className="mt-2 w-full" />
             </label>
           )}
@@ -361,12 +361,12 @@ export function SelectionTab() {
       </Card>
 
       <JobPanel job={job} extra={stats && (
-        <div className="text-[12px]">回放统计：{picks?.length} 只 · 平均未来收益 <b>{pct(stats.avgForwardReturn, 2)}</b> · 胜率 <b>{pct(stats.winRate, 0)}</b></div>
+        <div className="text-[13px]">回放统计：{picks?.length} 只 · 平均未来收益 <b>{pct(stats.avgForwardReturn, 2)}</b> · 胜率 <b>{pct(stats.winRate, 0)}</b></div>
       )} />
 
       {rows.length > 0 && (
         <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-[12px]">
+          <table className="w-full text-[13px]">
             <thead className="bg-card text-muted-foreground">
               <tr>
                 <th className="px-2 py-1.5 text-left font-normal">排名</th>
@@ -387,7 +387,7 @@ export function SelectionTab() {
                   <td className="px-2 py-1">{String(r.name)}</td>
                   <td className="px-2 py-1 text-right font-mono">{num(r.score as number, 4)}</td>
                   <td className="px-2 py-1">{Array.isArray(r.triggeredFactors) ? (r.triggeredFactors as string[]).join(",") : "-"}</td>
-                  <td className="max-w-52 truncate px-2 py-1 text-[11px] text-muted-foreground" title={String(r.reason ?? "")}>{String(r.reason ?? "")}</td>
+                  <td className="max-w-52 truncate px-2 py-1 text-[12px] text-muted-foreground" title={String(r.reason ?? "")}>{String(r.reason ?? "")}</td>
                   {picks && <td className={"px-2 py-1 text-right font-mono " + ((r.forwardReturn as number) >= 0 ? "text-red-300" : "text-emerald-300")}>{pct(r.forwardReturn, 2)}</td>}
                 </tr>
               ))}
@@ -416,12 +416,12 @@ export function ExperimentsTab() {
   }, []);
   return (
     <div className="space-y-2 pt-3">
-      <div className="text-[11.5px] text-muted-foreground">实验指纹去重：同输入（数据区间/股票池/因子版本/参数/成本）的实验不会重复执行。</div>
+      <div className="text-[12.5px] text-muted-foreground">实验指纹去重：同输入（数据区间/股票池/因子版本/参数/成本）的实验不会重复执行。</div>
       {rows.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-[13px] text-muted-foreground">暂无实验记录</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-[14px] text-muted-foreground">暂无实验记录</CardContent></Card>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-[12px]">
+          <table className="w-full text-[13px]">
             <thead className="bg-card text-muted-foreground">
               <tr>
                 <th className="px-2 py-1.5 text-left font-normal">时间</th>
@@ -435,12 +435,12 @@ export function ExperimentsTab() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className="border-t border-border/60">
-                  <td className="px-2 py-1 font-mono text-[11px]">{r.startedAt.slice(0, 19).replace("T", " ")}</td>
+                  <td className="px-2 py-1 font-mono text-[12px]">{r.startedAt.slice(0, 19).replace("T", " ")}</td>
                   <td className="px-2 py-1">{r.kind}</td>
-                  <td className="px-2 py-1"><Badge variant="outline" className={"text-[10.5px] " + (r.status === "done" ? "text-emerald-300 border-emerald-500/30" : r.status === "failed" ? "text-red-300 border-red-500/30" : "")}>{r.status}</Badge></td>
+                  <td className="px-2 py-1"><Badge variant="outline" className={"text-[11.5px] " + (r.status === "done" ? "text-emerald-300 border-emerald-500/30" : r.status === "failed" ? "text-red-300 border-red-500/30" : "")}>{r.status}</Badge></td>
                   <td className="px-2 py-1">{r.dataRange || "-"}</td>
-                  <td className="max-w-40 truncate px-2 py-1 font-mono text-[11px]" title={r.factorVersions}>{r.factorVersions || "-"}</td>
-                  <td className="max-w-52 truncate px-2 py-1 text-[11px] text-red-300" title={r.failureReason}>{r.failureReason || "-"}</td>
+                  <td className="max-w-40 truncate px-2 py-1 font-mono text-[12px]" title={r.factorVersions}>{r.factorVersions || "-"}</td>
+                  <td className="max-w-52 truncate px-2 py-1 text-[12px] text-red-300" title={r.failureReason}>{r.failureReason || "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -474,20 +474,20 @@ export function KnowledgeTab() {
           <option value="">全部类型</option>
           {Object.entries(KIND_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <span className="text-[11.5px] text-muted-foreground">Agent 开始新研究前会自动查询本库，避免重复失败实验</span>
+        <span className="text-[12.5px] text-muted-foreground">Agent 开始新研究前会自动查询本库，避免重复失败实验</span>
       </div>
       {rows.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-[13px] text-muted-foreground">知识库为空（挖掘/研究会自动沉淀条目）</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-[14px] text-muted-foreground">知识库为空（挖掘/研究会自动沉淀条目）</CardContent></Card>
       ) : (
         <div className="space-y-1.5">
           {rows.map((r) => (
-            <div key={r.id} className={"rounded-md border border-border px-3 py-2 text-[12.5px] " + (r.active ? "" : "opacity-40")}>
+            <div key={r.id} className={"rounded-md border border-border px-3 py-2 text-[13.5px] " + (r.active ? "" : "opacity-40")}>
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-[10.5px]">{KIND_LABEL[r.kind] ?? r.kind}</Badge>
-                <span className="font-mono text-[11.5px]">{r.title}</span>
-                <span className="ml-auto text-[10.5px] text-muted-foreground">{r.updatedAt.slice(0, 10)}</span>
+                <Badge variant="outline" className="text-[11.5px]">{KIND_LABEL[r.kind] ?? r.kind}</Badge>
+                <span className="font-mono text-[12.5px]">{r.title}</span>
+                <span className="ml-auto text-[11.5px] text-muted-foreground">{r.updatedAt.slice(0, 10)}</span>
               </div>
-              <div className="mt-0.5 text-[11.5px] text-muted-foreground">{r.content}</div>
+              <div className="mt-0.5 text-[12.5px] text-muted-foreground">{r.content}</div>
             </div>
           ))}
         </div>
@@ -548,7 +548,7 @@ export function ResearchTab() {
       </Card>
 
       <JobPanel job={job} extra={strategy && (
-        <div className="text-[12px]">
+        <div className="text-[13px]">
           策略产出：<b className="font-mono">{strategy.strategyKey}@{strategy.version}</b> 状态 <b>{strategy.status}</b>
           {live && <span> · 实时选股 {live.rows.length} 只（{live.rows.slice(0, 5).map((r) => r.code).join(", ")}…）</span>}
         </div>
@@ -557,7 +557,7 @@ export function ResearchTab() {
       {failure && (
         <Card>
           <CardHeader className="pb-1"><CardTitle className="text-sm text-red-300">结构化失败报告</CardTitle></CardHeader>
-          <CardContent className="space-y-1 text-[12.5px]">
+          <CardContent className="space-y-1 text-[13.5px]">
             <div>失败原因：{failure.reason}</div>
             <div>数据证据：{failure.evidence}</div>
             <div>失败指标：{failure.failedMetric}</div>
@@ -573,7 +573,7 @@ export function ResearchTab() {
           <CardHeader className="pb-1"><CardTitle className="text-sm">研究流水线（20 步闭环）</CardTitle></CardHeader>
           <CardContent className="space-y-1">
             {pipeline.map((p, i) => (
-              <div key={i} className="flex gap-2 text-[12px]">
+              <div key={i} className="flex gap-2 text-[13px]">
                 <span className="w-8 shrink-0 font-mono text-muted-foreground">{p.step}</span>
                 <span>{p.detail}</span>
               </div>

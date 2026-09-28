@@ -86,7 +86,8 @@ test("双 Tab 换榜：数据源带 kind、成分股带 kind、文案随 Tab 切
   assert.match(secPage, /fetch\(`\/api\/market\/sectors\?kind=\$\{kind\}`\)/, "榜单按 Tab 取");
   assert.match(secPage, /fetch\(`\/api\/market\/sectors\/\$\{encodeURIComponent\(code\)\}\?kind=\$\{kind\}`\)/,
     "成分股也要带 kind——概念板展开不走行业口径");
-  assert.match(secPage, /\{kind === "concept" \? "概念板块排行" : "行业板块排行"\}/);
+  // 2026-09-25：标题改为稳智同款固定文案「板块与概念分析」（一个标题 + 板块/概念双 Tab，不随 Tab 变）
+  assert.match(secPage, /板块与概念分析/, "标题固定为「板块与概念分析」");
   assert.match(secPage, /暂无\{noun\}数据/, "空态文案跟着换（稳智同款一字之差）");
   assert.match(secPage, /if \(k === kind\) return;[\s\S]*?setKind\(k\); closeBoard\(\); setJump\(null\); setList\(null\);/,
     "切 Tab 清上一张榜的展开/跳转/榜单态，不把 A 榜成分挂到 B 榜行下");
@@ -95,7 +96,10 @@ test("双 Tab 换榜：数据源带 kind、成分股带 kind、文案随 Tab 切
 test("统计行走纯核聚合：页面不抄聚合逻辑、缺读数显「—」不显 0", () => {
   assert.match(secPage, /import \{ aggregateSectors \} from "@\/lib\/quant\/screener\/sector-stats-core"/);
   assert.match(secPage, /st\.mainSumYi === null \? "—"/, "主力合计不可信时显「—」");
-  assert.match(secPage, /上涨\{noun\}数|`上涨\$\{noun\}数`/, "广度卡是板块口径（数据源无个股家数，不冒充稳智原口径）");
+  // 2026-09-25：文案改成稳智式「总上涨板块数 / 总下跌板块数」，但**口径仍是板块数**，
+  // 不冒充稳智的「总上涨家数」（个股家数，需 /api/sector-data）。
+  assert.match(secPage, /总上涨板块数/, "广度卡是板块口径（数据源无个股家数，不冒充稳智原口径）");
+  assert.ok(!/sum\(.*up_count|upCount/.test(secPage), "不许凭空引入不存在的板块广度字段");
   assert.ok(!/sum\(.*up_count|upCount/.test(secPage), "不许凭空引入不存在的板块广度字段");
 });
 
@@ -104,4 +108,68 @@ test("「去选股」出口：BK 码才给按钮、点击 stopPropagation、递�
     "腾讯兜底榜代码非东财 BK 口径——按钮如实缺席，不是点了再炸一句「板块代码非法」");
   assert.match(secPage, /e\.stopPropagation\(\); onScreen\(\)/, "去选股不该顺手展开成分股面板");
   assert.match(secPage, /setScanBoard\(\{ code: b\.code, name: b\.name, kind \}\);\s*go\("aiscan"\)/, "棒子带 kind，收口在 store 一处");
+});
+
+/* ---------------- P48：点板块名 → 量化因子选股（对齐稳智 /sectors?sector=） ---------------- */
+
+test("纯核：sectorConceptMatches 按「申万行业串 + 概念串」子串匹配（对齐稳智 sector|concept like）", async () => {
+  const { sectorConceptMatches } = await import("../../src/lib/quant/data/rps-seed.ts");
+  // 000001 平安银行：sector="银行-股份制银行Ⅱ-股份制银行Ⅲ"
+  assert.equal(sectorConceptMatches("000001.SZ", "银行"), true, "行业串命中");
+  assert.equal(sectorConceptMatches("000001.SZ", "股份制"), true, "行业串子串命中");
+  assert.equal(sectorConceptMatches("000001.SZ", "不存在的板块xyz"), false, "不命中");
+  assert.equal(sectorConceptMatches("000001.SZ", ""), true, "空关键词=不筛（对齐稳智：规整后为空则不加条件）");
+  assert.equal(sectorConceptMatches("999999.SZ", "银行"), false, "无板块/概念记录 → 不命中（不冒充命中）");
+});
+
+test("选股器后端：sector_concept 从数值条件路径摘出，按成员条件过滤股票池", () => {
+  assert.match(runSrc, /const MEMBERSHIP_FIELD = "sector_concept"/, "成员字段名收口一处");
+  assert.match(runSrc, /membershipConds = allConds\.filter\(\(c\) => c\.field === MEMBERSHIP_FIELD\)/, "成员条件单独摘出");
+  assert.match(runSrc, /const numericConds = allConds\.filter\(\(c\) => c\.field !== MEMBERSHIP_FIELD\)/, "数值路径不吃成员条件");
+  assert.match(runSrc, /metas = metas\.filter\(\(m\) => membershipConds\.every\(\(c\) => membershipHit\(m\.symbol, c\)\)\)/, "成员条件在池上按板块/概念文本匹配");
+  assert.match(runSrc, /Array\.isArray\(raw\)[\s\S]*?sectorConceptMatches\(symbol, String\(v \?\? ""\)\)[\s\S]*?c\.op === "not in"/, "in/not in 多值走任一命中/取反");
+  assert.match(runSrc, /import \{ rpsSeedOf, rpsSeedMeta, sectorConceptMatches \}/, "复用种子加载器，不另起一套板块映射");
+});
+
+test("store：screenerHandoff 一次性交接（读完即清、不进 partialize）", () => {
+  assert.match(storeSrc, /screenerHandoff: \{ sectorLike: string; kind: "industry" \| "concept" \} \| null/, "交接形状");
+  assert.match(storeSrc, /takeScreenerHandoff: \(\) => \{[\s\S]*?if \(h\) set\(\{ screenerHandoff: null \}\);\s*return h;/, "读完即清");
+  assert.ok(!/screenerHandoff: s\.screenerHandoff/.test(storeSrc), "不进 partialize（刷新后不该自动带条件）");
+});
+
+test("板块页：名称=可点搜索入口，点击预置条件并跳「量化因子选股」", () => {
+  assert.match(secPage, /setScreenerHandoff\(\{ sectorLike: b\.name, kind \}\);\s*go\("aiscreener"\)/, "递棒到量化因子选股页（aiscreener）");
+  assert.match(secPage, /e\.stopPropagation\(\); onJumpScreener\(\)/, "点名称跳选股、不顺手展开成分股");
+});
+
+test("选股页：挂载时取走交接，预置 sector_concept like 条件后再放开首屏自动筛选", () => {
+  const wb = read("../../src/components/desk/pages/ScreenerWorkbench.tsx");
+  assert.match(wb, /takeScreenerHandoff\(\)/, "取走一次性交接");
+  assert.match(wb, /normalizeSectorKeyword\(h\.sectorLike\)/, "消费交接时按稳智规则规整原始板块名");
+  assert.match(wb, /field: "sector_concept", zh: `板块\/概念: \$\{kw\}`, op: "like", value: kw/, "预置 like 条件（值为规整后的关键词）");
+  assert.match(wb, /if \(autoRan\.current \|\| !fields\.length \|\| !handoffReady\) return;/, "等条件就位再跑首屏筛选，避免先跑空条件");
+});
+
+test("纯核：normalizeSectorKeyword 逐字照搬稳智选股页对 ?sector= 的规整", async () => {
+  const { normalizeSectorKeyword: n } = await import("../../src/lib/quant/screener/sector-keyword-core.ts");
+  // 稳智规则：含"·"原样 → 否则最长字母数字段(≥3) → 否则去标点/去尾缀 → 长度≥4 再砍最后一字
+  assert.equal(n("银行"), "银行", "2 字中文原样");
+  assert.equal(n("半导体"), "半导体", "3 字中文原样");
+  assert.equal(n("人工智能"), "人工智", "≥4 字中文砍最后一字（稳智原样行为）");
+  assert.equal(n("光伏概念"), "光伏", "去掉结尾「概念」");
+  assert.equal(n("CPO概念"), "CPO", "有 ≥3 字母数字段优先用它");
+  assert.equal(n("AI算力"), "AI算", "字母段不足 3 位则走中文裁剪");
+  assert.equal(n("银行·股份制银行"), "银行·股份制银行", "含「·」原样返回");
+  assert.equal(n(""), "", "空串原样");
+  assert.equal(n("   "), "", "纯空白→空串");
+});
+
+test("纯核边界：客户端组件不得从 fs 版 rps-seed 取规整函数（否则 webpack 报 Can't resolve 'fs'）", () => {
+  const wb = read("../../src/components/desk/pages/ScreenerWorkbench.tsx");
+  assert.match(wb, /import \{ normalizeSectorKeyword \} from "@\/lib\/quant\/screener\/sector-keyword-core"/, "从纯核取用");
+  assert.doesNotMatch(wb, /from "@\/lib\/quant\/data\/rps-seed"/, "客户端不 import 依赖 fs 的种子加载器");
+  const core = read("../../src/lib/quant/screener/sector-keyword-core.ts");
+  assert.doesNotMatch(core, /\bfrom "fs"|\bfrom "path"/, "纯核不引 fs/path");
+  // rps-seed 仍 re-export，服务端调用点与旧测试路径不必改
+  assert.match(read("../../src/lib/quant/data/rps-seed.ts"), /export \{ normalizeSectorKeyword \} from "\.\.\/screener\/sector-keyword-core(\.ts)?"/, "rps-seed 继续 re-export");
 });

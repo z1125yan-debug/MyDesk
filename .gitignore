@@ -65,3 +65,26 @@ design-mockups/
 
 # P5 生命周期清理的运行时导出目录（每次真实清理写出的 JSON 快照，可能含大量明细行；导出逻辑不变，只是不入版本库）
 data/lifecycle/
+
+# ---- R21 仓库卫生：临时探测/调试产物（一次性的上游抓包与探针输出，非项目资产）----
+data/_probe-*.json
+data/_probe-*.txt
+data/_ep.json
+mcp-codes.tmp.json
+mcp-tools.json
+
+# 本地开发服务器日志（每次启动覆写，不入库）
+.devserver.log
+
+# 数据库备份（本地快照，体积大且每次不同）
+prisma/db/*.bak-*
+
+# 工作台/助手运行时目录（会话与记忆，属于本机状态）
+/.box-agent/
+/.workbuddy/
+
+# Windows 保留名文件（cmd 误建，删不掉也无害）
+/NUL
+
+# 旧 .next 编译产物的暂存处（rename 移走、暂不删除）
+/.stale-next/

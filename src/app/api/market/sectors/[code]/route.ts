@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { getProvider } from "@/lib/quant/data/index";
 import { shanghaiDate } from "@/lib/desk/session";
+import { latestTradeDate } from "@/lib/desk/trade-date";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
   const kind = new URL(req.url).searchParams.get("kind") === "concept" ? "concept" : "industry";
   try {
     const provider = await getProvider("em");
-    const metas = await provider.listUniverse({ kind, boardCode: code.toUpperCase() }, shanghaiDate());
+    // 成分股也按最近交易日取：休市日拿今天当数据日，取到的是上一交易日的成分却挂着今天的日期
+    const tdate = await latestTradeDate().catch(() => shanghaiDate());
+    const metas = await provider.listUniverse({ kind, boardCode: code.toUpperCase() }, tdate);
     if (!metas.length) {
       return NextResponse.json({ ok: false, error: "板块成分股为空（数据源无返回）" }, { status: 502 });
     }

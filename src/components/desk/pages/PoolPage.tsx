@@ -72,11 +72,11 @@ export default function PoolPage() {
   // ---------- 列表视图 ----------
   if (view === "list") {
     return (
-      <div className="mx-auto max-w-5xl space-y-4 px-6 py-4">
+      <div className="w-full space-y-4 px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-lg font-bold">候选池</div>
-            <div className="text-[11px] text-muted-foreground">冻结后原始结果永不覆盖 · 次日自动验证回填收益</div>
+            <div className="text-[12px] text-muted-foreground">冻结后原始结果永不覆盖 · 次日自动验证回填收益</div>
           </div>
           <button onClick={fetchList} disabled={loading}
             className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:border-sky-500/40 hover:text-sky-300 disabled:opacity-50">
@@ -115,15 +115,15 @@ export default function PoolPage() {
                     <td className="px-4 py-2 text-right font-mono">{p.row_count}</td>
                     <td className="px-4 py-2 text-center">
                       {p.has_verify
-                        ? <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-400">已验证</span>
+                        ? <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-400">已验证</span>
                         : <span className="text-muted-foreground">待验证</span>}
                     </td>
-                    <td className="px-4 py-2 text-[10px] text-muted-foreground">
+                    <td className="px-4 py-2 text-[11px] text-muted-foreground">
                       {p.source}
                       {isTestFixturePool(p.source) && (
-                        <span className="ml-1 rounded bg-amber-500/15 px-1 py-0.5 text-[9px] text-amber-400">测试/回填样本·非正式结果</span>
+                        <span className="ml-1 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] text-amber-400">测试/回填样本·非正式结果</span>
                       )}
-                      <div className="text-[9px] opacity-70">{p.data_source ? `数据：${p.data_source}` : "数据源：未记录（旧池）"}</div>
+                      <div className="text-[10px] opacity-70">{p.data_source ? `数据：${p.data_source}` : "数据源：未记录（旧池）"}</div>
                     </td>
                   </tr>
                 ))}
@@ -147,7 +147,7 @@ export default function PoolPage() {
   const v = detail.verify;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 px-6 py-4">
+    <div className="w-full space-y-4 px-6 py-4">
       <div className="flex items-center gap-3">
         <button onClick={() => { setView("list"); setDetail(null); }}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-sky-300">
@@ -169,11 +169,11 @@ export default function PoolPage() {
           {verifyBusy ? <Loader2 size={14} className="animate-spin" /> : <Snowflake size={14} />} 执行次日验证
         </button>
         {verifyMsg && <span className="text-xs text-sky-400">{verifyMsg}</span>}
-        {v && <span className="text-[10px] text-muted-foreground">上次验证：{v.verifiedDate}</span>}
+        {v && <span className="text-[11px] text-muted-foreground">上次验证：{v.verifiedDate}</span>}
       </div>
 
       {detail.price_basis && (
-        <div className="rounded-lg border border-border/60 bg-accent/30 px-3 py-1.5 text-[10.5px] text-muted-foreground">
+        <div className="rounded-lg border border-border/60 bg-accent/30 px-3 py-1.5 text-[11.5px] text-muted-foreground">
           价格口径：{detail.price_basis}
         </div>
       )}
@@ -246,7 +246,7 @@ export default function PoolPage() {
 
       {/* 汇总统计 */}
       {v && Object.keys(v.perSymbol).length > 0 && (
-        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 text-[11.5px]">
+        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 text-[12.5px]">
           <span className="text-muted-foreground">汇总：</span>
           <VerifySummary rows={detail.rows} verify={v} />
         </div>

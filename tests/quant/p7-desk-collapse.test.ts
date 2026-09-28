@@ -15,7 +15,7 @@ const code = (src: string) =>
   src.split("\n").filter((l) => !/^(\/\/|\*|\/\*)/.test(l.trim())).join("\n");
 
 const MOVED: { file: string; anchors: string[] }[] = [
-  { file: "src/components/desk/StepTimeline.tsx", anchors: ["AI 已完成分析 · 共", "系统预取", "模型自取"] },
+  { file: "src/components/desk/StepTimeline.tsx", anchors: ["agentPhasesHeadline", "系统预取", "模型自取"] },
   { file: "src/components/desk/DecisionCard.tsx", anchors: ["接线层登记", "这份结论的完整文字口径（与 AI 上下文共用同一份）", "分项"] },
   { file: "src/components/desk/CapabilityPanel.tsx", anchors: ["已知局限", "还缺什么", "这些结论不能用真实数据支撑"] },
   { file: "src/components/desk/EventInterpretation.tsx", anchors: ["展开完整回溯链（原始事件 → AI 提取 → AI 解释 → 状态分层）", "字段归属（内核唯一出处，页面不自己判）"] },
@@ -47,14 +47,19 @@ test("⑫-2 搬家不丢信息：16 处旧面板的标题原文逐条仍在，�
   }
 });
 
-test("⑫-3 StepTimeline 的流式受控语义保留：开流自动展开、流毕收起、翻转才强制对齐", () => {
+test("⑫-3 StepTimeline 的受控折叠语义：hooks 在 early-return 前、受控出口接回状态、默认单行不自动摊开", () => {
   const src = read("src/components/desk/StepTimeline.tsx");
   // hooks 必须在 early-return 之前（steps 会从零到有，条件后挂 hook 就是渲染间 hook 数不一致）
   const hooksAt = src.search(/useState\(pinned\)/);
   const earlyReturn = src.search(/if \(!steps\?\.length && !warning\) return null/);
   assert.ok(hooksAt > -1 && earlyReturn > hooksAt, "useState/useEffect 被挪到 early-return 之后：React 规则违规");
-  assert.match(src, /streaming === true && !!steps\?\.length/, "「流式中自动展开」的派生值还在");
+  // P36（用户实测否决）：执行过程常态是**单行流动进度**，默认收起——不再在取数阶段自动摊开整块。
+  assert.match(src, /const pinned = defaultOpen \?\? false;/, "执行过程默认单行，不再自动摊开");
+  assert.doesNotMatch(src, /const pinned = defaultOpen \?\? \(streaming/, "「流式中自动展开」已按用户实测撤掉");
   assert.match(src, /onOpenChange=\{setOpen\}/, "用户手点的出口要接回状态，否则 radix 受控会把面板焊死");
+  // 单行头的流动进度（稳智 flow-hero）：轨道 + 填充；跑的时候加 is-running 让渐变流动
+  assert.match(src, /flow-hero-track/, "单行头缺流动进度轨道");
+  assert.match(src, /flow-hero-fill/, "单行头缺流动进度填充");
 });
 
 test("⑫-4 DeskCollapse 承诺的三件事：排印整段可替换、受控透传、琥珀警示位", () => {

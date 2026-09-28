@@ -11,8 +11,8 @@ import {
   adaptChart, addMinutes, cityByName, coordOk, dateToWallClock, dayOfYear, equationOfTimeMinutes,
   formatWallClock, LIB_YEAR_MAX, LIB_YEAR_MIN, longitudeOffsetMinutes, normalizeQuestionType,
   parseWallClock, trueSolarOffsetMinutes, wallClockMs, wallClockToDate,
-  DEFAULT_TRUE_SOLAR_TIME, TEXT_MISSING_CITY, TEXT_MISSING_INPUT, TEXT_OUT_OF_RANGE,
-  type QimenOutcome, type WallClock,
+  DEFAULT_TRUE_SOLAR_TIME, TEXT_MISSING_CITY, TEXT_MISSING_INPUT, TEXT_MISSING_BIRTH, TEXT_OUT_OF_RANGE,
+  NATAL_QUESTION_TYPE, type QimenMode, type QimenOutcome, type WallClock,
 } from "./qimen-core";
 
 /**
@@ -29,6 +29,8 @@ const METHOD = "时家" as const;
 const NEAR_TERM_MINUTES = 15;
 
 export interface CastInput {
+  /** 起局模式：shijia=时家问事盘（默认）/ nianjia=年家本命盘 */
+  mode?: unknown;
   /** YYYY-MM-DD；不传就用当前北京时间那一天 */
   date?: unknown;
   /** HH:mm 或 HH:mm:ss；不传就用当前北京时间 */
@@ -39,7 +41,7 @@ export interface CastInput {
   lat?: unknown;
   /** 真太阳时校正，默认开启（任务书指定） */
   useTrueSolarTime?: unknown;
-  /** 问题类型，只认白名单 */
+  /** 问题类型，只认白名单；年家本命盘忽略此项（用固定的本命格局侧重） */
   questionType?: unknown;
 }
 
@@ -50,7 +52,24 @@ export interface CastOk {
 
 /** 入参解析结果：把「认不出来」和「认出来了」分开，route 只负责把 missing 原样回给前端 */
 export function castChart(input: CastInput): QimenOutcome {
+  // 模式：nianjia=年家本命盘，其余（含不传）一律按时家问事盘。
+  const mode: QimenMode = input.mode === "nianjia" ? "nianjia" : "shijia";
+  const isNatal = mode === "nianjia";
+
   const nowStamp = shanghaiStamp();
+  const dateStr = typeof input.date === "string" ? input.date.trim() : "";
+  const timeStr = typeof input.time === "string" ? input.time.trim() : "";
+
+  // 年家本命盘必须有根：出生日期和出生时间都不能留空，不能退回到「当前北京时间」。
+  // 放在 resolveWallClock 之前，避免「只给了一个」被静默补成 now 而算错盘。
+  if (isNatal && (!dateStr || !timeStr)) {
+    return {
+      ok: false,
+      missing: TEXT_MISSING_BIRTH,
+      detail: `收到 date=${dateStr} time=${timeStr}，本命盘必须给完整的出生年/月/日/时`,
+    };
+  }
+
   const beijing = resolveWallClock(input.date, input.time, nowStamp);
   if (!beijing) return { ok: false, missing: TEXT_MISSING_INPUT, detail: `收到 date=${String(input.date ?? "")} time=${String(input.time ?? "")}，当前北京时间 ${nowStamp}` };
 
@@ -84,7 +103,8 @@ export function castChart(input: CastInput): QimenOutcome {
   const date = wallClockToDate(cast);
   const snapshot = createCalendarSnapshot(date, { lateZiHourMode: LATE_ZI_HOUR_MODE });
   const hourIndex = getNativeHourIndex(date);
-  const result = calculateFromSnapshot(snapshot, date, { method: METHOD });
+  // 时家问事用 METHOD（时家）；年家本命用年家——开源库原生支持 method:"年家"，输出的是以年定局的不同盘。
+  const result = calculateFromSnapshot(snapshot, date, { method: isNatal ? "年家" : METHOD });
 
   return adaptChart({
     result,
@@ -103,8 +123,9 @@ export function castChart(input: CastInput): QimenOutcome {
       hourPillarChanged: !!beijingHourPillar && beijingHourPillar !== result.info.siZhu.time,
       beijingHourPillar,
     },
-    questionType: normalizeQuestionType(input.questionType),
+    questionType: isNatal ? NATAL_QUESTION_TYPE : normalizeQuestionType(input.questionType),
     lateZiHourMode: LATE_ZI_HOUR_MODE,
+    mode,
     computedAt: nowStamp,
     nearTermWarning: nearTermWarning(cast, snapshot.solarTermName),
   });

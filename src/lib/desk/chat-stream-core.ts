@@ -12,7 +12,7 @@
 
 // 只 import 类型：node --strip-types 会擦掉这一行，纯内核之间因此不会形成运行时依赖，
 // 但字段口径只有一份（改 chat-core 的徽章字段，这里编译期就跟着变，不会出现「服务端发了、前端解不出」）。
-import type { IntentBadge } from "./chat-core.ts";
+import type { IntentBadge, WzDecisionPayload } from "./chat-core.ts";
 
 export type StepStatus = "running" | "ok" | "error" | "missing" | "stale";
 
@@ -41,6 +41,20 @@ export interface StreamStep {
   args?: Record<string, unknown>;
   /** P8-⑤（debug=true 才发）：返回数据摘要（dispatch-core 的 ≤120 字口径）。detail 装的是判词，两者不能混用一个字段 */
   summary?: string;
+  /**
+   * P27 稳智对齐：这一步的 Agent Loop 阶段（后端显式发，不再靠前端语义反推）。
+   * 值：intent / skills / local_data / external_data / research / answer
+   * 与 P22 的 classifyStep 语义映射口径一致，但后端显式发更精确（不用猜）。
+   */
+  phase_key?: "intent" | "skills" | "local_data" | "external_data" | "research" | "answer";
+  /**
+   * P29 稳智对齐：子步骤挂父步骤（可选）。
+   * 场景：一个"研究"阶段的父步骤，下面挂着 3 个子步骤（比如 fetch_news / fetch_quote / fetch_fund）——
+   * 子步骤的 parentStepId 指向父步骤的 step 号。前端渲染时可以按 parentStepId 分组缩进显示。
+   * 稳智逆向里对应 agent_started + parentStepId 组合，做层次化步骤。
+   * 兼容：老客户端不识别这个字段就当扁平处理，不会崩。
+   */
+  parentStepId?: number;
 }
 
 /**
@@ -62,10 +76,18 @@ export interface DoneDebug {
 
 type StreamEventBody =
   | { type: "step"; data: StreamStep }
+  // P24：stage 事件（宏观阶段，对齐稳智 researching / answer_streaming / finished）
+  // 后端在关键节点 emit，前端用来更新顶部进度条（不再只靠 steps 语义反推）
+  | { type: "stage"; data: { stage: "researching" | "answer_streaming" | "finished" | "degraded" | "incomplete" | "failed" } }
+  // P26：block_started/finished 事件（结构化块，对齐稳智 table/code/quote/markdown）
+  // 后端在遇到 markdown 结构化块时 emit，前端用来渲染成结构化卡片
+  | { type: "block_started"; data: { block_id: string; block_type: "table" | "code" | "quote" | "markdown" } }
+  | { type: "block_finished"; data: { block_id: string } }
   | { type: "delta"; data: { content: string } }
   | { type: "warning"; data: { text: string } }
-  | { type: "done"; data: { fullText: string; steps?: StreamStep[]; intent?: StreamIntent; debug?: DoneDebug } }
-  | { type: "error"; data: { message: string } };
+  | { type: "done"; data: { fullText: string; steps?: StreamStep[]; intent?: StreamIntent; debug?: DoneDebug; wzDecision?: WzDecisionPayload } }
+  // P23：error 事件携带 error_code（下划线蛇形，对齐稳智 reverse-01 §11）
+  | { type: "error"; data: { message: string; error_code?: string } };
 
 /**
  * P8-⑥：seq 放帧**顶层**（{type, data, seq}），五类 type 白名单与各 data 形状零改动——
@@ -73,7 +95,7 @@ type StreamEventBody =
  */
 export type StreamEvent = StreamEventBody & { seq?: number };
 
-export const STREAM_EVENT_TYPES = ["step", "delta", "warning", "done", "error"] as const;
+export const STREAM_EVENT_TYPES = ["step", "stage", "block_started", "block_finished", "delta", "warning", "done", "error"] as const;
 
 /** seq 有则写进帧顶层（run-bus 留底与实发帧共用同一个序号，重放/实发对客户端可一一对账） */
 export function encodeStreamEvent(ev: StreamEvent, seq?: number): string {
@@ -132,7 +154,33 @@ function decodeEventBody(obj: unknown): StreamEvent | null {
       // 坏值只是这两个键不进，整帧照旧——帧形状白名单（五类 type）没有扩，既有钉帧断言不破。
       if (d.args && typeof d.args === "object" && !Array.isArray(d.args)) data.args = d.args as Record<string, unknown>;
       if (typeof d.summary === "string") data.summary = d.summary;
+      // P27：phase_key 按白名单收（6 个合法值），坏值不进
+      const validPhaseKeys = ["intent", "skills", "local_data", "external_data", "research", "answer"];
+      if (typeof d.phase_key === "string" && validPhaseKeys.includes(d.phase_key)) {
+        data.phase_key = d.phase_key as "intent" | "skills" | "local_data" | "external_data" | "research" | "answer";
+      }
+      // P29：parentStepId 只收 number 类型（非 number 直接丢弃，避免前端拿到"父步骤 undefined"这种假嵌套）
+      if (typeof d.parentStepId === "number" && Number.isFinite(d.parentStepId)) {
+        data.parentStepId = d.parentStepId;
+      }
       return { type: "step", data };
+    }
+    // P24：stage 事件（宏观阶段，对齐稳智 researching / answer_streaming / finished）
+    case "stage": {
+      const validStages = ["researching", "answer_streaming", "finished", "degraded", "incomplete", "failed"];
+      if (typeof o.data.stage !== "string" || !validStages.includes(o.data.stage)) return null;
+      return { type: "stage", data: { stage: o.data.stage as "researching" | "answer_streaming" | "finished" | "degraded" | "incomplete" | "failed" } };
+    }
+    // P26：block_started 事件（结构化块开始，对齐稳智 table/code/quote/markdown）
+    case "block_started": {
+      const validBlockTypes = ["table", "code", "quote", "markdown"];
+      if (typeof o.data.block_id !== "string" || typeof o.data.block_type !== "string" || !validBlockTypes.includes(o.data.block_type)) return null;
+      return { type: "block_started", data: { block_id: o.data.block_id, block_type: o.data.block_type as "table" | "code" | "quote" | "markdown" } };
+    }
+    // P26：block_finished 事件（结构化块结束）
+    case "block_finished": {
+      if (typeof o.data.block_id !== "string") return null;
+      return { type: "block_finished", data: { block_id: o.data.block_id } };
     }
     case "delta":
       return typeof o.data.content === "string" ? { type: "delta", data: { content: o.data.content } } : null;
@@ -150,10 +198,24 @@ function decodeEventBody(obj: unknown): StreamEvent | null {
         if (raw.transport === "stream" || raw.transport === "fallback" || raw.transport === "settle") dbg.transport = raw.transport;
         if (dbg.modelMs != null || dbg.transport) ev.data.debug = dbg;
       }
+      // P19：稳智决策信号 —— 走独立白名单解码；坏值/null 一律当"没判出"，
+      // 不让半截数据把整卡画成"决策信号：undefined"这种假结论。
+      const wz = asWzDecision(o.data.wzDecision);
+      if (wz) ev.data.wzDecision = wz;
       return ev;
     }
-    case "error":
-      return { type: "error", data: { message: typeof o.data.message === "string" ? o.data.message : "未知错误" } };
+    case "error": {
+      // P23：SSE error 事件透传 error_code 字段（下划线蛇形），前端用 friendlyErrorMessage 做映射
+      // 后端未发 error_code 时透传 undefined（字段不返回，避免 deep-equal 出现多余键）
+      const errorCode = typeof o.data.error_code === "string" ? o.data.error_code : undefined;
+      return {
+        type: "error",
+        data: {
+          message: typeof o.data.message === "string" ? o.data.message : "未知错误",
+          ...(errorCode ? { error_code: errorCode } : {}),
+        },
+      };
+    }
     default:
       return null;
   }
@@ -189,6 +251,108 @@ export function asStreamIntent(v: unknown): StreamIntent | null {
   if (alternates.length) out.alternates = alternates;
   if (typeof o.prefetchChars === "number" && isFinite(o.prefetchChars)) out.prefetchChars = Math.max(0, Math.trunc(o.prefetchChars));
   return out;
+}
+
+// ---------- P19 稳智决策信号解码（与 asStreamIntent 同风格：宽松收字段、白名单取值） ----------
+
+/**
+ * 把 SSE done 事件里的 wzDecision 字段解码成 WzDecisionPayload。
+ *
+ * 纪律与 asStreamIntent 一致：
+ *  - 缺字段一律走兜底（stance="neutral"、horizon/signalType/confidence/sentimentTemp/positionPct=null、数组空、字符串 null）；
+ *  - 数值一律 clamp 到 [0,100]（负数/超界都当"猜不出"用 0/100 兜住，而不是原样透传）；
+ *  - 完全解析不出来（不是 object 或全空）时返回 null，让调用方当"这轮没判出"处理，不画半截卡。
+ *
+ * 与 intent-llm-core.WzDecisionSignal 字段完全对齐：stance/horizon/signalType 是有限枚举，
+ * 其他数值/字符串字段一律按"字段存在则收、不存在则默认"。
+ */
+export function asWzDecision(v: unknown): WzDecisionPayload | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+
+  // stance 白名单：不在四选一里就落到 neutral
+  const stance: WzDecisionPayload["stance"] =
+    o.stance === "long" || o.stance === "short" || o.stance === "wait" || o.stance === "neutral"
+      ? o.stance
+      : "neutral";
+
+  // horizon 白名单
+  const horizonKeys = ["ultra_short", "short", "short_mid", "mid", "long"] as const;
+  const horizon: WzDecisionPayload["horizon"] =
+    typeof o.horizon === "string" && (horizonKeys as readonly string[]).includes(o.horizon)
+      ? (o.horizon as WzDecisionPayload["horizon"])
+      : null;
+
+  // signalType 白名单（含 no_signal 这一档——它意味着"没信号"，不是缺字段）
+  const signalKeys = [
+    "trend_breakout", "pullback_rebound", "range_bound", "volume_surge",
+    "divergence_risk", "stop_loss_hit", "stop_profit_hit", "capital_inflow",
+    "capital_outflow", "event_driven", "sector_rotation", "no_signal",
+  ] as const;
+  const signalType: WzDecisionPayload["signalType"] =
+    typeof o.signalType === "string" && (signalKeys as readonly string[]).includes(o.signalType)
+      ? (o.signalType as WzDecisionPayload["signalType"])
+      : null;
+
+  // 三个 0-100 数值字段
+  const pct = (x: unknown): number | null => {
+    if (typeof x !== "number" || !isFinite(x)) return null;
+    return Math.max(0, Math.min(100, Math.round(x)));
+  };
+  const confidence = pct(o.confidence);
+  const sentimentTemp = pct(o.sentimentTemp);
+  const positionPct = pct(o.positionPct);
+
+  // keyLevels / stopPlan：只收合法数字数组，过滤掉非数字
+  const numArray = (x: unknown): number[] | undefined => {
+    if (!Array.isArray(x)) return undefined;
+    const out = x.filter((n): n is number => typeof n === "number" && isFinite(n));
+    return out.length ? out : undefined;
+  };
+  const klRaw = o.keyLevels as Record<string, unknown> | undefined;
+  const keyLevels: WzDecisionPayload["keyLevels"] = {
+    support: Array.isArray(klRaw?.support) ? numArray(klRaw.support) : undefined,
+    resistance: Array.isArray(klRaw?.resistance) ? numArray(klRaw.resistance) : undefined,
+  };
+  const spRaw = o.stopPlan as Record<string, unknown> | undefined;
+  const stopNum = (x: unknown): number | null | undefined => {
+    if (x == null) return null;
+    return typeof x === "number" && isFinite(x) ? x : null;
+  };
+  const stopPlan: WzDecisionPayload["stopPlan"] = {
+    stopLoss: stopNum(spRaw?.stopLoss),
+    takeProfit: stopNum(spRaw?.takeProfit),
+  };
+
+  // invalidation：字符串截断（防 LLM 回一大段把整卡撑爆）
+  const invalidation: string | null =
+    typeof o.invalidation === "string" && o.invalidation.trim()
+      ? o.invalidation.slice(0, 240)
+      : null;
+
+  // riskNotes / dataGaps：字符串数组，过滤空值
+  const stringList = (x: unknown, max = 8): string[] => {
+    if (!Array.isArray(x)) return [];
+    return x
+      .filter((s): s is string => typeof s === "string" && Boolean(s.trim()))
+      .slice(0, max)
+      .map((s) => s.slice(0, 160));
+  };
+
+  const riskNotes = stringList(o.riskNotes);
+  const dataGaps = stringList(o.dataGaps);
+
+  // 全空时返回 null：没有一个是非空的有意义值，画卡没意义
+  const hasAnything =
+    stance !== "neutral" || horizon !== null || signalType !== null ||
+    confidence !== null || sentimentTemp !== null || positionPct !== null ||
+    invalidation !== null || riskNotes.length > 0 || dataGaps.length > 0 ||
+    (keyLevels.support?.length ?? 0) > 0 || (keyLevels.resistance?.length ?? 0) > 0 ||
+    stopPlan.stopLoss != null || stopPlan.takeProfit != null;
+
+  if (!hasAnything) return null;
+
+  return { stance, horizon, signalType, confidence, sentimentTemp, keyLevels, stopPlan, positionPct, invalidation, riskNotes, dataGaps };
 }
 
 // ---------- 请求体契约（两个端点对「这一轮是不是对话」的说法必须一致） ----------

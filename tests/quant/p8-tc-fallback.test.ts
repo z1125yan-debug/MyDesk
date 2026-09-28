@@ -151,14 +151,14 @@ test("上层 source 文案跟着真实来源走：sentiment/limitup/全A/主线�
 
 test("页面不拿占位 0 装真数：资金列「—」、明细不落演示数据、流向图拒绝作画", () => {
   const sec = readSrc("src/components/desk/pages/SectorsPage.tsx");
-  // R7 同花顺兜底后口径：主力净额列只查 fundsMissing（腾讯占位 0 显「—」；同花顺该列是真数不能遮），
-  // 净占比/超大单/大单三列查 fundsMissing||breakdownMissing（两家兜底都没有拆分读数）。
-  // 四列的「—」分支一个不能少——只是遮的理由分了两类。
+  // P48：板块表精简到稳智 10 列（ID/名称/日期/涨跌幅/排名/排名变化/上涨家数/下跌家数/涨停家数/资金流向），
+  // 净占比/超大单/大单三列随之移除——它们没了，「显「—」」的责任也就不在这三列上（不是放宽纪律）。
+  // 剩下的资金流向列仍守纪律：腾讯占位 0 显「—」（同花顺该列是真数，不遮）。
   assert.equal((sec.match(/board\.fundsMissing \? <span className="text-muted-foreground">—<\/span>/g) ?? []).length, 1,
-    "主力净额列：腾讯占位 0 显「—」（同花顺是真数，不遮）");
-  assert.equal((sec.match(/board\.fundsMissing \|\| board\.breakdownMissing \? <span className="text-muted-foreground">—<\/span>/g) ?? []).length, 3,
-    "净占比/超大单/大单 三列：两家兜底都无拆分读数，全走「—」分支");
-  assert.match(sec, /腾讯板块兜底榜（东财板块榜断源：涨幅口径，无主力资金读数）/);
+    "资金流向列：腾讯占位 0 显「—」（同花顺是真数，不遮）");
+  assert.equal((sec.match(/board\.fundsMissing \|\| board\.breakdownMissing \? <span className="text-muted-foreground">—<\/span>/g) ?? []).length, 0,
+    "净占比/超大单/大单三列已随「精简到稳智10列」移除，不再渲染");
+  assert.match(sec, /腾讯板块榜（涨幅口径，不含主力资金读数）/);
   const board = readSrc("src/components/desk/pages/BoardPage.tsx");
   // P15-R16 再往宽处改一档：通达信自算行（mainSelfComputed）只有推不出东财 secid 时才禁用联动——
   // 实测东财「近 14 日历史」那条接口还活着，取到的真明细不能因为榜单换源被一并砍掉（砍的是演示数据，不是真数）。

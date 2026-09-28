@@ -292,7 +292,8 @@ test("scene-dispatch 接线：契约注入走闸、校验只出警告，两个�
   const chat = readSrc("src/app/api/ai/chat/route.ts");
   const proxy = readSrc("src/app/api/ai/proxy/route.ts");
   // chat：非流式 JSON 与流式 done 前各核一次（两条传输同口径）
-  assert.equal((chat.match(/contractWarningOf\(turn, r\.content\)/g) ?? []).length, 2, "chat 端点两条传输都要接契约校验");
+  // P52 起非流式那处核的是「输出边界护栏清洗后的正文」（局部量 content，= guard.text 的兜底版本），口径不变（仍两条传输各核一次）
+  assert.equal((chat.match(/contractWarningOf\(turn, (r\.content|guard\.text|content)\)/g) ?? []).length, 2, "chat 端点两条传输都要接契约校验");
   // proxy：流式 / 降级非流式 / 整体返回三处
   assert.equal((proxy.match(/contractWarningOf\(turn, (content|c2)\)/g) ?? []).length, 3, "proxy 端点三条路径都要接契约校验");
   // 风险点 4 的结构证据：校验点之后没有第二次模型调用（模型调用函数只在原有路径出现）

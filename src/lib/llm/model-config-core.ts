@@ -95,6 +95,24 @@ export function resolveServerLlm(env: LlmEnvLike): ServerLlmResult {
   return { available: true, channel: { mode: "official", baseUrl, apiKey: key, model } };
 }
 
+// ---------- 上游超时钳位 ----------
+//
+// 为什么要有这个纯函数：/api/ai/proxy 的流式与非流式两条路都要把「客户端想要的上游超时」钳到
+// [10s, 600s]。原来这段逻辑只写在流式一处（非流式 callOpenAI 写死 45s），事件理解这类结构化长
+// 生成（客户端传 120s）因此永远撞不到 120s、45s 一到就被判「连接上游超时」——这是「AI理解今日
+// 事件」点不动的根因之一。把钳位收成一处纯函数，两条路共用同一份口径，也能被 node --test 直跑钉死。
+//
+// 只认 >= 10s 的显式数字：低于 10s / 非数字 / 缺失一律回落各自默认（流式 120s、非流式 45s）——
+// 不替调用方猜一个「更短」的超时，那只会把慢上游误判成失败。
+export const MIN_UPSTREAM_TIMEOUT_MS = 10_000;
+export const MAX_UPSTREAM_TIMEOUT_MS = 600_000;
+
+export function clampUpstreamTimeoutMs(raw: unknown, fallback: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < MIN_UPSTREAM_TIMEOUT_MS) return fallback;
+  return Math.min(Math.trunc(n), MAX_UPSTREAM_TIMEOUT_MS);
+}
+
 // ---------- 历史折叠（只对网关模式做） ----------
 //
 // doubao2API README 6.5 实测口径：OpenAI 兼容请求里它**只取最后一条 user 消息**，多轮上下文由

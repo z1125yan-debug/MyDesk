@@ -29,6 +29,20 @@ export function shanghaiDate(now = new Date()): string {
   return beijingParts(now).date;
 }
 
+// 「最近交易日」的日历兜底（纯函数）：周末回退到最近的周五，工作日原样返回。
+// ⚠️ 只认周末，**不认法定节假日**（2026-09-25 中秋这种它不知道）——
+// 真值由行情源给（`trade-date.ts` 先问通达信上证指数日K），这里只在行情源拿不到时兜底。
+export function prevWeekday(dateStr: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!m) return dateStr; // 形状不对就原样透传，不猜
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  // 0=周日 6=周六：周日退 2 天、周六退 1 天，落回周五
+  const back = d.getUTCDay() === 0 ? 2 : d.getUTCDay() === 6 ? 1 : 0;
+  if (!back) return dateStr;
+  d.setUTCDate(d.getUTCDate() - back);
+  return d.toISOString().slice(0, 10);
+}
+
 export function shanghaiStamp(now = new Date()): string {
   const p = beijingParts(now);
   return `${p.date} ${p.time}`;

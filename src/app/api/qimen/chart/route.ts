@@ -41,6 +41,7 @@ export async function GET(request: Request) {
   const lon = optNum(sp.get("lon"));
   const lat = optNum(sp.get("lat"));
   const questionType = (sp.get("question_type") ?? sp.get("questionType") ?? "").trim();
+  const mode = (sp.get("mode") ?? "").trim();
 
   // 经纬度必须成对：只给一个的话，服务层会退化成「城市不在表里」，那句话指不到真正的问题（少给了一半）
   if ((lon === null) !== (lat === null)) {
@@ -51,15 +52,18 @@ export async function GET(request: Request) {
   }
   // 问题类型不合法不报 400：内核会退回「其他」，且返回值里带着实际用的 question_type，页面看得见用了哪一档。
   // 这里只在响应里留一句提示，免得用户以为自己的分类被采纳了。白名单本身由 normalizeQuestionType 兜底（自由文本不进 prompt）。
+  // 年家本命盘（mode=nianjia）不收问题类型——它以年命为用神看终身格局，问事分类是时家问事盘的语义。
+  const isNatal = mode === "nianjia";
   const qtKnown = !questionType || QUESTION_TYPES.some((q) => q.value === questionType || q.label === questionType);
 
   const input: CastInput = {
+    ...(mode ? { mode } : {}),
     ...(date ? { date } : {}),
     ...(time ? { time } : {}),
     ...(city ? { city } : {}),
     ...(lon !== null && lat !== null ? { lon, lat } : {}),
     useTrueSolarTime: trueSolarWanted(sp.get("tst") ?? sp.get("use_true_solar_time")),
-    ...(questionType ? { questionType } : {}),
+    ...(isNatal ? {} : (questionType ? { questionType } : {})),
   };
 
   try {

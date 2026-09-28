@@ -72,7 +72,9 @@ test("store 接线：动作只调纯核+收口 activeSessionId，没清掉时不
 
 test("AppShell 冷启动挂一次（每次加载清一回，开着页面不盯时钟）", () => {
   const shellSrc = readSrc("src/components/desk/AppShell.tsx");
-  assert.match(shellSrc, /useDesk\.getState\(\)\.pruneStaleChats\(\);\r?\n  \}, \[\]\);/);
+  // 2026-09-26 起改为「rehydrate 完成后跑一次」：prune 依赖会话列表，必须在 persist 恢复完再执行，
+  // 否则会拿空 sessions 判 TTL（既白跑一次，也可能在恢复瞬间误判）。语义仍是「每次冷启动清一回」。
+  assert.match(shellSrc, /if \(!hydrated\) return;[\s\S]{0,400}?useDesk\.getState\(\)\.pruneStaleChats\(\);\r?\n  \}, \[hydrated\]\);/);
 });
 
 // 纯核自己的既有语义不回归：emptySession 的兜底形状一字未动

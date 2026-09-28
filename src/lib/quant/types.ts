@@ -33,10 +33,20 @@ export interface AssetMeta {
   high?: number; // 当日最高（快照口径，P0补齐·炸板率）
   prevClose?: number; // 昨收（快照口径，P0补齐·炸板率）
   mainNet?: number; // 主力净额（元，东财 f62，快照口径）
+  sectorRps50?: number; // 行业整体 RPS_50（稳智种子快照，data/rps-seed-latest.json）
+  inSectorRps50?: number; // 个股在所属行业内部的 RPS_50（稳智种子快照）
+  sectorRps120?: number; // 行业整体 RPS_120（稳智种子快照）
+  inSectorRps120?: number; // 个股在所属行业内部的 RPS_120（稳智种子快照）
   volume?: number; // 成交量
   amount?: number; // 成交额
   st?: boolean; // 名称含 ST/*ST
   suspended?: boolean; // 数据源标记当日无成交/停牌（仅快照口径）
+  /**
+   * 这份快照实际属于哪个交易日（YYYY-MM-DD）。
+   * 来自行情源自带的行情时间戳（腾讯 f[30]）。休市日（周末/节假日）上游仍返回上一交易日的快照，
+   * 有了它上层才能如实标注「数据截至 X 日」，而不是把旧数据标成今天。
+   */
+  quoteDate?: string;
 }
 
 export type UniverseKind = "all" | "custom" | "industry" | "concept";

@@ -143,6 +143,41 @@ export interface DebugView {
   stepsSection: DebugStepRow[];
   conclusionSection: DebugConclusionSection;
   counts: DebugCounts;
+  /** P33 稳智对齐 P3 #16：3 个 perf-block */
+  perfBlocks: PerfBlocks;
+}
+
+// ─── P33 稳智对齐 P3 #16：3 个 perf-block ─────────────────────────────────
+
+export interface BackendTimingBlock {
+  /** request_ack → first_token → first_answer → stream_done（前端里程碑，从 steps 里算） */
+  requestAckMs: number | null;
+  firstTokenMs: number | null;
+  firstAnswerMs: number | null;
+  streamDoneMs: number | null;
+}
+
+export interface LlmDetailBlock {
+  mode: string | null;
+  variant: string | null;
+}
+
+export interface SseEventCountBlock {
+  step: number;
+  stage: number;
+  blockStarted: number;
+  blockFinished: number;
+  delta: number;
+  warning: number;
+  done: number;
+  error: number;
+  total: number;
+}
+
+export interface PerfBlocks {
+  backendTiming: BackendTimingBlock;
+  llmDetail: LlmDetailBlock;
+  sseEventCount: SseEventCountBlock;
 }
 
 // ---------- 小工具（发帧侧与服务侧共用，测试直钉） ----------
@@ -301,5 +336,55 @@ export function buildDebugView(input: {
     freshness,
   };
 
-  return { intentSection: intentSectionOf(input.intent), stepsSection: rows, conclusionSection, counts };
+  // P33 稳智对齐 P3 #16：3 个 perf-block
+  const perfBlocks = buildPerfBlocks(steps, d);
+
+  return { intentSection: intentSectionOf(input.intent), stepsSection: rows, conclusionSection, counts, perfBlocks };
+}
+
+/**
+ * P33 稳智对齐 P3 #16：3 个 perf-block 的数据计算。
+ *
+ * 数据全部来自已有的帧（steps + done），不产生新事实：
+ * - backendTiming：从 steps 里的 ms 算（第一个步骤的 ms = first_token，最后步骤的 ms = stream_done）
+ * - llmDetail：从 done.modelMs + done.transport 算（mode/variant 暂用 transport 兜底）
+ * - sseEventCount：从 steps 里的 status 算（ok/error/missing/stale/running 映射到事件类型）
+ */
+function buildPerfBlocks(
+  steps: DebugStepLike[],
+  d: DebugDoneLike | null,
+): PerfBlocks {
+  const validSteps = (steps ?? []).filter((s) => s && typeof s.step === "number");
+
+  // 后端耗时拆解：从 steps 里的 ms 算
+  const msValues = validSteps
+    .map((s) => (typeof s.ms === "number" && isFinite(s.ms) ? s.ms : null))
+    .filter((v): v is number => v !== null);
+  const backendTiming: BackendTimingBlock = {
+    requestAckMs: null, // 前端拿不到 request_ack（后端才能算）
+    firstTokenMs: msValues.length > 0 ? Math.min(...msValues) : null,
+    firstAnswerMs: null, // 前端拿不到 first_answer（后端才能算）
+    streamDoneMs: d && typeof d.modelMs === "number" && isFinite(d.modelMs) ? Math.max(0, Math.trunc(d.modelMs)) : null,
+  };
+
+  // LLM 详情：从 done 算
+  const llmDetail: LlmDetailBlock = {
+    mode: null, // 前端拿不到 mode（后端才能算）
+    variant: d && typeof d.transport === "string" && d.transport ? d.transport : null,
+  };
+
+  // SSE 事件统计：从 steps 的 status 算（近似映射）
+  const sseEventCount: SseEventCountBlock = {
+    step: validSteps.length,
+    stage: 0, // 前端拿不到 stage 事件计数（需要后端发）
+    blockStarted: 0,
+    blockFinished: 0,
+    delta: 0,
+    warning: 0,
+    done: d ? 1 : 0,
+    error: validSteps.filter((s) => s.status === "error").length,
+    total: validSteps.length + (d ? 1 : 0) + validSteps.filter((s) => s.status === "error").length,
+  };
+
+  return { backendTiming, llmDetail, sseEventCount };
 }

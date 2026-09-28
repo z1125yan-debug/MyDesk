@@ -14,7 +14,7 @@ export function SourceBadge({ status, source, time }: { status: string; source?:
         ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
         : "bg-sky-500/10 text-sky-400 border-sky-500/30";
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 text-[10px] font-medium ${color}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 text-[11px] font-medium ${color}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${degraded ? "bg-amber-400" : demo ? "bg-fuchsia-400" : live ? "animate-pulse bg-emerald-400" : "bg-sky-400"}`} />
       {statusZh(status)}
       {source && <span className="text-muted-foreground">· {source}</span>}

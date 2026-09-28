@@ -16,12 +16,15 @@ interface G {
 const g = globalThis as unknown as G;
 
 export function quantBootstrap(): void {
-  if (g.__quantBootstrapped) return;
-  registerProvider("em", () => emProvider);
-  registerProvider("mcp", () => {
-    if (!mcpConfigured()) configureMcpProvider(mcpUrl());
-    return mcpProvider;
-  });
-  bindJobPersistence(makeJobPersistHook());
-  g.__quantBootstrapped = true;
+  if (!g.__quantBootstrapped) {
+    registerProvider("em", () => emProvider);
+    registerProvider("mcp", () => {
+      if (!mcpConfigured()) configureMcpProvider(mcpUrl());
+      return mcpProvider;
+    });
+    bindJobPersistence(makeJobPersistHook());
+    g.__quantBootstrapped = true;
+  }
+  // 幂等：每次调都确保 MCP 客户端已构造（fundamental/signals 等直接调 fetchMcp* 不走 listUniverse 工厂）
+  if (!mcpConfigured()) configureMcpProvider(mcpUrl());
 }

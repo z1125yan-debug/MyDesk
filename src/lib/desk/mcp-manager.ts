@@ -8,6 +8,23 @@ import type { McpServerConfig, McpToolInfo } from "./types";
 const DATA_DIR = path.join(process.cwd(), "data");
 const CONFIG_FILE = path.join(DATA_DIR, "mcp-config.json");
 
+/**
+ * P35-A：MCP 握手（initialize）超时——按启动器类型区分，对齐「真实耗时」而不是一刀切。
+ *
+ * uvx / npx / pipx 这类**包启动器**首次运行要现装依赖到缓存：实测 tdx-mcp 走应用的
+ * UV_CACHE_DIR（D:\Zai\uv-cache）冷缓存要拉 44 个包、initialize 约 46s，写死 20s 必然超时
+ * （历史现象：每一轮都少一条「取通达信指数概况」，被记成 missing）。
+ * 本地脚本 / 已装好的二进制不受这个影响，保持原来的 20s，不无谓拉长失败发现时间。
+ */
+const INIT_TIMEOUT_DEFAULT_MS = 20_000;
+const INIT_TIMEOUT_LAUNCHER_MS = 60_000;
+/** 包启动器（首跑会现装依赖）的可执行名，比较时去掉 .exe/.cmd/.bat 后缀 */
+const PACKAGE_LAUNCHERS = ["uvx", "uv", "npx", "pnpx", "pnpm", "bunx", "pipx", "yarn", "deno"];
+function initTimeoutFor(command: string): number {
+  const base = path.basename(String(command || "")).toLowerCase().replace(/\.(exe|cmd|bat|ps1)$/i, "");
+  return PACKAGE_LAUNCHERS.includes(base) ? INIT_TIMEOUT_LAUNCHER_MS : INIT_TIMEOUT_DEFAULT_MS;
+}
+
 interface Runtime {
   child: ChildProcessWithoutNullStreams;
   status: "starting" | "ready" | "failed" | "exited";
@@ -117,11 +134,12 @@ export async function startServer(cfg: McpServerConfig): Promise<{ toolCount: nu
   });
 
   try {
+    // P35-A：包启动器（uvx 等）首跑现装依赖，握手超时放宽到 60s（见 initTimeoutFor 注释）
     await request(rt, "initialize", {
       protocolVersion: "2024-11-05",
       capabilities: {},
       clientInfo: { name: "mydesk-local", version: "1.0.0" },
-    }, 20000);
+    }, initTimeoutFor(cfg.command));
     rt.child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
 
     const res = (await request(rt, "tools/list", {}, 15000)) as {

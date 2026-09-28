@@ -26,7 +26,7 @@ interface AcceptedRow {
   metrics?: { rankIc: number; icIr: number; stability: number; longShortReturn: number; turnover: number };
 }
 
-const inputCls = "h-8 rounded-md border border-border bg-background px-2 text-[13px]";
+const inputCls = "h-8 rounded-md border border-border bg-background px-2 text-[14px]";
 
 export function MiningTab() {
   const { toast } = useToast();
@@ -91,14 +91,14 @@ export function MiningTab() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">挖掘配置（Candidate → 初筛 → 精筛 → 入库，逐级收敛）</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-2 md:grid-cols-4">
-          <label className="text-[11.5px] text-muted-foreground">数据源
+          <label className="text-[12.5px] text-muted-foreground">数据源
             <select className={inputCls + " mt-1 w-full"} value={source} onChange={(e) => setSource(e.target.value as "em" | "demo")}>
               <option value="em">em 真实行情</option>
               <option value="mcp">mcp (china-stock-mcp)</option>
               <option value="demo">demo 演示</option>
             </select>
           </label>
-          <label className="text-[11.5px] text-muted-foreground">股票池
+          <label className="text-[12.5px] text-muted-foreground">股票池
             <select className={inputCls + " mt-1 w-full"} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
               <option value="all">全A股</option>
               <option value="industry">行业</option>
@@ -107,26 +107,26 @@ export function MiningTab() {
             </select>
           </label>
           {kind === "industry" || kind === "concept" ? (
-            <label className="text-[11.5px] text-muted-foreground">板块代码（BKxxxx）
+            <label className="text-[12.5px] text-muted-foreground">板块代码（BKxxxx）
               <input className={inputCls + " mt-1 w-full"} value={boardCode} onChange={(e) => setBoardCode(e.target.value)} placeholder="如 BK0475" />
             </label>
           ) : null}
-          <label className="text-[11.5px] text-muted-foreground">K线根数 {lookback}
+          <label className="text-[12.5px] text-muted-foreground">K线根数 {lookback}
             <input type="range" min={80} max={400} step={20} value={lookback} onChange={(e) => setLookback(+e.target.value)} className="mt-2 w-full" />
           </label>
-          <label className="text-[11.5px] text-muted-foreground">样本股票数 {maxSymbols}
+          <label className="text-[12.5px] text-muted-foreground">样本股票数 {maxSymbols}
             <input type="range" min={20} max={200} step={10} value={maxSymbols} onChange={(e) => setMaxSymbols(+e.target.value)} className="mt-2 w-full" />
           </label>
-          <label className="text-[11.5px] text-muted-foreground">候选上限 {limit}
+          <label className="text-[12.5px] text-muted-foreground">候选上限 {limit}
             <input type="range" min={8} max={80} step={4} value={limit} onChange={(e) => setLimit(+e.target.value)} className="mt-2 w-full" />
           </label>
-          <label className="text-[11.5px] text-muted-foreground">初筛 |RankIC| ≥ {minAbsRankIc}
+          <label className="text-[12.5px] text-muted-foreground">初筛 |RankIC| ≥ {minAbsRankIc}
             <input type="range" min={0.01} max={0.06} step={0.005} value={minAbsRankIc} onChange={(e) => setMinAbsRankIc(+e.target.value)} className="mt-2 w-full" />
           </label>
-          <label className="text-[11.5px] text-muted-foreground">初筛 ICIR ≥ {minIcIr}
+          <label className="text-[12.5px] text-muted-foreground">初筛 ICIR ≥ {minIcIr}
             <input type="range" min={0.1} max={1.5} step={0.05} value={minIcIr} onChange={(e) => setMinIcIr(+e.target.value)} className="mt-2 w-full" />
           </label>
-          <label className="text-[11.5px] text-muted-foreground">精筛稳定性 ≥ {minStability}
+          <label className="text-[12.5px] text-muted-foreground">精筛稳定性 ≥ {minStability}
             <input type="range" min={0.2} max={1} step={0.05} value={minStability} onChange={(e) => setMinStability(+e.target.value)} className="mt-2 w-full" />
           </label>
           <div className="flex items-end">
@@ -141,16 +141,16 @@ export function MiningTab() {
         <Card>
           <CardHeader className="pb-1">
             <CardTitle className="flex items-center gap-2 text-sm">
-              任务 <span className="font-mono text-[11px] text-muted-foreground">{job.id}</span>
-              <Badge variant="outline" className="text-[11px]">{job.status}</Badge>
-              <span className="ml-auto text-[11.5px] text-muted-foreground">{job.stage || job.message}</span>
+              任务 <span className="font-mono text-[12px] text-muted-foreground">{job.id}</span>
+              <Badge variant="outline" className="text-[12px]">{job.status}</Badge>
+              <span className="ml-auto text-[12.5px] text-muted-foreground">{job.stage || job.message}</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <Progress value={job.progress} className="h-2" />
-            {job.error && <div className="text-[12px] text-red-300">失败原因：{job.error}</div>}
+            {job.error && <div className="text-[13px] text-red-300">失败原因：{job.error}</div>}
             {funnel && (
-              <div className="flex flex-wrap gap-2 text-[11.5px]">
+              <div className="flex flex-wrap gap-2 text-[12.5px]">
                 <Badge variant="outline">生成 {funnel.generated}</Badge>
                 <Badge variant="outline" className="text-red-300 border-red-500/30">审计未过 {funnel.auditFailed}</Badge>
                 <Badge variant="outline" className="text-amber-300 border-amber-500/30">初筛未过 {funnel.preliminaryFailed}</Badge>
@@ -162,7 +162,7 @@ export function MiningTab() {
             )}
             {accepted.length > 0 && (
               <div className="overflow-x-auto rounded-md border border-border">
-                <table className="w-full text-[12px]">
+                <table className="w-full text-[13px]">
                   <thead className="bg-card text-muted-foreground">
                     <tr>
                       <th className="px-2 py-1.5 text-left font-normal">通过因子</th>
@@ -191,15 +191,15 @@ export function MiningTab() {
             {rejected.length > 0 && (
               <DeskCollapse
                 title={`淘汰明细（${rejected.length}，含失败原因）`}
-                triggerClassName="text-[12px] text-muted-foreground hover:text-foreground"
-                contentClassName="text-[12px]"
+                triggerClassName="text-[13px] text-muted-foreground hover:text-foreground"
+                contentClassName="text-[13px]"
               >
                 <div className="max-h-44 space-y-1 overflow-y-auto">
                   {rejected.map((r) => (
                     <div key={r.factorKey} className="rounded border border-border/60 px-2 py-1">
-                      <span className="font-mono text-[11px]">{r.factorKey}</span>
-                      <Badge variant="outline" className="ml-1 text-[10px]">{r.status}</Badge>
-                      <div className="text-[11px] text-muted-foreground">{r.reason}</div>
+                      <span className="font-mono text-[12px]">{r.factorKey}</span>
+                      <Badge variant="outline" className="ml-1 text-[11px]">{r.status}</Badge>
+                      <div className="text-[12px] text-muted-foreground">{r.reason}</div>
                     </div>
                   ))}
                 </div>

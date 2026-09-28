@@ -220,6 +220,86 @@ test("buildFieldPanel：全部新实现因子出现在面板且值域合法", ()
   assert.ok(f2.get("market_cost_60")![0].every((v) => v === null));
 });
 
+test("超级共振：类型 = 高斯入场×主力触发 组合；信号 = 任一命中（稳智口径反推，本地为上界）", () => {
+  const bars = walk(320);
+  const f = panelOf(bars);
+  const K = ["super_resonance_signal", "super_resonance_trend", "super_resonance_main", "super_resonance_force"];
+  for (const k of K) {
+    const col = f.get(k);
+    assert.ok(col, `面板缺少字段 ${k}`);
+    assert.equal(col![0].length, bars.length);
+    for (const v of col![0]) assert.ok(v === null || v === 0 || v === 1, `${k} 出现非 0/1/null：${v}`);
+  }
+  const ge = f.get("gauss_entry")![0], zt = f.get("zsb_trigger")![0];
+  const sig = f.get("super_resonance_signal")![0], tr = f.get("super_resonance_trend")![0];
+  const mn = f.get("super_resonance_main")![0], fo = f.get("super_resonance_force")![0];
+  for (let t = 0; t < bars.length; t++) {
+    // 依赖任一为 null → 该日整组 null（宁缺勿假，不把缺当 0）
+    if (ge[t] === null || zt[t] === null) {
+      assert.equal(sig[t], null, `t=${t} 依赖缺失应整组 null`);
+      continue;
+    }
+    const isG = ge[t] === 1, isZ = zt[t] === 1;
+    assert.equal(sig[t], isG || isZ ? 1 : 0, `t=${t} signal`);
+    assert.equal(tr[t], isG && !isZ ? 1 : 0, `t=${t} trend(仅高斯)`);
+    assert.equal(mn[t], isZ && !isG ? 1 : 0, `t=${t} main(仅主力)`);
+    assert.equal(fo[t], isG && isZ ? 1 : 0, `t=${t} force(同时)`);
+    // 三种类型互斥：同一天至多一个为 1
+    assert.ok([tr[t], mn[t], fo[t]].filter((v) => v === 1).length <= 1, `t=${t} 类型必须互斥`);
+  }
+});
+
+test("行业RPS快照：sector_rps_50/120、in_sector_rps_50/120 由 meta 注入为常数列；缺值→null（不造数）", () => {
+  const bars = walk(60);
+  // 有种子：四列填充为常数列
+  const withSeed = buildFieldPanel(
+    ["600000.SH"], [bars],
+    [{ symbol: "600000.SH", sectorRps50: 81, sectorRps120: 64, inSectorRps50: 42, inSectorRps120: 33 }],
+  ).fields;
+  const sr = withSeed.get("sector_rps_50")![0];
+  const sr120 = withSeed.get("sector_rps_120")![0];
+  const ir = withSeed.get("in_sector_rps_50")![0];
+  const ir120 = withSeed.get("in_sector_rps_120")![0];
+  assert.equal(sr.length, bars.length);
+  assert.ok(sr.every((v) => v === 81), "sector_rps_50 应为常数 81");
+  assert.ok(sr120.every((v) => v === 64), "sector_rps_120 应为常数 64");
+  assert.ok(ir.every((v) => v === 42), "in_sector_rps_50 应为常数 42");
+  assert.ok(ir120.every((v) => v === 33), "in_sector_rps_120 应为常数 33");
+  // 无种子：整列 null（如实露缺，不补 0）
+  const noSeed = buildFieldPanel(["600000.SH"], [bars], [{ symbol: "600000.SH" }]).fields;
+  assert.ok(noSeed.get("sector_rps_50")![0].every((v) => v === null));
+  assert.ok(noSeed.get("sector_rps_120")![0].every((v) => v === null));
+  assert.ok(noSeed.get("in_sector_rps_50")![0].every((v) => v === null));
+  assert.ok(noSeed.get("in_sector_rps_120")![0].every((v) => v === null));
+  // 口径：稳智种子快照，非本地 K线重算 → source=snapshot
+  assert.equal(FACTOR_FIELD_MAP.get("sector_rps_50")!.source, "snapshot");
+  assert.equal(FACTOR_FIELD_MAP.get("sector_rps_120")!.source, "snapshot");
+  assert.equal(FACTOR_FIELD_MAP.get("in_sector_rps_50")!.source, "snapshot");
+  assert.equal(FACTOR_FIELD_MAP.get("in_sector_rps_120")!.source, "snapshot");
+});
+
+test("close / above_cost_60：收盘价=K线c；above_cost_60 = (C>=market_cost_60)", () => {
+  const bars = walk(90);
+  const f = panelOf(bars);
+  const c = bars.map((b) => b.c);
+  const close = f.get("close")![0];
+  const cost = f.get("market_cost_60")![0];
+  const above = f.get("above_cost_60")![0];
+  for (let t = 0; t < bars.length; t++) {
+    assert.equal(close[t], c[t], `t=${t} close 应等于K线收盘`);
+    if (cost[t] === null || c[t] === null) {
+      assert.equal(above[t], null, `t=${t} 成本线缺失应整组 null`);
+    } else {
+      assert.equal(above[t], c[t]! >= cost[t]! ? 1 : 0, `t=${t} above_cost_60`);
+    }
+  }
+  // 无量额 → market_cost_60 整段 null → above_cost_60 也整段 null（不补 0）
+  const noAmt: BarsLike[] = bars.map((b) => ({ ...b, amount: undefined }));
+  const f2 = panelOf(noAmt);
+  assert.ok(f2.get("market_cost_60")![0].every((v) => v === null));
+  assert.ok(f2.get("above_cost_60")![0].every((v) => v === null));
+});
+
 test("vol_spike_ratio/close_dev_ma120/amplitude_20d 数值与纯公式一致", () => {
   const bars = walk(200);
   const f = panelOf(bars);
@@ -241,20 +321,28 @@ const NEW_IMPLEMENTED = [
   "support_break_250", "resistance_breakout_250", "support_near_250", "resistance_near_250",
   "support_breakdown_250", "resistance_breakout_250_conf", "support_144_val", "resistance_144_val",
   "market_cost_60", "vol_spike_ratio", "close_dev_ma120", "amplitude_20d",
+  // 2026-09-25：对齐稳智 /screener 的「突破60日成本 / 看涨吞没 / 早晨之星」新增的三个可筛选字段
+  "break_cost_60", "candle_bullish_engulf", "candle_morning_star",
+  // 2026-09-26：反推稳智「超级共振」——类型 = 高斯入场×主力触发 组合，信号 = 任一命中（本地为上界）
+  "super_resonance_signal", "super_resonance_trend", "super_resonance_main", "super_resonance_force",
+  // 2026-09-26：稳智行业 RPS 种子（sector_rps_50/120、in_sector_rps_50/120）——快照口径，非本地 K线重算
+  "sector_rps_50", "sector_rps_120", "in_sector_rps_50", "in_sector_rps_120",
+  // 2026-09-26：为导入稳智 721 条策略补齐的两个 K线因子——close（供无字段 rolling_return）、above_cost_60
+  "close", "above_cost_60",
 ];
 const NEW_PENDING = [
   "candle_patterns_text", "pe_dynamic",
-  "sector_rps_50", "sector_rps_120", "in_sector_rps_50", "in_sector_rps_120",
   "concept_rps_50", "concept_rps_120", "concept_lead_strength",
   "bidding_reversal_signal", "bidding_reversal_score", "bidding_volume_ratio", "bidding_premium_score",
   "super_resonance_week", "zsb_super_buy",
 ];
 
-test("注册表：key 唯一；新因子全部注册；总数=92+45=137", () => {
+test("注册表：key 唯一；新因子全部注册；总数=92+45+3+4+2=146", () => {
   const keys = FACTOR_FIELD_DEFS.map((d) => d.key);
   assert.equal(new Set(keys).size, keys.length, "存在重复 key");
   for (const k of [...NEW_IMPLEMENTED, ...NEW_PENDING]) assert.ok(FACTOR_FIELD_MAP.has(k), `未注册 ${k}`);
-  assert.equal(keys.length, 137);
+  // 注：sector_rps_120/in_sector_rps_120 本次由 pending 转已实现，字段本就已注册 → 总数不变，仍 146
+  assert.equal(keys.length, 146);
 });
 
 test("注册表：pending 因子 implemented=false 且带原因/数据依赖", () => {
@@ -286,7 +374,15 @@ test("factorCatalog：pending 不进分类清单；新实现进对应分类；ve
     assert.equal(ledger[k], undefined, `pending 因子 ${k} 不得进入验证账本`);
   }
   assert.ok(Object.values(ledger).every((v) => v === true), "账本只记录已验证（true）条目");
-  assert.ok(cat.category["板块与概念"] === undefined || cat.category["板块与概念"].length === 0, "板块分类只有 pending");
+  // 板块与概念：原先整类都是 pending（分类清单为空）；2026-09-26 起
+  // sector_rps_50/120、in_sector_rps_50/120 已实现（稳智种子快照口径），
+  // 故分类清单应恰好含这四个 key，且不含仍 pending 的概念类字段。
+  const sectorCat = cat.category["板块与概念"] ?? [];
+  assert.deepEqual(
+    [...sectorCat].sort(),
+    ["in_sector_rps_120", "in_sector_rps_50", "sector_rps_120", "sector_rps_50"].sort(),
+    "板块分类应只含已实现的行业RPS四项",
+  );
 });
 
 test("因子元数据完整性：新实现因子均有 zh/category/formula 或 description", () => {

@@ -16,7 +16,7 @@
 //  - 计划来自 skills-core 注册表（intent-core.planDispatch 表驱动解释），不再在本层写场景 if/else；
 //  - 完整性校验与补充轮计划来自 agent-loop-core：首轮取完，若「必读项」有洞，就原参数补一轮，
 //    补完仍缺的如实留在未取到清单——这就是「不是单轮直调大模型」的那一环。
-import { backtestWhitelist, findTool, BACKTEST_READY, type ToolCtx } from "./chat-tools";
+import { backtestWhitelist, findTool, phaseOfTool, BACKTEST_READY, type ToolCtx } from "./chat-tools";
 import { whitelistPromptLine, type WhitelistRow } from "./backtest-core";
 import {
   asScene,
@@ -128,6 +128,8 @@ export async function prefetchForScene(opts: {
     onStep: (s) => opts.emit?.({ type: "step", data: s }),
     execute,
     labelFor: prefetchLabel,
+    // P35 稳智对齐：每一步带上它真实归属的阶段（chat-tools 里的工具归属，单一出处）
+    phaseFor: (call) => phaseOfTool(call.tool),
   });
 
   // ---------- P8-④：校验数据完整性 -> 不足则补一轮（判定全在 agent-loop-core，这里只接线） ----------
@@ -146,6 +148,8 @@ export async function prefetchForScene(opts: {
       label: "校验本轮取数完整性（必读读数逐项对账）",
       status: verdict.status,
       source: "prefetch",
+      // P35：这是「取数完整性」核对，归在获取行情与市场数据阶段，不硬塞进综合分析
+      phase_key: "local_data",
       reason: "P8-④：不足先补一轮再进综合分析，不拿缺口当齐备下结论",
       detail: verdict.detail,
     };
@@ -160,6 +164,8 @@ export async function prefetchForScene(opts: {
         onStep: (s) => opts.emit?.({ type: "step", data: s }),
         execute,
         labelFor: prefetchLabel,
+        // P35：补充轮同样按工具真实归属标阶段
+        phaseFor: (call) => phaseOfTool(call.tool),
       });
       stepNo += r2.steps.length;
       steps.push(...r2.steps);
@@ -388,6 +394,8 @@ export async function prepareSceneTurn(opts: {
       label: "比对真实交易日历（000001.SH）核对日K新鲜度",
       status: freshness.has_issues ? "stale" : "ok",
       source: "prefetch",
+      // P35：行情读数的新鲜度核对，归在获取行情与市场数据阶段
+      phase_key: "local_data",
       reason: "P8-①：取数后、回答前先核对新鲜度，不拿过期行情当今日结论",
       detail: freshness.has_issues
         ? freshness.lines.join(" ")
@@ -404,6 +412,8 @@ export async function prepareSceneTurn(opts: {
           label: `现场用 v3 引擎算结论卡（${view.subject}）`,
           status: "ok",
           source: "prefetch",
+          // P35：v3 引擎实算结论 = 本地多因子综合分析，归 research（它就是这一步真正的"分析"）
+          phase_key: "research",
           reason: "P8-②：个股研判要以本地引擎结论为准，模型引用的数字由契约锁死",
           detail: `综合得分 ${view.decision.final_score}（${view.decision.grade}），参考日 ${view.trade_date}`,
         }
@@ -412,6 +422,8 @@ export async function prepareSceneTurn(opts: {
           label: "现场用 v3 引擎算结论卡",
           status: "missing",
           source: "prefetch",
+          // 算不出也只是这一步 missing，阶段归属不变（它本来就属于 research）
+          phase_key: "research",
           reason: "P8-②：算不出就不注入，模型按已取到的数据回答，但没有本地结论可引用",
           detail: outcome?.error ?? "结论卡构建失败",
         });

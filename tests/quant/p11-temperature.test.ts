@@ -120,8 +120,9 @@ test("asRegime 兜底：认不出的（存档被改坏/外部乱传）一律震�
 /* ---------- 持仓周期（horizon）：一处定义、两路由消费、未选零注入 ---------- */
 
 test("HORIZON_NOTES：与 CHAT_HORIZONS 同键、逐句非空以句号收口", () => {
+  // P28 稳智对齐：从 3 档扩到 5 档（ultrashort/short/shortmid/mid/long）
   const keys = CHAT_HORIZONS.map((h) => h.key);
-  assert.deepEqual(keys, ["short", "mid", "long"]);
+  assert.deepEqual(keys, ["ultrashort", "short", "shortmid", "mid", "long"]);
   assert.deepEqual(Object.keys(HORIZON_NOTES), keys);
   for (const k of keys) {
     assert.ok(HORIZON_NOTES[k as ChatHorizon].trim(), `${k} 的周期句不能为空`);
@@ -139,7 +140,9 @@ const chatRoute = read("../../src/app/api/ai/chat/route.ts");
 const proxyRoute = read("../../src/app/api/ai/proxy/route.ts");
 
 test("工具环消费周期：systemPrompt 收 horizon 参数，null 时空串被 filter(Boolean) 吞掉", () => {
-  assert.match(chatRoute, /function systemPrompt\(mode: ChatMode, horizon: ChatHorizon \| null/, "签名收口在编译期");
+  // P15-R20：签名从 3 参扩成 4 参（多一个持仓上下文 hold）后换行排版了，
+  // 断言放宽成「同一行或多行都认」——要钉的是参数确实按这个顺序收，不是排版。
+  assert.match(chatRoute, /function systemPrompt\(\s*mode: ChatMode,\s*horizon: ChatHorizon \| null/, "签名收口在编译期");
   assert.match(chatRoute, /horizon \? HORIZON_NOTES\[horizon\] : ""/, "没选就一个字都不注入");
   assert.match(chatRoute, /const horizon = asHorizon\(body\?\.horizon\);/, "外部输入先过白名单");
   assert.match(chatRoute, /horizon\?: string/, "ChatBody 按 string 收（外部输入不直信类型）");
@@ -148,8 +151,16 @@ test("工具环消费周期：systemPrompt 收 horizon 参数，null 时空串�
 test("纯对话端点消费周期：与风格件同门（只认带 scene 的对话轮）、同表、同白名单", () => {
   assert.match(proxyRoute, /const horizon = body\?\.scene \? asHorizon\(body\.horizon\) : null;/,
     "无 scene 的一次一问调用不吃周期——与 P8 风格件同一道门");
-  assert.match(proxyRoute, /const styleNote = \[modeNote, horizon \? HORIZON_NOTES\[horizon\] : ""\]\.filter\(Boolean\)\.join\("\\n"\);/,
-    "风格句+周期句拼成一份 system 件；都没选就没有这个件");
+  // P59：这份 system 件多了一段跨模式的收尾纪律（追问推荐），闸口与 mode/horizon 完全同门——
+  // 没带 scene 的转发轮三件都不加。判据从「整行逐字」放宽成「三件按同门口径拼一处」。
+  // P15-R20：这一份现在还多了持仓句与「说人话/说两面」两件（都跟 mode/horizon 同一道 scene 门），
+  // 一行写不下改成多行数组了。判据同步放宽：钉的是**每件都挂在 body?.scene 闸门下**，
+  // 以及「都没选就没有这个件」仍然成立，而不是钉排版。
+  assert.match(proxyRoute, /const styleNote = \[\s*modeNote,\s*horizon \? HORIZON_NOTES\[horizon\] : "",\s*holdNote\?\.line \?\? "",\s*holdNote \? HOLD_USAGE_NOTE : "",\s*body\?\.scene \? PLAIN_AND_BALANCED_NOTE : "",\s*body\?\.scene \? FOLLOWUP_NOTE : "",\s*\]\.filter\(Boolean\)\.join\("\\n"\);/,
+    "风格句+周期句+持仓句+说人话说两面+收尾纪律拼成一份 system 件；都没选就没有这个件");
+  for (const one of ["PLAIN_AND_BALANCED_NOTE", "FOLLOWUP_NOTE"]) {
+    assert.match(proxyRoute, new RegExp(`body\\?\\.scene \\? ${one} : ""`), `${one} 必须受 scene 闸门约束`);
+  }
   assert.match(proxyRoute, /horizon\?: string/, "ProxyBody 声明 horizon");
 });
 
@@ -186,7 +197,9 @@ test("界面接线：两条对话入口都挂周期选择器、extra() 都带 ho
   const page = read("../../src/components/desk/pages/AssistantPage.tsx");
   const widget = read("../../src/components/desk/AssistantWidget.tsx");
   assert.equal(page.split("<HorizonPicker disabled={!configured} />").length - 1, 2, "Hello 宽输入与底部 composer 各一处");
-  assert.match(page, /extra: \(\) => \(\{ focusSymbol, mode: useDesk\.getState\(\)\.assistantMode, horizon: useDesk\.getState\(\)\.assistantHorizon \}\)/);
+  // P15-R20：AssistantPage 那份现在多带一个 hold（持仓上下文，Task #9 加的），换行排版了。
+  // 钉的是「mode/horizon 都从 store 现读」，不是钉它必须写在一行里。
+  assert.match(page, /extra: \(\) => \(\{\s*focusSymbol,\s*mode: useDesk\.getState\(\)\.assistantMode,\s*horizon: useDesk\.getState\(\)\.assistantHorizon,/);
   assert.match(widget, /extra: \(\) => \(\{ focusSymbol, mode: useDesk\.getState\(\)\.assistantMode, horizon: useDesk\.getState\(\)\.assistantHorizon \}\)/,
     "小窗与整页同口径，不各写一份");
   const picker = read("../../src/components/desk/ui/HorizonPicker.tsx");
@@ -203,7 +216,7 @@ test("MarketPage：温度吃纯核、切行情不重取数、无读数不画假�
   assert.ok(!/TEMPERATURE_WEIGHTS\s*=\s*\{/.test(mk), "页面不得本地抄权重表");
   assert.match(mk, /useState<MarketRegime>\("range"\)/, "行情类型是纯前端态：切换只换权重、零重取数");
   assert.match(mk, /main_net_known: sent\.main_net_known/, "资金流缺读判据要一路带到纯核");
-  assert.match(mk, /<TempGauge value=\{temp\.temperature\} label=\{temp\.label\} \/>/);
+  assert.match(mk, /<TempGauge value=\{temp\?\.temperature \?\? null\} label="" compact \/>/, "顶卡用 compact 迷你表盘（签名收 null：无读数画「—」不画表针）");
   // P15-R2a 口径迁移：顶部监控四卡要同款迷你表盘，TempGauge 加了带默认值的 compact 形参——
   // 钉的不变量不变（签名收 null：无读数画「—」不画表针），只是允许多一个可选参数。
   assert.match(mk, /function TempGauge\(\{ value, label, compact = false \}: \{ value: number \| null/, "gauge 签名收 null：无读数画「—」不画表针");
@@ -224,4 +237,24 @@ test("场景话术：允许引用温度开场但必须带分量口径，缩权/�
   assert.match(intent, /数据块里有「情绪温度」时可以引用它开场/, "说人话入口打开");
   assert.match(intent, /宽度\/动量\/投机\/资金流按当前行情类型的加权分/, "引用时必须交代它是什么");
   assert.match(intent, /不许把它当成精确事实/, "综合分不是测量值——诚实纪律");
+});
+
+test("官方工具环：轮次上限 10 + 最后一轮强制收口，超时与服务端 maxDuration 对齐", () => {
+  // 2026-09-26 用户实测：「用七维框架全面分析寒武纪」这类多源交叉验证问题，原来 5 轮全花在取数上，
+  // 还没写结论就被掐断，用户只看到「工具调用轮次已达上限，未能生成结论」。修法=多给取数轮 + 最后一轮收走工具。
+  assert.match(chatRoute, /const MAX_TOOL_ROUNDS = 10;/, "取数轮上限提到 10");
+  assert.match(chatRoute, /for \(let round = 0; round <= MAX_TOOL_ROUNDS; round\+\+\)/, "循环多跑一轮作为收口轮");
+  assert.match(chatRoute, /const lastChance = round === MAX_TOOL_ROUNDS;/, "最后一轮标记为收口轮");
+  assert.match(chatRoute, /\.\.\.\(lastChance \? \{\} : \{ tools, tool_choice: "auto" \}\)/, "收口轮不传 tools（模型没有可调的，只能作答）");
+  // P36：一轮上游调用抽成可重放的 attemptUpstreamRound（网关偶发失败要整轮重试），
+  // 形态从句内 assembler.result() 改成读这一轮的 outcome，但口径一字不动：收口轮不给工具。
+  // P54 放宽一档：除了收口轮，被「重复死循环」掐断的轮次也不执行 tool_calls（同一处合一判断，
+  // 语义是超集 —— 收口轮仍然不给工具，既有口径没变）。
+  assert.match(chatRoute, /const calls = \(lastChance \|\| attempt\.finishReason === "degenerate"\) \? \[\] : attempt\.calls;/, "收口轮/退化轮即使硬编 tool_calls 也不执行");
+  assert.match(chatRoute, /export const maxDuration = 300;/, "服务端超时与工具环预算同量级（否则收口轮跑不到）");
+  // 客户端不得比服务端更早放弃：三处 timeoutMs 都取同一个常量
+  const chatLib = read("../../src/lib/desk/use-chat.ts");
+  assert.match(chatLib, /const TURN_TIMEOUT_MS = 300_000;/, "客户端单轮超时提到 300s");
+  assert.match(chatLib, /timeoutMs: TURN_TIMEOUT_MS,/, "流式调用带同一超时");
+  assert.ok(!/timeoutMs: 120_000/.test(chatLib), "不许残留旧的 120s 口径");
 });

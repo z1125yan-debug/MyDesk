@@ -28,7 +28,7 @@ test("资金去向图里每行直接摆当日涨幅：不悬停也能看出是�
   assert.match(src, /row\.changePct\.toFixed\(2\)\}%`[\s\S]{0,30}: "—"/, "有读数才画百分号，没读数是一个「—」");
   assert.match(src, /row\.name\.length > 7 \? `\$\{row\.name\.slice\(0, 7\)\}…`/, "名称过长截断给涨幅让位，全名在悬停与上方榜单里");
   assert.match(src, /当日涨幅 <span/, "悬停明细里也写「当日涨幅」，不留在无上下文的「涨跌」");
-  assert.match(src, /tip\.mainSelfComputed && <span className="ml-2 text-\[10px\] text-amber-300">自算<\/span>/, "自算行悬停也带自算标记，出身不只在表头");
+  assert.match(src, /tip\.mainSelfComputed && <span className="ml-2 text-\[11px\] text-amber-300">自算<\/span>/, "自算行悬停也带自算标记，出身不只在表头");
 });
 
 test("空态说人话：没读数就讲清楚不画流向，不拿占位 0 编线宽", () => {
@@ -43,8 +43,8 @@ test("看板把单位、同步口径与双时刻一起交给资金去向卡", ()
   assert.match(page, /unitLabel=\{unit\}/, "单位真的传进图里，不是只在父组件自己用");
   assert.match(page, /与上方榜单同步：每 \$\{poll\.interval\}s 换一批（第 \$\{poll\.tick\} 轮）/, "开盘：写明跟榜单同拍、周期几秒、第几轮");
   assert.match(page, /A股\$\{poll\.sessionLabel\}，自动刷新已暂停——画面停在最后一次取到的时刻/, "休市：明说暂停并停在最后一次取到的时刻");
-  assert.match(page, /· 数据截至 \{asOfStamp\}[\s\S]*· 行情时刻 \{quoteTime\}/, "卡上自带本机取数时刻与行情侧时刻两个戳，各答各的事");
-  assert.match(page, /涨幅为当日（\{asOfStamp\.slice\(0, 5\)\}）盘中读数/, "页头直接回答「这是哪天的涨幅」");
+  assert.match(page, /· 数据截至 \{asOfStamp\}[\s\S]*· 行情时刻 \{quoteStamp\}/, "卡上自带本机取数时刻与行情侧时刻两个戳，各答各的事");
+  assert.match(page, /涨幅为 \{tradeDate\}（最近交易日）读数/, "页头直接回答「这是哪天的涨幅」——用行情源给的交易日，不用本机今天");
   assert.match(page, /<th className="px-2 py-2\.5 text-right font-normal">当日涨幅%<\/th>/, "列头从「涨跌%」改口为「当日涨幅%」");
   assert.match(page, /资金去向 · 主力净额前 8 名\{unit\}/, "卡片标题用用户口中的「资金去向」");
   assert.equal(/红 = 主力净流入个股/.test(page), false, "父组件里那份写死「个股」的说明同步改口");

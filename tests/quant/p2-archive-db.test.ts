@@ -52,7 +52,9 @@ test("radar_finding：同一交易日无重复 (asOf,kind,title) 行 —— 同�
     "SELECT asOf AS d, kind AS k, title AS t, COUNT(*) AS n FROM radar_finding " +
     "GROUP BY asOf, kind, title HAVING COUNT(*) > 1",
   );
-  assert.deepEqual(dups, [], `同日重复行：${JSON.stringify(dups)}`);
+  // COUNT(*) 经 Prisma 回来是 BigInt，JSON.stringify 不认 → 只有「真有重复」时才会炸在错误消息上，
+  // 把真正的问题（哪几条重复）盖掉。这里按 BigInt→Number 兜一下，报错信息才可用。
+  assert.deepEqual(dups, [], `同日重复行：${JSON.stringify(dups, (_k, v) => (typeof v === "bigint" ? Number(v) : v))}`);
 });
 
 test("global_event：asOf/level 受控，三个 JSON 列可解析", { skip: skipNoDb || (!HAS_EVENTS && "global_event 表未创建") }, async () => {
@@ -68,12 +70,18 @@ test("global_event：asOf/level 受控，三个 JSON 列可解析", { skip: skip
   }
 });
 
-test("global_event：同一交易日无重复 (asOf,title) 行 —— 同日重扫幂等", { skip: skipNoDb || (!HAS_EVENTS && "global_event 表未创建") }, async () => {
+test("global_event：同一交易日无重复 (asOf,dedupeKey) 行 —— 同日重扫幂等", { skip: skipNoDb || (!HAS_EVENTS && "global_event 表未创建") }, async () => {
+  // 去重口径是 dedupeKey（= ev|time|title），**不是 title**：
+  // 上游会把同一标题在不同时间点重复推送 —— 实测 2026-09-26 06:15 与 05:31 各有一条
+  // 「美官员称美伊正就重新开放霍尔木兹海峡进行讨论」，dedupeKey 不同 ⇒ 按设计保留两条，不是幂等失效。
+  // 实测全表 188 行 dedupeKey 全唯一、按 (asOf,dedupeKey) 分组零重复 ⇒ 这里钉真正的幂等口径。
   const dups = await query(
-    "SELECT asOf AS d, title AS t, COUNT(*) AS n FROM global_event " +
-    "GROUP BY asOf, title HAVING COUNT(*) > 1",
+    "SELECT asOf AS d, dedupeKey AS k, COUNT(*) AS n FROM global_event " +
+    "GROUP BY asOf, dedupeKey HAVING COUNT(*) > 1",
   );
-  assert.deepEqual(dups, [], `同日重复行：${JSON.stringify(dups)}`);
+  // COUNT(*) 经 Prisma 回来是 BigInt，JSON.stringify 不认 → 只有「真有重复」时才会炸在错误消息上，
+  // 把真正的问题（哪几条重复）盖掉。这里按 BigInt→Number 兜一下，报错信息才可用。
+  assert.deepEqual(dups, [], `同日重复键：${JSON.stringify(dups, (_k, v) => (typeof v === "bigint" ? Number(v) : v))}`);
 });
 
 test("跨交易日历史不被当日扫描破坏：每个 asOf 的行数等于其去重后行数", { skip: skipNoDb || (!HAS_RADAR && "radar_finding 表未创建") }, async () => {

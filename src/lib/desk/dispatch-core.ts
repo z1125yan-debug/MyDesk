@@ -11,6 +11,7 @@
 //  - 断开后没执行的调用记在 notRun 里，不谎称取过，也不谎称失败。
 import type { DispatchCall } from "./intent-core.ts";
 import type { StepInfo } from "./chat-core.ts";
+import type { PhaseKey } from "./agent-phases-core.ts";
 import { stepDetailOf, stepLabelFor } from "./chat-stream-core.ts";
 
 /** 注入给模型的一段取数结果（ok=false 的不进正文，只进「未取到」清单） */
@@ -53,6 +54,12 @@ export interface RunPlanOpts {
    * 旧工具一字不变。
    */
   labelFor?: (call: DispatchCall) => string | null;
+  /**
+   * P35 稳智对齐：步骤的真实 Agent Loop 阶段（服务层给的 chat-tools.phaseOfTool）。
+   * 返回 null/不传 → 不带 phase_key，前端回落语义映射。纯核不 import 工具注册表，
+   * 映射由调用方注入（与 labelFor 同一手法）。
+   */
+  phaseFor?: (call: DispatchCall) => PhaseKey | null;
   /** 逐步吐给前端的步骤事件（SSE 下接 emit，非流式下传同一个函数收集，两边判定一致） */
   onStep?: (step: StepInfo) => void;
   /** 步骤起始序号：预取占了前几号，模型自己的工具调用要接着编号，不能两边都从 1 开始 */
@@ -82,7 +89,9 @@ export async function runDispatchPlan(opts: RunPlanOpts): Promise<RunPlanResult>
   const todo: { call: DispatchCall; step: StepInfo }[] = [];
   (calls ?? []).forEach((call, i) => {
     const label = opts.labelFor?.(call) ?? stepLabelFor(call.tool, call.args);
-    const step: StepInfo = { step: start + i + 1, label, status: "running", tool: call.tool, source: "prefetch", reason: call.reason };
+    // P35：这一步真实归属的阶段（服务层注入）——没标就不带，前端回落语义映射，不臆造阶段
+    const phaseKey = opts.phaseFor?.(call) ?? null;
+    const step: StepInfo = { step: start + i + 1, label, status: "running", tool: call.tool, source: "prefetch", reason: call.reason, ...(phaseKey ? { phase_key: phaseKey } : {}) };
     todo.push({ call, step });
   });
   // 已经取消就别再取数：留痕是「没执行」，不是「失败」，更不是「取到了」

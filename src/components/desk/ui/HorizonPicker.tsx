@@ -12,8 +12,8 @@ export default function HorizonPicker({ disabled = false }: { disabled?: boolean
   const horizon = useDesk((s) => s.assistantHorizon);
   const setHorizon = useDesk((s) => s.setAssistantHorizon);
   return (
-    <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-white/[0.04] px-1.5 py-1">
-      <span className="px-1.5 text-[11px] text-muted-foreground">周期</span>
+    <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-overlay px-1.5 py-1">
+      <span className="px-1.5 text-[12px] text-muted-foreground">周期</span>
       {CHAT_HORIZONS.map((h) => {
         const active = horizon === h.key;
         return (
@@ -24,7 +24,7 @@ export default function HorizonPicker({ disabled = false }: { disabled?: boolean
             title={h.desc + "（再点一次清回未选）"}
             onClick={() => setHorizon(active ? null : h.key)}
             className={
-              "rounded-full px-2.5 py-1 text-[12px] transition-colors disabled:opacity-50 " +
+              "rounded-full px-2.5 py-1 text-[13px] transition-colors disabled:opacity-50 " +
               (active ? "bg-sky-400/15 font-medium text-sky-200" : "text-muted-foreground hover:text-foreground")
             }
           >

@@ -12,6 +12,7 @@ import { getProvider } from "@/lib/quant/data/index";
 import { universeSource } from "@/lib/quant/data/tc-universe";
 import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
+import { latestTradeDate } from "@/lib/desk/trade-date";
 import type { AssetMeta } from "../types.ts";
 import { evalLimitSnapshot, limitRatio } from "./sentiment.ts";
 
@@ -62,8 +63,10 @@ function countBoards(symbol: string, name: string, bars: { date: string; c: numb
 
 export async function computeLimitUp(): Promise<LimitUpResult> {
   const provider = await getProvider("em");
-  const now = new Date();
-  const tradeDate = shanghaiDate(now);
+  // 数据日 = 行情源认的最近交易日，不是系统当天：
+  // 休市日（周末/节假日）拿今天当 trade_date，会把上一交易日的涨停名单说成「今天的涨停」，
+  // 页面上「涨停 55 家」就会挂在一个从没开过盘的日期底下。
+  const tradeDate = await latestTradeDate().catch(() => shanghaiDate(new Date()));
   const metas: AssetMeta[] = await provider.listUniverse({ kind: "all" }, tradeDate);
   if (!metas.length) throw new Error("全A快照为空（数据源无返回）");
 
@@ -115,7 +118,7 @@ export async function computeLimitUp(): Promise<LimitUpResult> {
   ];
 
   return {
-    as_of: shanghaiStamp(now),
+    as_of: shanghaiStamp(),
     trade_date: tradeDate,
     limit_up_count: sealed.length,
     touched_count: touched,

@@ -1,6 +1,7 @@
 // GET 最新发现 / POST 立即扫描并落库（P2-4）
 // 手动点击扫描与后台调度共用 scheduler.runTaskTracked（内部落库实现见 screener/persist.ts），保证幂等口径与任务记录只有一份实现
 import { NextResponse } from "next/server";
+import { ttlCache, invalidateServerCache, DEFAULT_TTL_MS } from "@/lib/quant/server-cache";
 import { db } from "@/lib/db";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { runTaskTracked, scanFailMessage } from "@/lib/quant/scheduler/index";
@@ -10,6 +11,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 180;
 
 export async function GET() {
+  return ttlCache("radar", DEFAULT_TTL_MS, () => getHandler());
+}
+async function getHandler() {
   // 失败也必须返回可读 JSON（空 body 会让前端抛 "Unexpected end of JSON input"，掩盖真实原因）
   try {
     const asOf = shanghaiDate();
@@ -45,6 +49,7 @@ export async function POST() {
     if (!result) {
       return NextResponse.json({ ok: false, error: scanFailMessage(outcome), task: outcome }, { status: 502 });
     }
+    invalidateServerCache("radar"); // 扫描写库成功 → 让 GET 的 30s 短缓存失效
     return NextResponse.json({
       ok: true,
       as_of: result.as_of,

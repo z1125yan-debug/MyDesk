@@ -23,7 +23,7 @@ function OneJobCard({ jobId }: { jobId: string }) {
   // 本轮的真实数字仍在上面那行步骤 detail 里，这里只说明「这张卡为什么画不出来」。
   if (missing) {
     return (
-      <div className="rounded-md border border-border px-2 py-1.5 text-[11.5px] text-muted-foreground">
+      <div className="rounded-md border border-border px-2 py-1.5 text-[12.5px] text-muted-foreground">
         {TEXT_JOB_GONE}：{missing}。本轮步骤里已列出的读数不受影响；要回看完整结果，请到量化研究页按实验台账查该任务号。
       </div>
     );
@@ -42,7 +42,7 @@ export default function ChatBacktestCards({ steps }: { steps?: StepInfo[] }) {
     <div className="mt-1.5 space-y-2">
       {jobs.map((s) => (
         <div key={`${s.step}-${s.jobId}`}>
-          <div className="mb-1 text-[10.5px] text-muted-foreground">
+          <div className="mb-1 text-[11.5px] text-muted-foreground">
             回测任务 {s.jobId} · 由本轮 run_backtest 启动 · 下方按这个任务号现查量化研究页的同一组件（数据源 em 真实行情；历史回测不代表未来收益）
           </div>
           <OneJobCard jobId={s.jobId as string} />

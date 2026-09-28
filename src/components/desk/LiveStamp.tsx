@@ -10,18 +10,16 @@ import type { LivePoll } from "@/hooks/use-live-poll";
 
 export default function LiveStamp({ poll, iso, prefix }: { poll: LivePoll; iso: string; prefix?: ReactNode }) {
   const stamp = clockZh(iso);
+  const paused = !poll.open;
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       {prefix}
-      {!poll.open && (
-        <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[12px] text-amber-300">
-          A股{poll.sessionLabel} · 自动刷新已暂停
+      {paused && (
+        <span className="rounded-md border border-border px-2.5 py-1 font-mono text-[13px] text-amber-400/80">
+          自动刷新已暂停
         </span>
       )}
-      <span className="rounded-md border border-border px-2.5 py-1 font-mono text-[12px] text-muted-foreground">
-        刷新 #{poll.tick} · 剩余 {poll.left}s
-      </span>
-      <span className="rounded-md border border-border px-2.5 py-1 font-mono text-[12px] text-muted-foreground">
+      <span className="rounded-md border border-border px-2.5 py-1 font-mono text-[13px] text-muted-foreground">
         {stamp ? `数据截至 ${stamp}` : "本次未取到数据"}
       </span>
     </div>

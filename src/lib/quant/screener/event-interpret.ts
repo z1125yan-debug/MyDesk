@@ -10,6 +10,7 @@
 // 口径：这张表里的东西永远是 AI_INTERPRETATION。事件事实只有 global_event 一份，这里不复制、不改写。
 import { db } from "@/lib/db";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
+import { recentEventWindow } from "./event-window.ts";
 import {
   INTERPRET_PROMPT_VERSION, INTERPRET_SYSTEM_PROMPT, buildEventInterpretPrompt, fieldCompleteness,
   parseEventInterpretations, summarizeInterpretations, type EventFact, type EventInterpretation,
@@ -87,8 +88,19 @@ export interface FactBundle {
  * 不参与构造事实：事实字段一律从库里现取的值来。
  */
 export async function loadEventFacts(opts: { date?: string; ids?: string[]; limit?: number } = {}): Promise<FactBundle> {
-  const date = (opts.date ?? "").trim() || shanghaiDate();
-  const all = await db.globalEvent.findMany({ where: { asOf: date }, orderBy: { time: "desc" } });
+  const explicit = (opts.date ?? "").trim();
+  let date: string;
+  let all: Awaited<ReturnType<typeof db.globalEvent.findMany>>;
+  if (explicit) {
+    date = explicit;
+    all = await db.globalEvent.findMany({ where: { asOf: date }, orderBy: { time: "desc" } });
+  } else {
+    // 未指定日期 → 「最近事件窗口」：最近那天不足 20 条时按新→旧自动补更早的日子（见 event-window.ts）。
+    // 列表（/api/events）与这里共用同一份窗口，保证「看到什么就理解什么」。
+    const win = await recentEventWindow();
+    date = win.dates[0] ?? shanghaiDate();
+    all = win.rows;
+  }
   const mapped = all.map(factOfRow);
   const want = opts.ids?.map((x) => String(x).trim()).filter(Boolean) ?? [];
   let picked = mapped;
@@ -248,12 +260,16 @@ export interface LoadResult {
 /** 只读回看：按 asOf 取已落库的解释，并与当天事件行对一遍（不改写任何数据） */
 export async function loadInterpretations(opts: { date?: string } = {}): Promise<LoadResult> {
   const today = shanghaiDate();
-  const date = (opts.date ?? "").trim() || today;
+  const explicit = (opts.date ?? "").trim();
+  // 未指定日期 → 与列表同一份「最近事件窗口」：过午夜后也能把昨天那批解释读回来，并按自然键逐条对照
+  const dates = explicit ? [explicit] : (await recentEventWindow()).dates;
+  const scope = dates.length ? dates : [today];
+  const date = scope[0];
   const [rows, buckets] = await Promise.all([
-    db.eventInterpretation.findMany({ where: { asOf: date }, orderBy: { updatedAt: "desc" } }),
+    db.eventInterpretation.findMany({ where: { asOf: { in: scope } }, orderBy: { updatedAt: "desc" } }),
     db.eventInterpretation.groupBy({ by: ["asOf"], _count: { _all: true } }),
   ]);
-  const events = rows.length ? await db.globalEvent.findMany({ where: { asOf: date } }) : [];
+  const events = rows.length ? await db.globalEvent.findMany({ where: { asOf: { in: scope } } }) : [];
   const cur = new Map<string, { id: string; contentHash: string; title: string }>();
   for (const e of events) cur.set(e.dedupeKey || e.id, { id: e.id, contentHash: e.contentHash, title: e.title });
 

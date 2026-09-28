@@ -17,23 +17,35 @@ export interface IndexDayBar {
   amountYi: number;
 }
 
-/** 两市按日配对的成交额（稳智「大盘成交额趋势」同源口径：沪+深合计） */
+/** 按日配对的成交额（大盘成交额趋势口径：沪深北（沪+深+北证50），缺北证时退化为沪深两市） */
 export interface TurnoverPoint {
   date: string;
   shYi: number | null;
   szYi: number | null;
-  /** 两边都有才有的合计；缺一边为 null（不拿单边冒充两市） */
+  /** 北证50 成交额（亿）；未启用沪深北口径时为 null */
+  bjYi?: number | null;
+  /**
+   * 合计。缺任一边为 null（不拿单边冒充合计）。
+   * 沪深北口径下要求沪、深、北三者齐全才出数——北交所体量虽小，但缺一天就不该假装那天有北证数据。
+   */
   totalYi: number | null;
 }
 
-export function mergeTurnover(sh: IndexDayBar[], sz: IndexDayBar[]): TurnoverPoint[] {
+export function mergeTurnover(sh: IndexDayBar[], sz: IndexDayBar[], bj?: IndexDayBar[]): TurnoverPoint[] {
   const szMap = new Map(sz.map((b) => [b.date, b]));
   const shMap = new Map(sh.map((b) => [b.date, b]));
-  const dates = [...new Set([...shMap.keys(), ...szMap.keys()])].sort();
+  const bjMap = new Map((bj ?? []).map((b) => [b.date, b]));
+  const useBj = Array.isArray(bj) && bj.length > 0;
+  const dates = [...new Set([...shMap.keys(), ...szMap.keys(), ...(useBj ? bjMap.keys() : [])])].sort();
   return dates.map((d) => {
     const a = shMap.get(d)?.amountYi ?? null;
     const b = szMap.get(d)?.amountYi ?? null;
-    return { date: d, shYi: a ?? null, szYi: b ?? null, totalYi: a !== null && b !== null ? a + b : null };
+    const c = useBj ? (bjMap.get(d)?.amountYi ?? null) : null;
+    // 沪深北：三者齐全才合计；两市：沪深齐全才合计
+    const total = a !== null && b !== null && (!useBj || c !== null)
+      ? a + b + (useBj ? (c as number) : 0)
+      : null;
+    return { date: d, shYi: a ?? null, szYi: b ?? null, bjYi: useBj ? c : null, totalYi: total };
   });
 }
 

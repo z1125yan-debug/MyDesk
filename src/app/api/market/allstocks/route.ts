@@ -4,6 +4,7 @@ import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { getProvider } from "@/lib/quant/data/index";
 import { universeSource } from "@/lib/quant/data/tc-universe";
 import { shanghaiDate } from "@/lib/desk/session";
+import { latestTradeDate } from "@/lib/desk/trade-date";
 import type { AssetMeta } from "@/lib/quant/types";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,9 @@ export async function GET(request: Request) {
 
   try {
     const provider = await getProvider("em");
-    const tradeDate = shanghaiDate();
+    // 数据日走行情源真值：休市日回最近交易日（节假日自动识别），不拿服务器时钟当数据日；
+    // 行情源全挂才退回服务器当天（此时本来也取不到多少数，标日期没有更真）
+    const tradeDate = await latestTradeDate().catch(() => shanghaiDate());
     let metas = await provider.listUniverse({ kind: "all" }, tradeDate);
     if (q) metas = metas.filter((m) => m.symbol.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
     if (industry) metas = metas.filter((m) => m.industry === industry);
@@ -70,7 +73,7 @@ export async function GET(request: Request) {
       source: {
         provider:
           universeSource() === "tc"
-            ? "腾讯批量快照兜底（东财榜单接口断源；行业/上市日/主力净额列暂空）"
+            ? "腾讯批量快照（本快照不含行业/上市日/主力净额列，这几列显「—」）"
             : "东财榜单接口（全A快照）",
       },
     });

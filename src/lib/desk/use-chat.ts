@@ -16,6 +16,7 @@ import {
 import { stepsFromTrace, type StreamEvent } from "./chat-stream-core";
 import type { AiSettings } from "./types";
 import type { ChatHorizon, ChatMode } from "./modes";
+import type { HoldCtx } from "./hold-core";
 
 export interface SnapshotResult {
   /** 注入模型的行情上下文（含来源分层），没有数据就返回空串 */
@@ -47,8 +48,9 @@ export interface ChatEndpointCfg {
    * 端点落到 tools 时这份同样不会发出去（理由同上）。
    */
   systemPrompt?: (context: string) => string;
-  /** 端点专属参数（mode / focusSymbol；追问沿用的 sessionSymbol / prevScene 由本 hook 补，页面不用各写一份） */
-  extra?: () => { mode?: ChatMode; focusSymbol?: string; horizon?: ChatHorizon | null };
+  /** 端点专属参数（mode / focusSymbol；追问沿用的 sessionSymbol / prevScene 由本 hook 补，页面不用各写一份）
+   *  hold：composer 上填的持仓条件（标的/成本/仓位/建仓日期），与 mode/horizon 同批随请求带出 */
+  extra?: () => { mode?: ChatMode; focusSymbol?: string; horizon?: ChatHorizon | null; hold?: HoldCtx | null };
   /** 每轮提问前取实时快照；不取则不注入 */
   snapshot?: (session: ChatSession, question: string) => Promise<SnapshotResult | null>;
   /**
@@ -62,12 +64,17 @@ export interface ChatEndpointCfg {
     ai: AiSettings,
     messages: ChatRequestMessage[],
     extras: RequestExtras,
-  ) => Promise<{ text: string; steps?: ChatMessage["steps"]; intent?: ChatMessage["intent"]; warning?: string }>;
+  ) => Promise<{ text: string; steps?: ChatMessage["steps"]; intent?: ChatMessage["intent"]; wzDecision?: ChatMessage["wzDecision"]; warning?: string }>;
   /** AI 未配置时怎么办（页面通常跳设置页） */
   onNotConfigured?: () => void;
 }
 
 const FLUSH_MS = 70;
+
+// P31：TTL 判定搬进纯核 task-ttl-core（单测不拉 use-chat 这条带 `@/lib` 别名的重依赖链），
+// 这里原样转出，本文件内部调用与既有 import 都不用改。
+import { TASK_TTL_MS, isRunRefExpired } from "./task-ttl-core";
+export { TASK_TTL_MS, isRunRefExpired };
 
 /**
  * 每轮请求统一带的参数。
@@ -80,7 +87,7 @@ const FLUSH_MS = 70;
  * P8-⑥ run：本轮流式的留底 id（浏览器生成；服务端拒挂底就按无 run 正常跑，逐字等同 A/B 轮）。
  * P8-⑤ debug：只有调试面板打开才带 true —— 面板关着时请求体与线上字节一致。
  */
-function requestExtras(cfgExtra?: { mode?: ChatMode; horizon?: ChatHorizon | null; focusSymbol?: string; sessionSymbol?: string | null; prevScene?: string | null; run?: string; debug?: boolean }) {
+function requestExtras(cfgExtra?: { mode?: ChatMode; horizon?: ChatHorizon | null; focusSymbol?: string; sessionSymbol?: string | null; prevScene?: string | null; run?: string; debug?: boolean; images?: string[]; hold?: HoldCtx | null }) {
   return {
     contextWindow: DEFAULT_MAX_TURNS,
     watchlist: watchlistPayload(),
@@ -97,23 +104,32 @@ export type RequestExtras = ReturnType<typeof requestExtras>;
  * 降级后的回答就会悄悄不做场景自动取数，而这种差别只有把两条传输摆在一起比才看得出来。
  * 现在页面不再需要提供兜底：带什么参数由这一处定，和流式那份用的是同一个 extras。
  */
+/**
+ * 单轮对话的超时上限。
+ * 2026-09-26 用户实测：七维框架这类「多源交叉验证」问题要跑十几步工具，原来 120s 会在服务端
+ * 跑完「取数轮 + 收口轮」之前就先掐断，用户只看到「未能生成结论」/超时。
+ * 与服务端 /api/ai/chat 的 maxDuration（300s）对齐，客户端不再比服务端更早放弃。
+ */
+const TURN_TIMEOUT_MS = 300_000;
+
 async function defaultFallback(
   endpoint: "plain" | "tools",
   ai: AiSettings,
   messages: ChatRequestMessage[],
   extras: RequestExtras,
-): Promise<{ text: string; steps?: ChatMessage["steps"]; intent?: ChatMessage["intent"]; warning?: string }> {
+): Promise<{ text: string; steps?: ChatMessage["steps"]; intent?: ChatMessage["intent"]; wzDecision?: ChatMessage["wzDecision"]; warning?: string }> {
   const scene = { focusSymbol: extras.focusSymbol ?? null, sessionSymbol: extras.sessionSymbol, prevScene: extras.prevScene };
   if (endpoint === "tools") {
     const r = await aiChatTools(ai, messages, {
       mode: extras.mode, horizon: extras.horizon, focusSymbol: extras.focusSymbol, contextWindow: extras.contextWindow,
-      watchlist: extras.watchlist, sessionSymbol: extras.sessionSymbol, prevScene: extras.prevScene, timeoutMs: 120_000,
+      watchlist: extras.watchlist, sessionSymbol: extras.sessionSymbol, prevScene: extras.prevScene, timeoutMs: TURN_TIMEOUT_MS,
+      hold: extras.hold,
     });
     // 非流式返回的是 trace：归一成与流式 step 事件同一种步骤，时间线才不会两种形状
     return { text: r.content, steps: r.steps ?? stepsFromTrace(r.trace), intent: r.intent, warning: r.warning };
   }
-  const r = await aiChatPlain(ai, messages, { timeoutMs: 120_000, watchlist: extras.watchlist, scene, mode: extras.mode, horizon: extras.horizon });
-  return { text: r.text, steps: r.steps, intent: r.intent, warning: r.warning };
+  const r = await aiChatPlain(ai, messages, { timeoutMs: TURN_TIMEOUT_MS, watchlist: extras.watchlist, scene, mode: extras.mode, horizon: extras.horizon, hold: extras.hold });
+  return { text: r.text, steps: r.steps, intent: r.intent, wzDecision: r.wzDecision, warning: r.warning };
 }
 
 // ---------- P8-⑥ 断点续传（刷新/换页后的独有一条补救路） ----------
@@ -146,10 +162,12 @@ async function resumeRound(sessionId: string, msgId: string, run: string, since:
       steps: next.steps,
       warning: next.warning,
       intent: next.intent,
+      wzDecision: next.wzDecision,
       debug: next.debug,
       // done/error 之后这条回答就完整了，界面不该再转圈
+      // P31：保留原 createdAt（不重置），续传不延长任务生命周期
       streaming: !closed,
-      runRef: closed ? undefined : { id: run, lastSeq },
+      runRef: closed ? undefined : { id: run, lastSeq, createdAt: msg.runRef?.createdAt },
     });
   };
   /** 就地收口：清 runRef、结算还在 running 的步骤，并把「为什么收口」写在 warning 里 */
@@ -182,12 +200,28 @@ async function resumeRound(sessionId: string, msgId: string, run: string, since:
   }
 }
 
-/** 挂载后扫一遍所有会话：把上次没跑完、且服务端还认得的草稿接回来（细则拍板点 1：只补帧，不重问） */
+/** 挂载后扫一遍所有会话：把上次没跑完、且服务端还认得的草稿接回来（细则拍板点 1：只补帧，不重问）
+ * P31 稳智对齐 P2 #14：加任务过期判定——runRef.createdAt 超过 TASK_TTL_MS 就清掉（不续传，只补 warning）。
+ */
 function resumePendingDrafts() {
+  const now = Date.now();
   for (const s of useDesk.getState().sessions) {
     for (const m of s.messages) {
       const ref = m.role === "assistant" ? m.runRef : null;
       if (!ref?.id || resumeInFlight.has(ref.id)) continue;
+      // P31：任务过期判定（createdAt 缺失时按"未过期"处理，向后兼容老存档）
+      if (isRunRefExpired(ref, now)) {
+        // 过期：清掉 runRef + 结算 running 步骤 + 补一条 warning
+        const next = settleRunningSteps({ ...m, streaming: false, runRef: undefined });
+        useDesk.getState().patchChatMessage(s.id, m.id, {
+          content: next.content || "（本轮分析已过期，保留断点前内容；不自动重问。）",
+          steps: next.steps,
+          warning: joinWarnings([next.warning, "本轮分析已过期（超过 15 分钟未续传），保留断点前内容，不自动重问。"]),
+          streaming: false,
+          runRef: undefined,
+        });
+        continue;
+      }
       resumeInFlight.add(ref.id);
       void resumeRound(s.id, m.id, ref.id, Number.isFinite(ref.lastSeq) ? Math.max(0, Math.trunc(ref.lastSeq)) : 0);
     }
@@ -231,7 +265,7 @@ export function useChatSend(cfg: ChatEndpointCfg) {
     }
   }, []);
 
-  const send = useCallback(async (raw: string) => {
+  const send = useCallback(async (raw: string, images?: string[]) => {
     const content = (raw ?? "").trim();
     if (!content || busyRef.current) return;
     if (!aiReady(ai)) {
@@ -308,6 +342,8 @@ export function useChatSend(cfg: ChatEndpointCfg) {
       run: runId,
       // P8-⑤：面板没开就一个 debug 键都不带，线上请求体与 A/B 轮逐字节一致。
       ...(debugPanel ? { debug: true } : {}),
+      // P34：图片多模态（base64 data URL 数组），有图才带；没图时 body 里不会有 images 键
+      ...(images && images.length > 0 ? { images } : {}),
     });
     // 本地裁窗的轮数与服务端兜底裁窗用的是同一个值（extras.contextWindow），两边各写一套迟早对不上。
     const pieces = buildPromptMessages({ messages: history }, {
@@ -328,7 +364,7 @@ export function useChatSend(cfg: ChatEndpointCfg) {
       // 刷新后全靠它认出哪条草稿可以续传。
       // debug 同样必须在这份名单里：onEvent 把 done.debug 收进 cur 后，白名单漏了它
       // 结论小节就永远「未留底」——浏览器走查实测（富化入参/摘要都在、唯独结论空）钉出的这条。
-      patchChatMessage(sessionId, draftId, { content: cur.content, steps: cur.steps, warning: cur.warning, intent: cur.intent, debug: cur.debug, streaming: cur.streaming, runRef: cur.runRef });
+      patchChatMessage(sessionId, draftId, { content: cur.content, steps: cur.steps, warning: cur.warning, intent: cur.intent, wzDecision: cur.wzDecision, debug: cur.debug, streaming: cur.streaming, runRef: cur.runRef });
     };
     const scheduleFlush = () => {
       if (timer) return;
@@ -341,11 +377,12 @@ export function useChatSend(cfg: ChatEndpointCfg) {
       if (ev.type === "error") streamError = ev.data?.message ?? "未知错误";
       if (ev.type === "delta") sawDelta = true;
       // runRef 只在收到带 seq 的帧后出现（= 服务端真认了这轮挂底）；done/error 一到就清 —— 收口的消息不留续传钩子
+      // P31 稳智对齐 P2 #14：runRef 加 createdAt（任务过期判定用）
       const runPatch =
         ev.type === "done" || ev.type === "error"
           ? { runRef: undefined }
           : typeof ev.seq === "number"
-            ? { runRef: { id: runId, lastSeq: resumeSince } }
+            ? { runRef: { id: runId, lastSeq: resumeSince, createdAt: cur.runRef?.createdAt ?? Date.now() } }
             : null;
       // done 只是把累计全文再回放一遍时丢掉内容 —— 但它同时带着场景徽章，徽章不能跟着一起丢：
       // 浏览器实测（首页发一句「今天大盘情绪怎么样」）就是这么发现「有步骤、没徽章」的：
@@ -361,6 +398,11 @@ export function useChatSend(cfg: ChatEndpointCfg) {
         // 就是这个回放分支只捡 intent、把 done.debug 落在了原地）。p7-dispatch 钉住的那句原文一字不动。
         if (ev.data?.debug) {
           cur = { ...cur, debug: ev.data.debug };
+          scheduleFlush();
+        }
+        // P19 稳智决策信号：与 intent/debug 同口径，一起捡走，别掉在原地
+        if (ev.data?.wzDecision) {
+          cur = { ...cur, wzDecision: ev.data.wzDecision };
           scheduleFlush();
         }
         if (!ev.data?.intent) return;
@@ -389,6 +431,7 @@ export function useChatSend(cfg: ChatEndpointCfg) {
         for (const s of fb.steps ?? []) onEvent({ type: "step", data: s });
         // 非流式那条路上 done 事件是不带徽章的（服务端把它放在 JSON 字段里），不接进来徽章就只会在降级时消失
         if (fb.intent) cur = { ...cur, intent: fb.intent };
+        if (fb.wzDecision) cur = { ...cur, wzDecision: fb.wzDecision };
         if (fb.warning) onEvent({ type: "warning", data: { text: fb.warning } });
         onEvent({ type: "warning", data: { text: "以下为一次性返回，逐字效果来自本机展示节奏，不是上游流式。" } });
         await playTypewriter(fb.text, (partial) => {
@@ -432,6 +475,7 @@ export function useChatSend(cfg: ChatEndpointCfg) {
         messages: callMessages,
         extra: extras,
         onEvent,
+        timeoutMs: TURN_TIMEOUT_MS,
         signal: ctrl.signal,
       });
       // P8-⑥：有帧进来但流在 done 前断了、且服务端认了这轮挂底（收到过带 seq 的帧 ⇒ resumeSince>0）
@@ -481,6 +525,7 @@ export function useChatSend(cfg: ChatEndpointCfg) {
             messages: correctiveMessages,
             extra: extras,
             onEvent,
+            timeoutMs: TURN_TIMEOUT_MS,
             signal: ctrl.signal,
           });
         }

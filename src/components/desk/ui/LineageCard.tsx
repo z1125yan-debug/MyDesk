@@ -34,8 +34,8 @@ export function LineageCard(props: {
     <div className={"apple-card apple-fade-in overflow-hidden " + (props.className ?? "p-5")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-[15px] font-semibold tracking-tight">{props.title}</div>
-          {props.note && <div className="mt-1 text-[11.5px] leading-5 text-muted-foreground">{props.note}</div>}
+          <div className="text-[16px] font-semibold tracking-tight">{props.title}</div>
+          {props.note && <div className="mt-1 text-[12.5px] leading-5 text-muted-foreground">{props.note}</div>}
         </div>
         {props.actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{props.actions}</div>}
       </div>
@@ -66,12 +66,12 @@ export function LineageSection(props: {
       <div className={props.divided === false ? "" : "mb-3 h-px bg-gradient-to-r from-transparent via-border to-transparent"} />
       <div className="flex flex-wrap items-center gap-2">
         <span className={"h-2 w-2 shrink-0 rounded-full " + TONE_DOT[tone]} aria-hidden />
-        <h3 className="text-[13.5px] font-semibold">{props.title}</h3>
-        {props.hint && <span className="text-[11px] text-muted-foreground">{props.hint}</span>}
+        <h3 className="text-[14.5px] font-semibold">{props.title}</h3>
+        {props.hint && <span className="text-[12px] text-muted-foreground">{props.hint}</span>}
         {props.collapsible && (
           <button
             onClick={() => setOpen((v) => !v)}
-            className="ml-auto rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground"
+            className="ml-auto rounded-md px-2 py-0.5 text-[12px] text-muted-foreground transition-colors hover:bg-overlay-strong hover:text-foreground"
             aria-expanded={open}
           >
             {open ? "收起" : "展开"}
@@ -96,9 +96,9 @@ export function StatCard(props: {
 }) {
   return (
     <div className="apple-card px-3.5 py-3" title={props.title}>
-      <div className="text-[11px] text-muted-foreground">{props.label}</div>
+      <div className="text-[12px] text-muted-foreground">{props.label}</div>
       <div className={"mt-1 font-mono text-lg font-semibold " + (props.toneClass ?? "")}>{props.value}</div>
-      {props.foot && <div className="mt-1 text-[10.5px] text-muted-foreground/80">{props.foot}</div>}
+      {props.foot && <div className="mt-1 text-[11.5px] text-muted-foreground/80">{props.foot}</div>}
     </div>
   );
 }

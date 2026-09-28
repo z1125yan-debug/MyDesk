@@ -5,19 +5,26 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { splitByLinks, type DeskLink, type LinkSegment, type SectorRef } from "@/lib/desk/link-core";
 import { splitBlocks, stripLeadingEmoji, SECTION_EMOJI, SECTION_DEFS, type MdBlock } from "@/lib/desk/markdown-sections-core";
+import { extractDecision } from "@/lib/desk/decision-widget-core";
+import DecisionWidget from "./DecisionWidget";
 
-// 聊天气泡内的 Markdown 渲染（P7-⑤③ 结构化 → P15 对齐稳智「分区卡」）。
+// 聊天气泡内的 Markdown 渲染（P7-⑤③ 结构化 → P15 对齐稳智「分区卡」→ P61 对齐稳智正文度量 → P62 正文去框）。
 //
-// P15 的关键改动（对齐从 aiwuchuan.com 前端 bundle 实测拆出的表达层）：
-//  - 不再只画一条标题色带、正文散落外面——「小节标题 + 它下面的正文」一起包进一张圆角分区卡。
-//    卡是同款灰卡：1px 浅描边 + 14px 圆角 + 浅灰底，卡头不再按九类分色（分类只决定 emoji 与成不成卡）。
-//    一屏下来一块一块的，这才是「不像死人机」的那层观感。
-//    分类与切块规则全在纯核 markdown-sections-core（有单测），这里只管画。
-//  - 标题 emoji 由纯核按关键词自动挂（模型没写也挂）；认不出的小节不硬凑卡、按普通标题渲染。
+// P62（2026-09-27 用户拿稳智截图对比后定的口径：「完全照稳智：正文彻底去框」）：
+//  - 稳智的正文本来就是**裸排**的：段落、列表、引用都没有框，只有表格卡、执行条、输入卡才描边。
+//    P61 那版给每一段散段套一张 .wz-block、给每个小节套一张灰卡，结果三层框叠在一起，
+//    看起来是「报表页」而不是「一句话 + 一段回答」。这里全部拆掉：p/ul/ol/blockquote 直接出标签、
+//    小节标题只是正文流里一行加粗字（emoji + 标题），框只留在 .wz-table-card 上。
+//  - 阅读宽度收成居中窄栏（.wz-col，880px），由挂类名的页面负责，不在这里画。
+//  - 分类与切块规则仍在纯核 markdown-sections-core（有单测），这里只管画。
+//
+// P61 留下的度量口径不变（来源：稳智 ai-matrix-content-DW5S8amy.css 实测）：正文 16px/1.82 + 数字等宽、
+// 标题 22/19/17 且字重 650、表格 15px/1.65 格内 11x16、段间 20px、条间 10px、代码块 14px 圆角。
+// 度量本体全在 globals.css 的 .wz-md / .wz-h / .wz-table 段里（一处定义），这个文件不写任何字号。
 //
 // P7-⑧② 保留：正文里的 6 位代码与「已知清单内的板块名」渲染成可点片段。三条渲染约束不变：
 //  - 不引新依赖、不改文案：切分保证拼回去逐字等于原文，链接不吞字不改字；
-//  - code / pre / a 里不做二次识别；卡片标题里不放链接（标题是「这块讲什么」，塞按钮会画歪）。
+//  - code / pre / a 里不做二次识别；小节标题里不放链接（标题是「这块讲什么」，塞按钮会画歪）。
 
 // ---------- P7-⑧② 可点片段：渲染层 ----------
 
@@ -97,6 +104,13 @@ function MdP({ children }: { children?: ReactNode }) {
 function MdLi({ children }: { children?: ReactNode }) {
   return <li><Linked>{children}</Linked></li>;
 }
+/** 列表：稳智的 ul/ol 就是裸列表 + 1.55em 缩进，不画框（度量在 globals.css 的 .wz-md ul/ol） */
+function MdUl({ children }: { children?: ReactNode }) {
+  return <ul>{children}</ul>;
+}
+function MdOl({ children }: { children?: ReactNode }) {
+  return <ol>{children}</ol>;
+}
 function MdTd({ children }: { children?: ReactNode }) {
   return <td><Linked>{children}</Linked></td>;
 }
@@ -104,24 +118,19 @@ function MdTh({ children }: { children?: ReactNode }) {
   return <th><Linked>{children}</Linked></th>;
 }
 function MdH1({ children }: { children?: ReactNode }) {
-  return <h1 className="text-[15px] font-bold"><Linked>{children}</Linked></h1>;
+  return <h1 className="wz-h wz-h1"><Linked>{children}</Linked></h1>;
 }
 function MdBlockquote({ children }: { children?: ReactNode }) {
-  return (
-    <blockquote className="my-1 rounded border-l-2 border-sky-500/50 bg-sky-500/5 px-2 py-1 text-[12.5px] text-muted-foreground">
-      <Linked>{children}</Linked>
-    </blockquote>
-  );
+  return <blockquote><Linked>{children}</Linked></blockquote>;
 }
 
 /**
- * 没被切成卡的 ##/### 标题（分类认不出的）：按普通标题渲染。
- * P15 起 ModuleHeading 退役——命中的标题已经被 splitBlocks 拿去当卡头，走到这里的都是不该成卡的。
+ * 没被切成段的 ##/### 标题（分类认不出的）：与卡头走同一行画法（wz-h），只是字号小一档。
+ * P15 起 ModuleHeading 退役；P62 起「卡」这个概念也退役了——标题就是正文里的一行加粗字。
  */
 function PlainHeading({ level, children }: { level: 2 | 3; children: ReactNode }) {
   const Tag = level === 2 ? "h2" : "h3";
-  const size = level === 2 ? "text-[14px]" : "text-[13px]";
-  return <Tag className={`${size} font-bold ${level === 3 ? "text-sky-300" : ""}`}><Linked>{children}</Linked></Tag>;
+  return <Tag className={"wz-h " + (level === 2 ? "wz-h2" : "wz-h3")}><Linked>{children}</Linked></Tag>;
 }
 
 const COMPONENTS: Components = {
@@ -130,18 +139,20 @@ const COMPONENTS: Components = {
   h3: ({ children }) => <PlainHeading level={3}>{children}</PlainHeading>,
   p: MdP,
   li: MdLi,
+  ul: MdUl,
+  ol: MdOl,
   // 表格里最容易整格都是代码：逐格换，不整表换（表头/结构节点不动）
   td: MdTd,
   th: MdTh,
-  // 表格在窄气泡里最容易撑破布局：包一层横向滚动，不裁数据
+  // 表格是稳智少数「该有框」的地方：外面一张圆角卡（.wz-table-card），卡内再包一层横向滚动，不裁数据
   table: ({ children }) => (
-    <div className="desk-scroll -mx-1 overflow-x-auto py-0.5">
-      <table className="w-full min-w-[420px] border-collapse text-[12px]">{children}</table>
+    <div className="wz-table-card desk-scroll -mx-1 overflow-x-auto">
+      <table className="wz-table">{children}</table>
     </div>
   ),
-  // 引用块常被模型用来放「系统提示 / 口径说明」，按提示条处理
+  // 引用块常被模型用来放「系统提示 / 口径说明」，按提示条处理（左竖条 + 弱色，不画框）
   blockquote: MdBlockquote,
-  hr: () => <hr className="my-2 border-border" />,
+  hr: () => <hr />,
   a: ({ children, href }) => <ExternalLink href={href}>{children}</ExternalLink>,
   code: ({ children }) => <InlineCode>{children}</InlineCode>,
 };
@@ -152,24 +163,25 @@ function MdTree({ text }: { text: string }) {
 }
 
 /**
- * 分区卡：同款灰卡——1px 浅描边 + 圆角 + 浅灰底，九类不再各配一色（用户口径：想收成同款灰卡）。
- * 分类只决定两件事：成不成卡、卡头挂哪个 emoji；配色统一由界面基调出，深浅色主题都成立。
+ * 分区小节（P62：正文彻底去框）。
+ * 之前这里是「同款灰卡 + 卡头色带」，卡头那一横条把标题和正文隔成了两层，读起来像报表页。
+ * 稳智的画法没有这层壳：小节标题就是正文流里一行加粗字（emoji + 标题），下面直接跟裸正文。
+ * 所以这里只输出一个 h2 + 正文本身，两者都是 .wz-md 的直接子节点，块间距由 globals.css 一处决定。
+ * 分类仍然只决定两件事：挂哪个 emoji、这一节要不要抬成标题（认不出的按普通标题渲染，不硬凑）。
  */
 function SectionCard({ block }: { block: Extract<MdBlock, { kind: "card" }> }) {
   const emoji = SECTION_EMOJI[block.section];
   const fallback = SECTION_DEFS.find((d) => d.kind === block.section)?.words[0] ?? "";
-  // 标题里的 emoji 剥掉再画：卡头左边已经挂了统一的一个，不重复
+  // 标题里的 emoji 剥掉再画：前面已经统一挂了一个，不重复
   const title = stripLeadingEmoji(block.head) || fallback;
   return (
-    <section className="rounded-xl border border-border/80 bg-card">
-      <header className="flex items-center gap-1.5 rounded-t-xl border-b border-border/60 bg-accent/40 px-2.5 py-1.5">
-        <span aria-hidden className="text-[13px] leading-none">{emoji}</span>
-        <span className="text-[13px] font-semibold text-foreground">{title}</span>
-      </header>
-      {block.body && (
-        <div className="px-3 py-2"><MdTree text={block.body} /></div>
-      )}
-    </section>
+    <>
+      <h2 className="wz-h wz-h2">
+        {emoji && <span aria-hidden>{emoji} </span>}
+        {title}
+      </h2>
+      {block.body && <MdTree text={block.body} />}
+    </>
   );
 }
 
@@ -183,12 +195,16 @@ export default function Markdown({
   onLink?: (link: DeskLink) => void;
 }) {
   const ctx: LinkCtx | null = onLink ? { sectors: sectors ?? [], onLink } : null;
-  const { intro, blocks } = splitBlocks(content);
+  // P18 稳智对齐：先尝试抽取 11 字段决策结构，命中就**只**走 DecisionWidget 渲染——
+  // widget 已经把 10 个字段合并成一张结构化卡 + 4 证据区块，视觉密度比"每小节一张卡"高得多。
+  // 命中决策后不再走 splitBlocks 分区卡路径（否则 10 个 11 字段会各画一张卡，视觉过载）。
+  // 没命中（研判/深度/搜索模式，或模型没照模板吐）就走原来的分区卡路径。
+  const decision = extractDecision(content);
+  const { intro, blocks } = decision ? { intro: "", blocks: [] as MdBlock[] } : splitBlocks(content);
   return (
-    <div
-      className="space-y-2 [&_code]:rounded [&_code]:bg-accent [&_code]:px-1 [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-accent/60 [&_pre]:p-2 [&_strong]:font-semibold [&_strong]:text-foreground [&_tbody_tr]:border-b [&_tbody_tr]:border-border/50 [&_td]:px-1.5 [&_td]:py-1 [&_th]:border-b [&_th]:border-border [&_th]:px-1.5 [&_th]:py-1 [&_ul]:list-disc [&_ul]:pl-4"
-    >
+    <div className="wz-md">
       <DeskLinkCtx.Provider value={ctx}>
+        {decision && <DecisionWidget parsed={decision} />}
         {intro && <MdTree text={intro} />}
         {blocks.map((b, i) => (
           b.kind === "card"

@@ -29,9 +29,12 @@ import {
 import {
   CITIES, DEFAULT_TIMEZONE, DEFAULT_TRUE_SOLAR_TIME, LIB_NAME, LIB_VERSION, LIB_YEAR_ADVERTISED_MAX,
   LIB_YEAR_ADVERTISED_MIN, LIB_YEAR_MAX, LIB_YEAR_MIN,
-  LUOSHU_ORDER, MINUTES_PER_DEGREE, PALACE_META, QIMEN_SYSTEM_PROMPT, QUESTION_TYPES, STANDARD_MERIDIAN,
-  TEXT_CENTER_HOST_MISSING, TEXT_LIB_ERROR, TEXT_LIB_SHAPE, TEXT_LUNAR_MISSING, TEXT_OUT_OF_RANGE,
-  addMinutes, adaptChart, bareTermName, buildInterpretPrompt, centerRuleText, chartFactsText, cityByName, coordOk,
+  LUOSHU_ORDER, MINUTES_PER_DEGREE, NATAL_QUESTION_TYPE, PALACE_META, QIMEN_SYSTEM_PROMPT, QUESTION_TYPES,
+  STANDARD_MERIDIAN,
+  TEXT_CENTER_HOST_MISSING, TEXT_LIB_ERROR, TEXT_LIB_SHAPE, TEXT_LUNAR_MISSING, TEXT_MISSING_BIRTH,
+  TEXT_OUT_OF_RANGE,
+  addMinutes, adaptChart, bareTermName, buildClassicalText, buildGuidance, buildInputEchoLines, buildInterpretPrompt,
+  centerRuleText, chartFactsText, cityByName, coordOk,
   dateToWallClock, dayOfYear, equationOfTimeMinutes, formatWallClock, hostsCenterPalace, isLeap, libFailureVerdict,
   longitudeOffsetMinutes, luoshuGrid, markerIndexOf, normalizeQuestionType, parseInterpretation, parseWallClock,
   provenanceLine, qinPalace, shapeOk, splitCell, trueSolarOffsetMinutes, wallClockMs, wallClockToDate,
@@ -112,6 +115,7 @@ function chartAt(dateStr: string, timeStr: string, over: Partial<AdaptInput> = {
     beijing: c.wc, cast: c.wc, trueSolar: tstOff(c.wc),
     questionType: normalizeQuestionType("decision"),
     lateZiHourMode: "same-day",
+    mode: "shijia",
     computedAt: "2026-09-21 15:30:12",
     ...over,
   } as AdaptInput);
@@ -604,7 +608,7 @@ test("adaptChart：农历缺失 / 找不到寄宫 / 节气交接临近，三种�
   const orphan = adaptChart({
     result: noHost, snapshot: c.snapshot, hourIndex: c.hourIndex, beijing: c.wc, cast: c.wc,
     trueSolar: tstOff(c.wc), questionType: normalizeQuestionType("other"), lateZiHourMode: "same-day",
-    computedAt: "2026-09-21 15:30:12",
+    mode: "shijia", computedAt: "2026-09-21 15:30:12",
   });
   assert.equal(orphan.ok, true, "找不到寄宫不算失败，其余盘面照给");
   assert.ok((orphan as { chart: QimenChart }).chart.warnings.includes(TEXT_CENTER_HOST_MISSING), "但要如实提示");
@@ -614,7 +618,8 @@ test("adaptChart：库返回 error 或结构不符时，整条判为缺失，绝
   const c = castAt(FIXTURE_DATE, FIXTURE_TIME);
   const base = {
     snapshot: c.snapshot, hourIndex: c.hourIndex, beijing: c.wc, cast: c.wc, trueSolar: tstOff(c.wc),
-    questionType: normalizeQuestionType("decision"), lateZiHourMode: "same-day", computedAt: "2026-09-21 15:30:12",
+    questionType: normalizeQuestionType("decision"), lateZiHourMode: "same-day",
+    mode: "shijia" as const, computedAt: "2026-09-21 15:30:12",
   };
   const err = adaptChart({ ...base, result: { error: true, message: "year must be an integer from 1900 to 2100, received 1899" } } as never);
   assert.equal(err.ok, false);
@@ -626,6 +631,92 @@ test("adaptChart：库返回 error 或结构不符时，整条判为缺失，绝
   const shape = adaptChart({ ...base, result: broken });
   assert.equal(shape.ok, false);
   assert.equal((shape as { missing: string }).missing, TEXT_LIB_SHAPE);
+});
+
+// ==================== 五之二、年家本命盘（mode=nianjia） ====================
+//
+// 本命盘与时家问事盘共用同一套九宫渲染与解盘通道，差别只在「用什么时刻定局、以什么为用神」：
+// 时家按问事时辰定局、以时干问事；年家按出生年份定局、以年命（年柱天干）为用神。
+// 这组断言钉住三件最容易做假的事：
+//  1) 年家必须真的起出**不同的盘**，不能只是换个标签（换标签＝把同一张盘说成两张）；
+//  2) 出处与措辞必须如实标成年家奇门、说清「以出生时空」；
+//  3) 输入回显必须改成出生口径，且本命盘不列「问题类型」（它没有「问什么事」这个语义）。
+
+test("年家本命盘：method 换成年家后，同一出生时空确实起出不同的盘（不是只换个标签）", () => {
+  const date = new Date(1990, 5, 15, 10, 30, 0);
+  const snapshot = createCalendarSnapshot(date, { lateZiHourMode: "same-day" });
+  const hourIndex = getNativeHourIndex(date);
+  assert.ok(hourIndex >= 0);
+  const shi = calculateFromSnapshot(snapshot, date, { method: "时家" }) as LibQimenResult;
+  const nian = calculateFromSnapshot(snapshot, date, { method: "年家" }) as LibQimenResult;
+  // 四柱由历法快照决定，与 method 无关——年家变的是定局/符使/空亡，不是把出生时间改掉
+  assert.deepEqual(nian.info.siZhu, shi.info.siZhu, "出生四柱不因 method 而变");
+  assert.ok(
+    nian.raw.juShu.fullName !== shi.raw.juShu.fullName
+      || nian.info.kong !== shi.info.kong
+      || nian.info.xunshou !== shi.info.xunshou,
+    `年家与时家必须出不同的盘：年家=${nian.raw.juShu.fullName}/${nian.info.kong}/${nian.info.xunshou}`
+      + ` 时家=${shi.raw.juShu.fullName}/${shi.info.kong}/${shi.info.xunshou}`,
+  );
+  // 两套盘都得是结构上完整的真盘（不是半个盘）
+  assert.ok(shapeOk(nian, snapshot) && shapeOk(shi, snapshot));
+});
+
+test("年家本命盘：出处与措辞如实标成年家奇门，古法说明点出年命，引导口径换成盘那一套", () => {
+  const date = new Date(1990, 5, 15, 10, 30, 0);
+  const snapshot = createCalendarSnapshot(date, { lateZiHourMode: "same-day" });
+  const result = calculateFromSnapshot(snapshot, date, { method: "年家" }) as LibQimenResult;
+  const wc: WallClock = { year: 1990, month: 6, day: 15, hour: 10, minute: 30, second: 0 };
+  const out = adaptChart({
+    result, snapshot, hourIndex: getNativeHourIndex(date), beijing: wc, cast: wc,
+    trueSolar: tstOff(wc), questionType: NATAL_QUESTION_TYPE, lateZiHourMode: "same-day",
+    mode: "nianjia", computedAt: "2026-09-26 03:30:00",
+  } as AdaptInput);
+  assert.equal(out.ok, true);
+  const chart = (out as { ok: true; chart: QimenChart }).chart;
+  assert.equal(chart.provenance.method, "年家奇门");
+  assert.ok(chart.provenance.cast_from.startsWith("以出生时空 "), `实际：${chart.provenance.cast_from}`);
+  assert.ok(chart.provenance.rules.some((r) => r.includes("年家奇门")), "起局口径要写清是年家");
+  assert.ok(chart.provenance.rules.some((r) => r.includes("以年命为用神")));
+  // 年命＝年柱天干。1990-06-15 属庚午年（外部锚点：1990 年春节 1/27，此后即庚午年）
+  assert.equal(chart.ganzhi.year, "庚午");
+  const classical = buildClassicalText(chart);
+  assert.ok(classical.includes("【年命】") && classical.includes("庚"), `古法原盘应点出年命：${classical.slice(-200)}`);
+  assert.ok(buildGuidance(false, chart).includes("本命盘"), "本命盘的引导口径要换成盘那一套");
+  // 库的年家实现口径必须如实挂出来（节气名恒为立春、局数年内固定），不能替它背书
+  assert.ok(
+    chart.warnings.some((w) => w.includes("年家奇门") && w.includes("立春")),
+    `本命盘要如实说明库年家实现口径，实际 warnings=${JSON.stringify(chart.warnings)}`,
+  );
+  // 时家盘不自称本命盘、也不挂年家说明（两边文案串台＝把事盘说成命盘）
+  const shiChart = chartAt(FIXTURE_DATE, FIXTURE_TIME);
+  assert.ok(!buildGuidance(false, shiChart).includes("本命盘"));
+  assert.ok(!buildClassicalText(shiChart).includes("【年命】"));
+  assert.ok(!shiChart.warnings.some((w) => w.includes("年家奇门")), "时家盘不挂年家说明");
+});
+
+test("年家本命盘：输入回显改用出生口径，且不再列问题类型", () => {
+  const natal = buildInputEchoLines({
+    mode: "nianjia", date: "1990-06-15", time: "10:30", city: "北京",
+    questionTypeLabel: "本命格局", trueSolarTime: true,
+  });
+  const natalKeys = natal.map((r) => r.k);
+  assert.ok(natalKeys.includes("出生日期") && natalKeys.includes("出生时间") && natalKeys.includes("出生地"));
+  assert.ok(!natalKeys.includes("问题类型"), "本命盘没有「问什么事」这个语义，不列问题类型");
+  assert.ok(natal.some((r) => r.v.includes("年家奇门")), "起局口径要写年家奇门");
+
+  const shi = buildInputEchoLines({
+    mode: "shijia", date: "", time: "", city: "北京", questionTypeLabel: "投资决策", trueSolarTime: true,
+  });
+  const shiKeys = shi.map((r) => r.k);
+  assert.ok(shiKeys.includes("问题类型") && shiKeys.includes("日期") && shiKeys.includes("城市"));
+  assert.ok(!shiKeys.includes("出生日期"), "时家问事盘不写成出生日期");
+  assert.ok(shi.some((r) => r.v.includes("时家奇门")));
+});
+
+test("本命盘缺出生时间时如实报缺失，且这条文案存在（不允许退化成「现在」起局）", () => {
+  assert.ok(TEXT_MISSING_BIRTH.includes("出生"), "缺失文案要指到出生时间上");
+  // 路由层与服务层的接线也在别处钉住：这里只保证常量口径，服务层的分支由 castChart 的入参校验负责
 });
 
 // ==================== 六、全年扫描：1460 个真实时刻的不变式 ====================

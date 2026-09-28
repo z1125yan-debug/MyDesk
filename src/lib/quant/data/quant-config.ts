@@ -3,10 +3,7 @@
 // 结构：{ "mcp": { "url": "https://..." } }
 import fs from "fs";
 import path from "path";
-
-export interface QuantConfig {
-  mcp?: { url?: string };
-}
+import type { QuantConfig } from "./types";
 
 const CONFIG_FILE = path.join(process.cwd(), "data", "quant-config.json");
 

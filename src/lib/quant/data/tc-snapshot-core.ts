@@ -55,6 +55,10 @@ export function parseTcQuoteBody(tcCode: string, body: string): AssetMeta | null
   const floatYi = numOr(f[44]);
   const totalYi = numOr(f[45]);
   const volumeHand = numOr(f[36]);
+  // f[30] 是行情数据时间戳（形如 20260924161430）——用它标出「这份快照属于哪个交易日」。
+  // 休市日（周末/节假日）上游仍返回上一交易日的快照，若不记录该日期，上层会把数据标成「今天」。
+  const stamp = (f[30] ?? "").trim();
+  const quoteDate = /^\d{8}/.test(stamp) ? `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}` : undefined;
   const meta: AssetMeta = {
     symbol,
     name,
@@ -73,6 +77,7 @@ export function parseTcQuoteBody(tcCode: string, body: string): AssetMeta | null
     pb: numOr(f[46]) ?? undefined,
     volumeRatio: numOr(f[49]) ?? undefined,
     suspended: price === null || price <= 0,
+    quoteDate,
     // mainNet / listDate / industry：腾讯批量快照不提供 → 留空，由上层「家数登记」口径显式露缺
   };
   return meta;

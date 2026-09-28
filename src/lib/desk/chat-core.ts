@@ -8,8 +8,52 @@
 //  - 摘要抬头写死「非实时数据」，避免模型把上周的聊天内容当成今天的行情；
 //  - 本地打字机切片必须能被识别成本地节奏（调用方要发 warning），不谎称上游在流式。
 import type { ChatMsg } from "./types";
+import { friendlyErrorMessage } from "./error-codes-core.ts";
+import { followUpBody } from "./followups-core.ts";
 
 export type ChatRole = "user" | "assistant";
+
+// ---------- P19 稳智决策信号 payload（前端展示契约） ----------
+//
+// 字段口径与 intent-llm-core.WzDecisionSignal 逐字段对齐，但不 import：
+// 纯展示层的字段表由这一处定义，intent-llm-core 里的 signal 在流传输前
+// 通过同一份白名单（chat-stream-core.asWzDecision）过一遍——
+// 两边对不上的时候，界面就会画一个"决策信号：undefined"这种假卡，而这正是最难查的那种错。
+//
+// 用 string 而不是联合类型（stance/horizon/signalType）：与 IntentBadge 同口径——
+// 纯展示层反向依赖判定层是多余的耦合，白名单在 asWzDecision 里做。
+
+export type WzDecisionStance = "long" | "short" | "wait" | "neutral";
+export type WzDecisionHorizon = "ultra_short" | "short" | "short_mid" | "mid" | "long";
+export type WzDecisionSignalType =
+  | "trend_breakout" | "pullback_rebound" | "range_bound" | "volume_surge"
+  | "divergence_risk" | "stop_loss_hit" | "stop_profit_hit" | "capital_inflow"
+  | "capital_outflow" | "event_driven" | "sector_rotation" | "no_signal";
+
+export interface WzDecisionPayload {
+  /** 主结论：偏多/偏空/观望/无观点 */
+  stance: WzDecisionStance;
+  /** 交易周期（5 档，稳智口径） */
+  horizon: WzDecisionHorizon | null;
+  /** 信号类型（12 类，稳智口径） */
+  signalType: WzDecisionSignalType | null;
+  /** 置信度 0-100 */
+  confidence: number | null;
+  /** 情绪温度 0-100 */
+  sentimentTemp: number | null;
+  /** 关键价位（结构化） */
+  keyLevels: { support?: number[]; resistance?: number[] };
+  /** 止盈止损（结构化） */
+  stopPlan: { stopLoss?: number | null; takeProfit?: number | null };
+  /** 建议仓位 0-100% */
+  positionPct: number | null;
+  /** 失效条件（自然语言） */
+  invalidation: string | null;
+  /** 风险提示 */
+  riskNotes: string[];
+  /** 数据缺口（缺失维度列表） */
+  dataGaps: string[];
+}
 
 /** 一次工具/步骤调用的展示信息（由 chat-stream-core 的 step 事件喂进来） */
 export interface StepInfo {
@@ -44,6 +88,18 @@ export interface StepInfo {
   args?: Record<string, unknown>;
   /** P8-⑤（debug=true 才发）：返回数据摘要（≤120 字口径）。detail 是判词、summary 是摘要，两个字段不混用 */
   summary?: string;
+  /**
+   * P27 稳智对齐：这一步的 Agent Loop 阶段（后端显式发，不再靠前端语义反推）。
+   * 值：intent / skills / local_data / external_data / research / answer
+   * 与 P22 的 classifyStep 语义映射口径一致，但后端显式发更精确（不用猜）。
+   */
+  phase_key?: "intent" | "skills" | "local_data" | "external_data" | "research" | "answer";
+  /**
+   * P29 稳智对齐：子步骤挂父步骤（可选）。
+   * 语义同 chat-stream-core 的 StreamStep.parentStepId。
+   * 前端渲染时按 parentStepId 分组缩进显示，实现层次化步骤。
+   */
+  parentStepId?: number;
 }
 
 export interface ChatMessage {
@@ -64,14 +120,35 @@ export interface ChatMessage {
   /**
    * P8-⑥：本轮「运行留底」的断点锚——客户端生成的 run id + 已收到的最大帧序号。
    * 刷新后靠它认出未收口的轮次并从 lastSeq 精确续接；只随消息进存档，不参与发给模型的任何口径。
+   * P31 稳智对齐 P2 #14：加 createdAt 记录创建时间，用于任务过期判定（TTL 15 分钟）。
    */
-  runRef?: { id: string; lastSeq: number };
+  runRef?: { id: string; lastSeq: number; createdAt?: number };
   /**
    * P8-⑤：done 帧带回来的结论留底（模型耗时 + 传输档位），供 debug 面板的结论小节。
    * 细则 §1.6 原话是「ChatMessage 不加新字段」，但 done.debug 若不落进消息就永远只在流里一闪，
    * 结论小节会全程「未留底」、§1.3 的字段成了摆设——两个小键随消息持久化，偏差在变更报告里如实记。
    */
   debug?: { modelMs?: number; transport?: string };
+  /**
+   * P19 稳智对齐：本轮稳智决策信号（11 字段结构）。
+   * 来自 LLM 意图识别器的解析结果，通过 SSE done 事件回传。
+   * 与 intent（场景徽章）并列、不共用字段：场景是"回答走哪条路"，决策信号是"分析出的结论"。
+   * 只在 LLM 兜底分类器实际判出非中性结论时才填充；分类失败（超时/JSON 无效）静默降级不填。
+   * 字段口径与 intent-llm-core.WzDecisionSignal 完全一致，避免前端另写一份字段表。
+   */
+  wzDecision?: WzDecisionPayload | null;
+  /**
+   * P24 稳智对齐：本轮宏观阶段（来自 SSE stage 事件）。
+   * 值：researching / answer_streaming / finished / degraded / incomplete / failed
+   * 不落 localStorage（stage 是过程信息，不是最终结果），仅用于前端实时更新顶部进度条。
+   */
+  stage?: "researching" | "answer_streaming" | "finished" | "degraded" | "incomplete" | "failed";
+  /**
+   * P26 稳智对齐：本轮结构化块（来自 SSE block_started/finished 事件）。
+   * 值：block_id + block_type（table/code/quote/markdown）+ content（markdown 原文）
+   * 不落 localStorage（block 是过程信息，不是最终结果），仅用于前端实时渲染结构化卡片。
+   */
+  blocks?: { block_id: string; block_type: "table" | "code" | "quote" | "markdown"; content: string; finished: boolean }[];
 }
 
 /**
@@ -254,6 +331,15 @@ export function summarizeDropped(dropped: ChatMessage[], opts: CompressOpts = {}
 export interface PromptPiece { role: "user" | "assistant" | "system"; content: string }
 
 /**
+ * P34：图片多模态消息块。OpenAI 兼容接口支持 user message 的 content 为数组，
+ * 数组里第一项是 text block，后续每项是 image_url block。
+ * 形状与 OpenAI Chat Completions API 的 ContentPart 对齐，便于直接透传。
+ */
+export interface ImageUrlPart { type: "image_url"; image_url: { url: string } }
+export interface TextPart { type: "text"; text: string }
+export type ContentPart = TextPart | ImageUrlPart;
+
+/**
  * 发给对话端点（/api/ai/chat、/api/ai/proxy）的一条消息。
  * 形状与 PromptPiece 相同，单独立个名字是因为它是**跨端契约**：system 件装的是压缩摘要与来源分层说明，
  * 服务端按 §2.2 兜底裁窗时不得静默丢弃（见 route 的 trimDialog）。
@@ -285,7 +371,9 @@ export function buildPromptMessages(session: Pick<ChatSession, "messages">, opts
   if (summaryText) pieces.push({ role: "system", content: summaryText });
   const window = sent.map((m) => ({
     role: m.role,
-    content: m.role === "assistant" ? `${m.content}${renderStepsLine(m.steps)}` : m.content,
+    // 「【追问推荐】a|b|c」那一行是画按钮用的，不是模型说过的话：送回去等于教它把推荐行抄进正文，
+    // 一轮一轮越抄越长。剥这一行用的是渲染层同一个函数（followups-core），两边不会漂。
+    content: m.role === "assistant" ? `${followUpBody(m.content)}${renderStepsLine(m.steps)}` : m.content,
   }) as PromptPiece);
   if (opts.snapshot) {
     // 快照只贴「本轮的新提问」，也就是窗口结尾那条用户消息。
@@ -504,10 +592,19 @@ export function isFollowUp(text: string): boolean {
 
 export type AppliedEvent =
   | { type: "step"; data: StepInfo }
+  // P24：stage 事件（宏观阶段，对齐稳智 researching / answer_streaming / finished）
+  // 后端在关键节点 emit，前端用来更新顶部进度条（不再只靠 steps 语义反推）
+  | { type: "stage"; data: { stage: "researching" | "answer_streaming" | "finished" | "degraded" | "incomplete" | "failed" } }
+  // P26：block_started/finished 事件（结构化块，对齐稳智 table/code/quote/markdown）
+  // 后端在遇到 markdown 结构化块时 emit，前端用来渲染成结构化卡片
+  | { type: "block_started"; data: { block_id: string; block_type: "table" | "code" | "quote" | "markdown" } }
+  | { type: "block_finished"; data: { block_id: string } }
   | { type: "delta"; data: { content: string } }
   | { type: "warning"; data: { text: string } }
-  | { type: "done"; data?: { fullText?: string; intent?: IntentBadge; debug?: { modelMs?: number; transport?: string } } }
-  | { type: "error"; data: { message: string } };
+  | { type: "done"; data?: { fullText?: string; intent?: IntentBadge; debug?: { modelMs?: number; transport?: string }; wzDecision?: WzDecisionPayload } }
+  // P23：error 事件携带 error_code（下划线蛇形，对齐稳智 reverse-01 §11）
+  // 后端未发 error_code 时前端用 friendlyErrorMessage 兜底到 unknown 文案
+  | { type: "error"; data: { message: string; error_code?: string } };
 
 /** 把多条警告拼成一句：每段先去掉结尾的「。」/「；」，再用「；」连接，避免出现「。；」这种断句 */
 export function joinWarnings(parts: (string | undefined | null)[]): string {
@@ -521,13 +618,41 @@ export function joinWarnings(parts: (string | undefined | null)[]): string {
 export function applyEvent(msg: ChatMessage, ev: AppliedEvent): ChatMessage {
   switch (ev.type) {
     case "delta":
-      return { ...msg, content: msg.content + (ev.data?.content ?? "") };
+      // P26：如果当前有未结束的 block，delta 内容追加到该 block 的 content 里
+      {
+        const blocks = msg.blocks ?? [];
+        const lastBlock = blocks[blocks.length - 1];
+        if (lastBlock && !lastBlock.finished) {
+          const updatedBlocks = blocks.map((b, i) =>
+            i === blocks.length - 1 ? { ...b, content: b.content + (ev.data?.content ?? "") } : b
+          );
+          return { ...msg, blocks: updatedBlocks };
+        }
+        return { ...msg, content: msg.content + (ev.data?.content ?? "") };
+      }
     case "step": {
       const steps = [...(msg.steps ?? [])];
       const i = steps.findIndex((s) => s.step === ev.data.step);
       if (i === -1) steps.push(ev.data);
       else steps[i] = { ...steps[i], ...ev.data };
       return { ...msg, steps };
+    }
+    // P24：stage 事件更新消息的 stage 字段（不落 localStorage，仅用于前端实时更新顶部进度条）
+    case "stage":
+      return { ...msg, stage: ev.data?.stage };
+    // P26：block_started 事件创建新 block 条目
+    case "block_started":
+      return {
+        ...msg,
+        blocks: [...(msg.blocks ?? []), { block_id: ev.data?.block_id ?? "", block_type: ev.data?.block_type ?? "markdown", content: "", finished: false }],
+      };
+    // P26：block_finished 事件标记 block 结束
+    case "block_finished": {
+      const blocks = msg.blocks ?? [];
+      const updatedBlocks = blocks.map((b) =>
+        b.block_id === ev.data?.block_id ? { ...b, finished: true } : b
+      );
+      return { ...msg, blocks: updatedBlocks };
     }
     case "warning":
       return { ...msg, warning: joinWarnings([msg.warning, ev.data?.text]) };
@@ -540,14 +665,24 @@ export function applyEvent(msg: ChatMessage, ev: AppliedEvent): ChatMessage {
         ...(ev.data?.intent ? { intent: ev.data.intent } : {}),
         // P8-⑤：结论留底同理——done 没带 debug 就不留空壳（旧服务端/无 debug 轮次画「未留底」）
         ...(ev.data?.debug ? { debug: ev.data.debug } : {}),
+        // P19：稳智决策信号同理——没判出就一个字都不留，不画半截卡
+        ...(ev.data?.wzDecision ? { wzDecision: ev.data.wzDecision } : {}),
       };
     case "error":
-      return {
-        ...msg,
-        streaming: false,
-        content: msg.content || `请求出错：${ev.data?.message ?? "未知错误"}`,
-        warning: joinWarnings([msg.warning, ev.data?.message ? `已中断：${ev.data.message}` : ""]) || msg.warning,
-      };
+      // P23：用 friendlyErrorMessage 把 error_code 映射成用户可读文案
+      // 原始 message 只留作调试视图（debugOn 时可见），正常用户看到的是映射后的文案
+      {
+        const { text } = friendlyErrorMessage({
+          code: ev.data?.error_code ?? null,
+          message: ev.data?.message ?? null,
+        });
+        return {
+          ...msg,
+          streaming: false,
+          content: msg.content || `请求出错：${text}`,
+          warning: joinWarnings([msg.warning, `已中断：${text}`]),
+        };
+      }
     default:
       return msg;
   }
@@ -565,17 +700,42 @@ export function settleRunningSteps(msg: ChatMessage, note = "未收到该步骤�
 // ---------- 本地打字机节奏（降级展示用，不是流式） ----------
 
 /**
+ * 切点落在高位代理后面时往后挪一位：`slice(0, i)` 切在 emoji 两半之间，
+ * 界面就会闪一个「?」再被下一帧修好。稳智的 flushAnswer 里是同一处保护
+ * （逆向 §6：`/[\uD800-\uDBFF]/.test(buf.charAt(g-1)) && (g+=1)`）。
+ */
+export function safeCut(text: string, target: number): number {
+  if (target >= text.length) return text.length;
+  return /[\uD800-\uDBFF]/.test(text.charAt(target - 1)) ? target + 1 : target;
+}
+
+/** 积压还有多少字 → 这一帧切多长（稳智 Cr() 的分档：积压大就一次多吐，别一帧一字刷半天） */
+export function typewriterStep(pending: number, size: number, floor: number): number {
+  return Math.max(floor, pending > 4000 ? 160 : pending > 1600 ? 128 : pending > 600 ? 96 : pending > 160 ? 64 : size);
+}
+
+/**
  * 上游整体返回时，用本机节奏分段画出来。
- * 切的是「展示用的前缀序列」，原文一个字不改；sliceCount 返回实际段数，调用方据此发 warning 说明这是本机节奏。
+ * 切的是「展示用的前缀序列」，原文一个字不改；调用方据此发 warning 说明这是本机节奏。
+ *
+ * P59 稳智对齐两处：
+ *  - 步长不再固定 `ceil(len/maxFrames)` 一档走到底：长文尾部（只剩几百字时）还按大步切，
+ *    观感是「突然刷完」；按剩余量分档递减，收尾才有逐字感。
+ *  - 每个切点过 safeCut，emoji 不会被切成半截。
+ * 段数上限仍是 maxSlices：floor 那一档就是按它算的，分档只会切得更大、段数只会更少。
  */
 export function typewriterSlices(text: string, opts: { sliceChars?: number; maxSlices?: number } = {}): string[] {
   if (!text) return [];
   const size = Math.max(1, opts.sliceChars ?? 6);
   const maxSlices = Math.max(1, opts.maxSlices ?? 400);
-  const step = Math.max(size, Math.ceil(text.length / maxSlices));
+  const floor = Math.max(size, Math.ceil(text.length / maxSlices));
   const out: string[] = [];
-  for (let i = step; i < text.length; i += step) out.push(text.slice(0, i));
-  out.push(text);
+  let i = 0;
+  while (i < text.length) {
+    i = safeCut(text, i + typewriterStep(text.length - i, size, floor));
+    out.push(text.slice(0, i));
+  }
+  if (out[out.length - 1] !== text) out.push(text);
   return out;
 }
 
@@ -627,4 +787,60 @@ export function pruneStaleSessions(sessions: ChatSession[], now: number = Date.n
     return touched === null || now - touched <= ttlMs;
   });
   return kept.length ? kept : [emptySession(now)];
+}
+
+// ─── P29 稳智对齐：parentStepId 嵌套步骤 ────────────────────────────────────
+
+/**
+ * 层次化步骤节点：在 StepInfo 基础上加可选 children。
+ * children 是按 step 号排序的子步骤数组。
+ */
+export interface StepTreeNode extends StepInfo {
+  children?: StepTreeNode[];
+}
+
+/**
+ * 把扁平的 steps 数组转成嵌套树。
+ *
+ * 规则：
+ * - 有 parentStepId 且能找到父步骤的，挂到父步骤的 children 下
+ * - parentStepId 找不到父步骤的（孤儿），作为顶层处理（不丢步骤）
+ * - 每个节点的 children 按 step 号排序
+ * - 顶层节点也按 step 号排序
+ *
+ * 兼容：老数据（所有步骤都没有 parentStepId）返回扁平树，每个节点 children === undefined。
+ */
+export function buildStepTree(steps?: StepInfo[]): StepTreeNode[] {
+  if (!steps || steps.length === 0) return [];
+
+  const nodes = new Map<number, StepTreeNode>();
+  for (const s of steps) {
+    nodes.set(s.step, { ...s });
+  }
+
+  const roots: StepTreeNode[] = [];
+  for (const s of steps) {
+    const node = nodes.get(s.step)!;
+    const parentId = s.parentStepId;
+    const parent = parentId !== undefined ? nodes.get(parentId) : undefined;
+
+    if (parent && parent !== node) {
+      // 有合法父步骤：挂到父步骤的 children 下
+      if (!parent.children) parent.children = [];
+      parent.children.push(node);
+    } else {
+      // 无父步骤 或 孤儿（parentStepId 指向不存在的父步骤）：作为顶层
+      roots.push(node);
+    }
+  }
+
+  // 排序：每个节点的 children 按 step 号排，顶层也按 step 号排
+  const sortNodes = (arr: StepTreeNode[]) => {
+    arr.sort((a, b) => a.step - b.step);
+    for (const n of arr) {
+      if (n.children && n.children.length > 0) sortNodes(n.children);
+    }
+  };
+  sortNodes(roots);
+  return roots;
 }

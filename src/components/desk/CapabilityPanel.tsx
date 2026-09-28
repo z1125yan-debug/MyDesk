@@ -40,7 +40,7 @@ function Evidence({ p }: { p: CapabilityProbeClient }) {
   return (
     <span className="flex flex-wrap gap-1">
       {entries.map(([k, v]) => (
-        <span key={k} className="rounded border border-border/70 px-1 py-0.5 text-[10px] text-muted-foreground">
+        <span key={k} className="rounded border border-border/70 px-1 py-0.5 text-[11px] text-muted-foreground">
           {k}=<span className="text-foreground">{String(v)}</span>
         </span>
       ))}
@@ -53,26 +53,26 @@ function Row({ p, def }: { p: CapabilityProbeClient; def?: CapabilityDef }) {
   return (
     <div className="border-t border-border/60 px-3 py-2 first:border-t-0">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium ${k.cls}`}>{k.label}</span>
-        <span className="text-[12.5px] font-semibold">{p.title}</span>
-        <span className="font-mono text-[10.5px] text-muted-foreground">{p.name}</span>
-        <span className="text-[10.5px] text-muted-foreground">状态分层 {statusZh(p.status)}</span>
-        {p.degraded_from && <span className="text-[10.5px] text-amber-300">兜底自 {p.degraded_from}</span>}
+        <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-medium ${k.cls}`}>{k.label}</span>
+        <span className="text-[13.5px] font-semibold">{p.title}</span>
+        <span className="font-mono text-[11.5px] text-muted-foreground">{p.name}</span>
+        <span className="text-[11.5px] text-muted-foreground">状态分层 {statusZh(p.status)}</span>
+        {p.degraded_from && <span className="text-[11.5px] text-amber-300">兜底自 {p.degraded_from}</span>}
         {p.probed && p.usable && (() => {
           // 措辞全部来自内核：只有服务端判了「超上限」才说不算实时；没有时刻时说未知，不显示「（? 秒）」
           const chip = plainify(freshnessChip(p.fresh, p.freshness, p.freshness_s));
           if (!chip) return null;
-          return <span className={`text-[10.5px] ${p.fresh === false ? "text-amber-300" : "text-muted-foreground"}`}>{chip}</span>;
+          return <span className={`text-[11.5px] ${p.fresh === false ? "text-amber-300" : "text-muted-foreground"}`}>{chip}</span>;
         })()}
-        {p.mutating && <span className="rounded border border-fuchsia-500/30 bg-fuchsia-500/10 px-1 text-[10px] text-fuchsia-300">写操作·Agent 不可用</span>}
+        {p.mutating && <span className="rounded border border-fuchsia-500/30 bg-fuchsia-500/10 px-1 text-[11px] text-fuchsia-300">写操作·Agent 不可用</span>}
       </div>
-      <div className="mt-1 text-[11.5px] leading-4 text-muted-foreground">{p.note}</div>
-      {def && <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">入参 {def.input} ｜ 返回 {def.output}</div>}
+      <div className="mt-1 text-[12.5px] leading-4 text-muted-foreground">{p.note}</div>
+      {def && <div className="mt-0.5 text-[12px] leading-4 text-muted-foreground">入参 {def.input} ｜ 返回 {def.output}</div>}
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
-        <span className="rounded border border-border/70 px-1 py-0.5 text-[10px] text-muted-foreground">范围 {p.scope}</span>
-        <span className="rounded border border-border/70 px-1 py-0.5 text-[10px] text-muted-foreground">来源 {def?.source ?? "—"}</span>
+        <span className="rounded border border-border/70 px-1 py-0.5 text-[11px] text-muted-foreground">范围 {p.scope}</span>
+        <span className="rounded border border-border/70 px-1 py-0.5 text-[11px] text-muted-foreground">来源 {def?.source ?? "—"}</span>
         {!!p.fallbacks.length && (
-          <span className="rounded border border-sky-500/25 px-1 py-0.5 text-[10px] text-sky-300/90">兜底 {p.fallbacks.join(" → ")}</span>
+          <span className="rounded border border-sky-500/25 px-1 py-0.5 text-[11px] text-sky-300/90">兜底 {p.fallbacks.join(" → ")}</span>
         )}
         <Evidence p={p} />
       </div>
@@ -80,8 +80,8 @@ function Row({ p, def }: { p: CapabilityProbeClient; def?: CapabilityDef }) {
         <DeskCollapse
           className="mt-1"
           title={`已知局限 ${p.limitations.length} 条`}
-          triggerClassName="text-[11px] text-muted-foreground hover:text-foreground"
-          contentClassName="text-[11px] text-muted-foreground"
+          triggerClassName="text-[12px] text-muted-foreground hover:text-foreground"
+          contentClassName="text-[12px] text-muted-foreground"
         >
           <ul className="space-y-0.5">
             {p.limitations.map((l) => <li key={l}>· {plainify(l)}</li>)}
@@ -150,7 +150,7 @@ export function CapabilityPanel() {
   return (
     <div className="rounded-xl border border-border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-        <div className="flex items-center gap-1.5 text-[13.5px] font-semibold">
+        <div className="flex items-center gap-1.5 text-[14.5px] font-semibold">
           <Boxes size={14} className="text-sky-400" /> 数据能力与来源状态（我现在能查什么）
         </div>
         <div className="flex items-center gap-2">
@@ -173,7 +173,7 @@ export function CapabilityPanel() {
       </div>
 
       <div className="space-y-3 px-4 py-4">
-        {!probe && !busy && <div className="text-[12px] text-muted-foreground">{error || "探测未取到：没有真实探测结果就不做任何判断。"}</div>}
+        {!probe && !busy && <div className="text-[13px] text-muted-foreground">{error || "探测未取到：没有真实探测结果就不做任何判断。"}</div>}
         {probe && (
           <>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -184,13 +184,13 @@ export function CapabilityPanel() {
                 { k: "未探测", v: `${counts.unprobed ?? 0} 项`, t: "没测就是没测，面板不会把它显示成「暂无数据」" },
               ].map((c) => (
                 <div key={c.k} title={c.t} className="rounded-lg border border-border px-3 py-2">
-                  <div className="text-[10.5px] text-muted-foreground">{c.k}</div>
-                  <div className="text-[13px] font-semibold">{c.v}</div>
+                  <div className="text-[11.5px] text-muted-foreground">{c.k}</div>
+                  <div className="text-[14px] font-semibold">{c.v}</div>
                 </div>
               ))}
             </div>
 
-            <div className="rounded-md border border-border/70 bg-accent/20 px-2.5 py-2 text-[11.5px] leading-4 text-muted-foreground">
+            <div className="rounded-md border border-border/70 bg-accent/20 px-2.5 py-2 text-[12.5px] leading-4 text-muted-foreground">
               <div>{statusShortZh(probe.layering)}</div>
               <div className="mt-1">{plainify(probe.gateway_note)}</div>
               <div className="mt-1">口径：{plainify(probe.basis)}</div>
@@ -207,8 +207,8 @@ export function CapabilityPanel() {
                 tone="amber"
                 defaultOpen
                 className="mt-2"
-                triggerClassName="text-[11.5px] font-medium text-amber-200 hover:text-amber-100"
-                contentClassName="text-[11.5px] text-amber-100/80"
+                triggerClassName="text-[12.5px] font-medium text-amber-200 hover:text-amber-100"
+                contentClassName="text-[12.5px] text-amber-100/80"
                 title={`还缺什么 ${missing.length} 项（这些结论不能用真实数据支撑）`}
               >
                 <ul className="space-y-1">
@@ -222,7 +222,7 @@ export function CapabilityPanel() {
                 <Search size={13} className="text-muted-foreground" />
                 <input value={need} onChange={(e) => setNeed(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void askNeed()}
                   placeholder="我还缺什么数据？例：板块资金 / 事件 / 因子 / 留档"
-                  className="w-[280px] rounded-md border border-border bg-transparent px-2 py-1.5 text-[12px] outline-none focus:border-sky-500/50" />
+                  className="w-[280px] rounded-md border border-border bg-transparent px-2 py-1.5 text-[13px] outline-none focus:border-sky-500/50" />
               </div>
               <button onClick={() => void askNeed()} disabled={needBusy || !need.trim()}
                 className="rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50">
@@ -230,25 +230,25 @@ export function CapabilityPanel() {
               </button>
             </div>
             {needResult && (
-              <div className="rounded-lg border border-border/70 px-2.5 py-2 text-[11.5px]">
+              <div className="rounded-lg border border-border/70 px-2.5 py-2 text-[12.5px]">
                 <div className="text-muted-foreground">需求「{needResult.need}」的已登记只读候选：</div>
                 {needResult.matches.length ? (
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {needResult.matches.map((m) => (
-                      <span key={m.name} className="rounded border border-sky-500/25 bg-sky-500/5 px-1.5 py-0.5 text-[11px] text-sky-200">{m.title}<span className="ml-1 font-mono text-[10px] text-muted-foreground">{m.name}</span>{needResult.hits?.find((h) => h.name === m.name)?.matched.length ? <span className="ml-1 text-[10px] text-muted-foreground">·命中 {needResult.hits!.find((h) => h.name === m.name)!.matched.join("/")}</span> : null}</span>
+                      <span key={m.name} className="rounded border border-sky-500/25 bg-sky-500/5 px-1.5 py-0.5 text-[12px] text-sky-200">{m.title}<span className="ml-1 font-mono text-[11px] text-muted-foreground">{m.name}</span>{needResult.hits?.find((h) => h.name === m.name)?.matched.length ? <span className="ml-1 text-[11px] text-muted-foreground">·命中 {needResult.hits!.find((h) => h.name === m.name)!.matched.join("/")}</span> : null}</span>
                     ))}
                   </div>
                 ) : (
                   <div className="mt-1 text-amber-200">{needResult.match_note || "没有已登记能力覆盖这个需求。"}{needResult.gap_groups?.length ? <span className="text-muted-foreground">（相近分组：{needResult.gap_groups.join("、")}）</span> : null}</div>
                 )}
-                <div className="mt-1 text-[10.5px] text-muted-foreground">这里只列只读能力（写库/删库/外部执行不在其中）；能不能取到看上面同一次探测。</div>
+                <div className="mt-1 text-[11.5px] text-muted-foreground">这里只列只读能力（写库/删库/外部执行不在其中）；能不能取到看上面同一次探测。</div>
               </div>
             )}
 
             <div className="overflow-hidden rounded-lg border border-border">
               {groups.map((g) => (
                 <div key={g.group}>
-                  <div className="flex items-center justify-between bg-accent/40 px-3 py-1.5 text-[11.5px] font-medium text-muted-foreground">
+                  <div className="flex items-center justify-between bg-accent/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground">
                     <span>{g.group}</span>
                     <span>{g.items.filter((p) => p.usable).length}/{g.items.length} 本次可取</span>
                   </div>
@@ -256,7 +256,7 @@ export function CapabilityPanel() {
                 </div>
               ))}
             </div>
-            {!!error && probe && <div className="text-[11.5px] text-rose-300">{error}</div>}
+            {!!error && probe && <div className="text-[12.5px] text-rose-300">{error}</div>}
           </>
         )}
       </div>

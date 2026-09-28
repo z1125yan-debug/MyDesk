@@ -19,27 +19,30 @@ const AGENT = "src/components/desk/pages/AgentPage.tsx";
 const HISTORY = "src/components/desk/pages/HistoryPage.tsx";
 const PROFILE = "src/components/desk/pages/ProfilePage.tsx";
 
-test("ResearchPage：四块读数 + 报告 + 采集器观测 + 台账 + 缺失口径 合成一张研究卡，tone 承载真实判定", () => {
+test("ResearchPage：板块深度决策研究收成一张卡（头 + 分区块 + 技术细节折叠），tone 承载真实判定", () => {
   const src = readSrc(RESEARCH);
   assert.equal(src.match(/<LineageCard/g)?.length, 1, "研究页只有一张卡");
-  assert.match(src, /title=\{<span className="flex items-center gap-2"><Microscope size=\{17\}[^}]*\/> AI 市场环境研究<\/span>\}/);
-  // 各散块 → 卡内小节（首节不分隔线）
-  assert.match(src, /<LineageSection title="当前读数"[\s\S]*divided=\{false\}/);
-  assert.match(src, /<LineageSection title="研究问题"/);
-  assert.match(src, /<LineageSection title="研究报告" tone=\{repTone\}/);
-  assert.match(src, /<LineageSection title="七分区明细"/);
-  // P15-R15：小节标题里的「Tool Calls」是黑话，换成「采集器观测 · 本次取数留痕」（tone 与结构一字未动）
-  assert.match(src, /<LineageSection title="采集器观测 · 本次取数留痕" tone=\{collectorTone\}/);
-  assert.match(src, /<LineageSection title=\{`台账目录/);
-  assert.match(src, /<LineageSection title=\{`缺失口径/);
-  // tone 是从真实状态推导的：REJECTED=danger、INTERPRETED=success，不是恒色
+  // 卡头 = 板块深度决策研究（仿稳智「研究结论」头）
+  assert.match(src, /板块深度决策研究/);
+  assert.match(src, /<span className="flex items-center gap-2"><Target size=\{17\}[^}]*\/> 板块深度决策研究<\/span>/);
+  // 选板块 + 决策卡分区块（稳智 10 段）都在卡内
+  assert.match(src, /<LineageSection title="选板块"/);
+  assert.match(src, /<LineageSection title="详细内容（七分区明细）"/);
+  assert.match(src, /<LineageSection title="今日取数状态"/);
+  // 技术细节折叠：引用原文 / 回溯文本 / 台账目录 收在一起，且都标「服务端现取」
+  assert.match(src, /title="技术细节（AI 核对、数据来源）"/);
+  assert.match(src, /title="引用原文（服务端按 id 回填，前端改不了）"/);
+  assert.ok(src.includes('回溯文本（这份报告「每句话从哪来」的完整核对串）'), "回溯文本折叠：报告每句话从哪来");
+  assert.ok(src.includes('台账目录（${(view?.evidence ?? []).length} 行，服务端现取）'), "台账目录明说服务端现取、不是前端编的");
+  // 数据缺口（缺失口径）原样活过重构
+  assert.ok(src.includes('数据缺口（${view.missing.length} 条）'), "缺失口径合成一处、显真实条数");
+  // tone 从真实状态推导：REJECTED=danger、INTERPRETED=success，不是恒色
   assert.match(src, /const repTone: SectionTone = !rep \? "info"/);
-  assert.match(src, /interpretation_status === "REJECTED" \? "danger"/);
-  assert.match(src, /interpretation_status === "INTERPRETED" \? "success"/);
-  assert.match(src, /\.some\(\(s\) => s\.status === "failed"\) \? "warning" : "info"/);
-  // 诚实缺失原样活过重构
-  assert.match(src, /缺失原因见下方「缺失口径」，不会用别的数字顶替/);
-  assert.match(src, /截断条数会出现在下方「缺失口径」里（不静默丢行）/);
+  assert.match(src, /rep\.interpretation_status === "REJECTED" \? "danger"/);
+  assert.match(src, /rep\.interpretation_status === "INTERPRETED" \? "success"/);
+  // 技术细节仍消费真实服务端证据（researchLayerSections / renderResearchTrace），不另造一份
+  assert.match(src, /researchLayerSections\(rep, view\?\.evidence \?\? \[\]\)/);
+  assert.match(src, /renderResearchTrace\(rep, view\?\.evidence \?\? \[\]\)/);
 });
 
 test("AgentPage：一次自主运行收成一张卡（问题→结论→步骤→台账→血缘→观测），结论 tone 跟服务端判定走", () => {
@@ -98,7 +101,7 @@ test("ProfilePage：本地 Section 卡退役，画像七块 + AI 解读合成一
   // DecisionCard（P7-④ 独立取数）仍在卡内，没被收口吞掉
   assert.match(src, /<DecisionCard symbol=\{data\.symbol\} \/>/);
   // 诚实缺失字符串原样活过重构
-  assert.match(src, /以下数据块暂缺（不参与结论，不冒充实数）/);
+  assert.match(src, /（不参与结论，不冒充实数）/);
   assert.match(src, /逐笔主动买卖：暂无数据（本机通达信行情网关未开启）/);
   assert.match(src, /技术指标：日K历史不足/);
   assert.match(src, /板块强度：行业未匹配到榜单/);

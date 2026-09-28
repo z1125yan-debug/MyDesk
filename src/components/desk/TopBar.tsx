@@ -43,7 +43,7 @@ export default function TopBar() {
     <header className="relative z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border/60 bg-background/70 px-5 backdrop-blur-xl">
       <button
         onClick={toggleSidebar}
-        className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground"
+        className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-overlay-strong hover:text-foreground"
         title="收起/展开侧栏"
       >
         <PanelLeftClose size={18} />
@@ -59,7 +59,7 @@ export default function TopBar() {
           onBlur={() => { blurTimer.current = setTimeout(() => setOpen(false), 150); }}
           onKeyDown={(e) => { if (e.key === "Enter" && results[0]) pick(results[0]); }}
           placeholder="搜索股票、板块，回车直达…"
-          className="h-10 w-full rounded-full border border-border/70 bg-white/[0.04] pl-11 pr-4 text-[13.5px] outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-sky-400/50 focus:bg-white/[0.06]"
+          className="h-10 w-full rounded-full border border-border/70 bg-overlay pl-11 pr-4 text-[14.5px] outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-sky-400/50 focus:bg-overlay-strong"
         />
         {open && results.length > 0 && (
           <div className="apple-card absolute left-0 right-0 top-12 z-50 p-1.5 shadow-2xl">
@@ -67,11 +67,11 @@ export default function TopBar() {
               <button
                 key={i}
                 onMouseDown={() => { if (blurTimer.current) clearTimeout(blurTimer.current); pick(r); }}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13.5px] transition-colors hover:bg-white/[0.05]"
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[14.5px] transition-colors hover:bg-overlay-strong"
               >
-                <span className="rounded-md bg-sky-400/15 px-2 py-0.5 text-[11px] text-sky-300">{r.type}</span>
+                <span className="rounded-md bg-sky-400/15 px-2 py-0.5 text-[12px] text-sky-300">{r.type}</span>
                 <span className="font-medium">{r.label}</span>
-                <span className="ml-auto font-mono text-[12px] text-muted-foreground">{r.value}</span>
+                <span className="ml-auto font-mono text-[13px] text-muted-foreground">{r.value}</span>
               </button>
             ))}
           </div>
@@ -83,7 +83,7 @@ export default function TopBar() {
         <button
           onClick={() => go("settings")}
           className={
-            "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12.5px] transition-all " +
+            "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[13.5px] transition-all " +
             (configured
               ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
               : "border-amber-400/25 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20")
