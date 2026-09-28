@@ -10,6 +10,8 @@
 //  - 「取数失败」与「确实没这么长的历史」必须分开写，否则模型会把限流说成历史不足；
 //  - 每个返回值自带 数据源 字段，前端与模型都能看到这条数据是从哪儿来的。
 import { computeSentiment } from "@/lib/quant/screener/sentiment";
+// 外盘与 A50（隔夜美股 / 恒生 / 富时A50 期货）：此前 AI 工具集里没有外盘工具，模型只能拿快讯冒充
+import { fetchOverseas } from "@/lib/quant/data/overseas";
 import { runScreener } from "@/lib/quant/screener/run";
 // P10 择优轮：默认活跃池条件、条件中文读法、出身文案与五条择优纪律（一份定义多处消费，纯核零 IO）
 // R11：池子行/条件读出人话化（poolRowZh/poolCondZh 只换读法，冻结原数据一字不动）
@@ -97,6 +99,37 @@ function resolvedNote(r: { resolvedName: string | null; resolvedFrom: string; ma
 
 // P11 情绪温度：0-100 综合分（缺读数缩权、绝不把缺失当 0 分），工具与仪表盘消费同一份纯核
 import { computeTemperature, temperatureSummary } from "@/lib/quant/screener/sentiment-temperature-core";
+
+/**
+ * 外盘与 A50：隔夜美股（纳指 / 标普 / 道指 / 半导体ETF / 英伟达）、恒生、富时A50 期货。
+ *
+ * 为什么补它：2026-09-29 实测——AI 工具集里**没有任何外盘工具**，于是用户问「美股与外盘」时
+ * 模型拿不到真实外盘读数，只能用财经快讯冒充（外盘表里填的是「全球资管机构展望」「新基金密集发行」，
+ * 既不是美股点位也不是美债收益率）。稳智那份「三、美股与外盘」我们因此根本产不出。
+ * 本工具只取数不判定（判定在 overseas-core 纯核），取不到照实回 missing。
+ */
+async function toolMarketOverseas(): Promise<unknown> {
+  const s = await fetchOverseas();
+  if (!s.rows.length && !s.a50) {
+    return { missing: s.missing.length ? s.missing.join("；") : "外盘数据未取到（数据源无返回）" };
+  }
+  return {
+    数据源: "腾讯外盘 + 新浪 A50（GBK 原样解码，时刻不折算）",
+    口径: s.basis,
+    隔夜天数: s.us_age_days,
+    外盘: s.rows.map((r) => ({
+      标的: r.label,
+      最新价: r.price,
+      涨跌: r.change,
+      涨跌幅: r.changePct,
+      行情时刻: `${r.stamp}（${r.tz}）`,
+    })),
+    A50: s.a50
+      ? { 标的: s.a50.name, 最新价: s.a50.price, 涨跌幅: s.a50.changePct, 日期: s.a50.date }
+      : null,
+    missing: s.missing,
+  };
+}
 
 async function toolMarketSentiment(): Promise<unknown> {
   const s = await computeSentiment();
@@ -883,6 +916,7 @@ export interface ChatTool {
 
 export const TOOLS: ChatTool[] = [
   { name: "market_sentiment", desc: "大盘情绪：情绪温度(0-100)/涨跌家数/涨停/跌停/成交额/主力净额/风险等级", fn: toolMarketSentiment, params: { type: "object", properties: {} }, phase: "local_data" },
+  { name: "market_overseas", desc: "外盘与A50（隔夜真实行情）：纳指/标普/道指/半导体ETF/英伟达/恒生 + 富时A50期货，带各自行情时刻与时区。凡问「美股/外盘/隔夜/外部环境」必须用它——禁止拿财经快讯冒充外盘读数（2026-09-29 事故）", fn: toolMarketOverseas, params: { type: "object", properties: {} }, phase: "external_data" },
   { name: "sector_rank", desc: "行业/概念板块资金榜（按主力净流入排序）", fn: toolSectorRank, params: { type: "object", properties: { kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number" } } }, phase: "local_data" },
   { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业；symbol 可传代码或公司简称（简称经东财搜索解析，解析结果如实标注）", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
   { name: "stock_depth", desc: "个股五档盘口（通达信网关）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
