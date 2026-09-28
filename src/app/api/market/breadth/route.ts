@@ -4,10 +4,15 @@
 // 历史从哪来（P15-R19）：2026-04-20~09-24 这 110 个交易日的逐票收盘价是用真实日K回填的
 // （新浪 getKLineData，不复权原始价，见 /api/market/breadth/backfill），当日之后的行由收盘后调度器自产。
 // 回填只补库里没有的键，绝不覆盖自产行——所以这一条序列的算法从头到尾只有一套。
+// 票池（P15-R19c）：默认按**三市全A**算（本地库里北交所 347 只的行本来就有，自算就用整个池子）；
+// ?scope=two_markets 才剔掉北交所——这个开关只是给「与稳智同步种子对照」用，不是我们的默认口径。
 import { NextResponse } from "next/server";
 import { ttlCache } from "@/lib/quant/server-cache";
 import { db } from "@/lib/db";
-import { computeBreadthSeries, storedTradingDays, BREADTH_CALIBER, type StockBar } from "@/lib/quant/screener/breadth-core";
+import {
+  computeBreadthSeries, storedTradingDays, breadthScopeLabel, breadthCalendarLookback,
+  DEFAULT_BREADTH_SCOPE, BREADTH_CALIBER, type BreadthScope, type StockBar,
+} from "@/lib/quant/screener/breadth-core";
 import { addBeijingDays } from "@/lib/quant/scheduler/rules";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 
@@ -24,16 +29,18 @@ async function getHandler(req: Request) {
   const u = new URL(req.url);
   const raw = Number.parseInt(u.searchParams.get("days") ?? "90", 10);
   const days = Number.isFinite(raw) ? Math.min(250, Math.max(5, raw)) : 90; // 脏输入不设野值：回落默认 90
+  const scope: BreadthScope = u.searchParams.get("scope") === "two_markets" ? "two_markets" : DEFAULT_BREADTH_SCOPE;
   const today = shanghaiDate();
   // 交易日→日历日粗略 0.6 上浮，再垫 10 天给序列首行的前 4 根窗口用
-  const from = addBeijingDays(today, -(Math.ceil(days * 1.6) + 10));
+  // （公式在 breadth-core.breadthCalendarLookback，收盘后自产宽度列走同一条，两边分母才对得上）
+  const from = addBeijingDays(today, -breadthCalendarLookback(days));
   try {
     const rows = await db.stockDailyClose.findMany({
       where: { tradeDate: { gte: from, lte: today } },
       select: { symbol: true, tradeDate: true, close: true },
     });
     const bars: StockBar[] = rows.map((r) => ({ symbol: r.symbol, date: r.tradeDate, close: r.close }));
-    const series = computeBreadthSeries(bars);
+    const series = computeBreadthSeries(bars, scope);
     const stored = storedTradingDays(bars);
     const latest = series.length ? series[series.length - 1] : null;
 
@@ -53,6 +60,8 @@ async function getHandler(req: Request) {
       needed_days: 5,
       latest,
       series: series.slice(-days),
+      scope,
+      scope_label: breadthScopeLabel(scope),
       caliber: BREADTH_CALIBER,
       missing,
       source: "stock_daily_close（历史 110 个交易日由真实日K回填、当日之后由收盘后调度器自产；(symbol,tradeDate) 唯一键不重写）",

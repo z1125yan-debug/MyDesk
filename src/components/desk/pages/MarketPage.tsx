@@ -61,11 +61,14 @@ function turnoverOption(days: TrendDayPoint[], marketLabel = "两市"): EChartsC
   };
 }
 
-/** 大盘情绪（5日线占比）趋势：整体实线 + 微/中/大盘三条虚线（稳智同款四线；分组缺时只画实线） */
+/** 大盘情绪（5日线占比）趋势：一次只画一条口径的线。
+ *  · 本地·三市（默认）：只有「高于5日线占比」一条实线——本地库里没有市值分组，不自编一套分组冒充。
+ *  · 同步·两市：主线 + 微/中/大盘三条虚线（稳智同款四线，分组只有那份种子里有）。
+ *  P15-R19c：两个口径**不并排摆**（第五条点线没人看得清，四条已经够挤），
+ *  差多少由 breadth-crosscheck-core 现算，压成卡片口径行里一行字。 */
 function breadthOption(
   main: { date: string; v: number }[],
   groups: { micro: { date: string; v: number | null }[]; mid: { date: string; v: number | null }[]; large: { date: string; v: number | null }[] } | null,
-  self: { date: string; v: number }[] | null,
 ): EChartsCoreOption {
   const dates = main.map((p) => p.date);
   const series: Record<string, unknown>[] = [
@@ -91,18 +94,6 @@ function breadthOption(
         lineStyle: { color, width: 1.5, type: "dashed" },
       });
     }
-  }
-  if (self) {
-    // 同一条指标的第二个来源：本库真实收盘价（110 个交易日回填 + 收盘后自产）算出来的占比。
-    // 与主线并排摆着，谁高谁低一眼看得见——不做静默替换，也不把外部口径藏掉。
-    const byDate = new Map(self.map((p) => [p.date, p.v]));
-    series.push({
-      name: "自算·真实收盘", type: "line",
-      data: dates.map((d) => { const v = byDate.get(d); return v != null ? +v.toFixed(1) : null; }),
-      smooth: true, symbol: "circle", symbolSize: 4.5, connectNulls: false,
-      itemStyle: { color: "rgba(0,0,0,0)", borderColor: CHART.color.selfComputed, borderWidth: 1.3 },
-      lineStyle: { color: CHART.color.selfComputed, width: 1.6, type: "dotted" },
-    });
   }
   return {
     animationDuration: CHART.anim.duration,
@@ -327,10 +318,13 @@ export default function MarketPage() {
   const trendTo = trendToPick || tradeDate;
   const [trendError, setTrendError] = useState("");
   // 复盘统计历史（稳智账号同步种子：P15-R19 已照抄进 market_daily_stats，读侧只把晚于种子终点的自产行续上图）
-  const [review, setReview] = useState<{ rows: ReviewRow[]; source: string; indexChanges?: { d: string; allA: number; sh: number; dividend: number; small: number; mid: number; sz: number; cyb: number }[] } | null>(null);
+  const [review, setReview] = useState<{ rows: ReviewRow[]; source: string; seedEnd?: string; indexChanges?: { d: string; allA: number; sh: number; dividend: number; small: number; mid: number; sz: number; cyb: number }[] } | null>(null);
   // 逐日宽度（站上5日线占比）：来自 stock_daily_close 的收盘后沉淀
   const [breadth, setBreadth] = useState<BreadthClient | null>(null);
   const [breadthBusy, setBreadthBusy] = useState(true);
+  // 这张图画哪条口径：local = 本库真实收盘价自算（三市全A，默认，我们的数）；
+  // sync = 外部同步种子（两市票池，带微/中/大盘分组，稳智同款四线）。图上同时只摆一条，不并排。
+  const [breadthSrc, setBreadthSrc] = useState<"local" | "sync">("local");
   const poll = useLivePoll();
 
   const load = useCallback(async () => {
@@ -421,8 +415,10 @@ export default function MarketPage() {
   }, regime) : null;
   const tLatest = trend ? [...trend.days].reverse().find((d) => d.totalYi !== null) ?? null : null;
   const bLatest = breadth?.latest ?? null;
-  // 5日线占比序列：复盘种子优先（含微/中/大盘分组四线），本地逐日沉淀兜底；
-  // 主线走种子时再叠一条「本地真实收盘自算」的对照线（bSelf）+ 两线差多少（bCheck）
+  // 5日线占比有两个口径，**图上同一时刻只画一个**（用户：四条线已经够挤，别再并排摆第五条对照线）：
+  //   本地·三市（默认）＝本库真实收盘价自算，票池是沪+深+北交所，收盘后自己往前长，往后分位数也吃这条；
+  //   同步·两市＝稳智同步那份（整体 + 微/中/大盘共四条），票池实测剔了北交所。
+  // 两者差多少由 breadth-crosscheck-core 当场算、写在口径行里——不静默替换，也不把外部口径藏掉。
   const reviewRows = review?.rows ?? [];
   // 指数涨跌幅：稳智 index-changes 同源种子优先（全A/上证/红利/小盘/中小盘/深成/创业板），eltdx 目录兜底
   const IDX_NAMES: [string, string, string][] = [
@@ -451,46 +447,56 @@ export default function MarketPage() {
     return d.toISOString().slice(0, 10);
   }, [reviewRows]);
   const bWindow = useMemo(() => (bFrom ? reviewRows.filter((x) => x.date >= bFrom) : reviewRows), [reviewRows, bFrom]);
-  const bMain = useMemo(() => {
-    const win = bWindow.filter((x) => x.aboveMa5Pct !== null);
-    // 窗口内不足 2 天（自定义了个很窄的区间）就退回全量，别画一个孤点；
-    // 复盘种子整段都缺才退到本地逐日沉淀。
-    const r = win.length >= 2 ? win : reviewRows.filter((x) => x.aboveMa5Pct !== null);
-    if (r.length >= 2) return r.map((x) => ({ date: x.date, v: x.aboveMa5Pct as number }));
-    return (breadth?.series ?? []).filter((p) => p.above_ma5_pct !== null).map((p) => ({ date: p.date, v: p.above_ma5_pct as number }));
-  }, [bWindow, reviewRows, breadth]);
-  const bMainFromSeed = useMemo(() => {
-    const win = bWindow.filter((x) => x.aboveMa5Pct !== null);
-    const r = win.length >= 2 ? win : reviewRows.filter((x) => x.aboveMa5Pct !== null);
-    return r.length >= 2;
-  }, [bWindow, reviewRows]);
-  // 对照线：只有主线画的是外部同步口径时才有意义（否则两条线是同一份数，白占一个图例）
-  const bSelf = useMemo(() => {
-    if (!bMainFromSeed) return null;
-    const pts = (breadth?.series ?? [])
-      .filter((p) => p.above_ma5_pct !== null)
-      .map((p) => ({ date: p.date, v: p.above_ma5_pct as number }));
-    const days = new Set(bMain.map((x) => x.date));
-    return pts.filter((p) => days.has(p.date)).length >= 2 ? pts : null;
-  }, [bMainFromSeed, breadth, bMain]);
-  // 两条线的差异有多大：算法在 breadth-crosscheck-core，这里只喂当眼前这段窗口的事实
+  // 本地自算那条（三市全A）：起头按同一个月窗口切，尾巴跟着库里最新沉淀日往前走
+  const bLocal = useMemo(
+    () => (breadth?.series ?? []).filter((p) => p.above_ma5_pct !== null).map((p) => ({ date: p.date, v: p.above_ma5_pct as number })),
+    [breadth],
+  );
+  const bLocalWin = useMemo(() => (bFrom ? bLocal.filter((p) => p.date >= bFrom) : bLocal), [bLocal, bFrom]);
+  // 同步那条（两市票池）：**只取种子覆盖到的那些日子**。种子终点之后库里是自产行（三市口径），
+  // 混进来这张图就挂着「同步·两市」的名字画我们的数——那是口径错标（R17 板块榜写死「个股」同一个坑）。
+  // 窗口内不足 2 天就退回全量，别画一个孤点。
+  const seedEnd = review?.seedEnd ?? "";
+  const bSyncRows = useMemo(() => {
+    const seedOnly = seedEnd ? reviewRows.filter((x) => x.date <= seedEnd) : reviewRows;
+    const win = bWindow.filter((x) => x.aboveMa5Pct !== null && (!seedEnd || x.date <= seedEnd));
+    return win.length >= 2 ? win : seedOnly.filter((x) => x.aboveMa5Pct !== null);
+  }, [bWindow, reviewRows, seedEnd]);
+  const bSync = useMemo(() => bSyncRows.map((x) => ({ date: x.date, v: x.aboveMa5Pct as number })), [bSyncRows]);
+  // 画哪条由开关定；本地那条还没攒够两天时如实退回同步，不空着一张图。
+  // bDrawn = **实际画出来的**那条：退回时口径行跟着改成同步的措辞，不挂着「自算」画别人的数。
+  const bLocalReady = bLocalWin.length >= 2;
+  const bDrawn: "local" | "sync" = breadthSrc === "sync" || !bLocalReady ? "sync" : "local";
+  const bMain = bDrawn === "sync" ? bSync : bLocalWin;
+  const bGroups = useMemo(() => {
+    // 分组三条虚线只有画同步那条时才配出现（它们是同一份种子出来的），且必须与主线同一段切片
+    if (bDrawn !== "sync" || bSyncRows.length < 2) return null;
+    const col = (k: "microPct" | "midPct" | "largePct") => bSyncRows.map((x) => ({ date: x.date, v: x[k] }));
+    return { micro: col("microPct"), mid: col("midPct"), large: col("largePct") };
+  }, [bDrawn, bSyncRows]);
+  // 两个口径差多少：算法在 breadth-crosscheck-core，这里只喂当眼前这段窗口的事实（跟画哪条无关，两段都有读数才算）
   const bCheck = useMemo(
-    () => (bSelf
+    () => (bLocalWin.length >= 2 && bSync.length >= 2
       ? compareBreadthWithSeed(
-        bMain.map((p) => ({ date: p.date, aboveMa5Pct: p.v })),
-        bSelf.map((p) => ({ date: p.date, above_ma5_pct: p.v })),
+        bSync.map((p) => ({ date: p.date, aboveMa5Pct: p.v })),
+        bLocalWin.map((p) => ({ date: p.date, above_ma5_pct: p.v })),
       )
       : null),
-    [bMain, bSelf],
+    [bSync, bLocalWin],
   );
-  const bGroups = useMemo(() => {
-    const win = bWindow.filter((x) => x.aboveMa5Pct !== null);
-    const r = win.length >= 2 ? win : reviewRows.filter((x) => x.aboveMa5Pct !== null);
-    if (r.length < 2) return null;
-    // 分组三条虚线必须与 bMain 同一段切片，否则虚线会错位到别的日期
-    const col = (k: "microPct" | "midPct" | "largePct") => r.map((x) => ({ date: x.date, v: x[k] }));
-    return { micro: col("microPct"), mid: col("midPct"), large: col("largePct") };
-  }, [bWindow, reviewRows]);
+  // 口径行：一行字说清「这条线是谁算的、票池几个市场、跟另一条差多少」——
+  // 数字全部现算（bCheck 走纯核），不写死；写死的话明天数据变了它还自信地报旧差值。
+  const bNote = bMain.length < 2
+    ? "站上5日线占比要拿每票收盘价对 5 日线：历史已按真实日K回填到 2026-04-20，之后每个交易日收盘后自产"
+    : `近一个月 · 站上5日线占比 ${bMain.length} 个统计日（${bMain[0].date} ~ ${bMain[bMain.length - 1].date}）· `
+      + (bDrawn === "local"
+        ? `本库真实收盘价自算，票池三市全A（当日 ${breadth?.latest?.universe ?? "—"} 只）`
+          + (bCheck
+            ? `；跟同步那份（只有沪+深）比：这 ${bCheck.comparable_days} 天平均差 ${bCheck.mean_abs_pt ?? "—"} 个百分点、`
+              + `最大 ${bCheck.max_abs_pt ?? "—"}（110 天全量实测：去掉北交所只少 0.26 点，票池不是主因，剩下是同步那条在弱市更平）`
+            : "")
+        : `外部同步口径，票池只有沪+深（剔北交所 347 只）；三条虚线是它的微盘/中盘/大盘分组，我们的数在「本地·三市」`
+          + `${seedEnd ? ` · 同步那份止于 ${seedEnd}，之后库里是我们自己算的（三市），不混进这条线` : ""}`);
   const belowMa5 = bLatest && bLatest.ma5_eligible > 0 ? bLatest.ma5_eligible - bLatest.above_ma5 : null;
   const p3 = tiers?.tiers.find((t) => t.label === "3连板+")?.stocks ?? [];
   const n3 = p3.filter((s) => s.boards === 3).length;
@@ -631,13 +637,24 @@ export default function MarketPage() {
         <ChartCard
           centerTitle
           title="大盘情绪（5日线占比）趋势"
-          note={bMain.length >= 2
-            ? `近一个月 · 站上5日线占比 ${bMain.length} 个统计日（${bMain[0].date} ~ ${bMain[bMain.length - 1].date}）${bGroups ? " · 微盘/中盘/大盘三条虚线为外部同步口径的分组" : ""}${bCheck ? ` · 点线是用本库真实收盘价另算的一条：本窗口 ${bCheck.comparable_days} 天平均差 ${bCheck.mean_abs_pt ?? "—"} 个百分点、最大 ${bCheck.max_abs_pt ?? "—"}` : ""}`
-            : "站上5日线占比要拿每票收盘价对 5 日线：历史已按真实日K回填到 2026-04-20，之后每个交易日收盘后自产"}
+          right={
+            <div className="flex shrink-0 gap-1">
+              {([["local", "本地·三市"], ["sync", "同步·两市"]] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setBreadthSrc(k)}
+                  title={k === "local" ? "用本库真实收盘价自算，票池沪+深+北交所" : "外部同步口径，票池只有沪+深"}
+                  className={"rounded px-2 py-0.5 text-[11.5px] transition-colors " +
+                    (breadthSrc === k ? "bg-sky-500/15 font-medium text-sky-300" : "text-muted-foreground hover:text-foreground")}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          }
+          note={bNote}
+          warnings={breadthSrc === "local" && !bLocalReady ? ["本地自算这条还没攒够两天，暂时画的是同步口径（不是我们的数）"] : []}
         >
           <EChart ariaLabel="大盘情绪（5日线占比）趋势" height={300} state={breadthState}
-            emptyText="暂无数据（本地真实收盘价没攒够 5 天）"
-            option={breadthOption(bMain, bGroups, bSelf)} />
+            emptyText="暂无数据（本地真实收盘价没攒够 5 天，同步口径也没到位）"
+            option={breadthOption(bMain, bGroups)} />
         </ChartCard>
 
       </div>

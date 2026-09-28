@@ -101,7 +101,10 @@ test("R19-④ 自查项逐个钉：坏数据要报得出、报得准", () => {
 test("R19-⑤ 让路判定只认开头：种子 basis 不许被误认成自产行（实测踩过的坑）", () => {
   assert.equal(SEED_IMPORT_BASIS.includes(SELF_BASIS_PREFIX), false,
     "种子出身句里不能出现「本地自产」四个字（连「非本地自产」都不行：全文包含会把种子认成自产，第二次导入就一条都不写）");
-  assert.equal(isSelfProducedBasis(COLLECT.match(/basis: "([^"]+)"/)?.[1] ?? ""), true,
+  // 采集器那句 basis 现在拼了宽度三列的出身（P19c），写成 `const basis = "本地自产…" + "…"`；
+  // 老形状是 upsert 里一行 `basis: "本地自产…"`。两种都认——intent 是「开头必须是本地自产」，不是它写在哪行。
+  const collectorBasis = COLLECT.match(/basis: "([^"]+)"/)?.[1] ?? COLLECT.match(/const basis = "([^"]+)"/)?.[1] ?? "";
+  assert.equal(isSelfProducedBasis(collectorBasis), true,
     "采集器写的那句 basis 必须被让路判定认出来（导入器不许倒灌自产结果）");
   assert.equal(isSelfProducedBasis(SEED_IMPORT_BASIS), false);
   assert.equal(isSelfProducedBasis(""), false, "空 basis 不是自产：让种子有机会补写出身");

@@ -183,7 +183,12 @@ export interface ReviewRow {
   decliners: number; belowMa5: number; belowMa3: number;
   aboveMa5Pct: number | null; microPct: number | null; midPct: number | null; largePct: number | null;
 }
-export async function fetchReviewStats(from: string, to: string): Promise<{ rows: ReviewRow[]; source: string; indexChanges?: { d: string; allA: number; sh: number; dividend: number; small: number; mid: number; sz: number; cyb: number }[] }> {
+export async function fetchReviewStats(from: string, to: string): Promise<{
+  rows: ReviewRow[]; source: string;
+  /** 种子（外部同步口径）覆盖到哪天：这之后的行是本地自产，两口径不许混着当同一条线画 */
+  seedEnd?: string;
+  indexChanges?: { d: string; allA: number; sh: number; dividend: number; small: number; mid: number; sz: number; cyb: number }[];
+}> {
   const q = new URLSearchParams();
   if (from) q.set("from", from);
   if (to) q.set("to", to);
@@ -202,6 +207,7 @@ export interface BreadthDayStat {
   ma3_eligible: number;
   above_ma5: number;
   above_ma5_pct: number | null;
+  above_ma3: number;
   new_low_5: number;
   new_low_3: number;
 }
@@ -213,13 +219,16 @@ export interface BreadthClient {
   needed_days: number;
   latest: BreadthDayStat | null;
   series: BreadthDayStat[];
+  scope: "two_markets" | "all_markets";
+  scope_label: string;
   caliber: string;
   missing: string[];
   source: string;
   error?: string;
 }
-export async function fetchBreadth(days = 90): Promise<BreadthClient> {
-  const res = await fetch(`/api/market/breadth?days=${days}`);
+/** 默认三市全A；只有跟稳智同步口径做对照时才传 "two_markets" */
+export async function fetchBreadth(days = 90, scope: "two_markets" | "all_markets" = "all_markets"): Promise<BreadthClient> {
+  const res = await fetch(`/api/market/breadth?days=${days}&scope=${scope}`);
   const j = await res.json();
   if (!res.ok || !j.ok) throw new Error(j.error || "宽度统计获取失败");
   return j;

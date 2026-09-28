@@ -32,7 +32,8 @@ export const SEED_END = ROWS.length ? String(ROWS[ROWS.length - 1].date) : "";
  * 库里的一行 → 纯核吃的自产行（字段名对齐，null 原样透传）。
  * 能不能上图由纯核 isUsableSelfRow 判：涨跌停与最高板缺任何一样就整行不进序列——
  * 用 0 顶替会变成「当日 0 家涨停」的假事实（缺读数 ≠ 0 纪律）。
- * 站上5日线那几列本来就可缺（要等逐票收盘价攒够 5 天），null 原样透传。
+ * 宽度三列（aboveMa5Pct/belowMa5/belowMa3）自 P15-R19c 起由本地逐票收盘价自产（三市全A），
+ * 微/中/大盘分组自产不了（库里没有市值分层）→ 继续 null 原样透传。
  */
 function toSelfRow(r: {
   tradeDate: string; limitUp: number | null; limitDown: number | null;

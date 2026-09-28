@@ -3,10 +3,12 @@
 // 背景：R19 给 stock_daily_close 回填了 110 个交易日的真实收盘价（新浪日K，不复权），
 // 项目里第一次出现「同一个指标、两个独立来源」——稳智同步种子的 aboveMa5Pct 与本地自算的 above_ma5_pct。
 // 本轮实测结论（106 个可比交易日，取法见 worklog）：两条线走势一致（相关 0.98），
-// 但**水平对不齐**：本地自算平均低 4.42 个百分点、最大低 14.25 个百分点，且差距随日期靠近种子快照日而收敛
+// 但**水平对不齐**：本地自算（三市全A）平均低 4.68 个百分点、最大低 14.25 个百分点，且差距随日期靠近种子快照日而收敛
 // （4 月 −12 左右、9 月 −1 以内）。已排除的解释：日期错位（±1 天只会更差）、票池不同（剔掉北交所后
-// 分母 5,156~5,209 与种子反推的 5,174~5,210 基本吻合）、复权基准不同（同票配对测到最多 +1.9 个百分点）。
-// 这套钉守的是「比对算法本身不许算错」+「页面必须把两条线并排摆、不许静默替换」。
+// 分母 5,156~5,209 与种子反推的 5,174~5,210 基本吻合，但平均差只从 4.68 降到 4.42，只值 0.26 个点）、
+// 复权基准不同（同票配对测到最多 +1.9 个百分点）。
+// 这套钉守的是「比对算法本身不许算错」+「页面一次只画一条口径、默认画我们自己的三市自算，
+// 差多少必须写在口径行里、不许静默替换也不许并排摆五条线」。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -83,13 +85,38 @@ test("R19-X⑥ 最差三天按绝对偏差降序、并列按日期升序，且�
   assert.equal(r.worst.length, 3, "报三条就够看：把 110 天全列出等于没重点");
 });
 
-test("R19-X⑦ 页面把两条线并排摆出来（不静默替换、不藏外部口径）", () => {
+test("R19-X⑦ 页面一次只画一条口径：默认本地三市自算，两市那份要显式切，差值写在口径行", () => {
   assert.match(PAGE, /compareBreadthWithSeed/, "对照差值走同一份纯核，页面里不许再手写一遍算法");
-  assert.match(PAGE, /breadthOption\(bMain, bGroups, bSelf\)/, "自算那条线作参数进图，不是覆盖主线");
-  assert.match(PAGE, /name: "自算·真实收盘"/);
-  assert.match(PAGE, /平均差 \$\{bCheck\.mean_abs_pt/, "两线差多少个点要写在标题下面，别让人自己悬停量");
-  // 主线仍然来自复盘种子：这一步只做对照，不改判定
-  assert.match(PAGE, /v: x\.aboveMa5Pct as number/, "主线取值没被换成 above_ma5_pct");
+  // 默认口径 = 我们自己的三市自算（用户 2026-09-28 拍板：不按两市，本地有数据就自己算）
+  assert.match(PAGE, /useState<"local" \| "sync">\("local"\)/, "开关默认落在本地自算那一侧");
+  assert.match(PAGE, /const bMain = bDrawn === "sync" \? bSync : bLocalWin;/, "主线跟着实际选中那条走，不是写死种子");
+  assert.match(PAGE, /本地·三市/, "两市那份只能显式切过去看，不做默认");
+  assert.match(PAGE, /同步·两市/);
+  // 第五条并排点线已撤：图上就一条主线（+ 同步模式下的三条分组虚线）
+  assert.match(PAGE, /breadthOption\(bMain, bGroups\)/, "自算那条不再作第三个参数进图");
+  assert.equal(/自算·真实收盘/.test(PAGE), false, "并排摆第五条线已经撤掉了，留着就是「太拥挤」那句还没改");
+  assert.equal(/bSelf/.test(PAGE), false, "bSelf 这条线整个不存在了");
+  // 分组虚线只配出现在同步那条线上（本地库里没有市值分组，不自编一套冒充）
+  assert.match(PAGE, /bDrawn !== "sync"/, "画本地时不把种子分组叠上去");
+  // 两口径差多少仍必须写在标题下面，让人不用悬停量
+  assert.match(PAGE, /平均差 \$\{bCheck\.mean_abs_pt/, "差多少个点要摆在脸上");
+  assert.match(PAGE, /去掉北交所只少 0\.26 点/, "票池只值 0.26 个点这个量化结论要跟着数走，别让人以为去了北交就齐了");
+  // 本地没攒够两天时如实退回，并明说画的是别人的数——不许挂着「自算」画同步口径
+  assert.match(PAGE, /暂时画的是同步口径/);
+});
+
+test("R19-X⑦b 配色令牌里不再留着「并排对照线」那个颜色", () => {
+  const tokens = readFileSync(new URL("../../src/components/desk/charts/chart-tokens.ts", import.meta.url), "utf8");
+  assert.equal(/selfComputed:/.test(tokens), false, "线撤了色还留着，下一个人会以为图上有对照线");
+});
+
+test("R19-X⑦c 同步那条线只画到种子终点：终点之后库里是三市自算，接上去就是挂错名字的口径", () => {
+  assert.match(PAGE, /x\.date <= seedEnd/, "bSyncRows 要按 seedEnd 截断");
+  assert.match(PAGE, /seedEnd/, "页面得拿到「种子覆盖到哪天」这个事实");
+  const ROUTE = readFileSync(new URL("../../src/app/api/market/review-stats/route.ts", import.meta.url), "utf8");
+  assert.match(ROUTE, /seedEnd: SEED_END/, "接口把种子终点回给页面，别让前端自己数行数");
+  const API = readFileSync(new URL("../../src/lib/desk/quant-api.ts", import.meta.url), "utf8");
+  assert.match(API, /seedEnd\?: string/, "客户端类型带上这个字段");
 });
 
 test("R19-X⑧ 宽度口径句改口：历史来自真实日K回填，且价格基准只有一种", () => {
