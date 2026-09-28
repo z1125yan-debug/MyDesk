@@ -1,11 +1,12 @@
-// Phase5 回测校准（轻量，纯用已有 sector-daily-snapshots.json，不接外部数据）
+// Phase2 回测扩展（轻量，纯用已有 sector-daily-snapshots.json，不接外部数据）。
+// 不改引擎、不改 TH、不改 v1 状态机、不做自动扫参。
 //
-// 标签定义（v5 §413 简化版）：在某交易日 T，板块「未来 20 交易日相对全A 超额收益 < -10pp」
-// = 一次真实趋势破坏事件（集 A）。引擎在 T 日判为「趋势反转 / 顶部形成中」= 发出预警（flagged）。
-// 统计查准率(precision) / 查全率(recall) / F1，并给出「假阳性集 B」比例（flagged 但非真实顶部）。
+// 标签定义（v5 §413 简化版，沿用）：在某交易日 T，板块「未来 H 交易日相对全A 超额收益 < -10pp」
+// = 一次真实趋势破坏事件。引擎在 T 日判为「趋势反转 / 顶部形成中」= 发出预警（flagged）。
+// 本文件在原 T+20 单档基础上扩展为 T+5 / T+10 / T+20 三档，并增加「09-28 半导体链真实事件专项」。
 //
-// 用途：把引擎阈值从「首版默认」变成「有历史证据」；不做自动扫参（避免过拟合），只报告当前阈值表现，
-// 供用户醒来后决定是否调 TH 常量。
+// 诚实边界：09-28 是归档末日，其 T+5/T+10/T+20 后续交易日尚未产生（国庆休市，10-09 开市后
+// 15:20 自动填才有数据），专项如实标注 dataReady=false 与待补算日期，不猜测、不回填历史值。
 import fs from "node:fs";
 import path from "node:path";
 import { scanAll } from "./top-risk-engine";
@@ -14,10 +15,10 @@ interface ArchiveJson {
   days: Record<string, { tradeDate: string; allA: { medianChange: number | null }; industries: any[] }>;
 }
 
-export interface BacktestReport {
-  ok: true;
+interface HorizonStat {
+  H: number;
+  threshold: number; // 未来 H 日超额 < threshold(pp) 判真实顶部
   testDays: number;
-  sectorDays: number;
   realTopEvents: number;
   flagged: number;
   tp: number;
@@ -27,11 +28,44 @@ export interface BacktestReport {
   precision: number | null;
   recall: number | null;
   f1: number | null;
-  falsePositiveRate: number | null; // flagged 中实际非顶部的比例（集 B）
-  rankPrecision: number | null; // 每日风险 Top-N 中真顶部占比（扫描器排序可用性）
-  stageDist: Record<string, number>;
+  falsePositiveRate: number | null; // flagged 中实际非顶部的比例
+  rankPrecision: number | null; // 每日风险 Top-N 中真顶部占比
+}
+
+interface SectorEventRow {
+  sector: string;
+  stage: string;
+  excess5: number | null;
+  excess10: number | null;
+  excess20: number | null;
+}
+
+interface Event0928 {
+  asOf: string;
+  dataReady: boolean;
+  pendingNote: string | null;
+  sectors: SectorEventRow[];
+}
+
+export interface BacktestReport {
+  ok: true;
+  testDays: number;
+  sectorDays: number;
+  topN: number;
+  byHorizon: HorizonStat[];
+  event0928: Event0928;
   note: string;
 }
+
+const HORIZONS = [
+  { H: 5, thr: -10 },
+  { H: 10, thr: -10 },
+  { H: 20, thr: -10 },
+];
+const MAXH = 20; // 统一前瞻窗口，保证三档都能算出标签
+const TOPN = 15;
+// 半导体链板块（按产业链与行情联动归类）
+const SEMI_CHAIN = ["半导体", "通信设备", "元件", "电子化学品", "其他电子", "光学光电子", "消费电子"];
 
 export function runBacktest(): BacktestReport {
   const p = path.resolve(process.cwd(), "data", "sector-daily-snapshots.json");
@@ -49,15 +83,15 @@ export function runBacktest(): BacktestReport {
     }
   }
 
-  // 未来 20 日相对全A 超额（用日收益求和近似累计超额）
-  const excess20 = (sector: string, atIdx: number): number | null => {
-    if (atIdx + 20 >= dates.length) return null;
+  // 未来 H 日相对全A 超额（用日收益求和近似累计超额）
+  const excessN = (sector: string, atIdx: number, H: number): number | null => {
+    if (atIdx + H >= dates.length) return null;
     const arr = sectorDaily[sector];
     if (!arr) return null;
     const map = new Map(arr.map((x) => [x.date, x.mc]));
     let sSec = 0;
     let sMkt = 0;
-    for (let k = atIdx + 1; k <= atIdx + 20; k++) {
+    for (let k = atIdx + 1; k <= atIdx + H; k++) {
       const dd = dates[k];
       const m = map.get(dd);
       if (m == null) return null;
@@ -67,74 +101,106 @@ export function runBacktest(): BacktestReport {
     return sSec - sMkt;
   };
 
-  // 测试窗口：需 >=20 日历史(前期涨幅) 且 留 20 日前瞻(标签)
+  // 测试窗口：需 >=20 日历史(前期涨幅) 且 留 20 日前瞻(标签)；三档共用同一窗口
   const lo = 20;
-  const hi = dates.length - 21;
-  let tp = 0,
-    fp = 0,
-    fn = 0,
-    tn = 0,
-    realTop = 0,
-    flagged = 0,
-    sectorDays = 0;
-  const stageDist: Record<string, number> = {};
-  // 排名可用性：每交易日取风险最高的 Top-N，统计其中真顶部占比（扫描器实际价值）
-  const TOPN = 15;
-  let rankRealTop = 0;
-  const rankTotal = (hi - lo + 1) * TOPN;
+  const hi = dates.length - 1 - MAXH;
+  const thrByH: Record<number, number> = {};
+  HORIZONS.forEach((h) => (thrByH[h.H] = h.thr));
+  const acc: Record<number, { tp: number; fp: number; fn: number; tn: number; realTop: number; flagged: number; rankRealTop: number }> = {};
+  HORIZONS.forEach((h) => (acc[h.H] = { tp: 0, fp: 0, fn: 0, tn: 0, realTop: 0, flagged: 0, rankRealTop: 0 }));
+  let sectorDays = 0;
 
   for (let k = lo; k <= hi; k++) {
-    const asOf = dates[k];
-    const scan = scanAll(asOf);
+    const scan = scanAll(dates[k]);
     const riskOf = (r: { stage: string; midTop: number; trendDamage: number }) =>
       Math.max(r.midTop, r.trendDamage) + (r.stage === "趋势反转" ? 10 : 0);
     const ranked = [...scan.rows].sort((a, b) => riskOf(b) - riskOf(a));
     const topSet = new Set(ranked.slice(0, TOPN).map((r) => r.sector));
     for (const row of scan.rows) {
       sectorDays++;
-      const ex = excess20(row.sector, k);
-      if (ex == null) continue;
-      const isRealTop = ex < -10; // 未来20日跑输全A >10pp
       const isFlag = row.stage === "趋势反转" || row.stage === "顶部形成中";
-      stageDist[row.stage] = (stageDist[row.stage] ?? 0) + 1;
-      if (isRealTop) realTop++;
-      if (isFlag) flagged++;
-      if (isFlag && isRealTop) tp++;
-      else if (isFlag && !isRealTop) fp++;
-      else if (!isFlag && isRealTop) fn++;
-      else tn++;
+      if (isFlag) HORIZONS.forEach((h) => acc[h.H].flagged++);
+      for (const { H, thr } of HORIZONS) {
+        const ex = excessN(row.sector, k, H);
+        if (ex == null) continue;
+        const isRealTop = ex < thr;
+        if (isRealTop) acc[H].realTop++;
+        if (isFlag && isRealTop) acc[H].tp++;
+        else if (isFlag && !isRealTop) acc[H].fp++;
+        else if (!isFlag && isRealTop) acc[H].fn++;
+        else acc[H].tn++;
+      }
     }
-    // Top-N 真顶部命中
-    for (const row of scan.rows) {
-      if (!topSet.has(row.sector)) continue;
-      const ex = excess20(row.sector, k);
-      if (ex == null) continue;
-      if (ex < -10) rankRealTop++;
+    // 排名可用性：每日 Top-N 中真顶部占比
+    for (const { H } of HORIZONS) {
+      const thr = thrByH[H];
+      for (const row of scan.rows) {
+        if (!topSet.has(row.sector)) continue;
+        const ex = excessN(row.sector, k, H);
+        if (ex == null) continue;
+        if (ex < thr) acc[H].rankRealTop++;
+      }
     }
   }
 
-  const precision = flagged ? tp / flagged : null;
-  const recall = realTop ? tp / realTop : null;
-  const f1 = precision != null && recall != null && precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : null;
-  const falsePositiveRate = flagged ? fp / flagged : null;
-  const rankPrecision = rankRealTop / rankTotal; // 每日 Top-15 中真顶部占比
+  const byHorizon: HorizonStat[] = HORIZONS.map(({ H, thr }) => {
+    const c = acc[H];
+    const rankTotal = (hi - lo + 1) * TOPN;
+    const precision = c.flagged ? c.tp / c.flagged : null;
+    const recall = c.realTop ? c.tp / c.realTop : null;
+    const f1 = precision != null && recall != null && precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : null;
+    return {
+      H,
+      threshold: thr,
+      testDays: hi - lo + 1,
+      realTopEvents: c.realTop,
+      flagged: c.flagged,
+      tp: c.tp,
+      fp: c.fp,
+      fn: c.fn,
+      tn: c.tn,
+      precision,
+      recall,
+      f1,
+      falsePositiveRate: c.flagged ? c.fp / c.flagged : null,
+      rankPrecision: c.rankRealTop / rankTotal,
+    };
+  });
+
+  // —— 09-28 半导体链真实事件专项 ——
+  const asOf28 = dates.includes("2026-09-28") ? "2026-09-28" : null;
+  let event0928: Event0928 = { asOf: "2026-09-28", dataReady: false, pendingNote: null, sectors: [] };
+  if (asOf28) {
+    const k28 = dates.indexOf(asOf28);
+    const dataReady = k28 + MAXH < dates.length; // 有完整 20 日前瞻才算得出
+    const scan = scanAll(asOf28);
+    const sectors: SectorEventRow[] = SEMI_CHAIN.map((name) => {
+      const row = scan.rows.find((r) => r.sector === name);
+      return {
+        sector: name,
+        stage: row ? row.stage : "未覆盖",
+        excess5: excessN(name, k28, 5),
+        excess10: excessN(name, k28, 10),
+        excess20: excessN(name, k28, 20),
+      };
+    }).filter((s) => s.stage !== "未覆盖");
+    event0928 = {
+      asOf: asOf28,
+      dataReady,
+      pendingNote: dataReady
+        ? null
+        : `后续交易日数据未就绪（归档末日 ${dates[dates.length - 1]}）。国庆 10-01~10-08 休市，10-09 开市后 15:20 自动填，T+5≈10-13 / T+10≈10-20 / T+20≈10-27 收盘后重跑本接口即得真实值。`,
+      sectors,
+    };
+  }
 
   return {
     ok: true,
     testDays: hi - lo + 1,
     sectorDays,
-    realTopEvents: realTop,
-    flagged,
-    tp,
-    fp,
-    fn,
-    tn,
-    precision,
-    recall,
-    f1,
-    falsePositiveRate,
-    rankPrecision,
-    stageDist,
-    note: `标签=未来20日相对全A超额<-10pp；测试窗口 ${lo}..${hi}（${hi - lo + 1} 交易日）。当前阈值为首版默认，precision/recall 供校准参考，非自动扫参。rankPrecision=每日风险Top-${TOPN}中真顶部占比（扫描器排序可用性）。`,
+    topN: TOPN,
+    byHorizon,
+    event0928,
+    note: `标签=未来 H 日相对全A超额<-10pp；测试窗口 ${lo}..${hi}（${hi - lo + 1} 交易日，统一留 20 日前瞻保证三档可比）。当前阈值为 v1 封版默认，precision/recall/rankPrecision 供校准参考，非自动扫参。rankPrecision=每日风险Top-${TOPN}中真顶部占比（扫描器排序可用性）。`,
   };
 }
