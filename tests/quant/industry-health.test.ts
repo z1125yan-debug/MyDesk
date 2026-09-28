@@ -96,22 +96,21 @@ test("解读：用户范式的标题+正文（利润翻倍/订单超一倍/提�
   assert.ok(r!.headline.includes("提前备货"), r!.headline);
   assert.ok(r!.body.startsWith("截至2026-06-30，市值排名前8的行业龙头"), r!.body);
   assert.ok(r!.look.includes("合同负债增速（142.4%）高于利润增速"), r!.look);
-  assert.ok(r!.caution.includes("合同负债增长并不等于未来利润一定增长"), r!.caution);
-  assert.ok(r!.caution.includes("资本开支数据暂缺"), r!.caution);
+  assert.ok(r!.caution === "", "数据无特别警示时不应硬凑模板句：" + r!.caution);
 });
 
 test("解读：订单萎缩+存货积压 → 风险话术", () => {
   const r = readFundamentals({ earnings_yoy: -5, orders_yoy: -35, inventory_yoy: 40 });
   assert.ok(r!.headline.includes("合同负债大幅萎缩"));
   assert.ok(r!.headline.includes("库存明显积压"), r!.headline);
-  assert.ok(r!.caution.includes("库存积压会侵蚀后续利润"), r!.caution);
+  assert.ok(r!.caution.includes("存货增速（+40%）明显快于合同负债（-35%）"), r!.caution);
 });
 
 test("解读：capex 有数 → 说明扩产/收缩，不再说暂缺", () => {
   const r = readFundamentals({ earnings_yoy: 10, capex_yoy: 45 });
   assert.ok(r!.caution.includes("同步扩产"), r!.caution);
   const r2 = readFundamentals({ earnings_yoy: 10 });
-  assert.ok(r2!.caution.includes("资本开支数据暂缺"), r2!.caution);
+  assert.ok(r2!.caution === "", "capex 暂缺不再占提醒位：" + r2!.caution);
 });
 
 test("解读：全空 → null", () => {
@@ -129,4 +128,17 @@ test("存货重要性闸门：占比<3% 的服务型行业，存货不进解读�
 test("存货重要性闸门：占比高的制造业照常参与", () => {
   const r = readFundamentals({ earnings_yoy: 100.4, orders_yoy: 142.4, inventory_yoy: 88.2, inventory_ratio_pct: 15, sampled: 8 });
   assert.ok(r!.look.includes("备货"), r!.look);
+});
+
+test("解读：需要注意随板块数据而变，不再千篇一律", () => {
+  // 利润高增+订单萎缩 → 背离警示
+  const diverge = readFundamentals({ earnings_yoy: 70.7, orders_yoy: -13.4, inventory_ratio_pct: 1.5 });
+  assert.ok(diverge!.caution.includes("利润还在增长"), diverge!.caution);
+  assert.ok(diverge!.caution.includes("70.7"), diverge!.caution);
+  // 订单远超利润 → 兑现节奏警示
+  const lag = readFundamentals({ earnings_yoy: 10, orders_yoy: 145, inventory_ratio_pct: 11 });
+  assert.ok(lag!.caution.includes("兑现节奏"), lag!.caution);
+  // 高库存基数+高增速 → 去化压力
+  const heavy = readFundamentals({ earnings_yoy: 50, orders_yoy: 35, inventory_yoy: 60, inventory_ratio_pct: 25 });
+  assert.ok(heavy!.caution.includes("占总资产 25%"), heavy!.caution);
 });
