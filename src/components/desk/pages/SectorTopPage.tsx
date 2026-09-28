@@ -37,7 +37,7 @@ function DeltaTag({ tone, label }: { tone: string; label: string }) {
   );
 }
 
-const FILTERS = ["全部", "趋势反转", "顶部形成中", "趋势内回撤", "趋势健康"] as const;
+const FILTERS = ["全部", "趋势反转", "顶部形成中", "下行延续", "趋势内回撤", "趋势健康"] as const;
 type Filter = (typeof FILTERS)[number];
 
 export default function SectorTopPage() {
@@ -122,9 +122,10 @@ export default function SectorTopPage() {
 
       {/* 状态概览 */}
       {ss && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           <Stat label="趋势反转" v={ss.trendBreak} tone="red" />
           <Stat label="顶部形成中" v={ss.topWatch} tone="amber" />
+          <Stat label="下行延续" v={ss.downtrend} tone="orange" />
           <Stat label="趋势内回撤" v={ss.highPullback} tone="blue" />
           <Stat label="趋势健康" v={ss.healthy} tone="green" />
         </div>

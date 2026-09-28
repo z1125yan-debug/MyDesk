@@ -1,7 +1,7 @@
 // 板块顶部风险 / 回撤性质识别器 —— 纯类型（无 fs，客户端/服务端共用）
 // 实现见 top-risk-engine.ts；UI 见 src/components/desk/pages/SectorTopPage.tsx
 
-export type Stage = "趋势内回撤" | "顶部形成中" | "趋势反转" | "趋势健康";
+export type Stage = "趋势内回撤" | "顶部形成中" | "趋势反转" | "下行延续" | "趋势健康";
 export type TopType = "A" | "B" | "C" | "D" | null;
 export type Tone = "red" | "orange" | "amber" | "green" | "blue";
 
@@ -68,7 +68,7 @@ export interface SectorRow {
 export interface ScannerResult {
   scanDate: string;
   sectorCount: number;
-  statusSummary: { trendBreak: number; topWatch: number; highPullback: number; healthy: number };
+  statusSummary: { trendBreak: number; topWatch: number; highPullback: number; downtrend: number; healthy: number };
   levels: string[];
   rows: SectorRow[];
   biggestMovers: string[];
