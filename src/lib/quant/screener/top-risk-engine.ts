@@ -530,27 +530,27 @@ export function readFundamentals(fin: {
   }
   const look = lookParts.length ? lookParts.join("；") + "。" : "";
 
-  // 需要注意：订单≠利润、库存双刃剑、资本开支
+  // 需要注意：只说这个板块的数据里真正值得警惕的点，每条都来自具体数字；没有就不硬凑
   const cautions: string[] = [];
   if (o != null && invEff != null && invEff - o > 30) {
-    cautions.push("存货增速明显快于订单（合同负债），如果需求没有跟上，库存积压会侵蚀后续利润");
-  } else if (o != null) {
-    cautions.push(
-      invEff != null
-        ? "合同负债增长并不等于未来利润一定增长：如果后续订单顺利兑现、库存顺利消化，当前备货有利于承接需求；反之，若需求不及预期，较快的库存增长可能转化为经营压力"
-        : "合同负债增长并不等于未来利润一定增长，订单能否顺利兑现仍需跟踪",
-    );
-  } else if (invEff != null && invEff >= 30) {
-    cautions.push("存货增速偏高，若需求跟不上，库存积压会侵蚀后续利润");
+    cautions.push(`存货增速（${signed(invEff)}）明显快于合同负债（${signed(o)}）：如果需求没有跟上，库存积压会侵蚀后续利润`);
   }
-  if (capex == null) {
-    cautions.push("资本开支数据暂缺，因此暂时无法判断行业是否正在同步大规模扩产");
-  } else if (capex >= 30) {
-    cautions.push(`资本开支同比大增(${signed(capex)})，行业在同步扩产，需留意未来供给是否过剩`);
-  } else if (capex <= -20) {
-    cautions.push(`资本开支在收缩(${signed(capex)})，行业扩产意愿谨慎`);
-  } else {
-    cautions.push(`资本开支基本持平(${signed(capex)})，扩产节奏温和`);
+  if (e != null && e >= 10 && o != null && o <= -10) {
+    cautions.push(`利润还在增长（+${r1(e)}%），但合同负债已经开始萎缩（${r1(o)}%）——当前盈利可能仍靠前期订单支撑，新订单能否接上需要跟踪`);
+  }
+  if (o != null && e != null && o - e > 50) {
+    cautions.push(`合同负债增速比利润增速高出 ${r1(o - e)} 个点：签单到收入确认存在时滞，后续几个季度的兑现节奏决定了利润走向`);
+  }
+  if (o != null && e != null && e - o > 50) {
+    cautions.push(`利润增速比合同负债增速高出 ${r1(e - o)} 个点：要留意当前盈利有多少来自前期订单的确认，新增需求是否跟得上`);
+  }
+  if (fin.inventory_ratio_pct != null && fin.inventory_ratio_pct >= 20 && invEff != null && invEff >= 30) {
+    cautions.push(`这个板块库存基数本就不低（占总资产 ${fin.inventory_ratio_pct}%），叠加 ${r1(invEff)}% 的增速，去化压力需要持续观察`);
+  }
+  if (capex != null && capex >= 30) {
+    cautions.push(`资本开支同比大增（+${r1(capex)}%）：行业在同步扩产，需留意未来供给是否过剩`);
+  } else if (capex != null && capex <= -20) {
+    cautions.push(`资本开支在收缩（${r1(capex)}%）：行业扩产意愿谨慎，可能反映对需求的保守判断`);
   }
   const caution = cautions.length ? cautions.join("。") + "。" : "";
   return { headline, body, look, caution };
