@@ -41,6 +41,15 @@ export interface SectorTopRisk {
     available: boolean;
     nodes: Record<string, { n: string; tone: Tone }[]>;
     metricsAvailable: number;
+    financial: {
+      earnings_yoy: number | null;
+      orders_yoy: number | null;
+      inventory_yoy: number | null;
+      capex_yoy: number | null;
+      period: string | null;
+      sampled: number | null;
+      total: number | null;
+    } | null;
     note: string;
   };
   pro: string[];
