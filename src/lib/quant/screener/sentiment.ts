@@ -6,11 +6,17 @@
 //   涨停价 = round(昨收 × (1+限制比例), 2)；比例：创业板/科创板(300/301/688/689) 20%（含ST，
 //   交易所规则注册制板块ST不降比例）→ 北交所 30% → 主板ST 5% → 其余 10%；名称 N 开头（上市首日）不参与判定。
 //   触板 = high ≥ 涨停价；收盘涨停 = price ≥ 涨停价；炸板 = 触板 且 未封板。
+// P15-R20：已有五条风险阈值一字未改，只补一条升档判据——同拍命中 ≥2 条「偏高」级读数即升「高风险」。
+//   为什么原来「高风险」是死档：类型里有这一档、页面样式也备好了，但五条规则没有一条会把档位抬到那儿，
+//   单条读数再差也只到「偏高」，所以那一档从来没被命中过。判据与理由在 top-risk-core.ts，不在这里重复。
 
 import { getProvider } from "@/lib/quant/data/index";
 import { universeSource } from "@/lib/quant/data/tc-universe";
 import { fetchQuotesReal, type RealQuote } from "@/lib/desk/em";
-import { marketSession, shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
+import { marketSession, shanghaiStamp } from "@/lib/desk/session";
+import { latestTradeDate } from "@/lib/desk/trade-date";
+// R20：「高风险」档位的同拍升档判据（纯核，阈值只有一份、写在文件里）
+import { escalateToHighRisk } from "./top-risk-core.ts";
 import type { AssetMeta } from "../types.ts";
 
 export interface SentimentResult {
@@ -42,7 +48,15 @@ export interface SentimentResult {
   main_net_known: number;
   median_pct: number;
   indices: { symbol: string; name: string; price: number; changePct: number }[];
-  risk: { level: "正常" | "注意" | "偏高" | "高风险"; triggers: string[] };
+  risk: {
+    level: "正常" | "注意" | "偏高" | "高风险";
+    triggers: string[];
+    /**
+     * R20：本次命中的「偏高」级读数短名（升高风险就靠数它，`>=2` 同拍才升）。
+     * 可选是为了不破旧快照测试里的 risk 字面量；读侧当空数组处理即可。
+     */
+    severe_signals?: string[];
+  };
   missing: string[];
   source: { provider: string; universe_endpoint: string; indices_endpoint: string };
 }
@@ -61,7 +75,7 @@ import { evalLimitSnapshot } from "../factors/fields.ts";
 export async function computeSentiment(): Promise<SentimentResult> {
   const provider = await getProvider("em");
   const now = new Date();
-  const tradeDate = shanghaiDate(now);
+  const tradeDate = await latestTradeDate(now);
   const session = marketSession(now);
   const live = session.phase === "trading";
   const metas: AssetMeta[] = await provider.listUniverse({ kind: "all" }, tradeDate);
@@ -105,24 +119,31 @@ export async function computeSentiment(): Promise<SentimentResult> {
   const advRatio = decliners > 0 ? advancers / decliners : advancers > 0 ? 99 : 1;
 
   const triggers: string[] = [];
+  // P15-R20：「偏高」级读数的短名。只用来数「同一时刻几条一起差」，不参与任何既有阈值判定。
+  const severe: string[] = [];
   let level: SentimentResult["risk"]["level"] = "正常";
   const worse = (next: SentimentResult["risk"]["level"]): void => {
     const order = ["正常", "注意", "偏高", "高风险"];
     if (order.indexOf(next) > order.indexOf(level)) level = next;
   };
-  if (advRatio < 0.5) { triggers.push(`涨跌家数比 ${advRatio.toFixed(2)}（阈值 <0.5）`); worse("偏高"); }
+  if (advRatio < 0.5) { triggers.push(`涨跌家数比 ${advRatio.toFixed(2)}（阈值 <0.5）`); severe.push("涨跌家数比<0.5"); worse("偏高"); }
   else if (advRatio < 0.8) { triggers.push(`涨跌家数比 ${advRatio.toFixed(2)}（<0.8 弱势）`); worse("注意"); }
-  if (limitDown > limitUp && limitDown > 0) { triggers.push(`跌停 ${limitDown} 家 > 涨停 ${limitUp} 家`); worse("偏高"); }
+  if (limitDown > limitUp && limitDown > 0) { triggers.push(`跌停 ${limitDown} 家 > 涨停 ${limitUp} 家`); severe.push("跌停家数反超涨停"); worse("偏高"); }
   else if (limitDown >= 5) { triggers.push(`跌停 ${limitDown} 家`); worse("注意"); }
   const mainNetYi = mainNetSum / 1e8;
-  if (mainNetYi < -500) { triggers.push(`全A主力净流出 ${mainNetYi.toFixed(0)} 亿（阈值 -500）`); worse("偏高"); }
+  if (mainNetYi < -500) { triggers.push(`全A主力净流出 ${mainNetYi.toFixed(0)} 亿（阈值 -500）`); severe.push("全A主力净流出<-500亿"); worse("偏高"); }
   else if (mainNetYi < -300) { triggers.push(`全A主力净流出 ${mainNetYi.toFixed(0)} 亿（阈值 -300）`); worse("注意"); }
   if (median < -1.5) { triggers.push(`全A中位涨跌幅 ${median.toFixed(2)}%`); worse("注意"); }
   // 炸板率触发（需求文档九）：>40% → 升到「偏高」
   if (breakRate !== null && breakRate > 40) {
     triggers.push(`炸板率升至 ${breakRate.toFixed(0)}%（触板 ${touched}/炸板 ${broken}，阈值 >40%）`);
+    severe.push("炸板率>40%");
     worse("偏高");
   }
+  // P15-R20：补活「高风险」这一档。上面五条阈值一个字没改；这里只加一条同拍判据
+  //（两条及以上「偏高」级读数同时命中 → 升高风险）。取舍理由见 top-risk-core.ts 文件头。
+  const esc = escalateToHighRisk(level, severe);
+  if (esc.escalated) { level = esc.level; triggers.push(esc.text); }
   if (!triggers.length) triggers.push("各项可用指标均在正常范围");
 
   const idxQuotes = await fetchQuotesReal(["000001.SH", "399001.SZ", "399006.SZ"]).catch(() => [] as (RealQuote | null)[]);
@@ -150,7 +171,7 @@ export async function computeSentiment(): Promise<SentimentResult> {
     main_net_known: mainNetKnown,
     median_pct: median,
     indices,
-    risk: { level, triggers },
+    risk: { level, triggers, severe_signals: severe },
     missing: [
       "北向净流入：交易所自2024-08-19起不再披露，无官方数据源",
       ...(breakRate === null ? [`炸板率（今日触板数为 0，无法计算比率）`] : []),

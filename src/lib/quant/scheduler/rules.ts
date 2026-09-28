@@ -3,7 +3,9 @@
 //       无法确证交易日时不猜测，交上层记为 skipped。
 // 时区口径：一律按北京时间（A股交易日历语义），不依赖宿主时区；北京固定 UTC+8 无夏令时。
 
-export type TaskKind = "radar" | "events" | "breadth" | "review";
+// P15-R20 加 "roster"：收盘后把当日涨停名单（哪几只、几连板）钉进 market_limit_up，
+// 晋级率 / 梯队断层 / 昨日涨停股今日表现这三组读数只有名单攒起来之后才算得出来。
+export type TaskKind = "radar" | "events" | "breadth" | "review" | "roster";
 
 export interface SchedulerConfig {
   /** 收盘时刻（北京时间当日分钟数，15:00 = 900） */

@@ -576,3 +576,44 @@ model MarketDailyStats {
   @@index([tradeDate])
   @@map("market_daily_stats")
 }
+
+// P15-R20 涨停名单沉淀（收盘后自产 + 东财涨停池回填留存窗口）：晋级率 / 梯队断层 / 赚钱效应的唯一根。
+//
+// 为什么要单开一张表，而不是用 market_daily_stats：那张表只有**计数**（limitUp/t3/t4/t5/maxBoards），
+// 而「昨天首板的 39 只，今天有几个变二板」要的是**按日的名单**——计数换算不出谁晋级了谁掉队了。
+// 用户口径里「昨日涨停名单收盘沉淀」这条欠账，根就在这张表上。
+//
+// 写死在这里的口径（实现在 screener/limit-up-collect.ts）：
+// 1) (symbol, tradeDate) 唯一：同日重跑整批覆盖（收盘后名单会随数据源落定微调，以最后一次为准，
+//    basis 记出身）；这与 stock_daily_close 的「收盘价不可变、已有键不重写」不同，别照抄那一条；
+// 2) 池子返回 0 行 = **不知道**，不是「当日 0 只涨停」：东财这个接口对休市日与超出留存窗口的日期
+//    都回 tc=0，本机无法只凭响应区分，所以 0 行一律**不写表**，缺哪天由读侧按 stock_daily_close 的
+//    交易日历判——缺就是缺，不写空名单冒充「当日无人涨停」；
+// 3) 周末 / 北京 15:05 之前拒跑（盘中名单不是收盘名单，钉进历史就是造假），与 breadth/review 同源三道闸；
+// 4) boards = 连板数（1 表示首板），取不到 boards 的行**不进晋级率分母**（缺 ≠ 首板）；
+//    firstSeal/lastSeal 是北京时刻 HH:MM:SS，breakCount 是当日炸板次数，sealFund 是封单额（元）；
+// 5) floatCap（流通市值）本轮只留档不参与任何读数：微/中/大盘分组要的是全 A 的市值，
+//    这张表只有涨停票，拿它分组等于用 50 只涨停票冒充全市场，下一轮要做得另接市值源；
+// 6) basis 明写来源。将来若用本地收盘价近似推名单，必须写「本地收盘近似」，
+//    两种出身不许混进同一批行——近似档判不出触板/炸板。
+model MarketLimitUp {
+  id         String  @id @default(cuid())
+  symbol     String // 601811.SH
+  tradeDate  String // 北京时间交易日 YYYY-MM-DD
+  name       String  @default("")
+  industry   String  @default("") // 东财行业板块名（hybk）
+  boards     Int? // 连板数 lbc（1=首板）
+  changePct  Float? // 当日涨跌幅 %（zdp）
+  firstSeal  String? // 首次封板时刻 HH:MM:SS
+  lastSeal   String? // 最后封板时刻 HH:MM:SS
+  breakCount Int? // 当日炸板次数 zbc
+  sealFund   Float? // 封单额（元，fund）
+  floatCap   Float? // 流通市值（元，ltsz）——只留档，本轮不做分组
+  basis      String  @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([symbol, tradeDate])
+  @@index([tradeDate])
+  @@map("market_limit_up")
+}
