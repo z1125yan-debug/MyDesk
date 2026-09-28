@@ -284,6 +284,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
           period: [fundamentals.earnings_period, fundamentals.orders_period, fundamentals.inventory_period, fundamentals.capex_period].filter(Boolean).sort().slice(-1)[0] ?? null,
           sampled: fundamentals.sampled ?? null,
           total: fundamentals.total ?? null,
+          interpret: interpretFundamentals(fundamentals),
         }
       : null,
     note: chainAvailable
@@ -406,6 +407,47 @@ function buildConclusion(
   return `${sector}今日${mcS}%，${stagePhrase}；${structPhrase}，${rsPhrase}${posPhrase}。当前判为「${topTypeLabel}」。${
     counter.includes("产业层数据不足(无法确认基本面恶化)") ? `产业层数据不足：${chainNote} ` : ""
   }主要风险：${pro.slice(0, 3).join("、") || "无明显"}；反向信号：${counter.slice(0, 2).join("、") || "暂无——各路读数同向走弱，没有像样的反向证据"}。综合看${stage === "趋势健康" ? "暂无需警示" : stage === "趋势内回撤" ? "偏回调、观察确认窗口" : "需重点跟踪"}。`;
+}
+
+// ── 行业财务快照的人话解读（用户 2026-09-29：'这些数据说明了什么？'）──
+// 三个同比数字合起来讲一个故事：赚不赚钱（利润）→ 需求旺不旺（合同负债=订单）→
+// 货卖不卖得动（存货 vs 订单的相对速度）。只描述状态，不给买卖建议。
+export function interpretFundamentals(fin: {
+  earnings_yoy?: number | null;
+  orders_yoy?: number | null;
+  inventory_yoy?: number | null;
+}): string | null {
+  const e = fin.earnings_yoy ?? null;
+  const o = fin.orders_yoy ?? null;
+  const inv = fin.inventory_yoy ?? null;
+  if (e == null && o == null && inv == null) return null;
+  const boom = (e != null && e >= 30) || (o != null && o >= 50);
+  const weak = (e != null && e <= -10) || (o != null && o <= -30);
+  const overall = boom ? "行业整体处于高景气" : weak ? "行业景气在走弱" : "行业整体平稳";
+  const parts: string[] = [];
+  if (e != null) {
+    if (e >= 100) parts.push(`利润翻倍还不止（+${r1(e)}%），行业在高速赚钱`);
+    else if (e >= 30) parts.push(`利润大增（+${r1(e)}%）`);
+    else if (e >= 10) parts.push(`利润稳增（+${r1(e)}%）`);
+    else if (e > -10) parts.push(`利润基本持平（${e >= 0 ? "+" : ""}${r1(e)}%）`);
+    else if (e > -30) parts.push(`利润明显下滑（${r1(e)}%）`);
+    else parts.push(`利润大幅恶化（${r1(e)}%）`);
+  }
+  if (o != null) {
+    if (o >= 50) parts.push(`下游在抢着下单（合同负债+${r1(o)}%，需求很旺）`);
+    else if (o >= 10) parts.push(`订单在增加（合同负债+${r1(o)}%）`);
+    else if (o > -10) parts.push(`订单平稳（合同负债${o >= 0 ? "+" : ""}${r1(o)}%）`);
+    else if (o > -30) parts.push(`订单在萎缩（合同负债${r1(o)}%）`);
+    else parts.push(`订单大幅萎缩（合同负债${r1(o)}%），需求转弱`);
+  }
+  if (inv != null) {
+    if (o != null && inv - o > 30) parts.push(`但存货涨得比订单快（+${r1(inv)}%），要防货压在手里卖不动`);
+    else if (o != null && o >= inv && o >= 0) parts.push(`存货跟着订单一起备（+${r1(inv)}%），属于正常备货、不是滞销`);
+    else if (inv >= 0) parts.push(`存货小幅增加（+${r1(inv)}%）`);
+    else parts.push(`存货在去化（${r1(inv)}%），压力不大`);
+  }
+  if (!parts.length) return null;
+  return `${overall}——${parts.join("；")}。`;
 }
 
 // ── 产业周期健康度（Phase2 路线①解锁）──

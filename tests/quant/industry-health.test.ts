@@ -3,7 +3,7 @@
 // asOf 截断只看历史月份（回放纪律）。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeIndustryHealth } from "../../src/lib/quant/screener/top-risk-engine.ts";
+import { computeIndustryHealth, interpretFundamentals } from "../../src/lib/quant/screener/top-risk-engine.ts";
 
 const monthly = (prices: number[], startYear = 2026, startMonth = 3): { date: string; price_trend: number }[] =>
   prices.map((p, i) => {
@@ -87,4 +87,22 @@ test("权重归一：只有价格分量时与只有财务分量时都能出分",
   const finOnly = computeIndustryHealth([], {}, undefined, { earnings_yoy: 30, earnings_period: "2026-06-30" });
   assert.equal(priceOnly, 100);
   assert.equal(finOnly, 100);
+});
+
+test("解读：利润翻倍+订单抢购+备货跟得上 → 高景气话术", () => {
+  const s = interpretFundamentals({ earnings_yoy: 100.4, orders_yoy: 142.4, inventory_yoy: 88.2 });
+  assert.ok(s!.includes("高景气"));
+  assert.ok(s!.includes("利润翻倍还不止"));
+  assert.ok(s!.includes("抢着下单"));
+  assert.ok(s!.includes("正常备货、不是滞销"), "存货增速低于订单增速 → 不该喊滞销");
+});
+
+test("解读：订单萎缩+存货高企 → 累库警示话术", () => {
+  const s = interpretFundamentals({ earnings_yoy: -5, orders_yoy: -35, inventory_yoy: 40 });
+  assert.ok(s!.includes("景气在走弱"));
+  assert.ok(s!.includes("卖不动"));
+});
+
+test("解读：全空 → null", () => {
+  assert.equal(interpretFundamentals({}), null);
 });
