@@ -541,3 +541,38 @@ model StockDailyClose {
   @@index([tradeDate])
   @@map("stock_daily_close")
 }
+
+// R21 每日复盘统计（收盘后自产）：把当日的涨跌停/连板梯队/下跌家数钉成一行，
+// 让首页「涨跌停板分布对比」「连板梯队结构」两张图不再只有一份不续写的离线种子。
+//
+// 写死在这里的四条口径：
+// 1) tradeDate 唯一：同日重跑走 upsert（收盘后数字会随数据源落定微调，与 stock_daily_close 的
+//    「收盘价不可变」不同——涨停家数是统计口径，允许以最后一次为准，但每次都留 basis 说明出身）；
+// 2) 只写真实读到的字段：取不到的写 null（above_ma5_pct 要等 width 攒够 5 个交易日才有数），
+//    不回填、不拿前一天顶替——缺就是缺；
+// 3) 周末/收盘前拒跑（在 collect 层挡，与 breadth 同源的三道闸）；
+// 4) 与 review-stats-seed.json 的关系：**种子是历史底子，本表只补种子覆盖终点之后的新日期**。
+//    同日两者都有时以种子为准（避免同一天数字跳变），本表行照样留档供口径核对。
+model MarketDailyStats {
+  id          String  @id @default(cuid())
+  tradeDate   String  @unique // 北京时间交易日 YYYY-MM-DD
+  limitUp     Int? // 涨停家数
+  limitDown   Int? // 跌停家数
+  t3          Int? // 3 连板家数
+  t4          Int? // 4 连板家数
+  t5          Int? // 5 连板及以上家数
+  maxBoards   Int? // 当日最高板
+  decliners   Int? // 全市场下跌家数
+  belowMa5    Int? // 收盘价低于 5 日线家数（需逐票收盘价沉淀，攒不够为 null）
+  belowMa3    Int? // 收盘价低于 3 日线家数
+  aboveMa5Pct Float? // 站上 5 日线占比 %
+  microPct    Float? // 微盘股站上 5 日线占比 %
+  midPct      Float? // 中盘股
+  largePct    Float? // 大盘股
+  basis       String  @default("") // 数据来源/口径（如「通达信涨停梯队 + 东财全A快照」）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tradeDate])
+  @@map("market_daily_stats")
+}

@@ -18,6 +18,7 @@ import { modeBasisLabel } from "@/lib/quant/screener/incremental-core";
 import { cursorSummary } from "@/lib/quant/screener/incremental";
 import { archiveRadarScan, archiveEventScan, type ArchiveResult, type DeltaStats, type EventRow, type RadarRow, type ScanMode } from "@/lib/quant/screener/persist";
 import { archiveBreadthScan } from "@/lib/quant/screener/breadth-collect";
+import { archiveReviewScan } from "@/lib/quant/screener/review-daily-collect";
 import { shanghaiDate } from "@/lib/desk/session";
 import {
   DEFAULT_SCHEDULER_CONFIG, SKIP_REASON_TEXT, decideRun, isDueWindow, judgeTradingDay, nextSlot, slotAtForDate,
@@ -28,7 +29,7 @@ export { SKIP_REASON_TEXT, type TaskKind } from "./rules";
 
 const TICK_MS = 60_000;
 const INDEX_SYMBOL = "000001.SH"; // 交易日判据：上证指数日线（与选股器交易日历同源）
-const KINDS: TaskKind[] = ["radar", "events", "breadth"];
+const KINDS: TaskKind[] = ["radar", "events", "breadth", "review"];
 const UNCONFIRMED_PROBE_MS = 15 * 60_000; // 确证不了交易日时，最多每 15 分钟再问一次数据源
 
 export interface TaskOutcome {
@@ -181,10 +182,13 @@ export async function runTaskTracked(
     // breadth 的 mode/force 不参与落库口径：写库层本就是「唯一键 + 不重写」，没有全量重刷这回事
     const out = kind === "radar" ? await archiveRadarScan(archiveOpts)
       : kind === "events" ? await archiveEventScan(archiveOpts)
+      : kind === "review" ? await archiveReviewScan()
       : await archiveBreadthScan();
     const writeLine = `写入：新增 ${out.delta.inserted}、更新 ${out.delta.updated}、未变 ${out.delta.unchanged}`
       + (out.delta.skippedByCursor ? `、游标跳过 ${out.delta.skippedByCursor}` : "")
-      + (kind === "radar" ? `、标记消失 ${out.delta.superseded}` : kind === "events" ? `、保留 ${out.delta.kept}` : "（收盘价不可变：同日重跑只补新票）");
+      + (kind === "radar" ? `、标记消失 ${out.delta.superseded}` : kind === "events" ? `、保留 ${out.delta.kept}`
+        : kind === "review" ? "（复盘统计按交易日唯一键 upsert：同日重跑以最后一次为准）"
+        : "（收盘价不可变：同日重跑只补新票）");
     await db.taskRun.update({
       where: { id: row.id },
       data: {
@@ -317,8 +321,9 @@ export async function schedulerStatus() {
       last_error: last?.error ?? "",
       // P3：当日增量游标（没有游标 = 今天还没成功跑过，下一次会走全量口径）
       // breadth 没有游标概念：它的幂等在写库层——(symbol, tradeDate) 唯一键、已有行不重写。
-      cursor: kind === "breadth"
-        ? { kind, trade_date: today, exists: false, watermark: "", done_keys: 0, unmatched_keys: 0, scanned: 0, results: 0, basis: "宽度管线不设增量游标：口径是「当日已有收盘价行不重写（收盘价不可变），重跑只补新票」", note: "", updated_at: null }
+      // review 同理：按 tradeDate 唯一键 upsert，同日重跑以最后一次为准（统计口径会随数据源落定微调）。
+      cursor: kind === "breadth" || kind === "review"
+        ? { kind, trade_date: today, exists: false, watermark: "", done_keys: 0, unmatched_keys: 0, scanned: 0, results: 0, basis: kind === "review" ? "复盘统计不设增量游标：口径是「按交易日唯一键 upsert，同日重跑以最后一次为准」" : "宽度管线不设增量游标：口径是「当日已有收盘价行不重写（收盘价不可变），重跑只补新票」", note: "", updated_at: null }
         : await cursorSummary(kind, today),
     };
   }));

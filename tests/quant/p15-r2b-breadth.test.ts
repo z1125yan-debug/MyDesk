@@ -85,8 +85,10 @@ test("R2b-⑤ 沉淀层红线：收盘前/周末拒跑、唯一键不重写、�
 test("R2b-⑥ 调度与读侧接线：breadth 进 KINDS 白名单，端点只算不存，页面吃进度与点集", () => {
   const rules = readSrc("src/lib/quant/scheduler/rules.ts");
   const idx = readSrc("src/lib/quant/scheduler/index.ts");
-  assert.ok(/TaskKind = "radar" \| "events" \| "breadth"/.test(rules), "任务类型三值化");
-  assert.ok(idx.includes('KINDS: TaskKind[] = ["radar", "events", "breadth"]'), "收盘后窗口自动跑宽度沉淀");
+  assert.ok(/TaskKind = "radar" \| "events" \| "breadth" \| "review"/.test(rules), "任务类型四值化（R21 加了 review）");
+  // R21：KINDS 多了 review，断言改成「含 breadth」而不是写死整个数组——
+  // 写死整行会让每次加任务种类都红一次，而这条钉要盯的是 breadth 在不在白名单里。
+  assert.ok(/KINDS: TaskKind\[\] = \["radar", "events", "breadth"/.test(idx), "收盘后窗口自动跑宽度沉淀");
   assert.ok(idx.includes("archiveBreadthScan()"), "执行分支接上沉淀器（mode/force 不参与其口径）");
   const run = readSrc("src/app/api/tasks/run/route.ts");
   assert.ok(run.includes('body.kind === "breadth"'), "手动接口白名单含 breadth（收盘前跑会被沉淀器拒并如实报错）");
@@ -97,7 +99,9 @@ test("R2b-⑥ 调度与读侧接线：breadth 进 KINDS 白名单，端点只算
   assert.ok(api.includes("/api/market/breadth"), "客户端一条口 fetchBreadth");
   const mk = readSrc("src/components/desk/pages/MarketPage.tsx");
   assert.ok(mk.includes("void loadBreadth()"), "首屏自动带宽度进度");
-  assert.ok(mk.includes("<BreadthPctLine points={bPoints} />"), "图只吃 pct 非 null 的真实统计日");
-  assert.ok(mk.includes("v / 100"), "占比图 y 轴固定 0–100%，不自动缩放夸大波动");
-  assert.ok(mk.includes("不画「一条横线冒充趋势」"), "只攒出 1 个点时不画线");
+  // R19：宽度图多了一个入参（本地自算对照线），空态文案也从「攒中/回填中」改成说清「没攒够 5 天」。
+  // 这两处只放宽形状、不放松 intent：图仍走 breadthOption、仍吃 pct 非 null 的真实统计日、空态仍明说缺什么。
+  assert.ok(/breadthOption\(bMain, bGroups(?:, \w+)?\)/.test(mk), "宽度图走统一 EChart（吃 pct 非 null 的真实统计日）");
+  assert.ok(/emptyText="暂无数据（[^"]*5 天[^"]*）"/.test(mk), "只攒出不足 2 个点时不画线、明说要满 5 天");
+  assert.ok(mk.includes("min: 0, max: 100"), "占比图 y 轴固定 0–100%，不自动缩放夸大波动");
 });
