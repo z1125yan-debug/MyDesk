@@ -130,6 +130,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
   const cur = industries.find((x) => x.name === sector);
   if (!cur) return null;
   const map = loadMap();
+  const fundamentals = loadFundamentals().sectors[sector] ?? null;
 
   const mc: number = cur.medianChange ?? 0;
   const rs: number = cur.rsProxy ?? 0;
@@ -194,6 +195,13 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
 
   // ── 顶部类型（与阶段机对齐：B 类只在阶段已进入顶部状态时判；长期下行中不判 A/B——先回升积累涨幅、再破位才构成顶部形态）──
   const topStage = stage === "趋势反转" || stage === "顶部形成中";
+  // C 类（基本面顶部）判定句：有行业财务就用真实同比说结论，没有才说"数据不足"
+  const finEyN = fundamentals?.earnings_yoy ?? null;
+  const finOyN = fundamentals?.orders_yoy ?? null;
+  const cClassNote =
+    finEyN != null
+      ? `行业财务：利润同比${finEyN >= 0 ? "+" : ""}${r1(finEyN)}%${finOyN != null ? `、订单(合同负债)同比${finOyN >= 0 ? "+" : ""}${r1(finOyN)}%` : ""}——基本面${finEyN >= 10 ? "尚未恶化，C 类暂不成立" : finEyN <= -10 ? "已确认走弱" : "变化有限"}。`
+      : "产业层数据不足，若订单↓/库存↑/利润↓确认恶化→升为 C 基本面顶部。";
   let topType: TopType = null;
   let topTypeLabel = "无明显顶部特征";
   let topTypeNote = "未触发 A/B 顶部信号。";
@@ -202,11 +210,11 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
   } else if (topStage && belowTrend && coreBreak && rsNeg) {
     topType = "B";
     topTypeLabel = "趋势顶部·深度调整";
-    topTypeNote = "价格↓、RS↓、宽度↓、龙头破位；属上涨趋势中的深度调整/估值消化。产业层数据不足，若订单↓/库存↑/利润↓确认恶化→升为 C 基本面顶部（产业链数据持续回补中）。";
+    topTypeNote = `价格↓、RS↓、宽度↓、龙头破位；属上涨趋势中的深度调整/估值消化。${cClassNote}`;
   } else if (topStage && coreBreak) {
     topType = "B";
     topTypeLabel = "趋势顶部·深度调整";
-    topTypeNote = "核心资产弱于板块（龙头跌幅>板块）。产业层数据不足，C 类基本面顶部待确认。";
+    topTypeNote = `核心资产弱于板块（龙头跌幅>板块）。${cClassNote}`;
   } else if ((cur.prevChange60 ?? 0) >= TH.typeRunUp60 && mc <= TH.typeDrop) {
     topType = "A";
     topTypeLabel = "情绪顶部·涨多回调";
@@ -214,7 +222,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
   } else if (topStage && mc <= TH.typeDrop && rsNeg) {
     topType = "B";
     topTypeLabel = "趋势顶部·深度调整";
-    topTypeNote = "短线破位+相对全市场走弱；产业层数据不足。";
+    topTypeNote = `短线破位+相对全市场走弱。${cClassNote}`;
   }
   topTypeNote += " D 宏观顶部需跨市场层(A50/VIX/全球)数据，当前未接入。";
 
@@ -259,7 +267,6 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
     nodes[node.layer].push({ n: node.name, tone: snap && snap.length ? "green" : "amber" });
   }
   const chainAvailable = links.length > 0;
-  const fundamentals = loadFundamentals().sectors[sector] ?? null;
   const industryHealthScore = computeIndustryHealth(links, map.metricSnapshots ?? {}, asOf, fundamentals);
   const finAvail = ["earnings", "orders", "inventory", "capex"].filter((k) => typeof fundamentals?.[`${k}_yoy`] === "number").length;
   const industryChain = {
