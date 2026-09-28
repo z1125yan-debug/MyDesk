@@ -3,18 +3,21 @@
 export type PageKey =
   | "aihome"       // 实时选股 · AI 对话首页（重定位后的一级入口）
   | "aiscan"       // AI 实时选股（全A扫描漏斗）——R3c 起为路由别名：导航收口到 quant 门户（nav-core ROUTE_REDIRECTS）
+  | "aiscreener"   // 量化选股工作台（稳智 /screener 复刻：条件卡片组 + 筛选 + AI 优选 + 策略）
   | "pool"         // 候选池（冻结 + 次日验证）
   | "screener"     // 因子选股器
   | "profile"      // 个股资金画像
   | "market"       // 大盘情绪仪表盘
   | "sectors"      // 行业板块排行（P1-2）
   | "allstocks"    // 全A市场列表
+  | "quotes"       // 行情（稳智 /overview 复刻：股票搜索 + 分时/日K + 复权 + 加自选）
   | "dashboard"    // 总览（旧）
   | "board"        // 数据看板
   | "analysis"     // AI 分析
   | "tracker"      // 追踪/自选
   | "history"      // 历史
-  | "copilot"      // 智能助手
+  | "copilot"      // 智能助手/对话本体（2026-09-26 起不再是路由别名：直接可达，登记在 nav-core HIDDEN_PAGES 的 ai 组）
+  | "llmportal"    // P26 LLM 分析门户（对齐稳智顶部 5 Tab 工作台）
   | "qimen"        // 奇门遁甲解盘（独立一级模块）
   | "quant"        // 量化研究实验室（Quant Research Lab，后台研究）
   | "factorlab"    // 因子有效性测试台（P1-4）
@@ -172,20 +175,23 @@ export interface AiSettings {
 }
 
 export const PAGE_TITLES: Record<PageKey, string> = {
-  aihome: "实时选股 · AI 首页",
+  aihome: "AI分析",
   aiscan: "AI 实时选股",
+  aiscreener: "量化选股",
   pool: "候选池",
   screener: "因子选股器",
   profile: "个股资金画像",
   market: "大盘情绪",
   sectors: "行业板块排行",
   allstocks: "全A市场列表",
+  quotes: "行情",
   dashboard: "总览",
   board: "数据看板",
   analysis: "AI 分析",
   tracker: "自选股",
   history: "历史",
   copilot: "智能助手",
+  llmportal: "LLM 分析",
   qimen: "奇门解盘",
   quant: "量化研究",
   factorlab: "因子测试台",

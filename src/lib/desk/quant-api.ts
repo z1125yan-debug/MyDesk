@@ -93,6 +93,12 @@ export interface SentimentClient {
   break_rate: number | null; // 炸板率 %（触板为0时 null）
   amount_total_yi: number; main_net_sum_yi: number; median_pct: number;
   /**
+   * R20：通达信当日逐笔自算的主力净额合计（成交额前 N 只的子集，不是全 A）。
+   * 全 A 快照不带 mainNet，断源期间 main_net_sum_yi/main_net_known 双双为 0 ——
+   * 那是「没读到」。这一份是真正算出来的数，页面按 main-net-core 的取舍规则选用。
+   */
+  main_net_tdx?: import("./main-net-core").MainNetTdxClient | null;
+  /**
    * P14：全A快照里成交额真实有值的家数。与 main_net_known 同一纪律——
    * 合计 0 可能是「一家都没抓到」而不是「全市场成交 0 元」，万亿格式换算前必须先问这个数。
    */
@@ -135,18 +141,29 @@ export async function fetchLimitUp(): Promise<LimitUpClient> {
   return j;
 }
 
-// P15-R2a：大盘趋势（两市成交额按日 + vs昨日 + 指数区间累计涨跌）。
+// P15-R2a：大盘趋势（沪深北成交额按日 + vs昨日 + 指数区间累计涨跌）。
 // 类型与 /api/market/trend 的返回一一对应；缺数走 missing/notes，界面照实画。
-export interface TrendDayPoint { date: string; shYi: number | null; szYi: number | null; totalYi: number | null }
+export interface TrendDayPoint { date: string; shYi: number | null; szYi: number | null; /** 北证50 成交额（亿）；两市口径下为 null */ bjYi?: number | null; totalYi: number | null; /** 5日均额（亿，服务端用窗口前历史算得，窗口首日即有值） */ ma5Yi?: number | null }
+export interface TrendIdxSeries { key: string; name: string; pts: { date: string; pct: number }[] }
 export interface TrendClient {
   ok: boolean;
   range: { from: string; to: string };
   days: TrendDayPoint[];
   delta: { yi: number | null; prev_date: string | null };
   cum: { sh: { date: string; pct: number }[]; sz: { date: string; pct: number }[]; cyb: { date: string; pct: number }[] };
+  /** 逐日涨跌幅（稳智「指数涨跌幅」口径，2026-09-25 eltdx 通达信源） */
+  idx?: TrendIdxSeries[];
   notes: string[];
   missing: string[];
   source: string;
+  /** 成交额合计口径：沪深北（沪+深+北证50）或沪深两市（北证取不到时的退化） */
+  market_label?: string;
+  /** 本次数据来自本地快照回放（上游取数不完整/失败时） */
+  cached?: boolean;
+  /** 快照落档时刻（ISO 串） */
+  cached_at?: string;
+  /** 回放原因说明（如实告知为什么用了缓存） */
+  cache_note?: string;
   error?: string;
 }
 export async function fetchTrend(from: string, to: string): Promise<TrendClient> {
@@ -156,6 +173,23 @@ export async function fetchTrend(from: string, to: string): Promise<TrendClient>
   const res = await fetch(`/api/market/trend?${q.toString()}`);
   const j = await res.json();
   if (!res.ok || !j.ok) throw new Error(j.error || "趋势数据获取失败");
+  return j;
+}
+
+// 复盘统计历史（稳智账号同步种子；S2 回填引擎上线后逐日续写）
+export interface ReviewRow {
+  date: string; limitUp: number; limitDown: number;
+  t3: number; t4: number; t5: number; maxBoards: number;
+  decliners: number; belowMa5: number; belowMa3: number;
+  aboveMa5Pct: number | null; microPct: number | null; midPct: number | null; largePct: number | null;
+}
+export async function fetchReviewStats(from: string, to: string): Promise<{ rows: ReviewRow[]; source: string; indexChanges?: { d: string; allA: number; sh: number; dividend: number; small: number; mid: number; sz: number; cyb: number }[] }> {
+  const q = new URLSearchParams();
+  if (from) q.set("from", from);
+  if (to) q.set("to", to);
+  const res = await fetch(`/api/market/review-stats?${q.toString()}`);
+  const j = await res.json();
+  if (!res.ok || !j.ok) throw new Error(j.error || "复盘统计获取失败");
   return j;
 }
 
@@ -233,6 +267,8 @@ export interface ProfileResp {
     probability: ProfileBlock<WinProbStats> | null;
     sector: ProfileBlock<{ name: string; changePct: number; rank: number; mainYi: number; count: number }> | null;
     news: ProfileBlock<{ time: string; title: string }[]> | null;
+    stock_news: ProfileBlock<{ title: string | null; time: string | null; source: string | null; url: string | null; content: string | null }[]> | null;
+    basic: ProfileBlock<Record<string, unknown>> | null;
     risk: ProfileBlock<{ level: string; triggers: string[] }> | null;
   };
   missing: string[];
@@ -260,6 +296,8 @@ export async function aiChatTools(
     watchlist?: { symbol: string; name?: string | null }[];
     /** P7-⑥⑤：追问要沿用的标的与上一轮场景（都来自上一条助手消息的场景徽章，不是会话字段） */
     sessionSymbol?: string | null; prevScene?: string | null;
+    /** 持仓条件（标的/成本/仓位/建仓日期），与流式请求体同一份顶层 hold 键 */
+    hold?: import("./hold-core").HoldCtx | null;
   },
 ): Promise<{ content: string; trace: AiChatTrace[]; steps?: StepInfo[]; intent?: IntentBadge; warning?: string }> {
   const res = await fetch("/api/ai/chat", {
@@ -278,6 +316,7 @@ export async function aiChatTools(
       ...(opts?.prevScene ? { prevScene: opts.prevScene } : {}),
       ...(opts?.contextWindow ? { contextWindow: opts.contextWindow } : {}),
       ...(opts?.watchlist?.length ? { watchlist: opts.watchlist } : {}),
+      ...(opts?.hold && Object.keys(opts.hold).length ? { hold: opts.hold } : {}),
     }),
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 120_000),
   });
@@ -573,8 +612,10 @@ export interface EventItemClient {
   mappedSectors: string[]; relatedStocks: string[];
   fundCheck: { stage?: string; note?: string; boards?: { name: string; changePct: number; mainYi: number; rank: number }[] };
   stage: string; source: string;
+  /** 该事件所属留档日（asOf）。「今天」视图是跨日窗口时，用来如实标出每条属于哪天 */
+  date?: string;
 }
-export async function fetchEvents(): Promise<{ as_of: string; items: EventItemClient[] }> {
+export async function fetchEvents(): Promise<{ as_of: string; window_dates?: string[]; supplemented?: boolean; items: EventItemClient[] }> {
   const res = await fetch("/api/events");
   const j = await res.json();
   if (!res.ok || !j.ok) throw new Error(j.error || "事件列表失败");

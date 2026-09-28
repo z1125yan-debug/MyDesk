@@ -1,60 +1,376 @@
 "use client";
-// 大盘情绪：用户友好版。
-// 保留全部取数逻辑；去掉工程口径脚注与高频状态徽章，视觉走纯黑苹果风。
-import { useCallback, useEffect, useState } from "react";
+// 大盘情绪（S1 稳智复刻）：版式/图表/动效对齐稳智 /home（照片像素基准），数据全部本站真实接口。
+// 数据源：eltdx 通达信日K（带成交额）→ 腾讯兜底（2026-09-25 去东财）。
+// 纪律不变：真实接口失败显式报错；缺历史序列的位置如实标「S2 回填中」，不画假线。
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
-import { PctText } from "../SourceBadge";
-import { LineageCard, LineageSection } from "../ui/LineageCard";
-import { fetchSentiment, fetchLimitUp, fetchTrend, fetchBreadth, type SentimentClient, type LimitUpClient, type TrendClient, type TrendDayPoint, type BreadthClient } from "@/lib/desk/quant-api";
-// P11 情绪温度：仪表盘与对话工具吃同一份纯核（零 IO，浏览器端直接 import），
-// 三态切换只换权重、不重取数——分量各算一次，牛/熊/震荡是同一批读数的三种加权。
+import {
+  fetchSentiment, fetchLimitUp, fetchTrend, fetchBreadth, fetchReviewStats,
+  type SentimentClient, type LimitUpClient, type TrendClient, type TrendDayPoint, type BreadthClient, type ReviewRow,
+} from "@/lib/desk/quant-api";
+// 情绪温度：与对话工具同一份纯核；牛/熊/震荡只换权重、不重取数
 import { computeTemperature, REGIMES, type MarketRegime } from "@/lib/quant/screener/sentiment-temperature-core";
-import type { SectorRow } from "@/lib/desk/types";
-// P15-R16c：情绪盘也要「几点取的数」+ 开盘自动重取（原来只能手点刷新）
+// P15-R19：种子口径的5日线占比 vs 本地真实收盘自算，同一段窗口摆在一起算差多少（纯核，不另取数）
+import { compareBreadthWithSeed } from "@/lib/quant/review/breadth-crosscheck-core";
+// P15-R16c：几点取的数 + 开盘自动重取
 import { useLivePoll } from "@/hooks/use-live-poll";
+import { useTradeDate } from "@/lib/desk/use-trade-date";
 import LiveStamp from "@/components/desk/LiveStamp";
-import { useDesk } from "@/lib/desk/store";
+import EChart, { type EChartState } from "@/components/desk/charts/EChart";
+import ChartCard from "@/components/desk/charts/ChartCard";
+import { CHART, chartTooltip, chartLegend } from "@/components/desk/charts/chart-tokens";
+import type { EChartsCoreOption } from "echarts/core";
+
+// —— 图表 option 构造（纯函数，进 S0 底座统一渲染）——
+
+/** 大盘成交额趋势：蓝柱=沪深北/两市合计（万亿），黄平滑线=5 日均线（头部不足 5 根不画） */
+function turnoverOption(days: TrendDayPoint[], marketLabel = "两市"): EChartsCoreOption {
+  const pts = days.filter((d) => d.totalYi !== null);
+  const dates = pts.map((d) => d.date);
+  const vals = pts.map((d) => +((d.totalYi as number) / 1e4).toFixed(3));
+  const totalName = `${marketLabel}合计`;
+  const fmtWan = (v: number | null) => (v == null || !isFinite(v) ? "—" : `${v.toFixed(2)} 万亿`);
+  return {
+    animationDuration: CHART.anim.duration,
+    animationEasing: CHART.anim.easing,
+    grid: { left: 46, right: 16, top: 34, bottom: 28 },
+    tooltip: { ...chartTooltip("axis"), valueFormatter: (v: number | null) => fmtWan(v) },
+    legend: { ...chartLegend({ top: 2, right: 4 }), data: [totalName, "5日均线"] },
+    xAxis: {
+      type: "category", data: dates, boundaryGap: true,
+      axisLine: { lineStyle: { color: CHART.color.axisLine } },
+      axisTick: { show: false },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize, hideOverlap: true },
+    },
+    yAxis: {
+      type: "value", name: "万亿", scale: true,
+      nameTextStyle: { color: CHART.color.label, fontSize: CHART.labelSize },
+      splitLine: { lineStyle: { color: CHART.color.splitLine } },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize, formatter: (v: number) => v.toFixed(1) },
+    },
+    series: [
+      { name: totalName, type: "bar", data: vals, barMaxWidth: 22, itemStyle: { color: CHART.color.barBlue, borderRadius: [2, 2, 0, 0] }, animationDelay: (i: number) => i * 22 },
+      {
+        // 稳智同款画法：黄线贴着柱顶走（柱值的平滑连线，非均线值），spline 过点视觉一致
+        name: "5日均线", type: "line", data: vals, smooth: true, connectNulls: false,
+        symbol: "circle", symbolSize: 6.5, animationDuration: 1400,
+        itemStyle: { color: CHART.color.maYellow, borderColor: "rgba(255,255,255,0.85)", borderWidth: 1 },
+        lineStyle: { color: CHART.color.maYellow, width: 2 },
+      },
+    ],
+  };
+}
+
+/** 大盘情绪（5日线占比）趋势：整体实线 + 微/中/大盘三条虚线（稳智同款四线；分组缺时只画实线） */
+function breadthOption(
+  main: { date: string; v: number }[],
+  groups: { micro: { date: string; v: number | null }[]; mid: { date: string; v: number | null }[]; large: { date: string; v: number | null }[] } | null,
+  self: { date: string; v: number }[] | null,
+): EChartsCoreOption {
+  const dates = main.map((p) => p.date);
+  const series: Record<string, unknown>[] = [
+    {
+      name: "高于5日线占比", type: "line", data: main.map((p) => +p.v.toFixed(1)),
+      smooth: true, symbol: "circle", symbolSize: 6.5,
+      itemStyle: { color: CHART.color.breadth, borderColor: "rgba(255,255,255,0.85)", borderWidth: 1 },
+      lineStyle: { color: CHART.color.breadth, width: 2.2 },
+    },
+  ];
+  if (groups) {
+    const defs: [string, { date: string; v: number | null }[], string][] = [
+      ["微盘股", groups.micro, CHART.color.group1],
+      ["中盘股", groups.mid, CHART.color.group2],
+      ["大盘股", groups.large, CHART.color.group3],
+    ];
+    for (const [name, pts, color] of defs) {
+      series.push({
+        name, type: "line",
+        data: dates.map((d) => { const f = pts.find((x) => x.date === d); return f?.v != null ? +f.v.toFixed(1) : null; }),
+        smooth: true, symbol: "circle", symbolSize: 5, connectNulls: false,
+        itemStyle: { color: "rgba(0,0,0,0)", borderColor: color, borderWidth: 1.3 },
+        lineStyle: { color, width: 1.5, type: "dashed" },
+      });
+    }
+  }
+  if (self) {
+    // 同一条指标的第二个来源：本库真实收盘价（110 个交易日回填 + 收盘后自产）算出来的占比。
+    // 与主线并排摆着，谁高谁低一眼看得见——不做静默替换，也不把外部口径藏掉。
+    const byDate = new Map(self.map((p) => [p.date, p.v]));
+    series.push({
+      name: "自算·真实收盘", type: "line",
+      data: dates.map((d) => { const v = byDate.get(d); return v != null ? +v.toFixed(1) : null; }),
+      smooth: true, symbol: "circle", symbolSize: 4.5, connectNulls: false,
+      itemStyle: { color: "rgba(0,0,0,0)", borderColor: CHART.color.selfComputed, borderWidth: 1.3 },
+      lineStyle: { color: CHART.color.selfComputed, width: 1.6, type: "dotted" },
+    });
+  }
+  return {
+    animationDuration: CHART.anim.duration,
+    animationEasing: CHART.anim.easing,
+    grid: { left: 42, right: 16, top: 34, bottom: 28 },
+    tooltip: { ...chartTooltip("axis"), valueFormatter: (v: number | null) => (v == null ? "—" : `${v.toFixed(1)}%`) },
+    legend: { ...chartLegend({ top: 2, right: 4 }), data: series.map((s) => s.name as string) },
+    xAxis: {
+      type: "category", data: dates,
+      axisLine: { lineStyle: { color: CHART.color.axisLine } },
+      axisTick: { show: false },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize, hideOverlap: true },
+    },
+    yAxis: {
+      type: "value", min: 0, max: 100, name: "%",
+      nameTextStyle: { color: CHART.color.label, fontSize: CHART.labelSize },
+      splitLine: { lineStyle: { color: CHART.color.splitLine } },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize },
+    },
+    series,
+  };
+}
+
+/** 涨跌停板分布对比（当日实数；历史逐日正负柱+趋势线等 S2 回填） */
+function limitTodayOption(limitUp: number, limitDown: number): EChartsCoreOption {
+  return {
+    animationDuration: CHART.anim.duration,
+    animationEasing: CHART.anim.easing,
+    grid: { left: 40, right: 16, top: 26, bottom: 28 },
+    tooltip: { ...chartTooltip("item"), valueFormatter: (v: number | null) => (v == null ? "—" : `${v} 家`) },
+    xAxis: {
+      type: "category", data: ["涨停", "跌停"],
+      axisLine: { lineStyle: { color: CHART.color.axisLine } },
+      axisTick: { show: false },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize },
+    },
+    yAxis: {
+      type: "value",
+      splitLine: { lineStyle: { color: CHART.color.splitLine } },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize },
+    },
+    series: [{
+      type: "bar", barWidth: 52, data: [
+        { value: limitUp, itemStyle: { color: CHART.color.up, borderRadius: [3, 3, 0, 0] } },
+        { value: limitDown, itemStyle: { color: CHART.color.down, borderRadius: [3, 3, 0, 0] } },
+      ],
+      label: { show: true, position: "top", color: CHART.color.label, fontSize: CHART.labelSize },
+    }],
+  };
+}
+
+/** 连板梯队结构（当日）：首板/2连板/3板/4板/5板+（配色对应稳智 3板绿/4板黄/5板+红） */
+function tierOption(first: number, second: number, n3: number, n4: number, n5: number): EChartsCoreOption {
+  const colors = [CHART.color.barBlue, CHART.color.barBlue, "#67c23a", "#f3c744", "#ef4444"];
+  return {
+    animationDuration: CHART.anim.duration,
+    animationEasing: CHART.anim.easing,
+    grid: { left: 40, right: 16, top: 26, bottom: 28 },
+    tooltip: { ...chartTooltip("item"), valueFormatter: (v: number | null) => (v == null ? "—" : `${v} 家`) },
+    xAxis: {
+      type: "category", data: ["首板", "2连板", "3板", "4板", "5板+"],
+      axisLine: { lineStyle: { color: CHART.color.axisLine } },
+      axisTick: { show: false },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize },
+    },
+    yAxis: {
+      type: "value",
+      splitLine: { lineStyle: { color: CHART.color.splitLine } },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize },
+    },
+    series: [{
+      type: "bar", barWidth: 30, data: [first, second, n3, n4, n5].map((v, i) => ({
+        value: v, itemStyle: { color: colors[i], borderRadius: [3, 3, 0, 0] },
+      })),
+      label: { show: true, position: "top", color: CHART.color.label, fontSize: CHART.labelSize },
+    }],
+  };
+}
+
+/** 指数涨跌幅：稳智同款 = 区间累计涨跌幅（自窗口首日起逐日复利累计），七条线 */
+function indexDailyOption(idx: NonNullable<TrendClient["idx"]>): EChartsCoreOption {
+  const palette = ["#4f8ef7", "#a3e635", "#94a3b8", "#f97316", "#22d3ee", "#facc15", "#f472b6"];
+  const series = idx.filter((s) => s.pts.length > 1);
+  const dates = [...new Set(series.flatMap((s) => s.pts.map((p) => p.date)))].sort();
+  const byDate = new Map(series.map((s) => [s.key, new Map(s.pts.map((p) => [p.date, p.pct]))]));
+  const cum = (key: string) => {
+    let prod = 1;
+    return dates.map((d) => {
+      const p = byDate.get(key)?.get(d);
+      if (p == null) return null;
+      prod *= 1 + p / 100;
+      return +((prod - 1) * 100).toFixed(2);
+    });
+  };
+  return {
+    animationDuration: CHART.anim.duration,
+    animationEasing: CHART.anim.easing,
+    grid: { left: 48, right: 16, top: 34, bottom: 28 },
+    tooltip: { ...chartTooltip("axis"), valueFormatter: (v: number | null) => (v == null ? "—" : `${v.toFixed(2)}%`) },
+    legend: {
+      ...chartLegend({ top: 2, right: 4, type: "scroll" }),
+      data: series.map((s) => s.name),
+    },
+    xAxis: {
+      type: "category", data: dates,
+      axisLine: { lineStyle: { color: CHART.color.axisLine } },
+      axisTick: { show: false },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize, hideOverlap: true },
+    },
+    yAxis: {
+      type: "value", name: "%", scale: true,
+      nameTextStyle: { color: CHART.color.label, fontSize: CHART.labelSize },
+      splitLine: { lineStyle: { color: CHART.color.splitLine } },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize, formatter: (v: number) => `${v.toFixed(2)}%` },
+    },
+    series: series.map((s, i) => ({
+      name: s.name, type: "line", data: cum(s.key),
+      smooth: true, symbol: "circle", symbolSize: 5.5, connectNulls: false,
+      itemStyle: { color: "rgba(0,0,0,0)", borderColor: palette[i % palette.length], borderWidth: 1.4 },
+      lineStyle: { color: palette[i % palette.length], width: 1.8 },
+    })),
+  };
+}
+
+/** 涨跌停板分布对比（历史）：稳智同款取窗口内最后 10 个交易日；涨停红柱向上/跌停绿柱向下 + 两条平滑趋势线 */
+function limitHistoryOption(allRows: ReviewRow[]): EChartsCoreOption {
+  const rows = allRows.slice(-10);
+  const dates = rows.map((r) => r.date);
+  const zt = rows.map((r) => r.limitUp);
+  const dt = rows.map((r) => r.limitDown);
+  const smooth = (arr: number[]) => arr.map((_, i) => {
+    const w = arr.slice(Math.max(0, i - 2), i + 1);
+    return +(w.reduce((s, x) => s + x, 0) / w.length).toFixed(1);
+  });
+  return {
+    animationDuration: CHART.anim.duration,
+    animationEasing: CHART.anim.easing,
+    grid: { left: 44, right: 16, top: 34, bottom: 28 },
+    tooltip: { ...chartTooltip("axis") },
+    legend: { ...chartLegend({ top: 2, right: 4 }), data: ["涨停", "跌停", "涨停趋势", "跌停趋势"] },
+    xAxis: {
+      type: "category", data: dates,
+      axisLine: { lineStyle: { color: CHART.color.axisLine } },
+      axisTick: { show: false },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize, hideOverlap: true },
+    },
+    yAxis: {
+      type: "value",
+      splitLine: { lineStyle: { color: CHART.color.splitLine } },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize },
+    },
+    series: [
+      { name: "涨停", type: "bar", stack: "l", data: zt, barMaxWidth: 26, itemStyle: { color: CHART.color.up, borderRadius: [2, 2, 0, 0] }, label: { show: true, position: "top", color: "rgba(255,160,160,0.9)", fontSize: 9.5 }, animationDelay: (i: number) => i * 45 },
+      { name: "跌停", type: "bar", stack: "l", data: dt.map((v) => -v), barMaxWidth: 26, itemStyle: { color: CHART.color.down, borderRadius: [0, 0, 2, 2] }, label: { show: true, position: "bottom", color: "rgba(140,220,180,0.9)", fontSize: 9.5 }, animationDelay: (i: number) => i * 45 },
+      { name: "涨停趋势", type: "line", data: smooth(zt), smooth: true, symbol: "none", animationDuration: 1500, itemStyle: { color: CHART.color.up }, lineStyle: { color: CHART.color.up, width: 1.8 } },
+      { name: "跌停趋势", type: "line", data: smooth(dt), smooth: true, symbol: "none", animationDuration: 1500, itemStyle: { color: CHART.color.down }, lineStyle: { color: CHART.color.down, width: 1.8 } },
+    ],
+  };
+}
+
+/** 连板梯队结构（历史）：稳智同款取窗口内最后 10 个交易日；3板/4板/5板+ 堆叠柱 + 最高板蓝线（右轴高度） */
+function tierHistoryOption(allRows: ReviewRow[]): EChartsCoreOption {
+  const rows = allRows.slice(-10);
+  const dates = rows.map((r) => r.date);
+  return {
+    animationDuration: CHART.anim.duration,
+    animationEasing: CHART.anim.easing,
+    grid: { left: 40, right: 42, top: 34, bottom: 28 },
+    tooltip: { ...chartTooltip("axis") },
+    legend: { ...chartLegend({ top: 2, right: 4 }), data: ["3板", "4板", "5板+", "最高板"] },
+    xAxis: {
+      type: "category", data: dates,
+      axisLine: { lineStyle: { color: CHART.color.axisLine } },
+      axisTick: { show: false },
+      axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize, hideOverlap: true },
+    },
+    yAxis: [
+      { type: "value", name: "家数", max: 10, nameTextStyle: { color: CHART.color.label, fontSize: CHART.labelSize }, splitLine: { lineStyle: { color: CHART.color.splitLine } }, axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize } },
+      { type: "value", name: "高度", max: 6, nameTextStyle: { color: CHART.color.label, fontSize: CHART.labelSize }, splitLine: { show: false }, axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize } },
+    ],
+    series: [
+      { name: "3板", type: "bar", stack: "t", data: rows.map((r) => r.t3), barMaxWidth: 16, itemStyle: { color: "#67c23a" } },
+      { name: "4板", type: "bar", stack: "t", data: rows.map((r) => r.t4), itemStyle: { color: "#f3c744" } },
+      { name: "5板+", type: "bar", stack: "t", data: rows.map((r) => r.t5), itemStyle: { color: "#ef4444", borderRadius: [2, 2, 0, 0] } },
+      { name: "最高板", type: "line", yAxisIndex: 1, data: rows.map((r) => r.maxBoards), smooth: true, symbol: "circle", symbolSize: 5.5, itemStyle: { color: "#5b8ff7" }, lineStyle: { color: "#5b8ff7", width: 2 } },
+    ],
+  };
+}
+
+// 温度档位色（与 TempGauge 色带同线）
+function bandColor(v: number | null): string | undefined {
+  if (v === null) return undefined;
+  if (v < 25) return "#38bdf8";
+  if (v < 45) return "#34d399";
+  if (v < 60) return "#94a3b8";
+  if (v < 80) return "#fb923c";
+  return "#f87171";
+}
 
 export default function MarketPage() {
-  const go = useDesk((s) => s.go);
-  const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
   const [sent, setSent] = useState<SentimentClient | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
-  const [boards, setBoards] = useState<SectorRow[] | null>(null);
   const [tiers, setTiers] = useState<LimitUpClient | null>(null);
-  const [tiersBusy, setTiersBusy] = useState(false);
-  // 行情类型（牛/熊/震荡）只影响温度权重，是本机视图状态、不进 store 也不发请求
+  const [tiersBusy, setTiersBusy] = useState(true);
+  // 行情类型（牛/熊/震荡）只影响温度权重，是本机视图状态、不发请求
   const [regime, setRegime] = useState<MarketRegime>("range");
-  // P15-R2a 复盘统计：两市成交额趋势/指数累计涨跌来自 /api/market/trend（东财指数日 K 实数）。
-  // 日期范围是本机视图参数（默认近 90 天），点「加载复盘数据统计」才按新范围重取——与稳智同纪律。
+  // 复盘统计：日期范围是本机视图参数，默认近 90 天（约 64 个交易日，看中期趋势）；
+// 注意：「大盘情绪（5日线占比）趋势」是另一条独立链路（loadBreadth 固定 30 天），不受这个选择器影响。
   const [trend, setTrend] = useState<TrendClient | null>(null);
-  const [trendBusy, setTrendBusy] = useState(false);
-  const [trendFrom, setTrendFrom] = useState("");
-  const [trendTo, setTrendTo] = useState("");
+  const [trendBusy, setTrendBusy] = useState(true);
+  const shDay = (offset: number) => {
+    const d = new Date(Date.now() - offset * 864e5);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const [trendFrom, setTrendFrom] = useState(() => shDay(90));
+  // 结束日期默认「最近交易日」而不是系统当天：休市日（周末/节假日）系统当天没有行情，
+  // 拿它当区间终点等于把一个没开过盘的日子摆进图里。
+  // 派生值而非 effect 同步：拿到真交易日之前 trendTo 为空（不取），拿到后自动取一次。
+  const { tradeDate } = useTradeDate();
+  const [trendToPick, setTrendToPick] = useState("");
+  const trendTo = trendToPick || tradeDate;
   const [trendError, setTrendError] = useState("");
-  // P15-R2b 逐日宽度（站上5日线占比/创5日·3日新低）：来自 stock_daily_close 的收盘后沉淀。
-  // 攒不够天数不是错误——chips 与图各按「攒中 N/x」如实显示进度，取数失败也只是没数。
+  // 复盘统计历史（稳智账号同步种子：P15-R19 已照抄进 market_daily_stats，读侧只把晚于种子终点的自产行续上图）
+  const [review, setReview] = useState<{ rows: ReviewRow[]; source: string; indexChanges?: { d: string; allA: number; sh: number; dividend: number; small: number; mid: number; sz: number; cyb: number }[] } | null>(null);
+  // 逐日宽度（站上5日线占比）：来自 stock_daily_close 的收盘后沉淀
   const [breadth, setBreadth] = useState<BreadthClient | null>(null);
+  const [breadthBusy, setBreadthBusy] = useState(true);
   const poll = useLivePoll();
 
-  const loadBreadth = useCallback(async () => {
+  const load = useCallback(async () => {
+    setBusy(true); setError("");
     try {
-      setBreadth(await fetchBreadth(90));
-    } catch {
-      setBreadth(null); // 宽度失败不打掉情绪主体：chips 走「暂无数据」分支，tooltip 说清原因
+      setSent(await fetchSentiment());
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    } finally {
+      setBusy(false);
     }
   }, []);
 
   const loadTrend = useCallback(async (from = "", to = "") => {
     setTrendBusy(true); setTrendError("");
     try {
-      setTrend(await fetchTrend(from, to));
+      const [t, rv] = await Promise.all([
+        fetchTrend(from, to),
+        fetchReviewStats(from, to).catch(() => null),
+      ]);
+      setTrend(t);
+      setReview(rv);
     } catch (e) {
       setTrend(null);
       setTrendError(String((e as Error).message || e));
     } finally {
       setTrendBusy(false);
+    }
+  }, []);
+
+  const loadBreadth = useCallback(async () => {
+    setBreadthBusy(true);
+    try {
+      // 30 天窗口：这张「大盘情绪（5日线占比）趋势」看的是近期宽度变化，
+      // 与上面成交额图的 90 天窗口刻意分开（两条链路独立，互不影响）。
+      setBreadth(await fetchBreadth(30));
+    } catch {
+      setBreadth(null); // 宽度失败不打掉情绪主体
+    } finally {
+      setBreadthBusy(false);
     }
   }, []);
 
@@ -69,420 +385,290 @@ export default function MarketPage() {
     }
   }, []);
 
-  const load = useCallback(async () => {
-    setBusy(true); setError("");
-    try {
-      setSent(await fetchSentiment());
-      const r = await fetch("/api/market/board?kind=industry&dir=in");
-      const j = await r.json();
-      setBoards(Array.isArray(j.rows) && j.rows.length ? (j.rows as SectorRow[]) : null);
-      void loadTiers();
-      void loadTrend(); // 顶部成交额监控卡第一屏就要有数，不等用户点按钮
-      void loadBreadth(); // P15-R2b 逐日宽度：与趋势一样首屏自动带，攒够没攒够页面自会显示
-    } catch (e) {
-      setError(String((e as Error).message || e));
-    } finally {
-      setBusy(false);
-    }
-  }, [loadTiers, loadTrend, loadBreadth]);
+  useEffect(() => {
+    // 三个首屏取数都丢进 setTimeout(0)：它们第一行就 set*Busy(true)，同步进 effect
+    // 会吃 set-state-in-effect 告警（HEAD 基线本页 1 条，不新增）；轮询那份保持原样。
+    const t = setTimeout(() => { void load(); void loadBreadth(); void loadTiers(); }, 0);
+    // 复盘统计（成交额/5日线占比/涨跌停/连板/指数五张图的历史）由下面那个 effect 负责：
+    // 必须等真交易日到位才取，这里不能顺手取 —— 空终点传下去就是拿系统当天当区间末日。
+    return () => clearTimeout(t);
+  }, [load, loadBreadth, loadTiers]);
 
-  useEffect(() => { load(); }, [load, poll.tick]);
+  // 首屏复盘统计：等「最近交易日」到位后自动取一次（不是挂载就取）。
+  // 这里踩过一次坑：交易日是异步来的，把 `if (trendTo) loadTrend(...)` 写在挂载 effect 里、
+  // 又不把 trendTo 放进依赖，交易日到了 effect 早跑完了 —— 整页历史一次都没取过（2026-09-28 实测）。
+  // 现在按「第一次拿到非空终点」触发；之后再改窗口仍只走「加载复盘数据统计」按钮，
+  // 免得日期 input 每敲一下就打一次上游。
+  // setTimeout(0) 只为绕开 set-state-in-effect：loadTrend 第一行就 setTrendBusy(true)，
+  // 同步调用会在 effect 里触发级联渲染告警（本页既有基线 1 条，不再新增）。
+  const trendAutoRef = useRef(false);
+  useEffect(() => {
+    if (!trendTo || trendAutoRef.current) return;
+    trendAutoRef.current = true;
+    const t = setTimeout(() => void loadTrend(trendFrom, trendTo), 0);
+    return () => clearTimeout(t);
+  }, [trendTo, trendFrom, loadTrend]);
 
-  // 风险档位 → 小节 tone 色点（原 riskColor 整卡底色退役为色点，档位词表一字没改：高风险/偏高/注意/其余）
-  const riskTone = (level: string): "danger" | "warning" | "success" =>
-    level === "高风险" ? "danger" : level === "偏高" || level === "注意" ? "warning" : "success";
+  useEffect(() => {
+    if (poll.tick > 0) load();
+  }, [poll.tick, load]);
 
-  const total = sent ? sent.advancers + sent.decliners + sent.flat : 0;
-  const advPct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
-
-  // —— 顶部监控卡的派生量（全部由已回传字段推得，不产生新事实）——
+  // —— 派生量（全部由已回传字段推得，不产生新事实）——
   const temp = sent ? computeTemperature({
     advancers: sent.advancers, decliners: sent.decliners, median_pct: sent.median_pct,
     limit_up: sent.limit_up, limit_down: sent.limit_down, break_rate: sent.break_rate,
     main_net_sum_yi: sent.main_net_sum_yi, main_net_known: sent.main_net_known,
   }, regime) : null;
-  // 三/四/五板+ 分档：从「3连板+」名单实数推（capped 20+ 计入五板+），监控卡与梯队卡共用这一份
+  const tLatest = trend ? [...trend.days].reverse().find((d) => d.totalYi !== null) ?? null : null;
+  const bLatest = breadth?.latest ?? null;
+  // 5日线占比序列：复盘种子优先（含微/中/大盘分组四线），本地逐日沉淀兜底；
+  // 主线走种子时再叠一条「本地真实收盘自算」的对照线（bSelf）+ 两线差多少（bCheck）
+  const reviewRows = review?.rows ?? [];
+  // 指数涨跌幅：稳智 index-changes 同源种子优先（全A/上证/红利/小盘/中小盘/深成/创业板），eltdx 目录兜底
+  const IDX_NAMES: [string, string, string][] = [
+    ["allA", "全A", "#4f8ef7"], ["sh", "上证", "#a3e635"], ["dividend", "红利", "#94a3b8"],
+    ["small", "小盘", "#f97316"], ["mid", "中小盘", "#22d3ee"], ["sz", "深成", "#facc15"], ["cyb", "创业板", "#f472b6"],
+  ];
+  const idxSeries = useMemo(() => {
+    const ic = review?.indexChanges;
+    if (ic && ic.length >= 2) {
+      return IDX_NAMES.map(([k, name]) => ({ key: k, name, pts: ic.map((r) => ({ date: r.d, pct: r[k] as number })) }));
+    }
+    return trend?.idx ?? [];
+  }, [review, trend]);
+  // 5日线占比图的时间窗口：**固定「近一个月」**，口径逐字对齐稳智（源码实证）。
+  // 稳智 Home.js 里默认区间就是这么算的：
+  //     const t = Te(e, -30);   // e = 数据里的最新日期；往前推 30 天（UTC 算法）
+  //     兜底：ce(new Date(Date.now() - 2592e6))   // 2592e6 ms = 30 天
+  // 所以基准是**最新数据日**而不是"今天"（休市日两者会差一天，跟稳智对齐要用前者）。
+  // 与上方成交额图的 90 天选择器解耦，也与「涨跌停板/连板梯队」的近 10 日不同 —— 三张图口径各自独立。
+  const bFrom = useMemo(() => {
+    const latest = reviewRows.length ? String(reviewRows[reviewRows.length - 1].date) : "";
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(latest);
+    if (!m) return "";
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    d.setUTCDate(d.getUTCDate() - 30);
+    return d.toISOString().slice(0, 10);
+  }, [reviewRows]);
+  const bWindow = useMemo(() => (bFrom ? reviewRows.filter((x) => x.date >= bFrom) : reviewRows), [reviewRows, bFrom]);
+  const bMain = useMemo(() => {
+    const win = bWindow.filter((x) => x.aboveMa5Pct !== null);
+    // 窗口内不足 2 天（自定义了个很窄的区间）就退回全量，别画一个孤点；
+    // 复盘种子整段都缺才退到本地逐日沉淀。
+    const r = win.length >= 2 ? win : reviewRows.filter((x) => x.aboveMa5Pct !== null);
+    if (r.length >= 2) return r.map((x) => ({ date: x.date, v: x.aboveMa5Pct as number }));
+    return (breadth?.series ?? []).filter((p) => p.above_ma5_pct !== null).map((p) => ({ date: p.date, v: p.above_ma5_pct as number }));
+  }, [bWindow, reviewRows, breadth]);
+  const bMainFromSeed = useMemo(() => {
+    const win = bWindow.filter((x) => x.aboveMa5Pct !== null);
+    const r = win.length >= 2 ? win : reviewRows.filter((x) => x.aboveMa5Pct !== null);
+    return r.length >= 2;
+  }, [bWindow, reviewRows]);
+  // 对照线：只有主线画的是外部同步口径时才有意义（否则两条线是同一份数，白占一个图例）
+  const bSelf = useMemo(() => {
+    if (!bMainFromSeed) return null;
+    const pts = (breadth?.series ?? [])
+      .filter((p) => p.above_ma5_pct !== null)
+      .map((p) => ({ date: p.date, v: p.above_ma5_pct as number }));
+    const days = new Set(bMain.map((x) => x.date));
+    return pts.filter((p) => days.has(p.date)).length >= 2 ? pts : null;
+  }, [bMainFromSeed, breadth, bMain]);
+  // 两条线的差异有多大：算法在 breadth-crosscheck-core，这里只喂当眼前这段窗口的事实
+  const bCheck = useMemo(
+    () => (bSelf
+      ? compareBreadthWithSeed(
+        bMain.map((p) => ({ date: p.date, aboveMa5Pct: p.v })),
+        bSelf.map((p) => ({ date: p.date, above_ma5_pct: p.v })),
+      )
+      : null),
+    [bMain, bSelf],
+  );
+  const bGroups = useMemo(() => {
+    const win = bWindow.filter((x) => x.aboveMa5Pct !== null);
+    const r = win.length >= 2 ? win : reviewRows.filter((x) => x.aboveMa5Pct !== null);
+    if (r.length < 2) return null;
+    // 分组三条虚线必须与 bMain 同一段切片，否则虚线会错位到别的日期
+    const col = (k: "microPct" | "midPct" | "largePct") => r.map((x) => ({ date: x.date, v: x[k] }));
+    return { micro: col("microPct"), mid: col("midPct"), large: col("largePct") };
+  }, [bWindow, reviewRows]);
+  const belowMa5 = bLatest && bLatest.ma5_eligible > 0 ? bLatest.ma5_eligible - bLatest.above_ma5 : null;
   const p3 = tiers?.tiers.find((t) => t.label === "3连板+")?.stocks ?? [];
   const n3 = p3.filter((s) => s.boards === 3).length;
   const n4 = p3.filter((s) => s.boards === 4).length;
   const n5 = p3.filter((s) => s.boards >= 5).length;
-  // 成交额卡：取最近一个「两市齐有读数」的日子；缺就是缺，不拿单边合计
-  const tLatest = trend ? [...trend.days].reverse().find((d) => d.totalYi !== null) ?? null : null;
-  const fmtYi = (yi: number) => (yi >= 10000 ? `${(yi / 1e4).toFixed(2)} 万亿` : `${yi.toFixed(0)} 亿`);
-  // P15-R2b 宽度派生量：只有攒满根数的日子才有点（above_ma5_pct 非 null）；进度按库里真实天数说
-  const bLatest = breadth?.latest ?? null;
-  const bStored = breadth?.stored_trading_days ?? 0;
-  const bPoints = (breadth?.series ?? []).filter((s) => s.above_ma5_pct !== null);
+  const nFirst = tiers?.tiers.find((t) => t.label === "首板")?.stocks.length ?? 0;
+  const nSecond = tiers?.tiers.find((t) => t.label === "2连板")?.stocks.length ?? 0;
+  const ratio = sent && sent.decliners > 0 ? sent.advancers / sent.decliners : null;
+  const asOfDay = sent?.as_of ? sent.as_of.slice(0, 10) : "";
+  const delta = trend?.delta ?? null;
+
+  const turnoverState: EChartState = trendBusy ? "loading"
+    : trend && trend.days.some((d) => d.totalYi !== null) ? "ok" : "empty";
+  const breadthState: EChartState = breadthBusy && bMain.length < 2 ? "loading" : bMain.length >= 2 ? "ok" : "empty";
+  const limitRows = reviewRows.filter((r) => r.limitUp > 0 || r.limitDown > 0);
+  const limitState: EChartState = limitRows.length >= 2 ? "ok" : busy && !sent ? "loading" : sent ? "ok" : "empty";
+  const tierRows = reviewRows.filter((r) => r.maxBoards > 0);
+  const tierState: EChartState = tierRows.length >= 2 ? "ok" : tiersBusy ? "loading" : tiers ? "ok" : "empty";
+  const idxHas = idxSeries.some((s) => s.pts.length > 1);
+  const idxState: EChartState = trendBusy ? "loading" : idxHas ? "ok" : "empty";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 px-6 py-6">
-      <div className="apple-slide-up flex items-end justify-between">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">大盘情绪</h1>
-          <p className="mt-1 text-[13px] text-muted-foreground">一眼看清今天市场的温度。</p>
+    <div className="w-full space-y-5 px-8 py-6">
+      {/* 页头：稳智同款居中标题+免责口径；实时戳/刷新挂右侧 */}
+      <div className="relative apple-slide-up">
+        <div className="text-center">
+          <h1 className="text-[25px] font-semibold tracking-tight">市场情绪分析</h1>
+          <p className="mt-1 text-[13.5px] text-muted-foreground">基于本站实时行情与收盘沉淀的市场资金流向与指标研究 · 仅供研究参考，不构成投资建议。</p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="absolute right-0 top-0 flex items-center gap-2">
           <LiveStamp poll={poll} iso={sent?.as_of ?? ""} />
-          <button onClick={load} className="flex items-center gap-1.5 rounded-full border border-border/70 bg-white/[0.03] px-3.5 py-2 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground">
+          <button onClick={load} className="flex items-center gap-1.5 rounded-full border border-border/70 bg-overlay px-3.5 py-2 text-[13.5px] text-muted-foreground transition-colors hover:text-foreground">
             {busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} 刷新
           </button>
         </div>
       </div>
 
-      {error && <div className="apple-card border-red-400/25 px-4 py-3 text-[13px] text-red-300">{error}</div>}
+      {error && <div className="apple-card border-red-400/25 px-4 py-3 text-[14px] text-red-300">{error}</div>}
 
-      {sent && (
-        <>
-          {/* 指数：大数字 */}
-          <div className="apple-stagger grid grid-cols-3 gap-3">
-            {sent.indices.map((ix) => (
-              <div key={ix.symbol} className="apple-card px-5 py-4">
-                <div className="text-[12px] text-muted-foreground">{ix.name}</div>
-                <div className="mt-1.5 flex items-baseline gap-2">
-                  <span className="text-[24px] font-semibold tracking-tight">{ix.price.toFixed(2)}</span>
-                  <PctText value={ix.changePct} className="text-[13px] font-medium" />
-                </div>
-              </div>
-            ))}
+      {/* 顶四卡：稳智同款合并大卡，竖线分四列，数字居中 */}
+      <div className="apple-slide-up rounded-2xl border border-border/60 bg-overlay px-2 py-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 lg:divide-x divide-border/40">
+          <div className="px-4 py-2 text-center">
+            <div className="text-[14.5px] font-medium">情绪温度</div>
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <span className="text-[35px] font-semibold leading-none tracking-tight" style={{ color: bandColor(temp?.temperature ?? null) }}>
+                {temp?.temperature ?? "—"}{temp?.temperature != null && <span className="text-[17px]">%</span>}
+              </span>
+              <TempGauge value={temp?.temperature ?? null} label="" compact />
+            </div>
+            <div className="mt-2 text-[12.5px] text-muted-foreground">{temp?.label ?? "无读数"}{temp?.temperature != null ? " / 100" : ""}</div>
           </div>
-
-          {/* P15-R2a 顶部监控四卡（稳智「市场情绪分析」同款布局）：温度 / 成交额 / 连板高度 / 涨跌比。
-              下面的原详细卡一个不删——监控卡管「3 秒看懂」，详细卡管「点开看口径」。 */}
-          <div className="apple-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {/* ① 情绪温度：小表盘 + 分数 + 行情三态（与下方详卡同一份 temp/regime，切哪边都同步） */}
-            <div className="apple-card px-4 py-3.5">
-              <div className="text-[12px] text-muted-foreground">情绪温度</div>
-              <div className="mt-1 flex items-center gap-2.5">
-                <TempGauge value={temp?.temperature ?? null} label={temp?.label ?? ""} compact />
-                <div className="min-w-0">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-[26px] font-semibold tracking-tight">{temp?.temperature ?? "—"}</span>
-                    <span className="text-[11px] text-muted-foreground">{temp?.label ?? "无读数"}</span>
-                  </div>
-                  <div className="mt-1.5 flex items-center gap-1">
-                    {REGIMES.map((rg) => (
-                      <button key={rg.key} onClick={() => setRegime(rg.key)}
-                        title={`${rg.label}：分量权重不同，温度是同一批读数的另一种看法`}
-                        className={
-                          "rounded-full px-2 py-0.5 text-[11px] transition-colors " +
-                          (regime === rg.key ? "bg-sky-400/15 font-medium text-sky-200" : "text-muted-foreground hover:text-foreground")
-                        }>{rg.label}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+          <div className="px-4 py-2 text-center">
+            <div className="text-[14.5px] font-medium">成交额</div>
+            <div className="mt-3 text-[35px] font-semibold leading-none tracking-tight">
+              {tLatest ? `${((tLatest.totalYi as number) / 1e4).toFixed(2)}万亿` : "—"}
             </div>
-            {/* ② 成交额（两市指数口径，与下方「全A快照合计」是两个口径各说各话——tooltip 写明出身） */}
-            <div className="apple-card px-4 py-3.5">
-              <div className="text-[12px] text-muted-foreground">成交额</div>
-              <div className="mt-1 text-[26px] font-semibold tracking-tight"
-                title={`沪深两市指数日成交额合计（东财 kline，含当天截至刷新时刻的累计）· ${trend?.range.from ?? ""} 至 ${trend?.range.to ?? ""} 窗口内最近一个两市齐有读数的日子。全A快照口径的成交额在下方「涨跌结构」卡，两者口径不同不互训`}>
-                {trendBusy && !tLatest ? <span className="text-[13px] font-normal text-muted-foreground">取数中…</span>
-                  : tLatest ? fmtYi(tLatest.totalYi as number)
-                  : <span className="text-[13px] font-normal text-muted-foreground" title={trend?.missing.join("；") || "趋势数据未取到（点「加载复盘数据统计」重试）"}>暂无数据</span>}
-              </div>
-              <div className="mt-1 text-[11.5px] text-muted-foreground">
-                {tLatest && trend?.delta.yi != null ? (
-                  <span className={trend.delta.yi >= 0 ? "text-red-400" : "text-emerald-400"}>
-                    {trend.delta.yi >= 0 ? "↑" : "↓"} {Math.abs(trend.delta.yi).toFixed(0)} 亿 <span className="text-muted-foreground">vs {trend.delta.prev_date} 两市合计</span>
-                  </span>
-                ) : tLatest ? <span>vs 昨日：上一配对日缺读数，不硬凑</span> : <span>—</span>}
-              </div>
-            </div>
-            {/* ③ 连板高度：max_boards + 五档 chips（与下方梯队卡同一份推导） */}
-            <div className="apple-card px-4 py-3.5">
-              <div className="text-[12px] text-muted-foreground">连板高度</div>
-              <div className="mt-1 text-[26px] font-semibold tracking-tight"
-                title={tiers ? `最高连板 ${tiers.max_boards} 板（涨停梯队实数）· 触板 ${tiers.touched_count}` : "涨停梯队还没取到读数"}>
-                {tiers ? <>{tiers.max_boards}<span className="text-[14px] font-normal text-muted-foreground">板</span></>
-                  : <span className="text-[13px] font-normal text-muted-foreground">{tiersBusy ? "取数中…" : "暂无数据"}</span>}
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-1 text-[10.5px] text-muted-foreground">
-                <span className="rounded bg-white/[0.05] px-1.5 py-0.5">涨停 <b className="text-red-400">{sent.limit_up}</b></span>
-                <span className="rounded bg-white/[0.05] px-1.5 py-0.5">跌停 <b className="text-emerald-400">{sent.limit_down}</b></span>
-                {tiers && <><span className="rounded bg-white/[0.05] px-1.5 py-0.5">三板 {n3}</span>
-                  <span className="rounded bg-white/[0.05] px-1.5 py-0.5">四板 {n4}</span>
-                  <span className="rounded bg-orange-400/10 px-1.5 py-0.5 text-orange-300">五板+ {n5}</span></>}
-              </div>
-            </div>
-            {/* ④ 涨跌比：涨/跌家数即时推；低5日/低3日要逐日历史沉淀，管线未建就明说没有 */}
-            <div className="apple-card px-4 py-3.5">
-              <div className="text-[12px] text-muted-foreground">涨跌比</div>
-              <div className="mt-1 text-[26px] font-semibold tracking-tight"
-                title={`涨 ${sent.advancers} / 跌 ${sent.decliners}（全A快照）；无跌幅票时按 99 封顶显示`}>
-                <span className={sent.advancers >= sent.decliners ? "text-red-400" : "text-emerald-400"}>
-                  {(sent.decliners > 0 ? sent.advancers / sent.decliners : 99).toFixed(2)}
+            <div className="mt-2 flex items-center justify-center gap-1.5 text-[13px]">
+              {delta?.yi != null && (
+                <span className={delta.yi < 0 ? "text-emerald-400" : "text-red-400"}>
+                  {delta.yi < 0 ? "↓" : "↑"}{Math.abs(Math.round(delta.yi))}亿 <span className="text-muted-foreground">vs昨日</span>
                 </span>
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-1 text-[10.5px] text-muted-foreground">
-                <span className="rounded bg-white/[0.05] px-1.5 py-0.5">涨 <b className="text-red-400">{sent.advancers}</b></span>
-                <span className="rounded bg-white/[0.05] px-1.5 py-0.5">跌 <b className="text-emerald-400">{sent.decliners}</b></span>
-                {bLatest && bLatest.ma5_eligible > 0 ? (
-                  <span className="rounded bg-white/[0.05] px-1.5 py-0.5"
-                    title={`创5日新低 ${bLatest.new_low_5} 家（${bLatest.date} 收盘沉淀·分母是满 5 根的 ${bLatest.ma5_eligible} 只）· ${breadth?.caliber ?? ""}`}>低5日 <b className="text-orange-300">{bLatest.new_low_5}</b></span>
-                ) : (
-                  <span className="rounded bg-white/[0.05] px-1.5 py-0.5 text-muted-foreground/70"
-                    title={bStored > 0
-                      ? `创5日新低家数：逐日沉淀管线已在跑（本库已攒 ${bStored}/5 个交易日），满 5 天才出数——不拿 4 天凑 5 天的口径`
-                      : "创5日新低家数：要逐日收盘价沉淀才有的读数。收盘后调度器（breadth 任务）从部署日起攒，还没跑出第一批——不做「拿今天快照猜新低」这种假数"}>
-                    {bStored > 0 ? `低5日 攒中 ${bStored}/5` : "低5日 暂无数据"}</span>
-                )}
-                {bLatest && bLatest.ma3_eligible > 0 ? (
-                  <span className="rounded bg-white/[0.05] px-1.5 py-0.5"
-                    title={`创3日新低 ${bLatest.new_low_3} 家（${bLatest.date} 收盘沉淀·分母是满 3 根的 ${bLatest.ma3_eligible} 只；并列最低算新低）`}>低3日 <b className="text-orange-300">{bLatest.new_low_3}</b></span>
-                ) : (
-                  <span className="rounded bg-white/[0.05] px-1.5 py-0.5 text-muted-foreground/70"
-                    title={bStored > 0
-                      ? `创3日新低家数：已攒 ${bStored}/3 个交易日，满 3 天出数（比 5 日口径早两个交易日）`
-                      : "创3日新低家数：同上，逐日收盘价沉淀未跑过第一批，缺就明说"}>
-                    {bStored > 0 ? `低3日 攒中 ${bStored}/3` : "低3日 暂无数据"}</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* P15-R2a 复盘统计：日期范围 + 加载按钮 + 三张图（成交额趋势/情绪5日线占比趋势/指数累计涨跌）。
-              R2b 后 5日线占比那条吃 stock_daily_close 的逐日沉淀：攒够 2 个真实统计日才画线，攒不够如实报进度。 */}
-          <div className="apple-card apple-fade-in p-5">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[14px] font-medium">大盘复盘统计</div>
-              <div className="flex flex-wrap items-center gap-2 text-[12px]">
-                <input type="date" value={trendFrom} max={trendTo || undefined} onChange={(e) => setTrendFrom(e.target.value)}
-                  className="rounded-md border border-border/70 bg-white/[0.03] px-2 py-1 text-[12px] text-foreground [color-scheme:dark]" title="开始日期（不设=近 90 天）" />
-                <span className="text-muted-foreground">至</span>
-                <input type="date" value={trendTo} min={trendFrom || undefined} onChange={(e) => setTrendTo(e.target.value)}
-                  className="rounded-md border border-border/70 bg-white/[0.03] px-2 py-1 text-[12px] text-foreground [color-scheme:dark]" title="结束日期（不设=至今）" />
-                <button onClick={() => void loadTrend(trendFrom, trendTo)} disabled={trendBusy}
-                  className="flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1.5 text-[12px] text-sky-200 transition-colors hover:bg-sky-400/15 disabled:opacity-50">
-                  {trendBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 加载复盘数据统计
-                </button>
-              </div>
-            </div>
-            {trendError && <div className="mb-2 rounded-lg border border-red-400/25 bg-red-400/10 px-3 py-2 text-[12.5px] text-red-300">{trendError}</div>}
-            {trend && !!trend.missing.length && (
-              <div className="mb-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-200/90">
-                {trend.missing.map((m, i) => <div key={i}>· {m}</div>)}
-              </div>
-            )}
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              <div className="rounded-xl border border-border/60 bg-white/[0.02] p-3">
-                <div className="mb-1.5 text-[12.5px] font-medium">大盘成交额趋势</div>
-                <TurnoverBars days={trend?.days ?? []} />
-                <div className="mt-1 text-[10.5px] text-muted-foreground/70" title={trend?.source ?? ""}>
-                  {trend ? `沪+深指数日成交额合计 · ${trend.range.from} ~ ${trend.range.to}（${trend.days.length} 个交易日）` : "未取数"}
-                </div>
-                {trend?.notes.map((n, i) => <div key={i} className="text-[10.5px] text-amber-200/70">· {n}</div>)}
-              </div>
-              <div className="rounded-xl border border-border/60 bg-white/[0.02] p-3">
-                <div className="mb-1.5 text-[12.5px] font-medium">大盘情绪（5日线占比）趋势</div>
-                {bPoints.length >= 2 ? (
-                  <>
-                    <BreadthPctLine points={bPoints} />
-                    <div className="mt-1 text-[10.5px] text-muted-foreground/70" title={breadth?.caliber ?? ""}>
-                      站上5日线占比 · {bPoints.length} 个真实统计日（自 {bPoints[0].date} 起逐日沉淀·无回填）
-                    </div>
-                  </>
-                ) : bPoints.length === 1 ? (
-                  <div className="flex h-[150px] flex-col items-center justify-center gap-1 text-center text-[11.5px] text-muted-foreground">
-                    <span>首日读数 {bPoints[0].above_ma5_pct?.toFixed(1)}%（{bPoints[0].date}）</span>
-                    <span className="max-w-[220px] text-[10.5px] leading-4">趋势要两个点以上才成立：现在只攒出 1 个真实统计日，不画「一条横线冒充趋势」。</span>
-                  </div>
-                ) : (
-                  <div className="flex h-[150px] flex-col items-center justify-center gap-1 text-center text-[11.5px] text-muted-foreground">
-                    <span>暂无数据{bStored > 0 ? `（已攒 ${bStored}/5 个交易日）` : ""}</span>
-                    <span className="max-w-[220px] text-[10.5px] leading-4">
-                      「高于5日线占比」要逐日沉淀全A收盘对 5 日线的关系（收盘后调度器 breadth 任务，自部署日起攒、不回填）：图画出来那天起才是真数，不拿别的东西冒充趋势。
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div className="rounded-xl border border-border/60 bg-white/[0.02] p-3">
-                <div className="mb-1.5 text-[12.5px] font-medium">指数区间累计涨跌</div>
-                <IndexCumLines cum={trend?.cum ?? null} />
-                <div className="mt-1 text-[10.5px] text-muted-foreground/70">{trend ? `按区间首日收盘归一（首日=0%）· ${trend.range.from} ~ ${trend.range.to}` : "未取数"}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* P15-R3b 页面血缘卡制：涨跌结构/情绪温度/风险/涨停梯队/板块资金榜原来一块一张卡竖着散开，
-              收成一张「盘面详情」卡按血缘分节（对方 analysis-section 结构同款）。
-              每节内容、口径、tooltip 一个字没动——监控四卡管「3 秒看懂」，这里管「点开看口径」。 */}
-          <LineageCard
-            title="盘面详情（逐项口径）"
-            note="下面每节的数据来源和口径各自独立，互不冒充：温度是快照推导、梯队是收盘实数、资金榜是板块口径。"
-          >
-          <LineageSection title="涨跌结构" divided={false}>
-            <div className="apple-fade-in">
-            <div className="mb-3 flex items-center justify-between text-[12.5px] text-muted-foreground">
-              <span>涨跌家数（共 {sent.total} 只）</span>
-              <span>涨停 <b className="text-red-400">{sent.limit_up}</b> · 跌停 <b className="text-emerald-400">{sent.limit_down}</b></span>
-            </div>
-            <div className="flex h-3 overflow-hidden rounded-full">
-              <div className="bg-red-400/80" style={{ width: `${advPct(sent.advancers)}%` }} />
-              <div className="bg-white/10" style={{ width: `${advPct(sent.flat)}%` }} />
-              <div className="bg-emerald-400/80" style={{ width: `${advPct(sent.decliners)}%` }} />
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <Card label="成交额" value={
-                sent.amount_known === 0 ? (
-                  <span className="text-[13px] font-normal text-muted-foreground" title="快照里没有任何一只票带成交额读数——合计 0 是「没抓到」不是「成交 0 亿」">暂无数据</span>
-                ) : (
-                  // P14 对齐稳智格式：≥万亿显 X.XX 万亿。vs昨日不硬凑——数据源不提供昨日全市场成交额字段，缺就是缺
-                  <span title={`全A快照合计口径（${sent.amount_known} 只有成交额读数）；数据源无「昨日全市场成交额」字段，不做 vs 昨日对比`}>
-                    {sent.amount_total_yi >= 10000 ? `${(sent.amount_total_yi / 1e4).toFixed(2)} 万亿` : `${sent.amount_total_yi.toFixed(0)} 亿`}
-                  </span>
-                )
-              } />
-              <Card label="主力净额" value={<span className={sent.main_net_sum_yi >= 0 ? "text-red-400" : "text-emerald-400"}>{sent.main_net_sum_yi >= 0 ? "+" : ""}{sent.main_net_sum_yi.toFixed(0)} 亿</span>} />
-              <Card label="中位涨跌" value={<PctText value={sent.median_pct} />} />
-              <Card label="涨跌比" value={(sent.decliners > 0 ? sent.advancers / sent.decliners : 99).toFixed(2)} />
-              <Card label="炸板率" value={<>{sent.break_rate === null ? "—" : `${sent.break_rate.toFixed(0)}%`}<span className="ml-1.5 text-[11px] font-normal text-muted-foreground">炸 {sent.limit_up_broken}</span></>} />
-            </div>
-            </div>
-          </LineageSection>
-
-          {/* 情绪温度详情（P11）：四分量加权与监控卡同一份 temp/regime——上面切三态，这里分量权重同步变 */}
-          {temp && (
-            <LineageSection title="情绪温度 · 分量加权" hint="与顶部监控卡同一份读数，切三态两边同步">
-              <div className="apple-fade-in">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-1">
-                    {REGIMES.map((rg) => (
-                      <button key={rg.key} onClick={() => setRegime(rg.key)}
-                        className={
-                          "rounded-full px-3 py-1 text-[12px] transition-colors " +
-                          (regime === rg.key ? "bg-sky-400/15 font-medium text-sky-200" : "text-muted-foreground hover:text-foreground")
-                        }
-                      >{rg.label}</button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-6">
-                  <TempGauge value={temp.temperature} label={temp.label} />
-                  <div className="min-w-[240px] flex-1 space-y-2">
-                    {temp.components.map((c) => (
-                      <div key={c.key} className="flex items-baseline gap-2 text-[12.5px]">
-                        <span className="w-14 shrink-0 text-muted-foreground">{c.label}</span>
-                        <span className="w-11 shrink-0 font-medium">{c.score === null ? "缺" : c.score}</span>
-                        <span className="w-10 shrink-0 text-muted-foreground/70">{c.score === null ? "—" : `${c.weight}%`}</span>
-                        <span className="truncate text-muted-foreground/80" title={c.score === null ? c.missing_note : c.raw}>
-                          {c.score === null ? c.missing_note : c.raw}
-                        </span>
-                      </div>
-                    ))}
-                    {temp.temperature === null && (
-                      <div className="text-[12px] text-amber-300/80">全部分量没有真实读数：温度按「无读数」显示，不硬造一个数。</div>
-                    )}
-                    {temp.temperature !== null && temp.missing.length > 0 && (
-                      <div className="text-[11.5px] text-amber-300/70">{temp.missing[0]}</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </LineageSection>
-          )}
-
-          {/* 风险等级：原来整卡带色散在中间，现在收进详情卡——tone 点按等级着色，触发项照旧逐条。
-              档位词表与 riskTone 一致（高风险/偏高/注意/其他），缺档不猜成绿色。 */}
-          <LineageSection title={`市场风险：${sent.risk.level}`} tone={riskTone(sent.risk.level)}>
-            <div className="apple-fade-in mt-2 space-y-1 text-[13px] text-foreground/80">
-              {sent.risk.triggers.map((t, i) => <div key={i}>· {t}</div>)}
-            </div>
-          </LineageSection>
-
-          {/* 涨停梯队 */}
-          <LineageSection title="涨停梯队" tone="warning" hint={tiers ? `最高 ${tiers.max_boards} 板` : undefined}>
-            <div className="apple-fade-in">
-            <div className="mb-3 flex items-center justify-between">
-              {/* P14 对齐稳智连板分档：三/四/五板+ 计数从「3连板+」名单实数推（capped 20+ 计入五板+），不是新读数；
-                  P15-R2a 起分档推导上移到组件顶部，监控卡与这里同一份 */}
-              {tiers && tiers.tiers.some((t) => t.stocks.length > 0) && (
-                <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground"
-                  title={`涨停 ${tiers.limit_up_count}（触板 ${tiers.touched_count}）· 跌停 ${sent.limit_down} · 三板 ${n3} · 四板 ${n4} · 五板+ ${n5}——分档按连板数实数归档（20+ 计入五板+）`}>
-                    <span className="rounded-full bg-white/[0.05] px-2 py-0.5">涨停 <b className="text-red-400">{tiers.limit_up_count}</b></span>
-                    <span className="rounded-full bg-white/[0.05] px-2 py-0.5">跌停 <b className="text-emerald-400">{sent.limit_down}</b></span>
-                    <span className="rounded-full bg-white/[0.05] px-2 py-0.5">三板 <b>{n3}</b></span>
-                    <span className="rounded-full bg-white/[0.05] px-2 py-0.5">四板 <b>{n4}</b></span>
-                    <span className="rounded-full bg-orange-400/10 px-2 py-0.5 text-orange-300">五板+ <b>{n5}</b></span>
-                </div>
               )}
-              <button onClick={loadTiers} className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-sky-200">
-                {tiersBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 刷新
-              </button>
+              {tLatest && <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px] text-muted-foreground">{tLatest.date}</span>}
             </div>
-            {tiersBusy && !tiers && <div className="text-[12.5px] text-muted-foreground">正在整理涨停名单…</div>}
-            {tiers && tiers.tiers.every((t) => !t.stocks.length) && (
-              <div className="text-[12.5px] text-muted-foreground/80">今天没有收盘涨停的股票。</div>
-            )}
-            {tiers && (
-              <div className="space-y-2.5">
-                {tiers.tiers.filter((t) => t.stocks.length > 0 || t.label === "首板").map((tier) => (
-                  <div key={tier.label} className="flex flex-wrap items-start gap-2">
-                    <span className={`w-14 shrink-0 rounded-full px-2 py-0.5 text-center text-[11.5px] font-medium ${
-                      tier.label === "最高板" ? "bg-red-400/15 text-red-300" : tier.label === "3连板+" ? "bg-orange-400/15 text-orange-300" : "bg-white/[0.05] text-muted-foreground"
-                    }`}>{tier.label}</span>
-                    <div className="flex flex-1 flex-wrap gap-1.5">
-                      {tier.stocks.length === 0 && <span className="text-[12px] text-muted-foreground/50">—</span>}
-                      {tier.stocks.map((s) => (
-                        <button key={s.symbol}
-                          onClick={() => { setFocusSymbol(s.symbol); go("profile"); }}
-                          className="rounded-full border border-border/60 bg-white/[0.02] px-2.5 py-1 text-[12.5px] transition-colors hover:border-sky-400/40 hover:text-sky-200">
-                          {s.name}
-                          <span className="ml-1 text-red-400">{s.boards}{s.capped ? "+" : ""}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          </div>
+          <div className="px-4 py-2 text-center">
+            <div className="text-[14.5px] font-medium">连板高度</div>
+            <div className="mt-3 text-[35px] font-semibold leading-none tracking-tight">{tiers ? `${tiers.max_boards}板` : "—"}</div>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-1 text-[11.5px]">
+              {sent && <span className="rounded border border-red-400/25 bg-red-400/10 px-1.5 py-0.5 text-red-300">涨停:{sent.limit_up}</span>}
+              {sent && <span className="rounded border border-emerald-400/25 bg-emerald-400/10 px-1.5 py-0.5 text-emerald-300">跌停:{sent.limit_down}</span>}
+              {tiers && <>
+                <span className="rounded border border-border/60 px-1.5 py-0.5 text-muted-foreground">三板:{n3}</span>
+                <span className="rounded border border-border/60 px-1.5 py-0.5 text-muted-foreground">四板:{n4}</span>
+                <span className={`rounded border px-1.5 py-0.5 ${n5 > 0 ? "border-red-400/25 bg-red-400/10 font-medium text-red-300" : "border-border/60 text-muted-foreground"}`}>五板+:{n5}</span>
+              </>}
             </div>
-          </LineageSection>
+          </div>
+          <div className="px-4 py-2 text-center">
+            <div className="text-[14.5px] font-medium">涨跌比</div>
+            <div className="mt-3 text-[35px] font-semibold leading-none tracking-tight" style={{ color: ratio == null ? undefined : ratio >= 1 ? CHART.color.up : CHART.color.down }}>
+              {ratio == null ? "—" : ratio.toFixed(2)}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5 text-[13px] text-muted-foreground">
+              {sent && <span>跌:{sent.decliners}</span>}
+              <span>低5日:{belowMa5 ?? "—"}</span>
+              {asOfDay && <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px]">{asOfDay}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
 
-          {/* 板块资金榜 */}
-          <LineageSection
-            title="行业资金流入榜"
-            actions={<button onClick={() => go("board")} className="text-[12.5px] text-sky-300 hover:underline">更多 →</button>}
-          >
-            <div className="apple-fade-in">
-            {boards ? (
-              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {boards.map((b, i) => (
-                  <button key={b.code} onClick={() => go("sectors")} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] transition-colors hover:bg-white/[0.04]">
-                    <span className="w-5 text-muted-foreground/60">{i + 1}</span>
-                    <span className="truncate font-medium">{b.name}</span>
-                    <PctText value={b.changePct} className="w-14 text-right" />
-                    <span className="ml-auto text-[12px] text-muted-foreground">主力 <span className={b.main >= 0 ? "text-red-400" : "text-emerald-400"}>{b.main.toFixed(2)}亿</span></span>
-                  </button>
-                ))}
-              </div>
-            ) : <div className="text-[12.5px] text-muted-foreground/80">资金榜数据稍后再看。</div>}
-            </div>
-          </LineageSection>
-          </LineageCard>
-        </>
+      {!sent && !error && (
+        <div className="apple-card flex items-center gap-2 px-4 py-3 text-[13.5px] text-muted-foreground">
+          <Loader2 size={13} className="animate-spin" /> 正在加载市场快照...
+        </div>
       )}
+
+      {/* 大盘情绪区：日期范围 + 行情状态 + 加载复盘数据统计（稳智同款控件行） */}
+      <div className="apple-fade-in flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[17px] font-semibold">大盘情绪</div>
+        <div className="flex flex-wrap items-center gap-2 text-[13px]">
+          <div className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-overlay px-2.5 py-1.5">
+            <input type="date" value={trendFrom} max={trendTo || undefined} onChange={(e) => setTrendFrom(e.target.value)}
+              className="bg-transparent text-[13px] text-foreground [color-scheme:dark] outline-none" title="开始日期（不设=近 90 天）" />
+            <span className="text-muted-foreground">至</span>
+            <input type="date" value={trendTo} min={trendFrom || undefined} onChange={(e) => setTrendToPick(e.target.value)}
+              className="bg-transparent text-[13px] text-foreground [color-scheme:dark] outline-none" title="结束日期（不设=至今）" />
+          </div>
+          <select value={regime} onChange={(e) => setRegime(e.target.value as MarketRegime)} title="行情状态只切换情绪温度的权重口径，不重新取数"
+            className="rounded-lg border border-border/70 bg-overlay px-2 py-1.5 text-[13px] text-foreground">
+            {REGIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+          </select>
+          <button onClick={() => void loadTrend(trendFrom, trendTo)} disabled={trendBusy}
+            className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-1.5 text-[13.5px] font-medium text-white transition-colors hover:bg-sky-500 disabled:opacity-50">
+            {trendBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 加载复盘数据统计
+          </button>
+        </div>
+      </div>
+
+      {trendError && <div className="rounded-lg border border-red-400/25 bg-red-400/10 px-3 py-2 text-[13.5px] text-red-300">{trendError}</div>}
+
+      {/* 图表区（稳智同款：标题居中、两栏+通栏；动画/配色走 S0 底座） */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <ChartCard
+          centerTitle
+          title="大盘成交额趋势"
+          note={trend
+            ? `沪深北 指数日成交额合计 · ${trend.range.from} ~ ${trend.range.to}（${trend.days.length} 个交易日）${trend.cached ? " · 本地快照" : ""}`
+            : "未取数"}
+          warnings={[...(trend?.cached ? [`本页数据来自本地快照回放（${trend.cached_at ? new Date(trend.cached_at).toLocaleString("zh-CN") : ""} 落档）：${trend.cache_note ?? "上游取数不完整"}`] : []), ...trend?.missing ?? [], ...(trend?.notes ?? [])]}
+        >
+          <EChart ariaLabel="大盘成交额趋势" height={300} state={turnoverState}
+            emptyText="趋势数据未取到或合计没配齐过一天" option={turnoverOption(trend?.days ?? [], trend?.market_label ?? "两市")} />
+        </ChartCard>
+
+        <ChartCard
+          centerTitle
+          title="大盘情绪（5日线占比）趋势"
+          note={bMain.length >= 2
+            ? `近一个月 · 站上5日线占比 ${bMain.length} 个统计日（${bMain[0].date} ~ ${bMain[bMain.length - 1].date}）${bGroups ? " · 微盘/中盘/大盘三条虚线为外部同步口径的分组" : ""}${bCheck ? ` · 点线是用本库真实收盘价另算的一条：本窗口 ${bCheck.comparable_days} 天平均差 ${bCheck.mean_abs_pt ?? "—"} 个百分点、最大 ${bCheck.max_abs_pt ?? "—"}` : ""}`
+            : "站上5日线占比要拿每票收盘价对 5 日线：历史已按真实日K回填到 2026-04-20，之后每个交易日收盘后自产"}
+        >
+          <EChart ariaLabel="大盘情绪（5日线占比）趋势" height={300} state={breadthState}
+            emptyText="暂无数据（本地真实收盘价没攒够 5 天）"
+            option={breadthOption(bMain, bGroups, bSelf)} />
+        </ChartCard>
+
+      </div>
+
+      {/* 涨跌停板分布对比：稳智同款独立一整行 */}
+      <div className="apple-fade-in">
+        <ChartCard centerTitle title="涨跌停板分布对比" note={limitRows.length >= 2 ? `近10个交易日（同源切片）· ${limitRows.slice(-10)[0].date} ~ ${limitRows[limitRows.length - 1].date} · ${review?.source ?? ""}` : "当日真实快照 · 历史逐日正负柱与趋势线等数据同步后开放"} right={asOfDay ? <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px] text-muted-foreground">{asOfDay}</span> : undefined}>
+          <EChart ariaLabel="涨跌停板分布对比" height={300} state={limitState}
+            emptyText="市场快照未取到" option={limitRows.length >= 2 ? limitHistoryOption(limitRows) : limitTodayOption(sent?.limit_up ?? 0, sent?.limit_down ?? 0)} />
+        </ChartCard>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <ChartCard centerTitle title="连板梯队结构" note={tierRows.length >= 2 ? `近10个交易日（同源切片）· ${tierRows.slice(-10)[0].date} ~ ${tierRows[tierRows.length - 1].date} · 3板/4板/5板+ 堆叠家数 + 最高板（右轴）` : `当日涨停梯队${tiers?.trade_date ? ` · ${tiers.trade_date}` : ""} · 历史堆叠柱与最高板线等数据同步后开放`}>
+          <EChart ariaLabel="连板梯队结构" height={300} state={tierState}
+            emptyText="涨停梯队未取到" option={tierRows.length >= 2 ? tierHistoryOption(tierRows) : tierOption(nFirst, nSecond, n3, n4, n5)} />
+        </ChartCard>
+
+        <ChartCard centerTitle title="指数涨跌幅" note={trend ? `区间累计涨跌幅（自窗口首日起累计 · 同源算法）· ${trend.range.from} ~ ${trend.range.to} · ${review?.indexChanges?.length ? "指数数据为离线快照种子" : trend.source}` : "未取数"}>
+          <EChart ariaLabel="指数涨跌幅" height={300} state={idxState}
+            emptyText="指数日K本次未取到" option={indexDailyOption(idxSeries)} />
+        </ChartCard>
+      </div>
     </div>
   );
 }
 
-function Card({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="apple-inset px-3.5 py-3">
-      <div className="text-[11.5px] text-muted-foreground">{label}</div>
-      <div className="mt-1 text-[15px] font-semibold">{value}</div>
-    </div>
-  );
-}
-
-// 半环温度计表盘：0-100 五段色带（冰点/偏冷/中性/偏热/过热），指针指当前分。
-// 色带分段与 sentiment-temperature-core 的 temperatureLabel 档位同线（25/45/60/80）；
-// 没有真实读数时画灰盘 + 「—」，不画一根指向编造位置的针。
-// compact=true 是监控卡里的迷你版（P15-R2a 用户口径：同款灰卡+顶部四卡，表盘要缩得进窄卡）。
+// 半环温度计表盘（P11 几何；顶卡里用 compact 迷你版，完整版留给详情卡复用）
 function TempGauge({ value, label, compact = false }: { value: number | null; label: string; compact?: boolean }) {
   const w = compact ? 96 : 200;
   const h = compact ? 60 : 118;
-  // 完整版几何与 P11 一字不动（cy=96 给下方数字行留位）；compact 是等比缩到 96×60
   const cx = w / 2, cy = compact ? 56 : 96, r = compact ? 38 : 74;
   const pt = (pct: number) => {
     const a = Math.PI * (1 - Math.min(100, Math.max(0, pct)) / 100);
@@ -503,7 +689,7 @@ function TempGauge({ value, label, compact = false }: { value: number | null; la
   const needle = value === null ? null : pt(value);
   return (
     <div className="relative shrink-0" style={{ width: w }}>
-      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`情绪温度 ${value ?? "无读数"}`}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`情绪温度 ${value ?? "无读数"}${label ? ` ${label}` : ""}`}>
         {bands.map((b) => (
           <path key={b.from} d={arc(b.from + 0.8, b.to - 0.8)} stroke={b.color}
             strokeOpacity={value === null ? 0.2 : b.color === active ? 0.95 : 0.3}
@@ -512,123 +698,6 @@ function TempGauge({ value, label, compact = false }: { value: number | null; la
         {needle && <line x1={cx} y1={cy} x2={needle.x} y2={needle.y} stroke={active} strokeWidth={compact ? 2.5 : 3} strokeLinecap="round" />}
         {needle && <circle cx={cx} cy={cy} r={compact ? 3 : 4.5} fill={active} />}
       </svg>
-      {!compact && (
-        <div className="absolute inset-x-0 bottom-0 text-center">
-          <span className="text-[30px] font-semibold tracking-tight" style={{ color: value === null ? undefined : active }}>
-            {value === null ? "—" : value}
-          </span>
-          <span className="ml-1 text-[12px] text-muted-foreground">{value === null ? "无读数" : `/ 100 · ${label}`}</span>
-        </div>
-      )}
     </div>
-  );
-}
-
-// ---------- P15-R2a 图表：手绘 SVG（不引图表库，项目零新依赖口径） ----------
-// 画法对齐稳智那两张图的意思，但守本页纪律：缺读数的日子留缝不画柱（不拉平到 0），
-// 每根柱子 hover 出「日期 · 沪/深/合计」三个数，图注自报窗口与来源。
-
-const CHART_W = 600, CHART_H = 150, CHART_PAD = 6;
-
-/** 大盘成交额趋势：柱=两市合计（亿），线=合计的 5 日均线（稳智同款「柱+线」语汇） */
-function TurnoverBars({ days }: { days: TrendDayPoint[] }) {
-  const pts = days.filter((d) => d.totalYi !== null);
-  if (!pts.length) {
-    return <div className="flex h-[150px] items-center justify-center text-[11.5px] text-muted-foreground" title="趋势数据未取到或两市没配齐过一天">暂无数据</div>;
-  }
-  const max = Math.max(...pts.map((d) => d.totalYi as number)) * 1.08;
-  const band = (CHART_W - CHART_PAD * 2) / days.length;
-  const idxOf = new Map(days.map((d, i) => [d.date, i]));
-  // 5 日均线只在窗口内能凑满 5 个配对日的点上画——窗口头部少于 5 根不硬画半截线
-  const ma = pts.map((d, i) => {
-    const win = pts.slice(Math.max(0, i - 4), i + 1);
-    return { date: d.date, v: win.reduce((s, p) => s + (p.totalYi as number), 0) / win.length, ok: i >= 4 };
-  }).filter((p) => p.ok);
-  const x = (date: string) => CHART_PAD + (idxOf.get(date) ?? 0) * band + band / 2;
-  const y = (v: number) => CHART_H - 18 - (v / max) * (CHART_H - 30);
-  return (
-    <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full" role="img" aria-label="大盘成交额趋势">
-      <line x1={CHART_PAD} y1={CHART_H - 18} x2={CHART_W - CHART_PAD} y2={CHART_H - 18} stroke="currentColor" strokeOpacity={0.2} />
-      {days.map((d) => (d.totalYi === null ? null : (
-        <rect key={d.date} x={x(d.date) - Math.max(1.5, band * 0.32)} y={y(d.totalYi)}
-          width={Math.max(3, band * 0.64)} height={CHART_H - 18 - y(d.totalYi)} rx={1.5}
-          className="fill-sky-400/70">
-          <title>{`${d.date} 合计 ${(d.totalYi / 1e4).toFixed(2)} 万亿（沪 ${d.shYi === null ? "缺" : (d.shYi / 1e4).toFixed(2)} / 深 ${d.szYi === null ? "缺" : (d.szYi / 1e4).toFixed(2)} 万亿）`}</title>
-        </rect>
-      )))}
-      {ma.length > 1 && (
-        <polyline fill="none" stroke="#fb923c" strokeOpacity={0.9} strokeWidth={1.6}
-          points={ma.map((p) => `${x(p.date).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ")} />
-      )}
-      <text x={CHART_PAD} y={11} className="fill-current text-[9px]" fill="#fb923c" opacity={0.85}>— 5 日均线</text>
-      <text x={CHART_PAD} y={CHART_H - 5} className="fill-current" fontSize={9} opacity={0.55}>{pts[0].date}</text>
-      <text x={CHART_W - CHART_PAD} y={CHART_H - 5} textAnchor="end" fontSize={9} opacity={0.55}>{pts[pts.length - 1].date}</text>
-    </svg>
-  );
-}
-
-/** 指数区间累计涨跌：三条线按区间首日归一（首日=0%），图例带区间末实数 */
-function IndexCumLines({ cum }: { cum: TrendClient["cum"] | null }) {
-  const series = cum ? [
-    { name: "上证", color: "#f87171", pts: cum.sh },
-    { name: "深成", color: "#38bdf8", pts: cum.sz },
-    { name: "创业板", color: "#fbbf24", pts: cum.cyb },
-  ].filter((s) => s.pts.length > 1) : [];
-  if (!series.length) {
-    return <div className="flex h-[150px] items-center justify-center text-[11.5px] text-muted-foreground" title="至少一条指数的区间读数都没取到时画空图没有意义">暂无数据</div>;
-  }
-  const dates = [...new Set(series.flatMap((s) => s.pts.map((p) => p.date)))].sort();
-  const vals = series.flatMap((s) => s.pts.map((p) => p.pct));
-  const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
-  const span = hi - lo || 1;
-  const x = (d: string) => CHART_PAD + (dates.indexOf(d) / Math.max(1, dates.length - 1)) * (CHART_W - CHART_PAD * 2);
-  const y = (v: number) => 14 + (1 - (v - lo) / span) * (CHART_H - 34);
-  return (
-    <div>
-      <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full" role="img" aria-label="指数区间累计涨跌">
-        <line x1={CHART_PAD} y1={y(0)} x2={CHART_W - CHART_PAD} y2={y(0)} stroke="currentColor" strokeOpacity={0.25} strokeDasharray="3 3" />
-        {series.map((s) => (
-          <polyline key={s.name} fill="none" stroke={s.color} strokeWidth={1.6} strokeOpacity={0.95}
-            points={s.pts.map((p) => `${x(p.date).toFixed(1)},${y(p.pct).toFixed(1)}`).join(" ")} />
-        ))}
-        <text x={CHART_PAD} y={CHART_H - 5} fontSize={9} opacity={0.55}>{dates[0]}</text>
-        <text x={CHART_W - CHART_PAD} y={CHART_H - 5} textAnchor="end" fontSize={9} opacity={0.55}>{dates[dates.length - 1]}</text>
-      </svg>
-      <div className="mt-1 flex flex-wrap gap-3 text-[10.5px] text-muted-foreground">
-        {series.map((s) => (
-          <span key={s.name}><i className="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={{ background: s.color }} />
-            {s.name} <b style={{ color: s.color }}>{s.pts[s.pts.length - 1].pct >= 0 ? "+" : ""}{s.pts[s.pts.length - 1].pct.toFixed(2)}%</b></span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// P15-R2b：站上5日线占比折线。点集只收 pct 非 null 的真实统计日（攒不满 5 根的日子不进图，
-// 也不会被 0 补上——线断在第一天是事实，不是画漏了）。y 轴固定 0-100%：占比就这个量纲，不自动缩放夸大波动。
-function BreadthPctLine({ points }: { points: { date: string; above_ma5_pct: number | null }[] }) {
-  const pts = points.filter((p): p is { date: string; above_ma5_pct: number } => p.above_ma5_pct !== null);
-  if (pts.length < 2) return null;
-  const x = (i: number) => CHART_PAD + (i / (pts.length - 1)) * (CHART_W - CHART_PAD * 2);
-  const y = (v: number) => 14 + (1 - v / 100) * (CHART_H - 34);
-  const last = pts[pts.length - 1];
-  return (
-    <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full" role="img" aria-label="大盘情绪（5日线占比）趋势">
-      {[0, 25, 50, 75, 100].map((g) => (
-        <g key={g}>
-          <line x1={CHART_PAD} y1={y(g)} x2={CHART_W - CHART_PAD} y2={y(g)} stroke="currentColor" strokeOpacity={g === 50 ? 0.25 : 0.1} strokeDasharray={g === 50 ? "3 3" : undefined} />
-          <text x={CHART_PAD} y={y(g) - 2} fontSize={8} opacity={0.45}>{g}%</text>
-        </g>
-      ))}
-      <polyline fill="none" stroke="#34d399" strokeWidth={1.8} points={pts.map((p, i) => `${x(i).toFixed(1)},${y(p.above_ma5_pct).toFixed(1)}`).join(" ")} />
-      {pts.map((p, i) => (
-        <circle key={p.date} cx={x(i)} cy={y(p.above_ma5_pct)} r={2.2} fill="#34d399">
-          <title>{`${p.date} 站上5日线 ${p.above_ma5_pct.toFixed(1)}%`}</title>
-        </circle>
-      ))}
-      <text x={CHART_PAD} y={CHART_H - 5} fontSize={9} opacity={0.55}>{pts[0].date}</text>
-      <text x={CHART_W - CHART_PAD} y={CHART_H - 5} textAnchor="end" fontSize={9} opacity={0.55}>{last.date}</text>
-      <text x={CHART_W - CHART_PAD - 4} y={y(last.above_ma5_pct) - 6} textAnchor="end" fontSize={10} fill="#34d399">{last.above_ma5_pct.toFixed(1)}%</text>
-    </svg>
   );
 }
