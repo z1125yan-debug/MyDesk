@@ -208,12 +208,13 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
   if (longDowntrend) {
     topTypeNote = `处长期下行趋势（60日累计 ${r1(cur.prevChange60)}%），当前破位属下行延续，不判顶部；若先回升积累涨幅后再破位，才构成顶部形态。`;
   } else if (topStage && belowTrend && coreBreak && rsNeg) {
-    topType = "B";
-    topTypeLabel = "趋势顶部·深度调整";
+    // C 类升级路径（此前写死无法触发）：B 类技术形态 + 行业利润同比确认恶化（≤-10%）→ 基本面顶部
+    topType = finEyN != null && finEyN <= -10 ? "C" : "B";
+    topTypeLabel = topType === "C" ? "基本面顶部·盈利下滑" : "趋势顶部·深度调整";
     topTypeNote = `价格↓、RS↓、宽度↓、龙头破位；属上涨趋势中的深度调整/估值消化。${cClassNote}`;
   } else if (topStage && coreBreak) {
-    topType = "B";
-    topTypeLabel = "趋势顶部·深度调整";
+    topType = finEyN != null && finEyN <= -10 ? "C" : "B";
+    topTypeLabel = topType === "C" ? "基本面顶部·盈利下滑" : "趋势顶部·深度调整";
     topTypeNote = `核心资产弱于板块（龙头跌幅>板块）。${cClassNote}`;
   } else if ((cur.prevChange60 ?? 0) >= TH.typeRunUp60 && mc <= TH.typeDrop) {
     topType = "A";
