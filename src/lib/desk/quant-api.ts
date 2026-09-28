@@ -107,6 +107,21 @@ export interface SentimentClient {
   main_net_known: number;
   indices: { symbol: string; name: string; price: number; changePct: number }[];
   risk: { level: string; triggers: string[]; severe_signals?: string[] };
+  /**
+   * P15-R20b 见顶压力分：六分量加权 0–100 + 分档 + 每条分量的读数与时间。
+   * 可选是为了不破旧的快照测试字面量；读侧当 null 处理即可（「算不出」与「没有这一格」是两回事，
+   * 纯核在 `score=null` 的 line 里已经把「几条读数缺失」写清楚了）。
+   */
+  pressure?: import("../quant/screener/top-pressure-core").TopPressure | null;
+  /** 外盘与 A50 的背离判定（含四条证据原文与行情时刻）；板块页那一行直接用 `line` */
+  divergence?: import("../quant/data/overseas-core").Divergence | null;
+  /** 上面那份判定吃的原样读数：美股/恒指每条带自己的行情时刻，页面拿来标「谁的数是几时」 */
+  overseas?: import("../quant/data/overseas-core").OverseasSnapshot | null;
+  /**
+   * 压力分这一整块计算失败时服务端给的一句话（路由里那块单独 try/catch，挂了不挡情绪数据）。
+   * 页面必须把它显示出来：没有 `pressure` 又没有这句，读者就只能猜是「没算」还是「算失败」。
+   */
+  pressure_error?: string;
   missing: string[];
   source: { provider: string };
 }

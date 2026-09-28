@@ -38,6 +38,17 @@ async function rosterDates(): Promise<string[]> {
 }
 
 /**
+ * 库里最新一天的名单（含日期）。R20b 的「龙头滞涨」要的就是这个：
+ * 梯队顶上那几只**昨天**是几板，**今天**实时涨成什么样 —— 日期必须跟着出去，
+ * 因为最新一天往往不是今天（今天的名单要等 15:20 才落），页面上得写清是哪一天。
+ */
+export async function latestRosterDay(): Promise<{ date: string; rows: RosterRow[] } | null> {
+  const dates = await rosterDates();
+  if (!dates.length) return null;
+  return { date: dates[0], rows: await rowsForDate(dates[0]) };
+}
+
+/**
  * 昨日涨停股的今日表现：涨幅 = 本地收盘价（今日）/ 本地收盘价（昨日）− 1。
  * 任一天缺行就不参与统计（缺就是缺，不补 0），覆盖率由纯核判够不够出数。
  */
