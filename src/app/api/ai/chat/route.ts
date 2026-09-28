@@ -17,6 +17,8 @@ import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { marketSession, shanghaiDate } from "@/lib/desk/session";
 // P64 数据时效：行情最新交易日（盘前已按 trade-date.ts 的新口径退到上一交易日）
 import { resolveTradeDate } from "@/lib/desk/trade-date";
+// P64 交易日历：真实年历（含法定节假日），回答「未来哪天开盘/休市」——通达信日历给不出未来
+import { tradeCalendarNote } from "@/lib/desk/trade-calendar";
 import { TOOLS, FACTOR_KEYS, findTool, phaseOfTool, type ToolCtx } from "@/lib/desk/chat-tools";
 import { backtestClaimWarning } from "@/lib/desk/backtest-core";
 import { contractWarningOf, prepareSceneTurn, type SceneTurn } from "@/lib/desk/scene-dispatch";
@@ -113,12 +115,20 @@ function systemPrompt(
       `凡涉及行情的问题，开头必须交代「数据截至 ${trade.tradeDate}」；今天未开盘时最新数据就是上一交易日收盘，` +
       `绝不许把「今天」当成已有数据、也不许说「截至今天」。`
     : "";
+  // 交易日历：真实年历（data/trade-calendar.json，源 akshare/新浪，含法定节假日）。
+  // 稳智那种「下周只有 28/29/30 三个交易日，10/1–7 休市，10/8 复市」只能靠它——按「去掉周末」猜必错（中秋/国庆）。
+  const calNoteRaw = tradeCalendarNote(today);
+  const calendarNote = calNoteRaw
+    ? `【交易日历·真实年历，非推断】${calNoteRaw}。凡涉及「下周/节后/接下来几天/哪天开盘」的问题，` +
+      `必须按这一句说清交易日与休市安排，并按此判断时间窗口——不许按「去掉周末」自己推算。`
+    : "";
   // 风格句的正文在 modes.ts 的 MODE_NOTES 一处定义：纯对话端点（/api/ai/proxy）现在也消费
   // mode，两条链路查同一张表，不会出现「chip 同名、两端口径不同」的漂移。
   // P11 持仓周期同纪律：HORIZON_NOTES 同址同表；没选就一个字都不注入（未选≠中线）。
   return [
     `你是 MyDesk 的 AI 交易员分析引擎。今天是 ${today}。${MODE_NOTES[mode]}`,
     dataNote,
+    calendarNote,
     horizon ? HORIZON_NOTES[horizon] : "",
     focusSymbol ? `用户当前关注标的：${focusSymbol}。` : "",
     // 持仓条件（标的/成本/仓位/建仓日期）：由 composer 小窗或持仓卡填出，随请求带来。
