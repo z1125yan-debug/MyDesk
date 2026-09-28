@@ -40,6 +40,9 @@ const TH = {
   // 顶部类型
   typeRunUp60: 20, // 前期60日涨幅 >= 此值 = 刚跑高（情绪顶部候选）
   typeDrop: -2,
+  // 下行延续(④)：长期下行趋势中的破位/恶化 = 下行本身，不算顶部（2026-09-29 用户定案：
+  // 「前面跌了好几个月、回温一点点，不算顶部」——顶部形态要求前期有上涨可反转）
+  downtrendRun60: -10, // 前期60日累计涨幅 <= 此值 = 处长期下行趋势
 } as const;
 
 // ── 类型（服务端/客户端共用，见 top-risk-types.ts）─────────────────
@@ -122,6 +125,7 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
   const breadthDeter = advMean20 != null ? advMean20 - adv : null;
 
   const coreBreak = leader < mc; // 龙头跌幅 > 板块跌幅 = 核心资产趋势破坏
+  const longDowntrend = (cur.prevChange60 ?? 0) <= TH.downtrendRun60; // 长期下行中：破位≠顶部
   const belowTrend = (cur.distMA60 ?? 0) < TH.reversalBelowMA60;
   const belowTrendSoft = (cur.distMA60 ?? 99) < TH.formingBelowMA60Soft;
   const rsNeg = rs < 0;
@@ -148,26 +152,28 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
     clamp(posComp * 0.4 + nearHighComp * 0.3 + trendDamageRaw * 0.35 + (rsMom10 != null ? clamp(-rsMom10 / -TH.damageRsMomFull, 0, 1) * 15 : 0)),
   );
 
-  // ── 三阶段状态机（回测校准：取中间值——顶部形成中 = 跌破60日趋势+任一恶化信号，或 核心破坏+RS深负+下跌日）──
+  // ── 阶段状态机（v2 形态修正：长期下行趋势中的破位=下行延续，不算顶部；回测校准：顶部形成中 = 跌破60日趋势+任一恶化信号，或 核心破坏+RS深负+下跌日）──
   const deterioration = (coreBreak ? 1 : 0) + (rsVeryNeg ? 1 : 0) + (breadthPoor ? 1 : 0);
   let stage: Stage;
   if (belowTrend && coreBreak && rsNeg && (mc <= TH.reversalDrop || (cur.distFromHigh20 ?? 0) <= TH.reversalDrawdown20)) {
-    stage = "趋势反转";
+    stage = longDowntrend ? "下行延续" : "趋势反转";
   } else if ((belowTrend && deterioration >= 1) || (coreBreak && rsVeryNeg && mc <= TH.formingDrop)) {
-    stage = "顶部形成中";
+    stage = longDowntrend ? "下行延续" : "顶部形成中";
   } else if (mc <= TH.pullbackDrop && !coreBreak && (cur.distMA60 ?? 0) >= TH.pullbackAboveMA) {
     stage = "趋势内回撤";
   } else {
     stage = "趋势健康";
   }
   const stageTone: Tone =
-    stage === "趋势反转" ? "red" : stage === "顶部形成中" ? "amber" : stage === "趋势内回撤" ? "blue" : "green";
+    stage === "趋势反转" ? "red" : stage === "顶部形成中" ? "amber" : stage === "下行延续" ? "orange" : stage === "趋势内回撤" ? "blue" : "green";
 
-  // ── 顶部类型 ──
+  // ── 顶部类型（长期下行中不判 A/B 顶部——先回升积累涨幅、再破位才构成顶部形态）──
   let topType: TopType = null;
   let topTypeLabel = "无明显顶部特征";
   let topTypeNote = "未触发 A/B 顶部信号。";
-  if (belowTrend && coreBreak && rsNeg) {
+  if (longDowntrend) {
+    topTypeNote = `处长期下行趋势（60日累计 ${r1(cur.prevChange60)}%），当前破位属下行延续，不判顶部；若先回升积累涨幅后再破位，才构成顶部形态。`;
+  } else if (belowTrend && coreBreak && rsNeg) {
     topType = "B";
     topTypeLabel = "趋势顶部·深度调整";
     topTypeNote = "价格↓、RS↓、宽度↓、龙头破位；属上涨趋势中的深度调整/估值消化。产业层数据不足，若订单↓/库存↑/利润↓确认恶化→升为 C 基本面顶部（待 Phase2 产业链数据）。";
@@ -208,9 +214,11 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
       ? "已破位，趋势破坏（观察 10–20 日是否持续）"
       : stage === "顶部形成中"
         ? "观察 3–5 日：能否收复跌幅 / RS 止跌 / 宽度回稳"
-        : stage === "趋势内回撤"
-          ? "观察 3–5 日：收复中则回到趋势内"
-          : "—";
+        : stage === "下行延续"
+          ? "下行趋势延续中；观察 5–10 日能否止跌企稳（RS 转正 / 宽度回稳），企稳前不按顶部抄底逻辑看"
+          : stage === "趋势内回撤"
+            ? "观察 3–5 日：收复中则回到趋势内"
+            : "—";
 
   // ── 产业链诊断（v5 第⑤层）──
   const links = map.sectorIndustryMap?.[sector] || [];
@@ -318,9 +326,11 @@ function buildConclusion(
       ? `已跌破60日趋势，趋势破坏`
       : stage === "顶部形成中"
         ? `顶部风险上升，进入确认窗口`
-        : stage === "趋势内回撤"
-          ? `仍在上升趋势内，属回调`
-          : `趋势健康`;
+        : stage === "下行延续"
+          ? `处长期下行趋势（60日${r1(cur.prevChange60)}%），属下行延续而非顶部`
+          : stage === "趋势内回撤"
+            ? `仍在上升趋势内，属回调`
+            : `趋势健康`;
   const structPhrase =
     leader < mc
       ? `龙头跌幅(${leadS}%)大于板块(${mcS}%)，核心资产转弱`
@@ -357,6 +367,7 @@ export function scanAll(asOf?: string): ScannerResult {
     trendBreak: rows.filter((r) => r.stage === "趋势反转").length,
     topWatch: rows.filter((r) => r.stage === "顶部形成中").length,
     highPullback: rows.filter((r) => r.stage === "趋势内回撤").length,
+    downtrend: rows.filter((r) => r.stage === "下行延续").length,
     healthy: rows.filter((r) => r.stage === "趋势健康").length,
   };
   const movers = [...industries].sort((a, b) => (b.medianChange ?? 0) - (a.medianChange ?? 0));
