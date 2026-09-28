@@ -51,8 +51,13 @@ test("trade-date：先问通达信 → 再问腾讯日K → 最后才退日历�
   // 补一条不受网关影响的腾讯日K源，顺序必须排在日历兜底之前。
   assert.match(src, /fetchKlinesReal\("000001\.SH", "日线", 8, "none"\)/, "第二顺位是上证指数日K（腾讯源）");
   assert.match(src, /const fromKline = await read\(klineLatestTradeDate\(\)\);/, "第二源排在日历之前");
-  assert.match(src, /return \{ date: prevWeekday\(today\), source: "calendar", fromMarketData: false \};/, "两源都拿不到才退周末感知的日历兜底");
-  assert.match(src, /return d && d <= today \? d : null;/, "行情源给出晚于今天的日期一律不认");
+  assert.match(src, /return \{ date: prevWeekday\(cutoff\), source: "calendar", fromMarketData: false \};/, "两源都拿不到才退周末感知的日历兜底");
+  // 2026-09-29 事故后收紧：上界从「今天」改成 cutoff——盘前/未开盘时行情源会返回一根「今天」的
+  // 未完成占位 K（价格=昨收/0 成交），它不是已收盘的最新交易日，必须把上界退到昨天再取
+  // （否则会把上一交易日收盘数据标成「截至今天」，sentiment 就是这么错的）。
+  assert.match(src, /const openedToday = marketSession\(now\)\.label !== "未开盘";/, "盘前（未开盘）要识别出来");
+  assert.match(src, /const cutoff = openedToday \? today : shanghaiDate\(new Date\(now\.getTime\(\) - 86_400_000\)\);/, "未开盘时上界退一天");
+  assert.match(src, /return d && d <= cutoff \? d : null;/, "行情源给出晚于上界 cutoff 的日期一律不认（含盘前的「今天」占位 K）");
 });
 
 test("resolveTradeDate 带来源：日历推算值标 fromMarketData=false，前端不得拿它宣称「最新交易日」", () => {

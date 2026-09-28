@@ -16,7 +16,7 @@
 // 于是把休市日说成"最近交易日"（/api/market/board 当场就吐了 tradeDate=2026-09-25）。
 // 腾讯日K不受网关影响，最后一根就是 09-24，把这类错挡在源头。
 
-import { prevWeekday, shanghaiDate } from "./session";
+import { marketSession, prevWeekday, shanghaiDate } from "./session";
 import { tdxCalendarTradeDate, tdxLatestTradeDate } from "./tdx";
 
 export type TradeDateSource = "tdx" | "tencent-kline" | "tdx-calendar" | "calendar";
@@ -49,9 +49,19 @@ export async function latestTradeDate(now = new Date()): Promise<string> {
 // 两条行情源都不认"晚于本机今天"的返回值：源异常或时钟漂移时宁退回日历兜底。
 export async function resolveTradeDate(now = new Date()): Promise<TradeDateInfo> {
   const today = shanghaiDate(now);
+  // 「最新已完成交易日」的上界 cutoff：
+  //   · 盘前（未开盘，含集合竞价前）：行情源会返回一根「今天」的 K，但那根是**未成交占位**
+  //     （价格=昨收 / 0 成交），它不是「最近一个已收盘的交易日」——必须把上界退到昨天。
+  //     2026-09-29 06:11 事故：sentiment 把 09-28 收盘数据标成 trade_date=2026-09-29
+  //     （与 build-sector-snapshot 假交易日同源：数据源在盘中/盘前会吐一根"当日"未完成的 K）。
+  //   · 已开盘（竞价/盘中/午休）与已收盘：今日 K 有意义（实时 / 当日已定稿），上界=今天。
+  // 为什么是「退一天」而不是「退到上一交易日」：不退日历、不猜节假日——上界退一天后，
+  // 行情源自己会给「≤ 上界」的真正上一根；两步都拿不到还有带节假日的通达信日历兜底。
+  const openedToday = marketSession(now).label !== "未开盘";
+  const cutoff = openedToday ? today : shanghaiDate(new Date(now.getTime() - 86_400_000));
   const read = async (p: Promise<string | null>) => {
     const d = await p.catch(() => null);
-    return d && d <= today ? d : null;
+    return d && d <= cutoff ? d : null;
   };
   const fromTdx = await read(tdxLatestTradeDate());
   if (fromTdx) return { date: fromTdx, source: "tdx", fromMarketData: true };
@@ -59,7 +69,7 @@ export async function resolveTradeDate(now = new Date()): Promise<TradeDateInfo>
   if (fromKline) return { date: fromKline, source: "tencent-kline", fromMarketData: true };
   // ③' 两条 K 线都拿不到时，先问通达信自带的交易日历（含法定节假日，见 tdx.ts 的实测注释）。
   // 它比 ③ 的「只认周末」强一档：2026-09-25 中秋那种日子，③ 会停在 09-25 并把休市日说成交易日。
-  const fromCalendar = await read(tdxCalendarTradeDate(today));
+  const fromCalendar = await read(tdxCalendarTradeDate(cutoff));
   if (fromCalendar) return { date: fromCalendar, source: "tdx-calendar", fromMarketData: true };
-  return { date: prevWeekday(today), source: "calendar", fromMarketData: false };
+  return { date: prevWeekday(cutoff), source: "calendar", fromMarketData: false };
 }
