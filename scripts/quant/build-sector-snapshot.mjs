@@ -83,6 +83,23 @@ const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length 
 const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
 
 async function main() {
+  // —— 交易日守卫（2026-09-29 事故后补；放在抓取前，未开盘直接退出，不白跑 4281 只）——
+  // 事故：凌晨 05:51 运行，qt.gtimg.cn 返回的仍是**上一交易日收盘价**，而本脚本按「当前日期」落档，
+  // 于是凭空多出一个用昨天数据冒充今天的假交易日（归档 111→112 天，且 prevChange*/Δ 被连锁重算污染）。
+  // 规则：北京时间 09:30 开盘前，数据源返回的永远是上一交易日收盘值 —— 此时落档必然污染，直接拒绝。
+  // 调度器 15:20（收盘后）跑天然安全；手动跑请在开盘后或收盘后。确需强跑加 --force 并自担后果。
+  const nowBj = new Date(Date.now() + 8 * 3600_000);
+  const bjMinutes = nowBj.getUTCHours() * 60 + nowBj.getUTCMinutes();
+  const OPEN_MINUTES = 9 * 60 + 30; // 09:30
+  if (!process.argv.includes("--force") && bjMinutes < OPEN_MINUTES) {
+    console.error(
+      `拒绝落档：当前北京时间 ${beijingStamp()} 未到开盘 09:30，qt.gtimg.cn 返回的仍是上一交易日收盘价，` +
+        `按 ${beijingDate()} 落档 = 用昨天的数据冒充今天（2026-09-29 事故：归档多出假交易日、prevChange 被污染）。` +
+        `请在开盘后/收盘后运行；确需强跑加 --force。`,
+    );
+    process.exit(2);
+  }
+
   if (!fs.existsSync(CONSTITUENTS_PATH)) {
     console.error("缺 sector-constituents.json:", CONSTITUENTS_PATH);
     process.exit(1);
