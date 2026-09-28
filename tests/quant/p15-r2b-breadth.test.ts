@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { computeBreadthSeries, storedTradingDays, type StockBar } from "../../src/lib/quant/screener/breadth-core.ts";
+import {
+  computeBreadthSeries, storedTradingDays, isBeijingSymbol, breadthScopeLabel, widthColsForDate,
+  breadthCalendarLookback, BREADTH_PAGE_DAYS, DEFAULT_BREADTH_SCOPE, BREADTH_CALIBER, type StockBar,
+} from "../../src/lib/quant/screener/breadth-core.ts";
 
 // P15-R2b 逐日宽度统计（站上5日线占比/创5日·3日新低）：纯核行为测 + 沉淀/接线钉。
 // 红线：攒不满根数不进分母（缺就是缺）、不随全局日历给停牌票补价、脏行不统计、同日重复取首条。
@@ -99,9 +102,66 @@ test("R2b-⑥ 调度与读侧接线：breadth 进 KINDS 白名单，端点只算
   assert.ok(api.includes("/api/market/breadth"), "客户端一条口 fetchBreadth");
   const mk = readSrc("src/components/desk/pages/MarketPage.tsx");
   assert.ok(mk.includes("void loadBreadth()"), "首屏自动带宽度进度");
-  // R19：宽度图多了一个入参（本地自算对照线），空态文案也从「攒中/回填中」改成说清「没攒够 5 天」。
+  // R19c：宽度图从「三条线（主线+分组+对照点线）」回到「一次一条口径」，空态文案补了「同步口径也没到位」。
   // 这两处只放宽形状、不放松 intent：图仍走 breadthOption、仍吃 pct 非 null 的真实统计日、空态仍明说缺什么。
   assert.ok(/breadthOption\(bMain, bGroups(?:, \w+)?\)/.test(mk), "宽度图走统一 EChart（吃 pct 非 null 的真实统计日）");
   assert.ok(/emptyText="暂无数据（[^"]*5 天[^"]*）"/.test(mk), "只攒出不足 2 个点时不画线、明说要满 5 天");
   assert.ok(mk.includes("min: 0, max: 100"), "占比图 y 轴固定 0–100%，不自动缩放夸大波动");
+});
+
+test("R2b-⑦ 票池口径：默认三市全A（含北交所），两市只是对照开关，筛票在进组前做", () => {
+  const mix: StockBar[] = [
+    ...bars("600000.SH", ["d1", 10], ["d2", 11], ["d3", 12], ["d4", 13], ["d5", 14]), // 站上
+    ...bars("000001.SZ", ["d1", 10], ["d2", 11], ["d3", 12], ["d4", 13], ["d5", 9]),  // 没站上
+    ...bars("835185.BJ", ["d1", 10], ["d2", 11], ["d3", 12], ["d4", 13], ["d5", 20]), // 站上（北交所）
+  ];
+  const all = computeBreadthSeries(mix); // 不传 scope：必须默认三市
+  const two = computeBreadthSeries(mix, "two_markets");
+  assert.equal(all[4].ma5_eligible, 3, "三市全A：北交所那只在分母里");
+  assert.equal(two[4].ma5_eligible, 2, "两市：北交所整票被剔，连它自己的历史根数都不进滚动");
+  assert.equal(all[4].above_ma5, 2);
+  assert.equal(two[4].above_ma5, 1, "剔票后分子分母同源（不是只把分母减 1、分子照旧）");
+  assert.ok(Math.abs((all[4].above_ma5_pct as number) - 200 / 3) < 1e-9);
+  assert.equal(two[4].above_ma5_pct, 50);
+  assert.equal(two[4].universe, 2, "universe 也跟着票池走：报表上说分母时不许还挂着三市的票数");
+  assert.ok(isBeijingSymbol("835185.BJ") && isBeijingSymbol("BJ835185") && isBeijingSymbol("bj835185"), "两种北交所写法都认（大小写不敏感）");
+  assert.ok(!isBeijingSymbol("600000.SH") && !isBeijingSymbol("000001.SZ"), "沪深别被误剔：误剔一只就是全天分母少一只");
+  // 默认值钉住：改默认口径是拍板级动作，不许在代码里悄悄翻
+  assert.equal(DEFAULT_BREADTH_SCOPE, "all_markets", "默认口径是三市全A（用户 2026-09-28 拍板：不按两市）");
+  assert.match(breadthScopeLabel("all_markets"), /三市|沪\+深\+北/);
+  assert.match(breadthScopeLabel("two_markets"), /两市/);
+  // 读侧与客户端都得把开关带下去，且默认不筛票
+  const route = readSrc("src/app/api/market/breadth/route.ts");
+  assert.ok(route.includes('u.searchParams.get("scope") === "two_markets"'), "接口只认 two_markets 这个显式值");
+  assert.ok(route.includes("DEFAULT_BREADTH_SCOPE") && route.includes("scope_label"), "接口把实际用的票池回给页面，不让前端自己猜");
+  const api = readSrc("src/lib/desk/quant-api.ts");
+  assert.match(api, /fetchBreadth\(days = \d+, scope: "two_markets" \| "all_markets" = "all_markets"\)/, "客户端默认也传三市");
+  assert.match(BREADTH_CALIBER, /三市全A/, "口径句得说清默认票池，别让下一个人以为跟种子一样是两市");
+});
+
+test("R2b-⑧ 宽度三列取单日的列（给收盘后自产复盘行用）：跌破 = 分母 − 站上，算不出留 null", () => {
+  const mix: StockBar[] = [
+    ...bars("600000.SH", ["d1", 10], ["d2", 11], ["d3", 12], ["d4", 13], ["d5", 14]), // 站上 MA5、站上 MA3
+    ...bars("000001.SZ", ["d1", 10], ["d2", 11], ["d3", 12], ["d4", 13], ["d5", 9]),  // 两档都没站上
+    ...bars("835185.BJ", ["d4", 5], ["d5", 6]), // 只有 2 根：两档分母都不进
+  ];
+  const d5 = widthColsForDate(mix, "d5");
+  assert.ok(d5);
+  assert.equal(d5!.aboveMa5Pct, 50, "满 5 根的只有两只（北交那只 2 根不进），1/2 = 50%");
+  assert.equal(d5!.belowMa5, 1, "跌破5日线家数 = 分母 − 站上（种子那 110 行反推出来就是这么减的）");
+  assert.equal(d5!.belowMa3, 1, "跌破3日线同一套：3 根以上进分母，站上 = 收盘 > 含当日 3 根均值");
+  // 这一天有行但凑不满 5 根：三列都 null，不是 0（「没票可算」≠「0% 站上」）
+  const d1 = widthColsForDate(mix, "d1");
+  assert.ok(d1, "d1 当天库里有线，所以返回的是一行「全缺」而不是「没有这天」");
+  assert.equal(d1!.aboveMa5Pct, null);
+  assert.equal(d1!.belowMa5, null);
+  assert.equal(d1!.belowMa3, null);
+  assert.equal(widthColsForDate(mix, "d9"), null, "库里压根没有这天 → null，采集器据此留空并写明原因");
+  // 窗口公式与页面那条序列共用（同一天同一个分母）；30 个交易日 → 58 个日历日
+  assert.equal(breadthCalendarLookback(BREADTH_PAGE_DAYS), 58);
+  const route = readSrc("src/app/api/market/breadth/route.ts");
+  assert.ok(route.includes("breadthCalendarLookback(days)") && !/Math\.ceil\(days \* 1\.6\)/.test(route),
+    "接口改成共用公式，不许两处各写一遍 1.6 上浮");
+  const collect = readSrc("src/lib/quant/screener/review-daily-collect.ts");
+  assert.ok(collect.includes("breadthCalendarLookback(BREADTH_PAGE_DAYS)"), "自产那一路也用同一个窗口");
 });

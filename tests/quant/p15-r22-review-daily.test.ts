@@ -44,7 +44,7 @@ test("自产行缺涨跌停或最高板就整行不上图（缺读数 ≠ 0）",
   assert.equal(isUsableSelfRow(row("2026-09-28", { limitUp: null })), false, "涨停家数缺 = 整行不可用");
   assert.equal(isUsableSelfRow(row("2026-09-28", { limitDown: null })), false);
   assert.equal(isUsableSelfRow(row("2026-09-28", { maxBoards: null })), false);
-  // 站上5日线那几列本来就可缺（要等逐票收盘价攒够 5 天），不影响整行可用性
+  // 宽度那几列可以缺（当日还没沉淀），缺了不影响涨跌停那几列上图——但缺就是缺，不拿 0 顶替
   assert.equal(isUsableSelfRow(row("2026-09-28", { aboveMa5Pct: null, belowMa5: null })), true);
 });
 
@@ -83,8 +83,13 @@ test("采集器：三道闸与字段口径都写死了", () => {
   assert.match(COLLECT, /15 \* 60 \+ 5/, "收盘下限是北京 15:05");
   assert.match(COLLECT, /splitBoards/, "连板拆分走纯核，不自己再写一套");
   assert.match(COLLECT, /upsert/, "按交易日唯一键 upsert（同日重跑以最后一次为准）");
-  // 站上5日线那几列要等 stock_daily_close 攒够 5 天，现在一律 null，不猜
-  assert.match(COLLECT, /aboveMa5Pct: null|belowMa5: null/);
+  // P15-R19c：宽度三列不再一律 null——库里 2026-04-20 起有逐票真实收盘价，收盘后就该自产。
+  // intent 不变（缺读数不许编），只是形状从「写死 null」变成「算不出来才 null」。
+  assert.match(COLLECT, /widthColsForDate/, "宽度三列走 breadth-core 同一份纯核，不自己再写一套 MA 判定");
+  assert.match(COLLECT, /aboveMa5Pct: width\.cols\?\.aboveMa5Pct \?\? null/, "取不到才落 null（缺就是缺，不拿昨天顶）");
+  assert.match(COLLECT, /microPct: null, midPct: null, largePct: null/, "微/中/大盘分组自产不了（库里没有市值分层），继续留空并说明原因");
+  assert.equal(/需逐票收盘价攒满 5 个交易日后自产，当前记 null/.test(COLLECT), false,
+    "「一直留 null 等攒够」已经不是事实，留着就是假口径");
 });
 
 test("路由：自产只查种子终点之后，异常不能吃掉历史", () => {
