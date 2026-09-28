@@ -88,3 +88,7 @@ prisma/db/*.bak-*
 
 # 旧 .next 编译产物的暂存处（rename 移走、暂不删除）
 /.stale-next/
+
+# SQLite 运行库：自动增长的二进制，不该进 git（2026-09-29）
+prisma/db/*.db
+db/*.db

@@ -1696,358 +1696,1275 @@
     },
     "2026-09-28|industry": {
       "tradeDate": "2026-09-28",
-      "computedAt": "2026-09-28 12:56",
+      "computedAt": "2026-09-29 02:57",
       "kind": "industry",
       "rows": [
         {
           "code": "THS881125",
           "name": "汽车整车",
-          "changePct": 1.64,
-          "main": 5.73,
+          "changePct": 1.72,
+          "main": 3.43,
           "rank": 1
         },
         {
           "code": "THS881173",
           "name": "小家电",
-          "changePct": 0.83,
-          "main": -0.45,
+          "changePct": 1.2,
+          "main": -0.03,
           "rank": 2
         },
         {
-          "code": "THS881155",
-          "name": "银行",
-          "changePct": -0.07,
-          "main": -5.49,
+          "code": "THS881280",
+          "name": "风电设备",
+          "changePct": 0.84,
+          "main": -1.34,
           "rank": 3
-        },
-        {
-          "code": "THS881145",
-          "name": "电力",
-          "changePct": -0.23,
-          "main": 5.08,
-          "rank": 4
-        },
-        {
-          "code": "THS881142",
-          "name": "生物制品",
-          "changePct": -0.31,
-          "main": -0.17,
-          "rank": 5
         },
         {
           "code": "THS881102",
           "name": "养殖业",
-          "changePct": -0.45,
-          "main": 2.57,
+          "changePct": 0.2,
+          "main": 5.54,
+          "rank": 4
+        },
+        {
+          "code": "THS881107",
+          "name": "油气开采及服务",
+          "changePct": -0.01,
+          "main": 1.63,
+          "rank": 5
+        },
+        {
+          "code": "THS881142",
+          "name": "生物制品",
+          "changePct": -0.08,
+          "main": -1.59,
           "rank": 6
         },
         {
           "code": "THS881133",
           "name": "饮料制造",
-          "changePct": -0.54,
-          "main": -3.43,
+          "changePct": -0.1,
+          "main": -0.79,
           "rank": 7
         },
         {
-          "code": "THS881134",
-          "name": "食品加工制造",
-          "changePct": -0.56,
-          "main": -2.64,
+          "code": "THS881145",
+          "name": "电力",
+          "changePct": -0.14,
+          "main": 8.6,
           "rank": 8
+        },
+        {
+          "code": "THS881155",
+          "name": "银行",
+          "changePct": -0.21,
+          "main": -13.65,
+          "rank": 9
         },
         {
           "code": "THS881141",
           "name": "中药",
-          "changePct": -0.56,
-          "main": -2.23,
-          "rank": 9
-        },
-        {
-          "code": "THS881107",
-          "name": "油气开采及服务",
-          "changePct": -0.64,
-          "main": 0.39,
+          "changePct": -0.22,
+          "main": -1.43,
           "rank": 10
         },
         {
-          "code": "THS881148",
-          "name": "港口航运",
-          "changePct": -0.67,
-          "main": -1.36,
+          "code": "THS881134",
+          "name": "食品加工制造",
+          "changePct": -0.35,
+          "main": -3.83,
           "rank": 11
-        },
-        {
-          "code": "THS881140",
-          "name": "化学制药",
-          "changePct": -0.87,
-          "main": -10.46,
-          "rank": 12
         },
         {
           "code": "THS881146",
           "name": "燃气",
-          "changePct": -1.04,
-          "main": -0.51,
+          "changePct": -0.39,
+          "main": -0.12,
+          "rank": 12
+        },
+        {
+          "code": "THS881140",
+          "name": "化学制药",
+          "changePct": -0.49,
+          "main": -7.82,
           "rank": 13
         },
         {
           "code": "THS881105",
           "name": "煤炭开采加工",
-          "changePct": -1.07,
-          "main": 0.26,
+          "changePct": -0.55,
+          "main": 3.55,
           "rank": 14
         },
         {
-          "code": "THS881143",
-          "name": "医药商业",
-          "changePct": -1.07,
-          "main": -0.41,
+          "code": "THS881148",
+          "name": "港口航运",
+          "changePct": -0.63,
+          "main": -1.22,
           "rank": 15
-        },
-        {
-          "code": "THS881149",
-          "name": "公路铁路运输",
-          "changePct": -1.15,
-          "main": 0.98,
-          "rank": 16
-        },
-        {
-          "code": "THS881156",
-          "name": "保险",
-          "changePct": -1.17,
-          "main": -4.87,
-          "rank": 17
-        },
-        {
-          "code": "THS881165",
-          "name": "综合",
-          "changePct": -1.22,
-          "main": -0.92,
-          "rank": 18
-        },
-        {
-          "code": "THS881177",
-          "name": "互联网电商",
-          "changePct": -1.25,
-          "main": -1.86,
-          "rank": 19
-        },
-        {
-          "code": "THS881182",
-          "name": "美容护理",
-          "changePct": -1.26,
-          "main": -1.63,
-          "rank": 20
-        },
-        {
-          "code": "THS881153",
-          "name": "房地产",
-          "changePct": -1.29,
-          "main": -5.3,
-          "rank": 21
-        },
-        {
-          "code": "THS881174",
-          "name": "厨卫电器",
-          "changePct": -1.31,
-          "main": -0.06,
-          "rank": 22
-        },
-        {
-          "code": "THS881272",
-          "name": "软件开发",
-          "changePct": -1.33,
-          "main": -10,
-          "rank": 23
         },
         {
           "code": "THS881103",
           "name": "农产品加工",
-          "changePct": -1.33,
-          "main": -1.91,
-          "rank": 24
+          "changePct": -0.82,
+          "main": -1.71,
+          "rank": 16
+        },
+        {
+          "code": "THS881153",
+          "name": "房地产",
+          "changePct": -0.84,
+          "main": -0.68,
+          "rank": 17
+        },
+        {
+          "code": "THS881143",
+          "name": "医药商业",
+          "changePct": -0.87,
+          "main": -0.63,
+          "rank": 18
+        },
+        {
+          "code": "THS881149",
+          "name": "公路铁路运输",
+          "changePct": -0.91,
+          "main": 1.78,
+          "rank": 19
+        },
+        {
+          "code": "THS881151",
+          "name": "机场航运",
+          "changePct": -0.97,
+          "main": -3.53,
+          "rank": 20
         },
         {
           "code": "THS881273",
           "name": "白酒",
-          "changePct": -1.38,
-          "main": -2.06,
-          "rank": 25
+          "changePct": -1.01,
+          "main": -0.19,
+          "rank": 21
+        },
+        {
+          "code": "THS881165",
+          "name": "综合",
+          "changePct": -1.07,
+          "main": -1.1,
+          "rank": 22
         },
         {
           "code": "THS881283",
           "name": "多元金融",
-          "changePct": -1.39,
-          "main": -2.91,
-          "rank": 26
+          "changePct": -1.08,
+          "main": -2.88,
+          "rank": 23
         },
         {
-          "code": "THS881128",
-          "name": "汽车服务及其他",
-          "changePct": -1.43,
-          "main": -0.97,
-          "rank": 27
-        },
-        {
-          "code": "THS881280",
-          "name": "风电设备",
-          "changePct": -1.45,
-          "main": -4.55,
-          "rank": 28
+          "code": "THS881180",
+          "name": "石油加工贸易",
+          "changePct": -1.12,
+          "main": 6.04,
+          "rank": 24
         },
         {
           "code": "THS881152",
           "name": "物流",
-          "changePct": -1.46,
-          "main": -1.26,
+          "changePct": -1.18,
+          "main": -0.29,
+          "rank": 25
+        },
+        {
+          "code": "THS881177",
+          "name": "互联网电商",
+          "changePct": -1.2,
+          "main": -2.98,
+          "rank": 26
+        },
+        {
+          "code": "THS881182",
+          "name": "美容护理",
+          "changePct": -1.2,
+          "main": -2.13,
+          "rank": 27
+        },
+        {
+          "code": "THS881269",
+          "name": "轨交设备",
+          "changePct": -1.22,
+          "main": 1.79,
+          "rank": 28
+        },
+        {
+          "code": "THS881272",
+          "name": "软件开发",
+          "changePct": -1.23,
+          "main": -9.55,
           "rank": 29
         },
         {
           "code": "THS881144",
           "name": "医疗器械",
-          "changePct": -1.53,
-          "main": -2.28,
+          "changePct": -1.27,
+          "main": -0.98,
           "rank": 30
-        },
-        {
-          "code": "THS881277",
-          "name": "电机",
-          "changePct": -1.59,
-          "main": -0.22,
-          "rank": 31
-        },
-        {
-          "code": "THS881135",
-          "name": "纺织制造",
-          "changePct": -1.64,
-          "main": -3.39,
-          "rank": 32
-        },
-        {
-          "code": "THS881269",
-          "name": "轨交设备",
-          "changePct": -1.65,
-          "main": 0.76,
-          "rank": 33
-        },
-        {
-          "code": "THS881137",
-          "name": "造纸",
-          "changePct": -1.66,
-          "main": -1.93,
-          "rank": 34
-        },
-        {
-          "code": "THS881180",
-          "name": "石油加工贸易",
-          "changePct": -1.69,
-          "main": 2.48,
-          "rank": 35
         },
         {
           "code": "THS881108",
           "name": "化学原料",
-          "changePct": -1.71,
-          "main": -5.14,
-          "rank": 36
-        },
-        {
-          "code": "THS881175",
-          "name": "医疗服务",
-          "changePct": -1.79,
-          "main": -7.57,
-          "rank": 37
+          "changePct": -1.3,
+          "main": -6.6,
+          "rank": 31
         },
         {
           "code": "THS881158",
           "name": "零售",
-          "changePct": -1.82,
-          "main": -5.37,
-          "rank": 38
+          "changePct": -1.36,
+          "main": -4.97,
+          "rank": 32
         },
         {
-          "code": "THS881160",
-          "name": "旅游及酒店",
-          "changePct": -1.84,
-          "main": -2.12,
-          "rank": 39
+          "code": "THS881128",
+          "name": "汽车服务及其他",
+          "changePct": -1.38,
+          "main": -1.22,
+          "rank": 33
         },
         {
-          "code": "THS881263",
-          "name": "农化制品",
-          "changePct": -1.91,
-          "main": -7.34,
-          "rank": 40
+          "code": "THS881159",
+          "name": "贸易",
+          "changePct": -1.43,
+          "main": -0.4,
+          "rank": 34
+        },
+        {
+          "code": "THS881277",
+          "name": "电机",
+          "changePct": -1.48,
+          "main": -0.29,
+          "rank": 35
+        },
+        {
+          "code": "THS881175",
+          "name": "医疗服务",
+          "changePct": -1.56,
+          "main": -7.02,
+          "rank": 36
+        },
+        {
+          "code": "THS881137",
+          "name": "造纸",
+          "changePct": -1.56,
+          "main": -2.13,
+          "rank": 37
         },
         {
           "code": "THS881112",
           "name": "钢铁",
-          "changePct": -1.95,
-          "main": -6.87,
-          "rank": 41
+          "changePct": -1.58,
+          "main": -6.05,
+          "rank": 38
         },
         {
-          "code": "THS881136",
-          "name": "服装家纺",
-          "changePct": -1.95,
-          "main": -1.18,
-          "rank": 42
+          "code": "THS881174",
+          "name": "厨卫电器",
+          "changePct": -1.67,
+          "main": -0.38,
+          "rank": 39
+        },
+        {
+          "code": "THS881156",
+          "name": "保险",
+          "changePct": -1.68,
+          "main": -8.56,
+          "rank": 40
+        },
+        {
+          "code": "THS881263",
+          "name": "农化制品",
+          "changePct": -1.7,
+          "main": -8.66,
+          "rank": 41
         },
         {
           "code": "THS881179",
           "name": "其他社会服务",
-          "changePct": -1.98,
-          "main": -1.58,
+          "changePct": -1.75,
+          "main": -1.36,
+          "rank": 42
+        },
+        {
+          "code": "THS881160",
+          "name": "旅游及酒店",
+          "changePct": -1.76,
+          "main": -2.34,
           "rank": 43
         },
         {
           "code": "THS881139",
           "name": "家居用品",
-          "changePct": -1.99,
-          "main": -1.8,
+          "changePct": -1.81,
+          "main": -1.25,
           "rank": 44
-        },
-        {
-          "code": "THS881157",
-          "name": "证券",
-          "changePct": -2.03,
-          "main": -24.46,
-          "rank": 45
-        },
-        {
-          "code": "THS881131",
-          "name": "白色家电",
-          "changePct": -2.05,
-          "main": -4.49,
-          "rank": 46
-        },
-        {
-          "code": "THS881159",
-          "name": "贸易",
-          "changePct": -2.06,
-          "main": -0.54,
-          "rank": 47
         },
         {
           "code": "THS881126",
           "name": "汽车零部件",
-          "changePct": -2.08,
-          "main": -13.76,
-          "rank": 48
+          "changePct": -1.82,
+          "main": -13.08,
+          "rank": 45
+        },
+        {
+          "code": "THS881136",
+          "name": "服装家纺",
+          "changePct": -1.85,
+          "main": -0.04,
+          "rank": 46
         },
         {
           "code": "THS881138",
           "name": "包装印刷",
-          "changePct": -2.08,
-          "main": -3.13,
+          "changePct": -1.87,
+          "main": -2.73,
+          "rank": 47
+        },
+        {
+          "code": "THS881157",
+          "name": "证券",
+          "changePct": -1.89,
+          "main": -26.75,
+          "rank": 48
+        },
+        {
+          "code": "THS881274",
+          "name": "影视院线",
+          "changePct": -1.93,
+          "main": -3.89,
           "rank": 49
+        },
+        {
+          "code": "THS881135",
+          "name": "纺织制造",
+          "changePct": -1.97,
+          "main": -2.54,
+          "rank": 50
+        },
+        {
+          "code": "THS881131",
+          "name": "白色家电",
+          "changePct": -2.02,
+          "main": -5.1,
+          "rank": 51
         },
         {
           "code": "THS881115",
           "name": "建筑材料",
-          "changePct": -2.11,
-          "main": -18.08,
+          "changePct": -2.1,
+          "main": -21.8,
+          "rank": 52
+        },
+        {
+          "code": "THS881264",
+          "name": "化学纤维",
+          "changePct": -2.1,
+          "main": -0.74,
+          "rank": 53
+        },
+        {
+          "code": "THS881181",
+          "name": "环境治理",
+          "changePct": -2.13,
+          "main": -6.42,
+          "rank": 54
+        },
+        {
+          "code": "THS881116",
+          "name": "建筑装饰",
+          "changePct": -2.24,
+          "main": -13.79,
+          "rank": 55
+        },
+        {
+          "code": "THS881130",
+          "name": "计算机设备",
+          "changePct": -2.32,
+          "main": -15.68,
+          "rank": 56
+        },
+        {
+          "code": "THS881279",
+          "name": "光伏设备",
+          "changePct": -2.34,
+          "main": -10.31,
+          "rank": 57
+        },
+        {
+          "code": "THS881275",
+          "name": "游戏",
+          "changePct": -2.41,
+          "main": -5.46,
+          "rank": 58
+        },
+        {
+          "code": "THS881271",
+          "name": "IT服务",
+          "changePct": -2.45,
+          "main": -19.19,
+          "rank": 59
+        },
+        {
+          "code": "THS881278",
+          "name": "电网设备",
+          "changePct": -2.46,
+          "main": -12.3,
+          "rank": 60
+        },
+        {
+          "code": "THS881166",
+          "name": "军工装备",
+          "changePct": -2.46,
+          "main": -7.74,
+          "rank": 61
+        },
+        {
+          "code": "THS881268",
+          "name": "工程机械",
+          "changePct": -2.48,
+          "main": -2.29,
+          "rank": 62
+        },
+        {
+          "code": "THS881101",
+          "name": "种植业与林业",
+          "changePct": -2.59,
+          "main": -1.05,
+          "rank": 63
+        },
+        {
+          "code": "THS881109",
+          "name": "化学制品",
+          "changePct": -2.6,
+          "main": -14.92,
+          "rank": 64
+        },
+        {
+          "code": "THS881132",
+          "name": "黑色家电",
+          "changePct": -2.68,
+          "main": -2.64,
+          "rank": 65
+        },
+        {
+          "code": "THS881118",
+          "name": "专用设备",
+          "changePct": -2.7,
+          "main": -18.58,
+          "rank": 66
+        },
+        {
+          "code": "THS881162",
+          "name": "通信服务",
+          "changePct": -2.72,
+          "main": -4.61,
+          "rank": 67
+        },
+        {
+          "code": "THS881122",
+          "name": "光学光电子",
+          "changePct": -2.77,
+          "main": -25.81,
+          "rank": 68
+        },
+        {
+          "code": "THS881164",
+          "name": "文化传媒",
+          "changePct": -2.77,
+          "main": -16.83,
+          "rank": 69
+        },
+        {
+          "code": "THS881117",
+          "name": "通用设备",
+          "changePct": -2.89,
+          "main": -24.98,
+          "rank": 70
+        },
+        {
+          "code": "THS881168",
+          "name": "工业金属",
+          "changePct": -3.11,
+          "main": -16.67,
+          "rank": 71
+        },
+        {
+          "code": "THS881281",
+          "name": "电池",
+          "changePct": -3.12,
+          "main": -10.34,
+          "rank": 72
+        },
+        {
+          "code": "THS881284",
+          "name": "环保设备",
+          "changePct": -3.15,
+          "main": -2.69,
+          "rank": 73
+        },
+        {
+          "code": "THS881267",
+          "name": "能源金属",
+          "changePct": -3.5,
+          "main": -4.51,
+          "rank": 74
+        },
+        {
+          "code": "THS881266",
+          "name": "橡胶制品",
+          "changePct": -3.55,
+          "main": -1.84,
+          "rank": 75
+        },
+        {
+          "code": "THS881171",
+          "name": "自动化设备",
+          "changePct": -3.71,
+          "main": -27.6,
+          "rank": 76
+        },
+        {
+          "code": "THS881178",
+          "name": "教育",
+          "changePct": -3.71,
+          "main": -4.45,
+          "rank": 77
+        },
+        {
+          "code": "THS881114",
+          "name": "金属新材料",
+          "changePct": -3.75,
+          "main": -4.94,
+          "rank": 78
+        },
+        {
+          "code": "THS881170",
+          "name": "小金属",
+          "changePct": -3.76,
+          "main": -16.51,
+          "rank": 79
+        },
+        {
+          "code": "THS881265",
+          "name": "塑料制品",
+          "changePct": -4.14,
+          "main": -14.31,
+          "rank": 80
+        },
+        {
+          "code": "THS881276",
+          "name": "军工电子",
+          "changePct": -4.24,
+          "main": -12.2,
+          "rank": 81
+        },
+        {
+          "code": "THS881124",
+          "name": "消费电子",
+          "changePct": -4.28,
+          "main": -23.57,
+          "rank": 82
+        },
+        {
+          "code": "THS881282",
+          "name": "其他电源设备",
+          "changePct": -4.58,
+          "main": -11.78,
+          "rank": 83
+        },
+        {
+          "code": "THS881121",
+          "name": "半导体",
+          "changePct": -4.69,
+          "main": -88.02,
+          "rank": 84
+        },
+        {
+          "code": "THS881123",
+          "name": "其他电子",
+          "changePct": -5.26,
+          "main": -10.91,
+          "rank": 85
+        },
+        {
+          "code": "THS881169",
+          "name": "贵金属",
+          "changePct": -5.62,
+          "main": -8.55,
+          "rank": 86
+        },
+        {
+          "code": "THS881167",
+          "name": "非金属材料",
+          "changePct": -5.63,
+          "main": -6.07,
+          "rank": 87
+        },
+        {
+          "code": "THS881172",
+          "name": "电子化学品",
+          "changePct": -5.88,
+          "main": -17.2,
+          "rank": 88
+        },
+        {
+          "code": "THS881129",
+          "name": "通信设备",
+          "changePct": -6.13,
+          "main": -102.34,
+          "rank": 89
+        },
+        {
+          "code": "THS881270",
+          "name": "元件",
+          "changePct": -6.84,
+          "main": -56.93,
+          "rank": 90
+        }
+      ]
+    },
+    "2026-09-29|industry": {
+      "tradeDate": "2026-09-29",
+      "computedAt": "2026-09-29 00:35",
+      "kind": "industry",
+      "rows": [
+        {
+          "code": "THS881125",
+          "name": "汽车整车",
+          "changePct": 1.72,
+          "main": 3.43,
+          "rank": 1
+        },
+        {
+          "code": "THS881173",
+          "name": "小家电",
+          "changePct": 1.2,
+          "main": -0.03,
+          "rank": 2
+        },
+        {
+          "code": "THS881280",
+          "name": "风电设备",
+          "changePct": 0.84,
+          "main": -1.34,
+          "rank": 3
+        },
+        {
+          "code": "THS881102",
+          "name": "养殖业",
+          "changePct": 0.2,
+          "main": 5.54,
+          "rank": 4
+        },
+        {
+          "code": "THS881107",
+          "name": "油气开采及服务",
+          "changePct": -0.01,
+          "main": 1.63,
+          "rank": 5
+        },
+        {
+          "code": "THS881142",
+          "name": "生物制品",
+          "changePct": -0.08,
+          "main": -1.59,
+          "rank": 6
+        },
+        {
+          "code": "THS881133",
+          "name": "饮料制造",
+          "changePct": -0.1,
+          "main": -0.79,
+          "rank": 7
+        },
+        {
+          "code": "THS881145",
+          "name": "电力",
+          "changePct": -0.14,
+          "main": 8.6,
+          "rank": 8
+        },
+        {
+          "code": "THS881155",
+          "name": "银行",
+          "changePct": -0.21,
+          "main": -13.65,
+          "rank": 9
+        },
+        {
+          "code": "THS881141",
+          "name": "中药",
+          "changePct": -0.22,
+          "main": -1.43,
+          "rank": 10
+        },
+        {
+          "code": "THS881134",
+          "name": "食品加工制造",
+          "changePct": -0.35,
+          "main": -3.83,
+          "rank": 11
+        },
+        {
+          "code": "THS881146",
+          "name": "燃气",
+          "changePct": -0.39,
+          "main": -0.12,
+          "rank": 12
+        },
+        {
+          "code": "THS881140",
+          "name": "化学制药",
+          "changePct": -0.49,
+          "main": -7.82,
+          "rank": 13
+        },
+        {
+          "code": "THS881105",
+          "name": "煤炭开采加工",
+          "changePct": -0.55,
+          "main": 3.55,
+          "rank": 14
+        },
+        {
+          "code": "THS881148",
+          "name": "港口航运",
+          "changePct": -0.63,
+          "main": -1.22,
+          "rank": 15
+        },
+        {
+          "code": "THS881103",
+          "name": "农产品加工",
+          "changePct": -0.82,
+          "main": -1.71,
+          "rank": 16
+        },
+        {
+          "code": "THS881153",
+          "name": "房地产",
+          "changePct": -0.84,
+          "main": -0.68,
+          "rank": 17
+        },
+        {
+          "code": "THS881143",
+          "name": "医药商业",
+          "changePct": -0.87,
+          "main": -0.63,
+          "rank": 18
+        },
+        {
+          "code": "THS881149",
+          "name": "公路铁路运输",
+          "changePct": -0.91,
+          "main": 1.78,
+          "rank": 19
+        },
+        {
+          "code": "THS881151",
+          "name": "机场航运",
+          "changePct": -0.97,
+          "main": -3.53,
+          "rank": 20
+        },
+        {
+          "code": "THS881273",
+          "name": "白酒",
+          "changePct": -1.01,
+          "main": -0.19,
+          "rank": 21
+        },
+        {
+          "code": "THS881165",
+          "name": "综合",
+          "changePct": -1.07,
+          "main": -1.1,
+          "rank": 22
+        },
+        {
+          "code": "THS881283",
+          "name": "多元金融",
+          "changePct": -1.08,
+          "main": -2.88,
+          "rank": 23
+        },
+        {
+          "code": "THS881180",
+          "name": "石油加工贸易",
+          "changePct": -1.12,
+          "main": 6.04,
+          "rank": 24
+        },
+        {
+          "code": "THS881152",
+          "name": "物流",
+          "changePct": -1.18,
+          "main": -0.29,
+          "rank": 25
+        },
+        {
+          "code": "THS881177",
+          "name": "互联网电商",
+          "changePct": -1.2,
+          "main": -2.98,
+          "rank": 26
+        },
+        {
+          "code": "THS881182",
+          "name": "美容护理",
+          "changePct": -1.2,
+          "main": -2.13,
+          "rank": 27
+        },
+        {
+          "code": "THS881269",
+          "name": "轨交设备",
+          "changePct": -1.22,
+          "main": 1.79,
+          "rank": 28
+        },
+        {
+          "code": "THS881272",
+          "name": "软件开发",
+          "changePct": -1.23,
+          "main": -9.55,
+          "rank": 29
+        },
+        {
+          "code": "THS881144",
+          "name": "医疗器械",
+          "changePct": -1.27,
+          "main": -0.98,
+          "rank": 30
+        },
+        {
+          "code": "THS881108",
+          "name": "化学原料",
+          "changePct": -1.3,
+          "main": -6.6,
+          "rank": 31
+        },
+        {
+          "code": "THS881158",
+          "name": "零售",
+          "changePct": -1.36,
+          "main": -4.97,
+          "rank": 32
+        },
+        {
+          "code": "THS881128",
+          "name": "汽车服务及其他",
+          "changePct": -1.38,
+          "main": -1.22,
+          "rank": 33
+        },
+        {
+          "code": "THS881159",
+          "name": "贸易",
+          "changePct": -1.43,
+          "main": -0.4,
+          "rank": 34
+        },
+        {
+          "code": "THS881277",
+          "name": "电机",
+          "changePct": -1.48,
+          "main": -0.29,
+          "rank": 35
+        },
+        {
+          "code": "THS881175",
+          "name": "医疗服务",
+          "changePct": -1.56,
+          "main": -7.02,
+          "rank": 36
+        },
+        {
+          "code": "THS881137",
+          "name": "造纸",
+          "changePct": -1.56,
+          "main": -2.13,
+          "rank": 37
+        },
+        {
+          "code": "THS881112",
+          "name": "钢铁",
+          "changePct": -1.58,
+          "main": -6.05,
+          "rank": 38
+        },
+        {
+          "code": "THS881174",
+          "name": "厨卫电器",
+          "changePct": -1.67,
+          "main": -0.38,
+          "rank": 39
+        },
+        {
+          "code": "THS881156",
+          "name": "保险",
+          "changePct": -1.68,
+          "main": -8.56,
+          "rank": 40
+        },
+        {
+          "code": "THS881263",
+          "name": "农化制品",
+          "changePct": -1.7,
+          "main": -8.66,
+          "rank": 41
+        },
+        {
+          "code": "THS881179",
+          "name": "其他社会服务",
+          "changePct": -1.75,
+          "main": -1.36,
+          "rank": 42
+        },
+        {
+          "code": "THS881160",
+          "name": "旅游及酒店",
+          "changePct": -1.76,
+          "main": -2.34,
+          "rank": 43
+        },
+        {
+          "code": "THS881139",
+          "name": "家居用品",
+          "changePct": -1.81,
+          "main": -1.25,
+          "rank": 44
+        },
+        {
+          "code": "THS881126",
+          "name": "汽车零部件",
+          "changePct": -1.82,
+          "main": -13.08,
+          "rank": 45
+        },
+        {
+          "code": "THS881136",
+          "name": "服装家纺",
+          "changePct": -1.85,
+          "main": -0.04,
+          "rank": 46
+        },
+        {
+          "code": "THS881138",
+          "name": "包装印刷",
+          "changePct": -1.87,
+          "main": -2.73,
+          "rank": 47
+        },
+        {
+          "code": "THS881157",
+          "name": "证券",
+          "changePct": -1.89,
+          "main": -26.75,
+          "rank": 48
+        },
+        {
+          "code": "THS881274",
+          "name": "影视院线",
+          "changePct": -1.93,
+          "main": -3.89,
+          "rank": 49
+        },
+        {
+          "code": "THS881135",
+          "name": "纺织制造",
+          "changePct": -1.97,
+          "main": -2.54,
           "rank": 50
+        },
+        {
+          "code": "THS881131",
+          "name": "白色家电",
+          "changePct": -2.02,
+          "main": -5.1,
+          "rank": 51
+        },
+        {
+          "code": "THS881115",
+          "name": "建筑材料",
+          "changePct": -2.1,
+          "main": -21.8,
+          "rank": 52
+        },
+        {
+          "code": "THS881264",
+          "name": "化学纤维",
+          "changePct": -2.1,
+          "main": -0.74,
+          "rank": 53
+        },
+        {
+          "code": "THS881181",
+          "name": "环境治理",
+          "changePct": -2.13,
+          "main": -6.42,
+          "rank": 54
+        },
+        {
+          "code": "THS881116",
+          "name": "建筑装饰",
+          "changePct": -2.24,
+          "main": -13.79,
+          "rank": 55
+        },
+        {
+          "code": "THS881130",
+          "name": "计算机设备",
+          "changePct": -2.32,
+          "main": -15.68,
+          "rank": 56
+        },
+        {
+          "code": "THS881279",
+          "name": "光伏设备",
+          "changePct": -2.34,
+          "main": -10.31,
+          "rank": 57
+        },
+        {
+          "code": "THS881275",
+          "name": "游戏",
+          "changePct": -2.41,
+          "main": -5.46,
+          "rank": 58
+        },
+        {
+          "code": "THS881271",
+          "name": "IT服务",
+          "changePct": -2.45,
+          "main": -19.19,
+          "rank": 59
+        },
+        {
+          "code": "THS881278",
+          "name": "电网设备",
+          "changePct": -2.46,
+          "main": -12.3,
+          "rank": 60
+        },
+        {
+          "code": "THS881166",
+          "name": "军工装备",
+          "changePct": -2.46,
+          "main": -7.74,
+          "rank": 61
+        },
+        {
+          "code": "THS881268",
+          "name": "工程机械",
+          "changePct": -2.48,
+          "main": -2.29,
+          "rank": 62
+        },
+        {
+          "code": "THS881101",
+          "name": "种植业与林业",
+          "changePct": -2.59,
+          "main": -1.05,
+          "rank": 63
+        },
+        {
+          "code": "THS881109",
+          "name": "化学制品",
+          "changePct": -2.6,
+          "main": -14.92,
+          "rank": 64
+        },
+        {
+          "code": "THS881132",
+          "name": "黑色家电",
+          "changePct": -2.68,
+          "main": -2.64,
+          "rank": 65
+        },
+        {
+          "code": "THS881118",
+          "name": "专用设备",
+          "changePct": -2.7,
+          "main": -18.58,
+          "rank": 66
+        },
+        {
+          "code": "THS881162",
+          "name": "通信服务",
+          "changePct": -2.72,
+          "main": -4.61,
+          "rank": 67
+        },
+        {
+          "code": "THS881122",
+          "name": "光学光电子",
+          "changePct": -2.77,
+          "main": -25.81,
+          "rank": 68
+        },
+        {
+          "code": "THS881164",
+          "name": "文化传媒",
+          "changePct": -2.77,
+          "main": -16.83,
+          "rank": 69
+        },
+        {
+          "code": "THS881117",
+          "name": "通用设备",
+          "changePct": -2.89,
+          "main": -24.98,
+          "rank": 70
+        },
+        {
+          "code": "THS881168",
+          "name": "工业金属",
+          "changePct": -3.11,
+          "main": -16.67,
+          "rank": 71
+        },
+        {
+          "code": "THS881281",
+          "name": "电池",
+          "changePct": -3.12,
+          "main": -10.34,
+          "rank": 72
+        },
+        {
+          "code": "THS881284",
+          "name": "环保设备",
+          "changePct": -3.15,
+          "main": -2.69,
+          "rank": 73
+        },
+        {
+          "code": "THS881267",
+          "name": "能源金属",
+          "changePct": -3.5,
+          "main": -4.51,
+          "rank": 74
+        },
+        {
+          "code": "THS881266",
+          "name": "橡胶制品",
+          "changePct": -3.55,
+          "main": -1.84,
+          "rank": 75
+        },
+        {
+          "code": "THS881171",
+          "name": "自动化设备",
+          "changePct": -3.71,
+          "main": -27.6,
+          "rank": 76
+        },
+        {
+          "code": "THS881178",
+          "name": "教育",
+          "changePct": -3.71,
+          "main": -4.45,
+          "rank": 77
+        },
+        {
+          "code": "THS881114",
+          "name": "金属新材料",
+          "changePct": -3.75,
+          "main": -4.94,
+          "rank": 78
+        },
+        {
+          "code": "THS881170",
+          "name": "小金属",
+          "changePct": -3.76,
+          "main": -16.51,
+          "rank": 79
+        },
+        {
+          "code": "THS881265",
+          "name": "塑料制品",
+          "changePct": -4.14,
+          "main": -14.31,
+          "rank": 80
+        },
+        {
+          "code": "THS881276",
+          "name": "军工电子",
+          "changePct": -4.24,
+          "main": -12.2,
+          "rank": 81
+        },
+        {
+          "code": "THS881124",
+          "name": "消费电子",
+          "changePct": -4.28,
+          "main": -23.57,
+          "rank": 82
+        },
+        {
+          "code": "THS881282",
+          "name": "其他电源设备",
+          "changePct": -4.58,
+          "main": -11.78,
+          "rank": 83
+        },
+        {
+          "code": "THS881121",
+          "name": "半导体",
+          "changePct": -4.69,
+          "main": -88.02,
+          "rank": 84
+        },
+        {
+          "code": "THS881123",
+          "name": "其他电子",
+          "changePct": -5.26,
+          "main": -10.91,
+          "rank": 85
+        },
+        {
+          "code": "THS881169",
+          "name": "贵金属",
+          "changePct": -5.62,
+          "main": -8.55,
+          "rank": 86
+        },
+        {
+          "code": "THS881167",
+          "name": "非金属材料",
+          "changePct": -5.63,
+          "main": -6.07,
+          "rank": 87
+        },
+        {
+          "code": "THS881172",
+          "name": "电子化学品",
+          "changePct": -5.88,
+          "main": -17.2,
+          "rank": 88
+        },
+        {
+          "code": "THS881129",
+          "name": "通信设备",
+          "changePct": -6.13,
+          "main": -102.34,
+          "rank": 89
+        },
+        {
+          "code": "THS881270",
+          "name": "元件",
+          "changePct": -6.84,
+          "main": -56.93,
+          "rank": 90
         }
       ]
     }
