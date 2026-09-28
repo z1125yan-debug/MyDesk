@@ -4,8 +4,18 @@
 // 数据：/api/market/sectors/top-risk（全市场）+ ?sector= 单板块详情。引擎：top-risk-engine.ts。
 // 不接 Jev/AI；结论卡渲染规则生成的 conclusion 字符串。术语走方案 §3 词典（少黑话）。
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { RefreshCw, ArrowUp, ArrowDown, Minus, Activity, Network } from "lucide-react";
+import { RefreshCw, ArrowUp, ArrowDown, Minus, Activity, Network, Globe } from "lucide-react";
 import type { ScannerResult, SectorRow, SectorTopRisk, Tone } from "@/lib/quant/screener/top-risk-types";
+import type { CrossInstrumentJudgement, CrossSectorSignal } from "@/lib/quant/screener/cross-market-core";
+import { recentRiskVerdict } from "@/lib/quant/screener/cross-market-core";
+
+interface CrossMarkData {
+  ok: boolean;
+  today: string;
+  instruments: CrossInstrumentJudgement[];
+  sectors: Record<string, CrossSectorSignal>;
+  basis: string;
+}
 
 const TONE: Record<Tone, string> = {
   red: "text-red-500 border-red-500/40 bg-red-500/10",
@@ -49,6 +59,20 @@ export default function SectorTopPage() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("全部");
   const [q, setQ] = useState("");
+  const [cross, setCross] = useState<CrossMarkData | null>(null);
+  const [crossError, setCrossError] = useState(false);
+
+  const loadCross = useCallback(async () => {
+    setCrossError(false);
+    try {
+      const r = await fetch("/api/market/sectors/cross-market", { cache: "no-store" });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "加载失败");
+      setCross(j);
+    } catch {
+      setCrossError(true); // 外盘挂了不影响本页主数据，只如实说没读到
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -85,7 +109,8 @@ export default function SectorTopPage() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadCross();
+  }, [load, loadCross]);
   useEffect(() => {
     if (selected) void loadDetail(selected);
   }, [selected, loadDetail]);
@@ -112,7 +137,7 @@ export default function SectorTopPage() {
               异动：{scanner.biggestMovers.slice(0, 4).join("  ")}
             </span>
           )}
-          <button onClick={load} disabled={busy} className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-white/5">
+          <button onClick={() => { void load(); void loadCross(); }} disabled={busy} className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-white/5">
             <RefreshCw className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} /> 刷新
           </button>
         </div>
@@ -161,7 +186,12 @@ export default function SectorTopPage() {
                 className={`flex w-full items-center justify-between gap-2 border-b border-border/60 px-3 py-2 text-left text-sm hover:bg-white/5 ${selected === r.sector ? "bg-blue-500/10" : ""}`}
               >
                 <div className="min-w-0">
-                  <div className="truncate font-medium">{r.sector}</div>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate font-medium">{r.sector}</span>
+                    {cross?.sectors[r.sector]?.warn && (
+                      <span className="shrink-0 rounded border border-red-500/40 bg-red-500/10 px-1 py-px text-[10px] text-red-400">外盘连跌</span>
+                    )}
+                  </div>
                   <div className="text-xs text-zinc-400">中期顶 {r.midTop} · 破坏 {r.trendDamage}</div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
@@ -177,7 +207,7 @@ export default function SectorTopPage() {
         {/* 右：详情诊断 */}
         <div className="min-h-0 overflow-y-auto desk-scroll rounded-xl border border-border bg-card p-4">
           {detailBusy && !detail && <div className="flex items-center gap-2 text-sm text-zinc-400"><RefreshCw className="h-4 w-4 animate-spin" /> 加载诊断…</div>}
-          {detail && <Detail d={detail} />}
+          {detail && <Detail d={detail} cross={cross} crossError={crossError} onReloadCross={loadCross} />}
           {!detail && !detailBusy && <div className="p-4 text-sm text-zinc-500">点左侧板块查看诊断</div>}
         </div>
       </div>
@@ -218,9 +248,37 @@ function Bar({ label, v, danger }: { label: string; v: number | null; danger?: b
   );
 }
 
-function Detail({ d }: { d: SectorTopRisk }) {
+function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cross: CrossMarkData | null; crossError: boolean; onReloadCross: () => void }) {
+  const sig = cross?.sectors[d.sector] ?? null;
+  // 近期风险综合结论：阶段+四分数+隔夜外盘 → 一句人话（每个板块各不相同）
+  const weakInsts = (cross?.instruments ?? []).filter((j) => sig?.instrumentKeys?.includes(j.key) && j.bearish === true);
+  const crossShort = weakInsts.length
+    ? weakInsts
+        .map((j) =>
+          (j.downStreak ?? 0) >= 2
+            ? `${j.label} 连跌${j.downStreak}天、5日 ${fmt(j.cum5)}`
+            : `${j.label} 5日累计 ${fmt(j.cum5)}`,
+        )
+        .join("、")
+    : null;
+  const risk = recentRiskVerdict({
+    stage: d.stage,
+    midTop: d.scores.midTop,
+    trendDamage: d.scores.trendDamage,
+    shortPullback: d.scores.shortPullback,
+    deltaUp: d.delta.tone === "up_up",
+    crossWarn: sig?.warn === true,
+    crossShort,
+  });
   return (
     <div className="flex flex-col gap-4">
+      {/* 近期风险综合结论（面板全部读数 → 一句话） */}
+      <div className={`rounded-xl border px-3 py-2.5 ${TONE[risk.tone]}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold">近期风险：{risk.label}</span>
+        </div>
+        <p className="mt-1 text-xs leading-relaxed">{risk.line}</p>
+      </div>
       {/* 状态条 */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
@@ -253,11 +311,45 @@ function Detail({ d }: { d: SectorTopRisk }) {
         <p className="mt-2 text-xs leading-relaxed text-zinc-400">{d.topTypeNote}</p>
       </div>
 
+      {/* 隔夜外盘（跨市场预警）：对应板块的美国品种/国际期货连跌 → 提醒 */}
+      <div className="rounded-xl border border-border bg-background/40 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Globe className="h-3.5 w-3.5 text-zinc-400" />
+          <span className="text-sm font-medium">隔夜外盘</span>
+          {sig?.warn && tonePill("red", "外盘连跌 · 注意开盘")}
+          {cross && <span className="text-xs text-zinc-500">读数日 {cross.today}</span>}
+          {crossError && (
+            <button onClick={onReloadCross} className="text-xs text-zinc-400 underline decoration-dotted hover:text-zinc-200">
+              没读到，重试
+            </button>
+          )}
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-zinc-300">{crossError ? "外盘读数没拿到（网络或上游问题），判不了——不是没有信号。" : sig?.line ?? (cross ? "这个板块没有贴近的外盘品种，不硬套跨市场信号。" : "外盘读数加载中…")}</p>
+        {cross?.instruments?.length && sig?.instrumentKeys?.length ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {cross.instruments
+              .filter((j) => sig.instrumentKeys.includes(j.key))
+              .map((j) => (
+                <span key={j.key}>
+                  {tonePill(
+                    j.bearish === true ? "red" : j.bearish === false ? "green" : "amber",
+                    j.bearish === true && (j.downStreak ?? 0) >= 2
+                      ? `${j.label} 连跌${j.downStreak}天 · 5日 ${fmt(j.cum5)}`
+                      : `${j.label} 5日 ${fmt(j.cum5)}`,
+                  )}
+                </span>
+              ))}
+          </div>
+        ) : null}
+      </div>
+
       {/* 信号分色板 */}
       <div>
         <div className="mb-1.5 text-xs font-medium text-zinc-400">信号</div>
         <div className="flex flex-wrap gap-1.5">
-          {d.signals.map((s) => tonePill(s.tone, `${s.name}`))}
+          {d.signals.map((s) => (
+            <span key={s.name}>{tonePill(s.tone, `${s.name}`)}</span>
+          ))}
         </div>
       </div>
 
