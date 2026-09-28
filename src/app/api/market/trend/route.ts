@@ -12,9 +12,12 @@ import { quantBootstrap } from "@/lib/quant/bootstrap";
 import {
   fetchIndexDayBars, fetchTodayAmountYi, INDEX_CATALOG, SH_SYMBOL, SZ_SYMBOL, CYB_SYMBOL, BJ_SYMBOL,
 } from "@/lib/quant/screener/market-trend";
-import { mergeTurnover, turnoverDeltaVsPrev, cumReturnSeries, inRange, trendNotes } from "@/lib/quant/screener/market-trend-core";
+import {
+  mergeTurnover, turnoverDeltaVsPrev, cumReturnSeries, inRange, trendNotes, type IndexDayBar,
+} from "@/lib/quant/screener/market-trend-core";
 import {
   saveTrendSnapshot, getTrendSnapshot, countTurnoverDays, MIN_USABLE_DAYS,
+  stripIntradayTurnoverTail, beijingNow, CLOSE_GATE_MIN,
 } from "@/lib/desk/market-trend-cache";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +27,103 @@ function shanghaiDateStr(d: Date): string {
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+type CatalogEntry = { key: string; name: string; symbol: string; bars: IndexDayBar[]; source: "eltdx" | "tencent" | "none" };
+type BarsCarrier = { bars: IndexDayBar[] };
+interface TrendDayRow { date: string; shYi: number | null; szYi: number | null; bjYi?: number | null; totalYi: number | null; ma5Yi?: number | null }
+
+/** idx（逐日涨跌幅）+ cum（区间累计）只依赖收盘价 —— 主路径与快照回放共用同一份构建，口径不分叉 */
+function buildIdxCum(catalog: CatalogEntry[], sh: BarsCarrier, sz: BarsCarrier, cyb: BarsCarrier, defFrom: string, defTo: string) {
+  const winBars = (b: IndexDayBar[]) => inRange(b, defFrom, defTo);
+  const idx = catalog.map((c) => {
+    const bars = winBars(c.bars);
+    return {
+      key: c.key,
+      name: c.name,
+      pts: bars.slice(1).map((b, i) => {
+        const prev = bars[i].close;
+        return { date: b.date, pct: prev > 0 ? +(((b.close / prev) - 1) * 100).toFixed(2) : 0 };
+      }),
+    };
+  });
+  return {
+    idx: idx.map(({ key, name, pts }) => ({ key, name, pts })),
+    cum: { sh: cumReturnSeries(winBars(sh.bars)), sz: cumReturnSeries(winBars(sz.bars)), cyb: cumReturnSeries(winBars(cyb.bars)) },
+  };
+}
+
+/**
+ * 回放快照时的「活水补丁」：快照带着落档时刻的旧值，最坏情形=盘中半根柱被当成全天
+ * （事故 09-28 10:17 落档 7565亿，真全天 17168亿）。而腾讯行情快照隔夜保留上一交易日的
+ * 全天累计成交额 —— 所以回放时：
+ *  · 快照缺这一天的成交额行 → 补一行（收盘闸门前如实标注「盘中累计」）；
+ *  · 快照这一天的合计明显小于腾讯快照的全天值 → 用快照值替换并重算该行 MA5 与 delta；
+ *  · idx/cum 只依赖收盘价，直接用本次腾讯日K重建（收盘价是真实的，不受落档时刻污染）。
+ * 补丁只改返回值、不动落档文件 —— 网关恢复后自会重新落一份干净档。
+ */
+function replayWithLivePatch(
+  snap: { tradeDate: string; cachedAt: string; payload: unknown },
+  live: { sh: { date: string; amountYi: number } | null; sz: { date: string; amountYi: number } | null; bj: { date: string; amountYi: number } | null },
+  catalog: CatalogEntry[], sh: BarsCarrier, sz: BarsCarrier, cyb: BarsCarrier,
+  defFrom: string, defTo: string, sourceLabel: string, turnoverUsableDays: number,
+): Record<string, unknown> {
+  const snapPayload = (snap.payload ?? {}) as Record<string, unknown>;
+  const days: TrendDayRow[] = Array.isArray(snapPayload.days) ? (snapPayload.days as TrendDayRow[]).map((d) => ({ ...d })) : [];
+  const liveDate = live.sh?.date ?? live.sz?.date ?? live.bj?.date;
+  const patches: string[] = [];
+  if (liveDate && live.sh && live.sz) {
+    const shY = live.sh.amountYi;
+    const szY = live.sz.amountYi;
+    const bjY = live.bj?.amountYi ?? null;
+    const i = days.findIndex((d) => d.date === liveDate);
+    if (i >= 0) {
+      const row = days[i];
+      const oldTot = row.totalYi;
+      // 全天累计只会 ≥ 盘中累计；明显更小视为「快照已是完整档」，不动（尊重 eltdx 原值）
+      const useBj = row.bjYi != null || bjY != null;
+      const tot = useBj ? shY + szY + (bjY ?? (row.bjYi as number)) : shY + szY;
+      if (oldTot == null || tot > oldTot * 1.0001) {
+        row.shYi = shY;
+        row.szYi = szY;
+        if (bjY != null) row.bjYi = bjY;
+        row.totalYi = tot;
+        const win = days.slice(Math.max(0, i - 4), i + 1).filter((d) => d.totalYi != null);
+        if (win.length >= 5) row.ma5Yi = +(win.reduce((s, x) => s + (x.totalYi as number), 0) / win.length).toFixed(1);
+        patches.push(`${liveDate} 成交额末柱已按腾讯快照全天累计修正（快照里是落档时刻的盘中旧值）`);
+      }
+    } else {
+      const useBj = bjY != null;
+      const row: TrendDayRow = {
+        date: liveDate, shYi: shY, szYi: szY, bjYi: useBj ? bjY : null,
+        totalYi: useBj ? shY + szY + (bjY as number) : shY + szY, ma5Yi: null,
+      };
+      const prior = days.filter((d) => d.totalYi != null).slice(-4);
+      if (prior.length >= 4) row.ma5Yi = +([...prior, row].reduce((s, x) => s + (x.totalYi as number), 0) / (prior.length + 1)).toFixed(1);
+      days.push(row);
+      days.sort((a, b) => (a.date < b.date ? -1 : 1));
+      const now = beijingNow();
+      patches.push(now.minutes < CLOSE_GATE_MIN && liveDate === now.date
+        ? `${liveDate} 成交额柱为腾讯快照的盘中累计，收盘前会持续增加`
+        : `已按腾讯快照补上 ${liveDate} 成交额柱`);
+    }
+  }
+  const { deltaYi, prevDate } = turnoverDeltaVsPrev(days);
+  const { idx, cum } = buildIdxCum(catalog, sh, sz, cyb, defFrom, defTo);
+  const snapNotes = Array.isArray(snapPayload.notes) ? (snapPayload.notes as string[]) : [];
+  const baseSource = typeof snapPayload.source === "string" ? snapPayload.source : "";
+  return {
+    ...snapPayload,
+    days,
+    delta: { yi: deltaYi, prev_date: prevDate },
+    idx,
+    cum,
+    notes: [...snapNotes, ...patches],
+    source: patches.length ? `${baseSource} · ${patches.length} 处已按腾讯快照活水修正` : baseSource,
+    cached: true,
+    cached_at: snap.cachedAt,
+    cache_note: `本次上游只取到 ${turnoverUsableDays} 根成交额（${sourceLabel}），已回放 ${snap.tradeDate} 的本地快照`,
+  };
+}
 
 export async function GET(req: Request) {
   return ttlCache(`market/trend?${new URL(req.url).search}`, DEFAULT_TTL_MS, () => getHandler(req));
@@ -107,19 +207,7 @@ async function getHandler(req: Request) {
     else if (!useBj) missing.push("北证50：本次无有效成交额读数，成交额按沪深两市合计");
 
     // 逐日涨跌幅（稳智「指数涨跌幅」口径）：首日无前收不画，不冒充 0；窗口内
-    const winBars = (b: typeof catalog[number]["bars"]) => inRange(b, defFrom, defTo);
-    const idx = catalog.map((c) => {
-      const bars = winBars(c.bars);
-      return {
-        key: c.key,
-        name: c.name,
-        pts: bars.slice(1).map((b, i) => {
-          const prev = bars[i].close;
-          return { date: b.date, pct: prev > 0 ? +(((b.close / prev) - 1) * 100).toFixed(2) : 0 };
-        }),
-        source: c.source,
-      };
-    });
+    const { idx, cum } = buildIdxCum(catalog, sh, sz, cyb, defFrom, defTo);
 
     // 主源分布自报：本次窗口里各指数实际用了哪个源
     const srcSet = new Set(catalog.map((c) => c.source));
@@ -138,14 +226,23 @@ async function getHandler(req: Request) {
       return "本次无有效数据源";
     })();
 
+    // 盘中诚实标注：当日柱还没过收盘闸门时只是「截至目前」的累计，直接 vs昨日等于拿半天比全天
+    const bjNow = beijingNow();
+    const lastTurnoverRow = [...days].reverse().find((d) => d.totalYi !== null);
+    const intradayTail = !!lastTurnoverRow && lastTurnoverRow.date === defTo && defTo === bjNow.date && bjNow.minutes < CLOSE_GATE_MIN;
+    const notesAll = [
+      ...trendNotes(sh.bars.length, sz.bars.length, cyb.bars.length),
+      ...(intradayTail ? ["最后一根成交额为盘中累计、非全天：vs昨日拿它对比会偏小，北京时间 15:05 后才是全天口径"] : []),
+    ];
+
     const payload = {
       ok: true,
       range: { from: defFrom, to: defTo },
       days,
       delta: { yi: deltaYi, prev_date: prevDate },
-      cum: { sh: cumReturnSeries(inRange(sh.bars, defFrom, defTo)), sz: cumReturnSeries(inRange(sz.bars, defFrom, defTo)), cyb: cumReturnSeries(inRange(cyb.bars, defFrom, defTo)) },
+      cum,
       idx: idx.map(({ key, name, pts: p }) => ({ key, name, pts: p })),
-      notes: trendNotes(sh.bars.length, sz.bars.length, cyb.bars.length),
+      notes: notesAll,
       missing,
       source: sourceLabel,
       sources: { sh: sh.source, sz: sz.source, cyb: cyb.source, bj: bj.source },
@@ -155,20 +252,19 @@ async function getHandler(req: Request) {
       cached_at: "",
     };
 
-    const turnoverUsableDays = countTurnoverDays({ days });
+    // 落档前剥掉盘中半根柱（事故 09-28 10:17：半根累计被当「完整」落档，网关一挂就永远回放假全天）
+    const cacheable = stripIntradayTurnoverTail(payload, defTo);
+    const turnoverUsableDays = countTurnoverDays(cacheable);
     if (turnoverUsableDays >= MIN_USABLE_DAYS) {
       // 数据完整 → 落快照（存算好的整份响应；回放时原样返回，保证前后看到同一张图）
-      try { saveTrendSnapshot(defTo, payload); } catch { /* 写缓存失败不影响本次返回 */ }
+      try { saveTrendSnapshot(defTo, cacheable); } catch { /* 写缓存失败不影响本次返回 */ }
     } else {
-      // 数据不完整（网关没起，只剩 1 根）→ 回放当天快照，别让图缩成一根柱
+      // 数据不完整（网关没起，只剩 1 根）→ 回放快照 + 腾讯快照活水补/替当日柱，别让图缩成一根柱
       const snap = getTrendSnapshot(defTo) ?? getTrendSnapshot();
       if (snap && countTurnoverDays(snap.payload) >= MIN_USABLE_DAYS) {
-        return NextResponse.json({
-          ...(snap.payload as Record<string, unknown>),
-          cached: true,
-          cached_at: snap.cachedAt,
-          cache_note: `本次上游只取到 ${turnoverUsableDays} 根成交额（${sourceLabel}），已回放 ${snap.tradeDate} 的本地快照`,
-        });
+        return NextResponse.json(
+          replayWithLivePatch(snap, { sh: todaySh, sz: todaySz, bj: todayBj }, catalog, sh, sz, cyb, defFrom, defTo, sourceLabel, turnoverUsableDays),
+        );
       }
     }
 

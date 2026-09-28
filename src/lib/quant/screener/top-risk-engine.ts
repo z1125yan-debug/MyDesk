@@ -61,14 +61,16 @@ let _map: IndustryMapJson | null = null;
 function loadArchive(): ArchiveJson {
   if (_archive) return _archive;
   const p = path.resolve(process.cwd(), "data", "sector-daily-snapshots.json");
-  _archive = JSON.parse(fs.readFileSync(p, "utf8"));
-  return _archive;
+  const parsed = JSON.parse(fs.readFileSync(p, "utf8")) as ArchiveJson;
+  _archive = parsed;
+  return parsed;
 }
 function loadMap(): IndustryMapJson {
   if (_map) return _map;
   const p = path.resolve(process.cwd(), "data", "sector-industry-map.json");
-  _map = JSON.parse(fs.readFileSync(p, "utf8"));
-  return _map;
+  const parsed = JSON.parse(fs.readFileSync(p, "utf8")) as IndustryMapJson;
+  _map = parsed;
+  return parsed;
 }
 
 const clamp = (x: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, x));
@@ -137,12 +139,13 @@ export function analyzeSector(sector: string, asOf?: string): SectorTopRisk | nu
   const structComp = clamp((mc - leader) / -TH.damageStructFull, 0, 1) * 40; // 龙头比板块差 → 结构破坏
   const rsMomComp = rsMom10 != null ? clamp(-rsMom10 / -TH.damageRsMomFull, 0, 1) * 30 : 15;
   const brdComp = breadthDeter != null ? clamp(breadthDeter / TH.damageBreadthFull, 0, 1) * 30 : 10;
-  const trendDamage = r1(clamp(structComp + rsMomComp + brdComp));
+  const trendDamageRaw = clamp(structComp + rsMomComp + brdComp);
+  const trendDamage = r1(trendDamageRaw);
 
   const posComp = clamp((cur.prevChange60 ?? 0) / TH.midPosFull, 0, 1) * 30;
   const nearHighComp = clamp((cur.distFromHigh20 ?? 0) / -TH.midNearHighFull, 0, 1) * 20;
   const midTop = r1(
-    clamp(posComp * 0.4 + nearHighComp * 0.3 + trendDamage * 0.35 + (rsMom10 != null ? clamp(-rsMom10 / -TH.damageRsMomFull, 0, 1) * 15 : 0)),
+    clamp(posComp * 0.4 + nearHighComp * 0.3 + trendDamageRaw * 0.35 + (rsMom10 != null ? clamp(-rsMom10 / -TH.damageRsMomFull, 0, 1) * 15 : 0)),
   );
 
   // ── 三阶段状态机（回测校准：取中间值——顶部形成中 = 跌破60日趋势+任一恶化信号，或 核心破坏+RS深负+下跌日）──
