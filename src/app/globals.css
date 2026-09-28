@@ -374,6 +374,9 @@ select option { background-color: #16181d; color: #e5e7eb; }
    P62 删掉的：.ai-content-block 那套「每段一张框」——稳智实测正文根本没用它，是我们上一轮抄错了层。 */
 .wz-md {
   font-family: var(--wz-sans);
+  /* 2026-09-29 用户反馈：字体调大——16px 抄的是稳智桌面 CSS，实际对比截图观感偏小；
+     抬到 17px，标题/表格同步 +1~2px（浮窗小尺寸由 .wz-compact .wz-md 覆盖回 14px）。 */
+  font-size: 17px;
 }
 .wz-md > * { margin: 0 0 20px; }
 .wz-md > *:last-child { margin-bottom: 0; }
@@ -399,6 +402,21 @@ select option { background-color: #16181d; color: #e5e7eb; }
   color: var(--muted-foreground);
 }
 
+/* ---- 2026-09-29 稳智「结论先行」顶部数据黑框 ----
+   稳智截图里 ⏱ 数据时间那一段装在一张深灰圆角卡里（内容自适应、无卡头、整卡随文字撑开）。
+   渲染层（Markdown.tsx）识别「⏱ / 数据时间」开头的段落或列表项挂 .wz-callout；
+   列表项要抵消 ul 的 1.55em 缩进并去掉圆点，黑框才与正文同宽。 */
+.wz-md .wz-callout {
+  background: var(--overlay);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 13px 16px;
+}
+.wz-md li.wz-callout {
+  list-style: none;
+  margin-left: -1.55em;
+}
+
 /* 标题：稳智把标题留在框外，字号按 h1/h2/h3 分档，字重 650 */
 .wz-h {
   margin: 34px 0 16px;
@@ -407,9 +425,9 @@ select option { background-color: #16181d; color: #e5e7eb; }
   color: var(--foreground);
 }
 .wz-md > .wz-h:first-child { margin-top: 0; }
-.wz-h1 { font-size: 22px; letter-spacing: -0.01em; }
-.wz-h2 { font-size: 19px; }
-.wz-h3 { font-size: 17px; }
+.wz-h1 { font-size: 23px; letter-spacing: -0.01em; }
+.wz-h2 { font-size: 20px; }
+.wz-h3 { font-size: 18px; }
 
 /* 表格：稳智少数「该有框」的地方之一——外面一张圆角卡，卡内 15px/1.65、格内 11x16、只画横线 */
 .wz-table-card {
@@ -422,7 +440,7 @@ select option { background-color: #16181d; color: #e5e7eb; }
   width: 100%;
   min-width: 420px;
   border-collapse: collapse;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.65;
   font-variant-numeric: tabular-nums;
 }

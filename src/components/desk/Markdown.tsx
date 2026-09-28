@@ -98,10 +98,33 @@ function Linked({ children }: { children?: ReactNode }) {
   return <>{ctx ? linkifyTree(children, ctx, "r") : children}</>;
 }
 
+/**
+ * 取一段渲染树的纯文本（只用于识别「⏱ 数据时间」这类特殊段落，不参与显示）。
+ * react-markdown 给 p/li 的 children 是 [字符串, <strong>, 字符串…] 混合树，逐层拍平。
+ */
+function plainText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(plainText).join("");
+  if (isValidElement(node)) {
+    const props = node.props as { children?: ReactNode };
+    return plainText(props?.children);
+  }
+  return "";
+}
+
+/** 稳智「结论先行」顶部黑框：⏱ 数据时间独立段（骨架已要求模型单独成段；列表项形态兜底也认） */
+const CALLOUT_RE = /^(?:⏱|数据时间)/;
+
 function MdP({ children }: { children?: ReactNode }) {
+  if (CALLOUT_RE.test(plainText(children).trim())) {
+    return <p className="wz-callout"><Linked>{children}</Linked></p>;
+  }
   return <p><Linked>{children}</Linked></p>;
 }
 function MdLi({ children }: { children?: ReactNode }) {
+  if (CALLOUT_RE.test(plainText(children).trim())) {
+    return <li className="wz-callout"><Linked>{children}</Linked></li>;
+  }
   return <li><Linked>{children}</Linked></li>;
 }
 /** 列表：稳智的 ul/ol 就是裸列表 + 1.55em 缩进，不画框（度量在 globals.css 的 .wz-md ul/ol） */
