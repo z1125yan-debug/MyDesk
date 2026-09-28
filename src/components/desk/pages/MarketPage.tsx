@@ -61,14 +61,15 @@ function turnoverOption(days: TrendDayPoint[], marketLabel = "两市"): EChartsC
   };
 }
 
-/** 大盘情绪（5日线占比）趋势：一次只画一条口径的线。
- *  · 本地·三市（默认）：只有「高于5日线占比」一条实线——本地库里没有市值分组，不自编一套分组冒充。
- *  · 同步·两市：主线 + 微/中/大盘三条虚线（稳智同款四线，分组只有那份种子里有）。
- *  P15-R19c：两个口径**不并排摆**（第五条点线没人看得清，四条已经够挤），
+/** 大盘情绪（5日线占比）趋势：默认「同步·两市」四线 + 本地自算第五条点线（2026-09-29 用户拍板恢复）。
+ *  · 主线（稳智红实线）+ 微/中/大盘三条虚线 = 外部同步口径的四个分组，只有那份种子里有。
+ *  · 第五条「自算·真实收盘」点线（蓝）= 本库真实收盘价三市全A自算，两个口径并排摆、不静默替换
+ *    （P15-R19 定稿；R19c 曾按「太拥挤」撤成单线，现按用户要求恢复五线）。
  *  差多少由 breadth-crosscheck-core 现算，压成卡片口径行里一行字。 */
 function breadthOption(
   main: { date: string; v: number }[],
   groups: { micro: { date: string; v: number | null }[]; mid: { date: string; v: number | null }[]; large: { date: string; v: number | null }[] } | null,
+  self: { date: string; v: number }[] | null,
 ): EChartsCoreOption {
   const dates = main.map((p) => p.date);
   const series: Record<string, unknown>[] = [
@@ -94,6 +95,16 @@ function breadthOption(
         lineStyle: { color, width: 1.5, type: "dashed" },
       });
     }
+  }
+  if (self) {
+    const byDate = new Map(self.map((p) => [p.date, p.v]));
+    series.push({
+      name: "自算·真实收盘", type: "line",
+      data: dates.map((d) => { const v = byDate.get(d); return v != null ? +v.toFixed(1) : null; }),
+      smooth: true, symbol: "circle", symbolSize: 4.5, connectNulls: false,
+      itemStyle: { color: "rgba(0,0,0,0)", borderColor: CHART.color.selfComputed, borderWidth: 1.3 },
+      lineStyle: { color: CHART.color.selfComputed, width: 1.6, type: "dotted" },
+    });
   }
   return {
     animationDuration: CHART.anim.duration,
@@ -324,7 +335,7 @@ export default function MarketPage() {
   const [breadthBusy, setBreadthBusy] = useState(true);
   // 这张图画哪条口径：local = 本库真实收盘价自算（三市全A，默认，我们的数）；
   // sync = 外部同步种子（两市票池，带微/中/大盘分组，稳智同款四线）。图上同时只摆一条，不并排。
-  const [breadthSrc, setBreadthSrc] = useState<"local" | "sync">("local");
+  const [breadthSrc, setBreadthSrc] = useState<"local" | "sync">("sync");
   const poll = useLivePoll();
 
   const load = useCallback(async () => {
@@ -495,7 +506,7 @@ export default function MarketPage() {
             ? `；跟同步那份（只有沪+深）比：这 ${bCheck.comparable_days} 天平均差 ${bCheck.mean_abs_pt ?? "—"} 个百分点、`
               + `最大 ${bCheck.max_abs_pt ?? "—"}（110 天全量实测：去掉北交所只少 0.26 点，票池不是主因，剩下是同步那条在弱市更平）`
             : "")
-        : `外部同步口径，票池只有沪+深（剔北交所 347 只）；三条虚线是它的微盘/中盘/大盘分组，我们的数在「本地·三市」`
+        : `外部同步口径，票池只有沪+深（剔北交所 347 只）；三条虚线是它的微盘/中盘/大盘分组，蓝色点线是我们本库三市全A自算（两条差多少见下）`
           + `${seedEnd ? ` · 同步那份止于 ${seedEnd}，之后库里是我们自己算的（三市），不混进这条线` : ""}`);
   const belowMa5 = bLatest && bLatest.ma5_eligible > 0 ? bLatest.ma5_eligible - bLatest.above_ma5 : null;
   const p3 = tiers?.tiers.find((t) => t.label === "3连板+")?.stocks ?? [];
@@ -654,7 +665,7 @@ export default function MarketPage() {
         >
           <EChart ariaLabel="大盘情绪（5日线占比）趋势" height={300} state={breadthState}
             emptyText="暂无数据（本地真实收盘价没攒够 5 天，同步口径也没到位）"
-            option={breadthOption(bMain, bGroups)} />
+            option={breadthOption(bMain, bGroups, bDrawn === "sync" && bLocalReady ? bLocalWin : null)} />
         </ChartCard>
 
       </div>
