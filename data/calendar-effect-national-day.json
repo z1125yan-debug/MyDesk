@@ -1,0 +1,130 @@
+{
+  "source": "akshare.stock_zh_index_daily(symbol='sh000001') 新浪",
+  "method": "国庆前一周=节前最后交易日及往前4交易日(close(T)/close(T-5)-1)；后一周=节后首个交易日及往后4交易日(close(T+5)/close(T)-1)",
+  "exclude_years": [
+    2018,
+    2024
+  ],
+  "citic_reference": {
+    "pre_down_prob": 0.875,
+    "pre_avg_return": -0.011,
+    "post_up_prob": 0.625,
+    "post_avg_return": 0.013
+  },
+  "per_year": [
+    {
+      "year": 2016,
+      "last_pre": "2016-09-30",
+      "resume": "2016-10-10",
+      "pre5_start": "2016-09-23",
+      "post5_end": "2016-10-14",
+      "pre_return": -0.0096,
+      "post_return": 0.0197,
+      "excluded": false
+    },
+    {
+      "year": 2017,
+      "last_pre": "2017-09-29",
+      "resume": "2017-10-09",
+      "pre5_start": "2017-09-22",
+      "post5_end": "2017-10-13",
+      "pre_return": -0.0011,
+      "post_return": 0.0124,
+      "excluded": false
+    },
+    {
+      "year": 2018,
+      "last_pre": "2018-09-28",
+      "resume": "2018-10-08",
+      "pre5_start": "2018-09-20",
+      "post5_end": "2018-10-12",
+      "pre_return": 0.0337,
+      "post_return": -0.076,
+      "excluded": true
+    },
+    {
+      "year": 2019,
+      "last_pre": "2019-09-30",
+      "resume": "2019-10-08",
+      "pre5_start": "2019-09-23",
+      "post5_end": "2019-10-14",
+      "pre_return": -0.0241,
+      "post_return": 0.0353,
+      "excluded": false
+    },
+    {
+      "year": 2020,
+      "last_pre": "2020-09-30",
+      "resume": "2020-10-09",
+      "pre5_start": "2020-09-23",
+      "post5_end": "2020-10-15",
+      "pre_return": -0.0188,
+      "post_return": 0.0355,
+      "excluded": false
+    },
+    {
+      "year": 2021,
+      "last_pre": "2021-09-30",
+      "resume": "2021-10-08",
+      "pre5_start": "2021-09-23",
+      "post5_end": "2021-10-14",
+      "pre_return": -0.0203,
+      "post_return": -0.0028,
+      "excluded": false
+    },
+    {
+      "year": 2022,
+      "last_pre": "2022-09-30",
+      "resume": "2022-10-10",
+      "pre5_start": "2022-09-23",
+      "post5_end": "2022-10-14",
+      "pre_return": -0.0207,
+      "post_return": 0.0157,
+      "excluded": false
+    },
+    {
+      "year": 2023,
+      "last_pre": "2023-09-28",
+      "resume": "2023-10-09",
+      "pre5_start": "2023-09-21",
+      "post5_end": "2023-10-13",
+      "pre_return": 0.0084,
+      "post_return": -0.0072,
+      "excluded": false
+    },
+    {
+      "year": 2024,
+      "last_pre": "2024-09-30",
+      "resume": "2024-10-08",
+      "pre5_start": "2024-09-23",
+      "post5_end": "2024-10-14",
+      "pre_return": 0.2137,
+      "post_return": -0.0156,
+      "excluded": true
+    },
+    {
+      "year": 2025,
+      "last_pre": "2025-09-30",
+      "resume": "2025-10-09",
+      "pre5_start": "2025-09-23",
+      "post5_end": "2025-10-15",
+      "pre_return": 0.0159,
+      "post_return": 0.0076,
+      "excluded": false
+    }
+  ],
+  "summary_full": {
+    "n": 10,
+    "pre_down_prob": 0.6,
+    "pre_avg_return": 0.0177,
+    "post_up_prob": 0.6,
+    "post_avg_return": 0.0025
+  },
+  "summary_trimmed": {
+    "n": 8,
+    "pre_down_prob": 0.75,
+    "pre_avg_return": -0.0088,
+    "post_up_prob": 0.75,
+    "post_avg_return": 0.0145
+  }
+}
