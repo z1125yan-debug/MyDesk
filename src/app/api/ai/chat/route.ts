@@ -33,7 +33,9 @@ import { stripScaffoldEcho, SCAFFOLD_ONLY_NOTICE, type GuardOpts } from "@/lib/d
 import { detectRepetition, degenWarning, type DegenVerdict } from "@/lib/desk/degen-core";
 import { debugFramesFromSteps } from "@/lib/desk/debug-core";
 import { injectSceneContext, trimDialog, clampTurns, type ChatRequestMessage, type ContextMsg, type StepInfo } from "@/lib/desk/chat-core";
-import { asChatMode, asHorizon, HORIZON_NOTES, MARKET_OUTLOOK_SKELETON, MODE_NOTES, type ChatHorizon, type ChatMode } from "@/lib/desk/modes";
+import { asChatMode, asHorizon, CHAIN_RESEARCH_SKELETON, HORIZON_NOTES, MARKET_OUTLOOK_SKELETON, modeNoteFor, type ChatHorizon, type ChatMode } from "@/lib/desk/modes";
+// 链路研究触发口径：与 scene-dispatch 的预取层同源（wantsChain），保证「查了链上数据」与「按链研究口径答」同进同出
+import { wantsChain } from "@/lib/desk/intent-core";
 // 持仓上下文（标的/成本/仓位/建仓日期）：清洗、拼句、使用规则都在 hold-core 一处，
 // 与 /api/ai/proxy 同一份 —— 两条链路不能各写一句「我持有 X，成本 C」。
 import { HOLD_USAGE_NOTE } from "@/lib/desk/hold-core";
@@ -102,6 +104,7 @@ function systemPrompt(
   focusSymbol?: string,
   hold?: { line?: string; note?: string } | null,
   trade?: { tradeDate: string; sessionLabel: string; fromMarketData: boolean } | null,
+  chainResearch = false,
 ): string {
   // 服务端日期只走 shanghaiDate()：new Date() 直接格式化在跨时区机器上会把今天算错一天
   const today = shanghaiDate();
@@ -129,13 +132,21 @@ function systemPrompt(
   // 风格句的正文在 modes.ts 的 MODE_NOTES 一处定义：纯对话端点（/api/ai/proxy）现在也消费
   // mode，两条链路查同一张表，不会出现「chip 同名、两端口径不同」的漂移。
   // P11 持仓周期同纪律：HORIZON_NOTES 同址同表；没选就一个字都不注入（未选≠中线）。
+  // 2026-09-29：命中原子的那一轮换成 CHAIN_MODE_OVERRIDE（见 modes.ts 顶部注释）——deep 的
+  // 「先摆数据·五类分列」与链骨架矛盾，实测模型听前者，所以直接不下发它。
+  const modeNote = modeNoteFor(mode, chainResearch);
   return [
-    `你是 MyDesk 的 AI 交易员分析引擎。今天是 ${today}。${MODE_NOTES[mode]}`,
+    `你是 MyDesk 的 AI 交易员分析引擎。今天是 ${today}。${modeNote}`,
     dataNote,
     calendarNote,
     // 大盘研判骨架（照稳智大盘报告逆向）：只在用户问市场级问题时生效，个股问题仍走四档模式骨架。
     // 它的第一段自己写了触发条件，所以无条件挂在这里不会污染个股问答。
-    MARKET_OUTLOOK_SKELETON,
+    // 2026-09-29：链路研究档下**整段不发**——实测模型把它里面的示例区间（3800–3820 / 1.5–1.8 万亿）
+    // 搬进链研究回答当本板块的价位（「领涨股回踩至 3800 点」）。与模式骨架同一条成法：说不动就不下发。
+    chainResearch ? "" : MARKET_OUTLOOK_SKELETON,
+    // 产业链六问骨架（Serenity / 白毛股神方法论本地化，2026-09-29）：同样自带触发条件——
+    // 只有问「产业链 / 供应链 / 卡点 / 国产替代 / 谁真受益」时才生效，其余问题照旧走四档骨架。
+    CHAIN_RESEARCH_SKELETON,
     horizon ? HORIZON_NOTES[horizon] : "",
     focusSymbol ? `用户当前关注标的：${focusSymbol}。` : "",
     // 持仓条件（标的/成本/仓位/建仓日期）：由 composer 小窗或持仓卡填出，随请求带来。
@@ -647,6 +658,10 @@ export async function POST(req: NextRequest) {
   // 代码识别、去重与条数上限在工具层的 watchlist_overview 内做，本层不替它猜。
   const ctx: ToolCtx = { watchlist: Array.isArray(body?.watchlist) ? body.watchlist : [] };
   const lastUser = [...history].reverse().find((m) => m.role === "user");
+  // 2026-09-29：链路研究档的判定（与 scene-dispatch 预取层同源 wantsChain）——命中时 systemPrompt
+  // 不发 MODE_NOTES 那套、改发 CHAIN_MODE_OVERRIDE；回显语料也必须跟着换成实际下发的那份。
+  const chainResearch = wantsChain(typeof lastUser?.content === "string" ? lastUser.content : "");
+  const modeNote = modeNoteFor(mode, chainResearch);
   // P53-B：用户本轮原话（字符串形态），交给输出边界护栏做「回显比对」——
   // 实测上游会把提问整句抄一遍再作答（「上证指数现在多少点？」单独占一个头块）。
   // P55-B：回显语料 = 本轮用户原话 + 服务端注入的口径件（MODE_NOTES/HORIZON_NOTES）。
@@ -661,8 +676,11 @@ export async function POST(req: NextRequest) {
   const sessionMeta = marketSession();
   const lastUserEcho = [
     typeof lastUser?.content === "string" && lastUser.content.trim() ? lastUser.content : "",
-    MODE_NOTES[mode],
+    modeNote,
     horizon ? HORIZON_NOTES[horizon] : "",
+    // 产业链六问骨架同属「服务端注入的口径件」：它是一整段指令文本，弱指令模型最可能整段抄回来
+    // （与周期口径同一类噪声），所以同样进回显语料，由护栏在正文开头剥掉。
+    CHAIN_RESEARCH_SKELETON,
     // 持仓那一句同属「服务端注入的口径件」：模型把它抄回正文时用这段语料认出来并剥掉
     holdNote?.line ?? "",
     // P59 明确不加 FOLLOWUP_NOTE：护栏是按「整行被语料包含 / 半窗覆盖」判回显的，
@@ -672,7 +690,7 @@ export async function POST(req: NextRequest) {
   // 场景层自己出错时用它把原因带到响应里：这轮照样要回答，但不能让用户以为「只是没取到数据」
   let sceneFailure: string | null = null;
 
-  const baseMessages: ContextMsg[] = [{ role: "system", content: systemPrompt(mode, horizon, body?.focusSymbol, holdNote, tradeMeta ? { tradeDate: tradeMeta.date, sessionLabel: sessionMeta.label, fromMarketData: tradeMeta.fromMarketData } : null) }, ...history];
+  const baseMessages: ContextMsg[] = [{ role: "system", content: systemPrompt(mode, horizon, body?.focusSymbol, holdNote, tradeMeta ? { tradeDate: tradeMeta.date, sessionLabel: sessionMeta.label, fromMarketData: tradeMeta.fromMarketData } : null, chainResearch) }, ...history];
   // 交给工具调用环时换成 Record 形状：它还要往同一批消息里追加 tool_calls / tool_call_id
   const buildMessages = (turn: SceneTurn | null): Record<string, unknown>[] =>
     injectSceneContext(baseMessages, turn ?? {}, (role, content) => ({ role, content })).map((m) => ({ ...m }));

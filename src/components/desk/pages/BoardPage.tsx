@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchBoardRows, fetchDetailFor, type BoardKind } from "@/lib/desk/market";
 import { useLivePoll } from "@/hooks/use-live-poll";
 import LiveStamp from "@/components/desk/LiveStamp";
@@ -39,6 +39,19 @@ export default function BoardPage() {
   const [showBubble, setShowBubble] = useState(true);
   const [flowIn, setFlowIn] = useState<SectorRow[]>([]);
   const [flowOut, setFlowOut] = useState<SectorRow[]>([]);
+
+  // 2026-09-29 换榜清场：上一张榜的行不许在新榜取数期间顶着新表头继续显示——
+  // 用户实拍事故：行业榜（同花顺兜底）的「银行 THS81155」行残留在实时榜表里，
+  // 看着就像板块混进了个股榜。只在 kind/dir 变化时清；poll.tick 的同榜刷新不清，
+  // 避免整张表每 60 秒闪一次空表。
+  const lastKindRef = useRef("");
+  useEffect(() => {
+    const sig = `${kind}|${dir}`;
+    if (lastKindRef.current && lastKindRef.current !== sig) {
+      setRows([]); setOrigin(null); setAsOf(""); setTradeDate(null); setQuoteTime(null);
+    }
+    lastKindRef.current = sig;
+  }, [kind, dir]);
 
   useEffect(() => {
     let dead = false;

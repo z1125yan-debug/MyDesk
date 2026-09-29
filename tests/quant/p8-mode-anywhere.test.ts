@@ -52,7 +52,10 @@ test("MODE_NOTES：与 CHAT_MODES 一键一句、逐句非空，四键齐全（R
 });
 
 test("风格句只有一份：chat 路由不再本地抄写，两条路由都查 MODE_NOTES", () => {
-  assert.match(chatRoute, /MODE_NOTES\[mode\]/, "工具环查共享表");
+  // 2026-09-29：chat 路由从「直接 MODE_NOTES[mode]」改为「经 modeNoteFor 查这张表」——
+  // 命中原子的那一轮会换成 CHAIN_MODE_OVERRIDE（deep 的「先摆数据·五类分列」与链骨架矛盾，
+  // 实测模型听前者，所以不再下发）。表本身仍只在 modes.ts 一处，禁止本地抄写这条不变。
+  assert.match(chatRoute, /modeNoteFor\(mode, chainResearch\)/, "工具环查共享表（经 modeNoteFor）");
   assert.ok(!/decision: "决策模式：面向/.test(chatRoute), "chat 路由不得再留本地副本（抄两份必漂）");
   assert.match(proxyRoute, /MODE_NOTES\[asChatMode\(body\.mode\)\]/, "纯对话端点同样查这张表，且先过白名单");
   // 与 chat 路由既有纪律一致：body.mode 是外部输入，认不出的按默认口径答而不是静默丢风格

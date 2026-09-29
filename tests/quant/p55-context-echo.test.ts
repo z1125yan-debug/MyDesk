@@ -301,9 +301,13 @@ test("误伤回归：答案只复用短语（「跌破关键位再进场」）�
   assert.equal(isEchoLine("跌破关键位就先离场，别跟它耗。短线口径下仓位轻一点。", corpus), false);
 });
 
-test("两条路的回显语料都补了服务端注入件（MODE_NOTES/HORIZON_NOTES）", () => {
+test("两条路的回显语料都补了服务端注入件（模式口径 / 周期口径）", () => {
   const chat = read("src/app/api/ai/chat/route.ts");
-  assert.match(chat, /const lastUserEcho = \[[\s\S]*?MODE_NOTES\[mode\][\s\S]*?HORIZON_NOTES\[horizon\][\s\S]*?\.filter\(\(s\) => s\.trim\(\)\)/, "chat route 语料缺注入件");
+  // 2026-09-29：链路研究档下服务端发的不是 MODE_NOTES[mode] 而是 CHAIN_MODE_OVERRIDE（见 modes.ts），
+  // 所以语料必须跟着「实际下发的那份」走（modeNote = modeNoteFor(mode, chainResearch)）——
+  // 语义从「一定含 MODE_NOTES」改成「含的必须是真下发的那一份」，否则命中链路档时护栏认不出被复述的注入件。
+  assert.match(chat, /const modeNote = modeNoteFor\(mode, chainResearch\)/, "模式口径没走 modeNoteFor（链路档替换件下不来）");
+  assert.match(chat, /const lastUserEcho = \[[\s\S]*?\bmodeNote\b[\s\S]*?HORIZON_NOTES\[horizon\][\s\S]*?\.filter\(\(s\) => s\.trim\(\)\)/, "chat route 语料缺注入件");
   const proxy = read("src/app/api/ai/proxy/route.ts");
   assert.match(proxy, /if \(md\?\.trim\(\)\) base\.push\(md\);[\s\S]*?if \(hz\) base\.push\(HORIZON_NOTES\[hz\]\);/, "proxy 语料缺注入件");
 });

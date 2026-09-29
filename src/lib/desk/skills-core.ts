@@ -13,11 +13,11 @@
 import type { Scene } from "./intent-core.ts";
 
 /** 入参形状判别符（具体拼法在 intent-core 的 planDispatch，文案单一出处） */
-export type SkillArgs = "empty" | "news8" | "sector_kind" | "symbol" | "screener_pool";
+export type SkillArgs = "empty" | "news8" | "sector_kind" | "symbol" | "screener_pool" | "board_code";
 /** 「为什么取它」的文案键（渲染时套 SCENE_LABELS，与旧 switch 逐字一致；news 两变体照抄不统一） */
-export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "depth" | "trades" | "news" | "news_why" | "watchlist" | "screener_pool" | "stock_news";
-/** 出条件判别符：news=提问显式要消息面；watchlist_nonempty=本机自选非空 */
-export type SkillGate = "news" | "watchlist_nonempty";
+export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "depth" | "trades" | "news" | "news_why" | "watchlist" | "screener_pool" | "stock_news" | "sector_constituents" | "business_composition";
+/** 出条件判别符：news=提问显式要消息面；watchlist_nonempty=本机自选非空；board_code=提问里点了 BK 板块代码；chain=提问落在产业链/供应链类（白毛股神六问的触发口径） */
+export type SkillGate = "news" | "watchlist_nonempty" | "board_code" | "chain";
 
 export interface SkillPlanEntry {
   scene: Scene;
@@ -68,6 +68,17 @@ export const BUILTIN_SKILLS: Skill[] = [
     desc: "行业/概念板块资金榜（按主力净流入排序）",
     plan: [{ scene: "sector", spread: "once", args: "sector_kind", reason: "scene", required: true }],
   },
+  // Serenity 落点②（2026-09-29）：成分股只在「提问里点了 BK 板块代码」时预取——不点代码就无从知道取哪个板块，
+  // 硬猜一个板块等于替用户决定看什么；没预取到也不影响：模型仍可先 sector_rank 拿 code 再自取。
+  // 落点 A（2026-09-29）：东财断源、榜单退同花顺时，二阶段预取（chainFollowUpCalls）会改带**行业名**走本地
+  // 行业归属快照备胎（data/sector-constituents.json）——这条不进本计划表（它是第二棒、由链研究档现算），
+  // 所以这里的 gate 仍是 board_code：用户手打 BK 代码才走东财真成分。
+  // 不标 required：板块代码可能存在但接口无返回，缺了留 missing，不触发补跑整轮。
+  {
+    name: "sector_constituents",
+    desc: "板块成分股（真实名单；东财 BK 代码 或 行业名走本地行业归属快照）",
+    plan: [{ scene: "sector", spread: "once", args: "board_code", reason: "sector_constituents", gate: "board_code" }],
+  },
   {
     name: "stock_snapshot",
     desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业",
@@ -98,6 +109,16 @@ export const BUILTIN_SKILLS: Skill[] = [
     name: "stock_fund_flow",
     desc: "个股近14日主力资金净额（东财）",
     plan: [{ scene: "stock_analysis", spread: "per_symbol", args: "symbol", reason: "fund_flow", required: true }],
+  },
+  // Serenity 落点②（2026-09-29）：只在「产业链/供应链/卡点/国产替代」这类问法上预取主营构成——
+  // 六问第 3 步要的「卖什么、什么商业阶段」没有真披露就只能靠先验，这条是让纪律真取到数的唯一入口。
+  // 为什么加 chain 闸而不是无条件逐只预取：上游是 china-stock-mcp 云调用（每只一次），
+  // 普通「日K怎么看」根本用不到主营构成，无条件预取等于每轮多打 N 次云接口。
+  // 不标 required：MCP 未配置/上游无返回留 missing 照样能答，不触发补跑。
+  {
+    name: "stock_business_composition",
+    desc: "个股主营与产品构成（披露原文）",
+    plan: [{ scene: "stock_analysis", spread: "per_symbol", args: "symbol", reason: "business_composition", gate: "chain" }],
   },
   {
     name: "market_news",

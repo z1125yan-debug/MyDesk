@@ -242,8 +242,8 @@ const TDX_MCP_SERVER: McpServerConfig = {
   trusted: true,
 };
 
-/** 会话上限：只留最近 30 个（老会话不静默丢，按更新时间淘汰最旧的） */
-const MAX_SESSIONS = 30;
+/** 会话上限：只留最新 3 个（2026-09-29 用户拍板：被顶掉的最旧会话直接删，不进回收） */
+const MAX_SESSIONS = 3;
 
 function byUpdatedDesc(a: ChatSession, b: ChatSession): number {
   return b.updatedAt - a.updatedAt;
@@ -378,7 +378,12 @@ export const useDesk = create<DeskState>()(
         const current = s.sessions.find((x) => x.id === s.activeSessionId);
         if (current && current.messages.length === 0) return current.id;
         const session = emptySession();
-        set({ sessions: [session, ...s.sessions], activeSessionId: session.id });
+        // 上限闸与 addChatMessage 同一条：超过 3 条时最旧的直接删（被顶掉即删，用户拍板）
+        const merged = [session, ...s.sessions];
+        set({
+          sessions: merged.length > MAX_SESSIONS ? merged.slice(0, MAX_SESSIONS) : merged,
+          activeSessionId: session.id,
+        });
         return session.id;
       },
       switchSession: (id) => {
@@ -392,7 +397,9 @@ export const useDesk = create<DeskState>()(
       // 这里只做两件事：调纯核、把 activeSessionId 收口（活动那条若被清就换最新留下的）。
       // 没清掉任何东西时原样返回 {}——不给 persist 多写一次盘，也不惊动订阅者重渲染。
       pruneStaleChats: () => set((s) => {
-        const sessions = pruneStaleCore(s.sessions);
+        // R13：7 天没动的清出；2026-09-29 上限改 3 后，老存档（>3 条）也在冷启动时一并收敛
+        let sessions = pruneStaleCore(s.sessions);
+        if (sessions.length > MAX_SESSIONS) sessions = sessions.slice().sort(byUpdatedDesc).slice(0, MAX_SESSIONS);
         if (sessions.length === s.sessions.length && sessions.every((x, i) => x.id === s.sessions[i].id)) return {};
         const activeSessionId = sessions.some((x) => x.id === s.activeSessionId) ? s.activeSessionId : sessions[0].id;
         return { sessions, activeSessionId };
