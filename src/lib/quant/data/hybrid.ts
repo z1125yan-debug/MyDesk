@@ -39,12 +39,18 @@ export async function fetchBarsHybridTracked(
   lookback: number,
 ): Promise<HybridResult> {
   const out = new Map<string, BarsLike[]>();
-  const outcomes: BarOutcome[] = [];
+  // 全A 几千只逐只拉K线，串行循环（30~250ms/只）会把一次筛选拖到分钟级：
+  // 改成固定并发池（TDX_GATEWAY 是本机网关，6 路实测无压力；腾讯兜底量在熔断正常时占比很小）。
+  // 熔断语义保持：连续 8 只 TDX 失败 → tdxDown=true，此后**尚未开始**的股票直接跳过 TDX 走腾讯。
+  const CONCURRENCY = 6;
+  const outcomes: BarOutcome[] = new Array(symbols.length);
   let consecutiveFail = 0;
   let tdxDown = false;
+  let cursor = 0;
   const provider = await getProvider("em");
   const count = Math.min(800, Math.max(120, Math.ceil(lookback * 1.35)));
-  for (const sym of symbols) {
+
+  const fetchOne = async (sym: string, idx: number): Promise<void> => {
     let bars: TdxDailyBar[] | null = null;
     if (!tdxDown) {
       try {
@@ -74,33 +80,43 @@ export async function fetchBarsHybridTracked(
           const real = sb.filter((b) => b.date <= asOf).slice(-lookback);
           if (real.length >= TC_MIN_BARS) {
             out.set(sym, real);
-            outcomes.push(classifyBarOutcome({ symbol: sym, channel: "sina", ok: true, count: real.length }));
-            continue;
+            outcomes[idx] = classifyBarOutcome({ symbol: sym, channel: "sina", ok: true, count: real.length });
+            return;
           }
           // 新浪也不够 → 保留腾讯拿到的（哪怕是 1 根），但如实记录为数据不足
           out.set(sym, tcBars);
-          outcomes.push(classifyBarOutcome({ symbol: sym, channel: "sina", ok: false, count: real.length, error: `新浪日K仅 ${real.length} 根，不足 ${TC_MIN_BARS} 根` }));
-          continue;
+          outcomes[idx] = classifyBarOutcome({ symbol: sym, channel: "sina", ok: false, count: real.length, error: `新浪日K仅 ${real.length} 根，不足 ${TC_MIN_BARS} 根` });
+          return;
         } catch (e) {
           out.set(sym, tcBars);
           if (tcBars.length) {
-            outcomes.push(classifyBarOutcome({ symbol: sym, channel: "tencent", ok: true, count: tcBars.length }));
+            outcomes[idx] = classifyBarOutcome({ symbol: sym, channel: "tencent", ok: true, count: tcBars.length });
           } else {
-            outcomes.push(classifyBarOutcome({
+            outcomes[idx] = classifyBarOutcome({
               symbol: sym, channel: "sina", ok: false, count: 0,
               error: `通达信、腾讯、新浪三条K线通道均未取到：${(e as Error)?.message ?? "请求失败"}`,
-            }));
+            });
           }
-          continue;
+          return;
         }
       }
       out.set(sym, tcBars);
-      outcomes.push(classifyBarOutcome({ symbol: sym, channel: "tencent", ok: true, count: tcBars.length }));
-      continue;
+      outcomes[idx] = classifyBarOutcome({ symbol: sym, channel: "tencent", ok: true, count: tcBars.length });
+      return;
     }
     const real = bars.filter((b) => b.date <= asOf).slice(-lookback) as BarsLike[];
     out.set(sym, real);
-    outcomes.push(classifyBarOutcome({ symbol: sym, channel: "tdx", ok: true, count: real.length }));
-  }
+    outcomes[idx] = classifyBarOutcome({ symbol: sym, channel: "tdx", ok: true, count: real.length });
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, symbols.length) }, async () => {
+      for (;;) {
+        const i = cursor++;
+        if (i >= symbols.length) return;
+        await fetchOne(symbols[i]!, i);
+      }
+    }),
+  );
   return { bars: out, outcomes, tdx_down: tdxDown };
 }
