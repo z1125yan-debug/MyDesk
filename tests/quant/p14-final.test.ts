@@ -107,10 +107,14 @@ test("友好多色卡：蓝/绿/橙三色 + 灰=技术补充折叠；未解析�
 const marketSrc = read("../../src/components/desk/pages/MarketPage.tsx");
 const quantApi = read("../../src/lib/desk/quant-api.ts");
 
-test("成交额卡：先过 tLatest 再换算万亿；vs昨日只在趋势真带回 delta 时给，缺就显「—」不凑", () => {
+test("成交额卡：实时口径（过 amount_known 闸）再换算万亿；vs昨日只在趋势真带回 delta 时给，缺就显「—」不凑", () => {
   assert.ok(quantApi.includes("amount_known: number"), "客户端类型补上真实读数家数（合计 0≠全市场 0 亿）");
-  assert.ok(marketSrc.includes('tLatest ? `${((tLatest.totalYi as number) / 1e4).toFixed(2)}万亿` : "—"'),
+  // 2026-09-29：这张卡从「趋势序列最后一根（会被当日沉淀定在盘中）」改成**实时快照口径**——
+  // 用户实测过刷新后仍停在 0.48 万亿（真实已 0.62），根因就是读了被定住的序列。
+  assert.ok(marketSrc.includes("const turnoverLiveYi = sent && (sent.amount_known ?? 0) > 0 ? sent.amount_total_yi : null"),
     "一家都没抓到 → 暂无数据（—），不出 0.00 万亿");
+  assert.ok(marketSrc.includes('turnoverLiveWan != null ? `${turnoverLiveWan.toFixed(2)}万亿` : "—"'),
+    "缺读数显「—」；有读数才出万亿");
   assert.ok(marketSrc.includes("万亿"), "≥万亿对齐稳智格式");
   assert.ok(marketSrc.includes("delta?.yi != null"), "vs昨日只在趋势真带回 delta 时给，缺就是缺、不硬凑");
 });

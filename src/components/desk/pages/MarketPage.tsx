@@ -15,7 +15,7 @@ import { compareBreadthWithSeed } from "@/lib/quant/review/breadth-crosscheck-co
 // P15-R16c：几点取的数 + 开盘自动重取
 import { useLivePoll } from "@/hooks/use-live-poll";
 // 当日沉淀缓存：下面的历史图每天只回源一次，当天内秒开（收盘后自动换掉盘中那份）
-import { readSettled, writeSettled, decideSettled, beijingDayTime } from "@/lib/desk/settled-cache-core";
+import { readSettled, writeSettled, decideSettled, beijingDayTime, CLOSE_HM } from "@/lib/desk/settled-cache-core";
 import { useTradeDate } from "@/lib/desk/use-trade-date";
 import LiveStamp from "@/components/desk/LiveStamp";
 import EChart, { type EChartState } from "@/components/desk/charts/EChart";
@@ -408,19 +408,17 @@ export default function MarketPage() {
     }
   }, []);
 
-  const loadTiers = useCallback(async (opts: { force?: boolean } = {}) => {
-    const KEY = "market-tiers";
-    const cached = readSettled<LimitUpClient>(KEY);
-    const decision = cached ? decideSettled(cached, beijingDayTime()) : { use: false, refetch: true, reason: "missing" as const };
-    if (cached && decision.use && !opts.force) { setTiers(cached.data); setTiersBusy(false); return; }
-    const instant = !!cached;
-    if (instant) { setTiers(cached!.data); setTiersBusy(false); } else setTiersBusy(true);
+  /**
+   * 涨停梯队 = **当日实时结构**，必须跟盘中一起走（用户 2026-09-29 拍板：
+   * 「连板梯队肯定跟着实时走啊，盘中和盘后能一样吗」）。
+   * 所以它**不进**当日沉淀缓存——和顶四卡一样挂 useLivePoll 的 tick，开盘自动重取、休市自然停。
+   */
+  const loadTiers = useCallback(async () => {
+    setTiersBusy(true);
     try {
-      const fresh = await fetchLimitUp();
-      setTiers(fresh);
-      writeSettled(KEY, fresh);
+      setTiers(await fetchLimitUp());
     } catch {
-      if (!instant) setTiers(null);
+      setTiers(null);
     } finally {
       setTiersBusy(false);
     }
@@ -451,22 +449,21 @@ export default function MarketPage() {
   }, [trendTo, trendFrom, loadTrend]);
 
   useEffect(() => {
-    if (poll.tick > 0) load();
-  }, [poll.tick, load]);
+    if (poll.tick > 0) { load(); void loadTiers(); }
+  }, [poll.tick, load, loadTiers]);
 
   // 轮询周期里顺带问一句「下方的当日沉淀数据需不需要换新」：
-  // 三个 load 内部先查缓存判定——命中就**一次网络都不发**（秒回，不打扰用户），
+  // 两个 load 内部先查缓存判定——命中就**一次网络都不发**（秒回，不打扰用户），
   // 只有「昨天那份」或「盘中取的、现在已经收盘」才回源。于是页面一直开着跨过 15:00 时，
-  // 下方历史图会自己换成收盘口径，而四个卡片照旧实时刷新。
+  // 下方历史图会自己换成收盘口径；连板梯队/四卡则按上面的实时轮询走。
   useEffect(() => {
     if (poll.tick <= 0) return;
     const t = setTimeout(() => {
       void loadTrend(trendFrom, trendTo);
       void loadBreadth();
-      void loadTiers();
     }, 0);
     return () => clearTimeout(t);
-  }, [poll.tick, trendFrom, trendTo, loadTrend, loadBreadth, loadTiers]);
+  }, [poll.tick, trendFrom, trendTo, loadTrend, loadBreadth]);
 
   // —— 派生量（全部由已回传字段推得，不产生新事实）——
   const temp = sent ? computeTemperature({
@@ -474,7 +471,38 @@ export default function MarketPage() {
     limit_up: sent.limit_up, limit_down: sent.limit_down, break_rate: sent.break_rate,
     main_net_sum_yi: sent.main_net_sum_yi, main_net_known: sent.main_net_known,
   }, regime) : null;
-  const tLatest = trend ? [...trend.days].reverse().find((d) => d.totalYi !== null) ?? null : null;
+  /**
+   * 已完成的交易日（口径）：15:00 之后算今天，否则算到昨天。
+   *
+   * 为什么需要：行情源在盘中会给**今天那根未收盘的半截柱**（实测 10:22 是 6199 亿）。
+   * 半截柱不能进「当日沉淀」——否则页面上会同时出现两个今天（卡片说 0.62 万亿、图说 0.48），
+   * 而且那根柱子会一整天定在第一次打开时的值上。所以：
+   *   · 图 = 只画已完成交易日（收盘后今天自然入列）
+   *   · 卡 = 实时累计（见下面 turnoverLive，走 sentiment 轮询源）
+   */
+  const completedThrough = useMemo(() => {
+    const { day, hm } = beijingDayTime();
+    if (hm >= CLOSE_HM) return day;
+    const d = new Date(`${day}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+    // 跟轮询一起走：跨过 15:00 后这一行自动把今天纳入
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poll.tick]);
+  const trendDaysDone = useMemo(
+    () => (trend?.days ?? []).filter((d) => d.date <= completedThrough),
+    [trend, completedThrough],
+  );
+  /**
+   * 成交额卡片＝**实时**口径（用户实测过：刷新后还停在 0.48 是因为它读了被定住的趋势序列）。
+   * 「一家都没抓到」时 `amount_total_yi` 也是 0——那是**没读到**，不是「今天只成交了 0 亿」，
+   * 所以必须过 `amount_known` 这道闸，缺读数就显「—」（P14 定下的口径，不许出 0.00 万亿）。
+   */
+  const turnoverLiveYi = sent && (sent.amount_known ?? 0) > 0 ? sent.amount_total_yi : null;
+  const turnoverLiveWan = turnoverLiveYi != null ? turnoverLiveYi / 1e4 : null;
+  /** 昨日全天成交额（已收盘口径，来自沉淀序列）——用来算「盘中已达昨日 X%」 */
+  const yesterdayYi = [...trendDaysDone].reverse().find((d) => d.totalYi != null)?.totalYi ?? null;
+  const turnoverPctOfYesterday = turnoverLiveYi != null && yesterdayYi ? (turnoverLiveYi / yesterdayYi) * 100 : null;
   const bLatest = breadth?.latest ?? null;
   // 5日线占比有两个口径，**图上同一时刻只画一个**（用户：四条线已经够挤，别再并排摆第五条对照线）：
   //   本地·三市（默认）＝本库真实收盘价自算，票池是沪+深+北交所，收盘后自己往前长，往后分位数也吃这条；
@@ -612,16 +640,30 @@ export default function MarketPage() {
           </div>
           <div className="px-4 py-2 text-center">
             <div className="text-[14.5px] font-medium">成交额</div>
+            {/* 实时口径：盘中＝当日累计（跟着轮询涨），收盘后＝全天值。数据源与四卡其他张一致（sentiment）。 */}
             <div className="mt-3 text-[35px] font-semibold leading-none tracking-tight">
-              {tLatest ? `${((tLatest.totalYi as number) / 1e4).toFixed(2)}万亿` : "—"}
+              {turnoverLiveWan != null ? `${turnoverLiveWan.toFixed(2)}万亿` : "—"}
             </div>
-            <div className="mt-2 flex items-center justify-center gap-1.5 text-[13px]">
-              {delta?.yi != null && (
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5 text-[12.5px]">
+              {turnoverLiveYi != null && (
+                <span className={poll.open ? "text-sky-300" : "text-muted-foreground"}>
+                  {poll.open ? "盘中累计" : "全天"}
+                </span>
+              )}
+              {turnoverPctOfYesterday != null && poll.open && (
+                <span className="text-muted-foreground">已达昨日 {turnoverPctOfYesterday.toFixed(0)}%</span>
+              )}
+              {!poll.open && delta?.yi != null && (
                 <span className={delta.yi < 0 ? "text-emerald-400" : "text-red-400"}>
                   {delta.yi < 0 ? "↓" : "↑"}{Math.abs(Math.round(delta.yi))}亿 <span className="text-muted-foreground">vs昨日</span>
                 </span>
               )}
-              {tLatest && <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px] text-muted-foreground">{tLatest.date}</span>}
+              {yesterdayYi != null && (
+                <span className="text-muted-foreground" title="昨日全天（沪深北合计，已收盘口径）">
+                  昨日 {(yesterdayYi / 1e4).toFixed(2)}万亿
+                </span>
+              )}
+              {sent?.as_of && <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px] text-muted-foreground">{sent.as_of.slice(0, 10)}</span>}
             </div>
           </div>
           <div className="px-4 py-2 text-center">
@@ -664,7 +706,7 @@ export default function MarketPage() {
           {/* 口径如实标注：这批历史数是当天几点取的（每天首次打开取一次，当天不再重复请求→秒开） */}
           {settledAt && (
             <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px] text-muted-foreground"
-              title={`下方历史口径（成交额/5日线占比/涨跌停/连板梯队/指数）为当日沉淀：${settledAt} 取回后固定，收盘后自动更新一次；上面四个卡片仍是实时刷新`}>
+              title={`下方历史口径（成交额趋势/5日线占比/涨跌停分布/指数区间涨跌）为当日沉淀：${settledAt} 取回后固定，收盘后自动更新一次。实时部分＝顶四卡与连板梯队，按交易时段轮询刷新。`}>
               当日沉淀 {settledAt}
             </span>
           )}
@@ -701,7 +743,7 @@ export default function MarketPage() {
           warnings={[...(trend?.cached ? [`本页数据来自本地快照回放（${trend.cached_at ? new Date(trend.cached_at).toLocaleString("zh-CN") : ""} 落档）：${trend.cache_note ?? "上游取数不完整"}`] : []), ...trend?.missing ?? [], ...(trend?.notes ?? [])]}
         >
           <EChart ariaLabel="大盘成交额趋势" height={300} state={turnoverState}
-            emptyText="趋势数据未取到或合计没配齐过一天" option={turnoverOption(trend?.days ?? [], trend?.market_label ?? "两市")} />
+            emptyText="趋势数据未取到或合计没配齐过一天" option={turnoverOption(trendDaysDone, trend?.market_label ?? "两市")} />
         </ChartCard>
 
         <ChartCard

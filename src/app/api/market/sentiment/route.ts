@@ -5,7 +5,7 @@
 //   还得让页面自己拼两份不同时刻的数。挂在这儿，档位牌和顶上四张卡就是同一次计算出来的。
 //   代价：压力分本身不挡情绪数据——下面整块 try/catch，任何一路挂了只少这三块，情绪照发。
 import { NextResponse } from "next/server";
-import { ttlCache, DEFAULT_TTL_MS } from "@/lib/quant/server-cache";
+import { ttlCache } from "@/lib/quant/server-cache";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { computeSentiment } from "@/lib/quant/screener/sentiment";
 // R20：全 A 快照不带 mainNet，这里另挂一份通达信逐笔自算的主力净额合计
@@ -16,8 +16,17 @@ import type { MainNetTdxClient } from "@/lib/desk/main-net-core";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * 服务端 TTL：55 秒（默认 30 秒）。
+ * 为什么单独给这条路由：它算一次要十几~二十五秒（腾讯批量快照兜底 95 个请求 + 通达信主力净额），
+ * 而页面轮询是 60 秒一次——用默认 30 秒的话**每次轮询都必然过期重算**，四张卡就一直在转圈等。
+ * 55 < 60：轮询基本都能命中热缓存（读数最多滞后约 55 秒，对累计成交额无感），
+ * 冷启动只在「第一次/长时间没人看」时发生。
+ */
+const SENTIMENT_TTL_MS = 55_000;
+
 export async function GET() {
-  return ttlCache("market/sentiment", DEFAULT_TTL_MS, () => getHandler());
+  return ttlCache("market/sentiment", SENTIMENT_TTL_MS, () => getHandler());
 }
 async function getHandler() {
   quantBootstrap();
