@@ -104,7 +104,8 @@ test("indexTrendZh：给出点位 / 均线 / 站在线下方 / 回撤，全是�
   const line = indexTrendZh("上证指数(000001.SH)", indexTrendFromCandles(REAL_TAIL_20));
   assert.match(line, /上证指数\(000001\.SH\)/);
   assert.match(line, /收 3888\.37/);
-  assert.match(line, /当日 -1\.22%/);
+  // 09-30 同步：涨跌必须带符号+方向词（曾因「当日 0.18%」无符号，被模型按熊市语境脑补成「跌幅 0.18%」）
+  assert.match(line, /当日涨跌 -1\.22%（下跌）/);
   assert.match(line, /MA5=3927\.76 \/ MA10=3904\.37 \/ MA20=3926\.74/);
   assert.match(line, /收盘位于 MA5、MA10、MA20 下方/);
   assert.match(line, /距最近 20 个交易日收盘高点 -2\.46%/, "(3888.37-3986.3)/3986.3：样本不足 60 根时按实际窗口算，不谎称 60 日");
