@@ -65,7 +65,9 @@ test("自定义 ttlMs 参数留给测试与将来改口（不许把七天焊死�
 test("store 接线：动作只调纯核+收口 activeSessionId，没清掉时不多写一次盘", () => {
   const storeSrc = readSrc("src/lib/desk/store.ts");
   assert.match(storeSrc, /pruneStaleSessions as pruneStaleCore/);
-  assert.match(storeSrc, /pruneStaleChats: \(\) => set\(\(s\) => \{\r?\n        const sessions = pruneStaleCore\(s\.sessions\);/);
+  // 2026-09-30 同步判据：9-29「上限改 3 条」让 pruneStaleChats 在纯核之前多了一行说明注释、
+  // 之后插了 MAX_SESSIONS 收敛行（const→let），语义（收口 activeSessionId、没清掉不写盘）未变
+  assert.match(storeSrc, /pruneStaleChats: \(\) => set\(\(s\) => \{[\s\S]{0,200}?let sessions = pruneStaleCore\(s\.sessions\);/);
   assert.match(storeSrc, /if \(sessions\.length === s\.sessions\.length && sessions\.every\(\(x, i\) => x\.id === s\.sessions\[i\]\.id\)\) return \{\};/);
   assert.match(storeSrc, /activeSessionId = sessions\.some\(\(x\) => x\.id === s\.activeSessionId\) \? s\.activeSessionId : sessions\[0\]\.id/);
 });

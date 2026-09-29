@@ -3518,3 +3518,15 @@ R20 的后半。要回答的不再是「此刻哪几条读数难看」（那是�
 6. 压力分的**刻度本身还没有历史样本可校**：70/50/30 三条档位带和六条锚点都是本机拍的，等自产宽度/名单再攒两周才谈得上回测；本轮只做「读数齐、话说清」，不做准确率承诺。
 7. **板块页压着一轮从来没进过 git 的改动**（提交前做范围核对才发现）：工作区那份 `SectorsPage.tsx` 比 HEAD 多 294 行——对齐稳智 /sectors 的排序字段/范围筛选/资金流向分布图/「点板块名跳选股」，连带 `store.ts` 的 `setScreenerHandoff` 与板块行的 `up_count/down_count/limit_up_count/rank_change` 四列都只活在工作区里。R20b 这一笔**只入了本轮那 59 行**（HEAD 版 + 本轮外盘片段，单独 tsc 0 / eslint 无新增验过），其余原样留在工作区，不代它入库、也不拿它当基线。**待办：那一轮单独补一笔提交**——本轮之外的债，混进来就等于用一次提交掩盖两次未留痕。
 
+
+## P33 「预测」按钮第一刀：策略闸门 + 组合推荐 + 攒样本进度（2026-09-30）
+
+用户拍板的完整流程（经 6 节 HTML 样稿 `design-mockups/strategy-gate-mockup.html` 逐轮确认）：量化选股页结果区加紫色「🔮 预测」按钮（筛选左边）→ 弹卡显示今天档位 + 推荐列表（组合=紫标 / 社区单条=蓝标，每条带来源与真实理由）→ 点「选它」自动筛选出股票 → 用户自己点 AI 优选选股。**概率分工红线：概率只来自概率引擎与使用台账；AI 优选不产出概率；市场级概率是全市场一个数，单独一行，绝不复制到单条头上。**
+
+- 纯核 `src/lib/quant/strategy/strategy-gate-core.ts`：gateOf（档位分 × sentiment_threshold 闸门；score=null → unknown 不猜）+ packForecast（组合=过闸策略按赞踩相邻配对至多 2 个、单条至多 3 条、n_mapped=0 不进推荐、record 恒 null——v1 无台账不编数）+ marketProbState（v1 恒 accumulating，攒够也只说「样本已攒够」，不拿无条件 base rate 冒充条件概率）。单测 `tests/quant/strategy-gate-core.test.ts` 14/14。
+- 路由 `GET /api/quant/strategy-forecast`：computeSentiment + computeTopPressure（与 /api/market/sentiment 同一套六分量）+ 策略闸门 + daily_snapshot count；进程内 TTL 5 分钟，冷启动实测 36.9s、热缓存 0.02s。tier 失败降级为 error+items=[]，不拖垮策略列表。
+- ScreenerWorkbench：预测按钮 + 弹卡（档位分/六分量摊开/推荐/红线底注）；「选它」单条=bodyFrom(新条件)立即筛选（绕开 setConds 异步），组合=成员分别跑 limit 100 按代码并集合并、`__from` 列标「来自」（组合行顶层伪键已进 skip/TOP_LEVEL 集合）；组合名单提示条可一键退出；ensureRows 组合短路（AI优选冻结的就是合并名单，pool.conditions 写记录用伪条件）；社区列表默认收起被挡策略（搜索时全量、unknown 不收——「没判」≠「被挡」）+ ✓能用/待判/✗挡 圆标；分页器组合模式隐藏。
+- 首刀如实状态：档位分 31.6/注意（凌晨无盘），143 条带门槛全部被挡（低于最低门槛 50）→ 推荐列表空态文案；marketProb 1/30。概率数字要等 daily_snapshot 攒满 + P1（Wilson CI）+ P2（受控放行）。
+- 顺手同步三个 master 上已红的旧钉测（9-29 菜单/会话调整没跟上判据，先于本轮改动即红，按「同步判据不回滚写法」惯例）：p50（最近会话行 pl-3 pr-8）、p20（会话 5 条→3 条）、p15-r13（pruneStaleChats const→let+收敛行，放宽注释间隔）。
+- 验证：tsc 0 / eslint 新改文件 0 error / 全量 1960 项 1951 pass 0 fail 9 skip / 接口实测 200 + 页面按钮实机渲染确认。
+- 挂账：使用台账（P3，record 字段已留型）· 概率数字（P1 Wilson CI + P2 FORECAST_PHASE=2）· 弹卡冷启动 15-25s 可选预热点。
