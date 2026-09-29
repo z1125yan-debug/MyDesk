@@ -17,6 +17,7 @@ import type { Divergence } from "@/lib/quant/data/overseas-core";
 // P15-R16c：开盘自动重取 + 取数时刻的人话读法（全站共用，别再各页抄一份倒计时）
 import { useLivePoll } from "@/hooks/use-live-poll";
 import { clockZh } from "@/lib/desk/plain-core";
+import { plainCode, codeTitle } from "@/lib/desk/code-format";
 
 type BoardKind = "industry" | "concept";
 
@@ -626,7 +627,7 @@ function SectorBlock({ rank, board, asOf, expanded, busy, error, members, canScr
                       .sort((a, b) => (b.changePct ?? -999) - (a.changePct ?? -999))
                       .map((m) => (
                         <tr key={m.symbol} onClick={() => onOpenProfile(m.symbol)} className="cursor-pointer border-b border-border/30 hover:bg-sky-500/5">
-                          <td className="px-2.5 py-1.5 font-mono">{m.symbol}</td>
+                          <td className="px-2.5 py-1.5 font-mono" title={codeTitle(m.symbol)}>{plainCode(m.symbol)}</td>
                           <td className="px-2.5 py-1.5">{m.name}{m.st && <span className="ml-1 text-[10px] text-amber-400">ST</span>}{m.suspended && <span className="ml-1 text-[10px] text-muted-foreground">停牌</span>}</td>
                           <td className="px-2.5 py-1.5 text-right"><NumText value={m.price} /></td>
                           <td className="px-2.5 py-1.5 text-right"><PctText value={m.changePct} /></td>

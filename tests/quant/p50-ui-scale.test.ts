@@ -75,7 +75,11 @@ test("对话页铺满：输入条满宽（P50）；消息流改居中窄栏（P6
 });
 
 test("量化选股工作台/行业板块/自选三页根容器满宽（贴侧栏）", () => {
-  assert.match(read("src/components/desk/pages/ScreenerWorkbench.tsx"), /<div className="w-full space-y-4 px-8 py-6">/, "选股工作台满宽");
+  // 2026-09-29 用户实测：选股结果表「还得拉一下才能看完」。左右内边距 px-8 → px-3，
+  // 把省下的横向空间让给表格（**满宽纪律不变**：仍是 w-full，仍禁止限宽居中）。
+  const screener = read("src/components/desk/pages/ScreenerWorkbench.tsx");
+  assert.match(screener, /<div className="w-full space-y-4 px-3 py-6">/, "选股工作台满宽（内边距收窄以容纳结果表）");
+  assert.ok(!/mx-auto max-w-\d/.test(screener), "选股工作台不居中限宽");
   assert.match(read("src/components/desk/pages/SectorsPage.tsx"), /<div className="w-full space-y-4 px-6 py-4">/, "行业板块满宽");
   assert.match(read("src/components/desk/pages/WatchlistPage.tsx"), /<div className="w-full space-y-4 px-6 py-4">/, "自选页满宽");
 });

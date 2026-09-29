@@ -8,6 +8,7 @@ import { aiReady } from "@/lib/desk/ai";
 import { runScreenerApi, aiChatTools, freezePoolApi, saveScanAsStrategyApi, type ScreenerCond, type ScreenerRespClient } from "@/lib/desk/quant-api";
 // P13 门户轮：「存池交 AI 择优」的研究指令装配（纯核，与 candidate_pool 工具/择优纪律同源一份定义）
 import { poolPickThesis } from "@/lib/quant/screener/pick-pool-core";
+import { plainCode, codeTitle } from "@/lib/desk/code-format";
 
 const RESULTS_FIELDS = ["change_pct", "amount_yi", "turnover_rate", "volume_ratio", "main_net_yi", "rps_50", "above_ma_20", "macd_cross"];
 
@@ -363,7 +364,7 @@ export default function AiScanPage() {
                 const h = (n: number) => r.win_prob?.horizons.find((x) => x.h === n);
                 return (
                   <tr key={r.symbol} onClick={() => openProfile(r.symbol)} className="cursor-pointer border-b border-border/40 hover:bg-sky-500/5">
-                    <td className="px-3 py-1.5 font-mono">{r.symbol}</td>
+                    <td className="px-3 py-1.5 font-mono" title={codeTitle(r.symbol)}>{plainCode(r.symbol)}</td>
                     <td className="px-3 py-1.5">{r.name}{r.industry ? <span className="ml-1 text-[11px] text-muted-foreground">{r.industry}</span> : null}</td>
                     <td className="px-3 py-1.5 text-right"><NumText value={r.close} /></td>
                     <td className="px-3 py-1.5 text-right"><PctText value={r.change_pct} /></td>

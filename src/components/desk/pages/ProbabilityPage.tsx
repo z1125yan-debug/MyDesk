@@ -8,6 +8,7 @@ import {
   fetchFactorCatalog, fetchTradeDates, runProbabilityApi,
   type FactorFieldDef, type ScreenerCond, type ProbabilityResp,
 } from "@/lib/desk/quant-api";
+import { plainCode, codeTitle } from "@/lib/desk/code-format";
 
 // §四 操作符全集（in / not in = 多值，值用逗号或空格分隔）
 const OPS = ["=", ">=", ">", "<=", "<", "!=", "in", "not in"] as const;
@@ -199,7 +200,7 @@ export default function ProbabilityPage() {
                 const h5 = h(5);
                 return (
                   <tr key={r.symbol} className="border-t border-border/60">
-                    <td className="py-1.5 font-mono">{r.symbol}</td>
+                    <td className="py-1.5 font-mono" title={codeTitle(r.symbol)}>{plainCode(r.symbol)}</td>
                     <td>{r.name}</td>
                     <td><WinText v={h(1)?.win_rate} /></td>
                     <td><WinText v={h5?.win_rate} /></td>

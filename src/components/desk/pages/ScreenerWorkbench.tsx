@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Sparkles, Trash2, X } from "lucide-react";
 import { useDesk, type ChatHorizon, type FrozenPool } from "@/lib/desk/store";
 import { normalizeSectorKeyword } from "@/lib/quant/screener/sector-keyword-core";
+import { plainCode, codeTitle } from "@/lib/desk/code-format";
 
 type CatalogField = { key: string; zh: string; category: string; source?: string; implemented?: boolean; unit?: string };
 type CondType = "single" | "rolling_return" | "rolling_sum" | "rolling_any";
@@ -373,8 +374,26 @@ export default function ScreenerWorkbench() {
     ];
   }, [rows, selCols]);
 
+  /**
+   * 列宽（百分比，合计 100）。2026-09-29 用户：表格太宽「还得拉一下才能看完，参考稳智」。
+   * 口径：base 列给固定小宽度，其余因子列平分剩余 —— 配 `table-fixed w-full` 后表格**恒等于容器宽**，
+   * 无论用户加了多少列都不会再出现横向滚动条；表头允许换行（多行读得清，比拖滚动条强）。
+   */
+  const colWidth = useMemo(() => {
+    const out: Record<string, string> = {};
+    if (!cols.length) return out;
+    const FIXED: Record<string, number> = {
+      symbol: 6.5, code: 6.5, name: 8.5, close: 5.5, price: 5.5, change_pct: 6.5,
+    };
+    const fixedSum = cols.reduce((s, c) => s + (FIXED[c.key] ?? 0), 0);
+    const rest = cols.filter((c) => !(c.key in FIXED));
+    const share = rest.length ? Math.max(4, (100 - fixedSum) / rest.length) : 0;
+    for (const c of cols) out[c.key] = `${c.key in FIXED ? FIXED[c.key] : share}%`;
+    return out;
+  }, [cols]);
+
   return (
-    <div className="w-full space-y-4 px-8 py-6">
+    <div className="w-full space-y-4 px-3 py-6">
       <div className="text-center apple-slide-up">
         <h1 className="text-[25px] font-semibold tracking-tight">多因子量化模型</h1>
         <p className="mt-1 text-[13.5px] text-muted-foreground">所示结果仅为模型筛选结果与历史数据分析，不构成任何投资建议。投资有风险，决策需谨慎。</p>
@@ -479,7 +498,7 @@ export default function ScreenerWorkbench() {
                   <div className="mt-1.5 max-h-40 overflow-y-auto rounded border border-border/40 bg-card/40 p-1.5 font-mono text-[12px]">
                     {pool.rows.slice(0, 60).map((r, ri) => (
                       <div key={`${r.symbol}-${ri}`} className="flex justify-between gap-2">
-                        <span className="text-muted-foreground">{r.symbol} {r.name}</span>
+                        <span className="text-muted-foreground">{plainCode(r.symbol)} {r.name}</span>
                         <span className={r.changePct != null && r.changePct >= 0 ? "text-red-400" : "text-emerald-400"}>
                           {r.changePct == null ? "—" : `${r.changePct >= 0 ? "+" : ""}${r.changePct.toFixed(2)}%`}
                         </span>
@@ -596,11 +615,15 @@ export default function ScreenerWorkbench() {
         </div>
         {error && <div className="mt-2 rounded-lg border border-red-400/25 bg-red-400/10 px-3 py-2 text-[13.5px] text-red-300">{error}</div>}
         {rows?.length ? (
-          <div className="mt-3 max-h-[620px] overflow-auto rounded-lg border border-border/50 bg-background">
-            <table className="w-full text-[13.5px]">
+          <div className="mt-3 max-h-[620px] overflow-y-auto overflow-x-hidden rounded-lg border border-border/50 bg-background">
+            <table className="w-full table-fixed text-[12.5px]">
+              <colgroup>
+                {cols.map((c) => <col key={c.key} style={{ width: colWidth[c.key] }} />)}
+              </colgroup>
               <thead className="sticky top-0 z-10 bg-surface text-muted-foreground">
                 <tr className="border-b border-border/60">
-                  {cols.map((c) => <th key={c.key} className="whitespace-nowrap px-3 py-2.5 text-left font-medium">{c.zh}</th>)}
+                  {/* 表头允许换行（leading-tight）：长列名不再把整列撑宽，这是「不用横向拖」的关键 */}
+                  {cols.map((c) => <th key={c.key} className="break-words px-2 py-2 text-left align-bottom font-medium leading-tight">{c.zh}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -624,22 +647,23 @@ export default function ScreenerWorkbench() {
                       // 形态可能是 "涨停板|看涨吞没" 这类组合：拆成小标签分别渲染，比一整串更好读
                       const patternTags = isPattern && typeof v === "string" && v !== "—" ? v.split("|").filter(Boolean) : null;
                       return (
-                        <td key={c.key}
-                          className={`whitespace-nowrap px-3 py-2 ${
+                        <td key={c.key} title={isCode ? codeTitle(r.symbol ?? r.code) : undefined}
+                          className={`overflow-hidden px-2 py-1.5 align-middle ${
                             num && isPct ? ((v as number) >= 0 ? "text-red-400" : "text-emerald-400") : ""
                           } ${num && isMacd ? "font-mono italic text-red-400" : ""}`}>
-                          {isCode ? <span className="cursor-pointer font-mono text-sky-400 hover:underline">{disp}</span>
+                          {/* 代码列走通达信口径：只显示 6 位数字，不带 .SH/.SZ/.BJ（数据层全码在 title 里） */}
+                          {isCode ? <span className="block truncate font-mono text-sky-400">{plainCode(r.symbol ?? r.code)}</span>
                             : patternTags ? (
                               <span className="flex flex-wrap gap-1">
                                 {patternTags.map((t, ti) => (
-                                  <span key={ti} className="rounded border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 text-[12px] text-sky-200">{t}</span>
+                                  <span key={ti} className="rounded border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 text-[11.5px] text-sky-200">{t}</span>
                                 ))}
                               </span>
                             )
                               : num && isMacd
                                 // MACD 走稳智同款：红色斜体，且数值固定两位小数（0 也写 0.00，避免与缺失的「—」混淆）
-                                ? <span className="font-mono italic text-red-400">{(v as number).toFixed(2)}</span>
-                                : disp}
+                                ? <span className="block truncate font-mono italic text-red-400">{(v as number).toFixed(2)}</span>
+                                : <span className="block truncate" title={String(disp)}>{disp}</span>}
                         </td>
                       );
                     })}
