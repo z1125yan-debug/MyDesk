@@ -76,19 +76,51 @@ export function upcomingHolidayWindows(
 }
 
 const fmt = (d: string): string => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+/** 星期几（按北京时间 UTC+8、无夏令时，直接用日期的 UTC 星期，避免宿主机时区漂移）。 */
+export function weekdayOf(d: string): string {
+  return WEEKDAYS[new Date(`${d}T00:00:00Z`).getUTCDay()];
+}
 
 /**
- * 一句人话的交易日历说明（给 AI 注入 / 页面展示用）。
- * 例：「接下来的交易日：9/28、9/29、9/30、10/8、10/9；10/1–10/7 休市，10/8 复市」
+ * 一句人话的交易日历说明（给 AI 注入 / 页面展示用），**带星期**——之前没带星期，
+ * 模型只能自己猜，结果把 9/29 写成「周五」（实际周二）、9/30 写成「周六」（实际周三）。
+ * 现在星期由这里确定性算出，模型照抄即可，不许再自己算。
+ * 例：「接下来的交易日：9/29（周二）、9/30（周三）；10/1—10/7 国庆休市；10/8（周四）、10/9（周五）交易；10/10—10/11 周末休市；10/12（周一）交易」
  * 日历读不到时返回 null——调用方不许拿它编一句。
  */
 export function tradeCalendarNote(from: string, horizon = 21): string | null {
-  const ups = upcomingTradingDays(from, 5);
+  const ups = upcomingTradingDays(from, 6);
   if (!ups.length) return null;
-  const parts: string[] = [`接下来的交易日：${ups.map(fmt).join("、")}`];
-  for (const h of upcomingHolidayWindows(from, horizon)) {
-    const after = upcomingTradingDays(h.end, 1)[0];
-    parts.push(`${fmt(h.start)}–${fmt(h.end)} 休市${after ? `，${fmt(after)} 复市` : ""}`);
+  const hols = upcomingHolidayWindows(from, horizon);
+  const tradeRun = (arr: string[], withTrade: boolean) =>
+    arr.map((d) => `${fmt(d)}（${weekdayOf(d)}）${withTrade ? "交易" : ""}`).join("、");
+  const segs: string[] = [];
+  let ti = 0;
+  let hi = 0;
+  let first = true;
+  while (ti < ups.length) {
+    const nextHol = hols[hi];
+    const runEnd = nextHol ? ups.findIndex((d) => d >= nextHol.start) : -1;
+    const end = runEnd === -1 ? ups.length : runEnd;
+    if (end > ti) {
+      segs.push(tradeRun(ups.slice(ti, end), !first));
+      ti = end;
+      first = false;
+    }
+    if (nextHol && ti < ups.length && ups[ti] >= nextHol.start) {
+      let label = "休市";
+      // 国庆：覆盖 10/1–10/7（A 股国庆长假窗口）；其余纯周六日连休标「周末休市」
+      if (nextHol.start <= "2026-10-07" && nextHol.end >= "2026-10-01") label = "国庆休市";
+      else if (weekdayOf(nextHol.start) === "周六" && weekdayOf(nextHol.end) === "周日") label = "周末休市";
+      segs.push(`${fmt(nextHol.start)}—${fmt(nextHol.end)} ${label}`);
+      hi++;
+      first = false;
+    } else if (ti < ups.length) {
+      segs.push(tradeRun(ups.slice(ti), !first));
+      ti = ups.length;
+    } else break;
   }
-  return parts.join("；");
+  return `接下来的交易日：${segs.join("；")}`;
 }

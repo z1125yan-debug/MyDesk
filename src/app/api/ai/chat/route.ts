@@ -120,7 +120,8 @@ function systemPrompt(
   const calNoteRaw = tradeCalendarNote(today);
   const calendarNote = calNoteRaw
     ? `【交易日历·真实年历，非推断】${calNoteRaw}。凡涉及「下周/节后/接下来几天/哪天开盘」的问题，` +
-      `必须按这一句说清交易日与休市安排，并按此判断时间窗口——不许按「去掉周末」自己推算。`
+      `必须按这一句说清交易日与休市安排，并按此判断时间窗口——不许按「去掉周末」自己推算；` +
+      `这一句已经带好了星期（周X），照原样抄进「数据时间」那一行，不许自己算星期、也不许改星期。`
     : "";
   // 风格句的正文在 modes.ts 的 MODE_NOTES 一处定义：纯对话端点（/api/ai/proxy）现在也消费
   // mode，两条链路查同一张表，不会出现「chip 同名、两端口径不同」的漂移。
