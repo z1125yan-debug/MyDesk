@@ -14,6 +14,8 @@ import { computeTemperature, REGIMES, type MarketRegime } from "@/lib/quant/scre
 import { compareBreadthWithSeed } from "@/lib/quant/review/breadth-crosscheck-core";
 // P15-R16c：几点取的数 + 开盘自动重取
 import { useLivePoll } from "@/hooks/use-live-poll";
+// 当日沉淀缓存：下面的历史图每天只回源一次，当天内秒开（收盘后自动换掉盘中那份）
+import { readSettled, writeSettled, decideSettled, beijingDayTime } from "@/lib/desk/settled-cache-core";
 import { useTradeDate } from "@/lib/desk/use-trade-date";
 import LiveStamp from "@/components/desk/LiveStamp";
 import EChart, { type EChartState } from "@/components/desk/charts/EChart";
@@ -336,6 +338,12 @@ export default function MarketPage() {
   // 这张图画哪条口径：local = 本库真实收盘价自算（三市全A，默认，我们的数）；
   // sync = 外部同步种子（两市票池，带微/中/大盘分组，稳智同款四线）。图上同时只摆一条，不并排。
   const [breadthSrc, setBreadthSrc] = useState<"local" | "sync">("sync");
+  /**
+   * 下方这些「收盘后沉淀」的图，当天已经取过一次就固定下来（用户 2026-09-29：
+   * 「像下面这些需要收盘后的就固定……再点击除了首页四个卡片实时更新，而不是得等待」）。
+   * settledAt 只用于如实标注「这批数是几点取的」，不参与判定。
+   */
+  const [settledAt, setSettledAt] = useState("");
   const poll = useLivePoll();
 
   const load = useCallback(async () => {
@@ -349,8 +357,20 @@ export default function MarketPage() {
     }
   }, []);
 
-  const loadTrend = useCallback(async (from = "", to = "") => {
-    setTrendBusy(true); setTrendError("");
+  const loadTrend = useCallback(async (from = "", to = "", opts: { force?: boolean; cacheKey?: string } = {}) => {
+    // 当日沉淀缓存（settled-cache-core）：下方这些「收盘后才沉淀」的图每天只回源一次，
+    // 当天内再进页面一律秒开；若上次是盘中取的、现在已经收盘，则先摆旧值再后台换新（不阻塞）。
+    const cacheKey = opts.cacheKey ?? `market-trend:${from}:${to}`;
+    const cached = cacheKey ? readSettled<{ t: TrendClient; rv: typeof review }>(cacheKey) : null;
+    const decision = cached ? decideSettled(cached, beijingDayTime()) : { use: false, refetch: true, reason: "missing" as const };
+    if (cached && decision.use && !opts.force) {
+      setTrend(cached.data.t); setReview(cached.data.rv); setTrendBusy(false); setSettledAt(cached.at);
+      return;
+    }
+    const instant = !!cached;                       // 有旧值：先渲染，避免白屏等待
+    if (instant) { setTrend(cached!.data.t); setReview(cached!.data.rv); setSettledAt(cached!.at); setTrendBusy(false); }
+    else setTrendBusy(true);
+    setTrendError("");
     try {
       const [t, rv] = await Promise.all([
         fetchTrend(from, to),
@@ -358,33 +378,49 @@ export default function MarketPage() {
       ]);
       setTrend(t);
       setReview(rv);
+      if (cacheKey) setSettledAt(writeSettled(cacheKey, { t, rv }).at);
     } catch (e) {
-      setTrend(null);
-      setTrendError(String((e as Error).message || e));
+      if (!instant) { setTrend(null); setTrendError(String((e as Error).message || e)); }
     } finally {
       setTrendBusy(false);
     }
+    // 依赖只放「取数函数」：review 只用于类型标注，不该把本函数身份搅动起来
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadBreadth = useCallback(async () => {
-    setBreadthBusy(true);
+  const loadBreadth = useCallback(async (opts: { force?: boolean } = {}) => {
+    const KEY = "market-breadth:30";
+    const cached = readSettled<BreadthClient>(KEY);
+    const decision = cached ? decideSettled(cached, beijingDayTime()) : { use: false, refetch: true, reason: "missing" as const };
+    if (cached && decision.use && !opts.force) { setBreadth(cached.data); setBreadthBusy(false); return; }
+    const instant = !!cached;
+    if (instant) { setBreadth(cached!.data); setBreadthBusy(false); } else setBreadthBusy(true);
     try {
       // 30 天窗口：这张「大盘情绪（5日线占比）趋势」看的是近期宽度变化，
       // 与上面成交额图的 90 天窗口刻意分开（两条链路独立，互不影响）。
-      setBreadth(await fetchBreadth(30));
+      const fresh = await fetchBreadth(30);
+      setBreadth(fresh);
+      writeSettled(KEY, fresh);
     } catch {
-      setBreadth(null); // 宽度失败不打掉情绪主体
+      if (!instant) setBreadth(null); // 宽度失败不打掉情绪主体
     } finally {
       setBreadthBusy(false);
     }
   }, []);
 
-  const loadTiers = useCallback(async () => {
-    setTiersBusy(true);
+  const loadTiers = useCallback(async (opts: { force?: boolean } = {}) => {
+    const KEY = "market-tiers";
+    const cached = readSettled<LimitUpClient>(KEY);
+    const decision = cached ? decideSettled(cached, beijingDayTime()) : { use: false, refetch: true, reason: "missing" as const };
+    if (cached && decision.use && !opts.force) { setTiers(cached.data); setTiersBusy(false); return; }
+    const instant = !!cached;
+    if (instant) { setTiers(cached!.data); setTiersBusy(false); } else setTiersBusy(true);
     try {
-      setTiers(await fetchLimitUp());
+      const fresh = await fetchLimitUp();
+      setTiers(fresh);
+      writeSettled(KEY, fresh);
     } catch {
-      setTiers(null);
+      if (!instant) setTiers(null);
     } finally {
       setTiersBusy(false);
     }
@@ -417,6 +453,20 @@ export default function MarketPage() {
   useEffect(() => {
     if (poll.tick > 0) load();
   }, [poll.tick, load]);
+
+  // 轮询周期里顺带问一句「下方的当日沉淀数据需不需要换新」：
+  // 三个 load 内部先查缓存判定——命中就**一次网络都不发**（秒回，不打扰用户），
+  // 只有「昨天那份」或「盘中取的、现在已经收盘」才回源。于是页面一直开着跨过 15:00 时，
+  // 下方历史图会自己换成收盘口径，而四个卡片照旧实时刷新。
+  useEffect(() => {
+    if (poll.tick <= 0) return;
+    const t = setTimeout(() => {
+      void loadTrend(trendFrom, trendTo);
+      void loadBreadth();
+      void loadTiers();
+    }, 0);
+    return () => clearTimeout(t);
+  }, [poll.tick, trendFrom, trendTo, loadTrend, loadBreadth, loadTiers]);
 
   // —— 派生量（全部由已回传字段推得，不产生新事实）——
   const temp = sent ? computeTemperature({
@@ -539,7 +589,7 @@ export default function MarketPage() {
         </div>
         <div className="absolute right-0 top-0 flex items-center gap-2">
           <LiveStamp poll={poll} iso={sent?.as_of ?? ""} />
-          <button onClick={load} className="flex items-center gap-1.5 rounded-full border border-border/70 bg-overlay px-3.5 py-2 text-[13.5px] text-muted-foreground transition-colors hover:text-foreground">
+          <button onClick={load} title="只刷新上面四个实时卡片（下方历史图是「收盘后沉淀」口径，每天首次打开自动更新一次）" className="flex items-center gap-1.5 rounded-full border border-border/70 bg-overlay px-3.5 py-2 text-[13.5px] text-muted-foreground transition-colors hover:text-foreground">
             {busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} 刷新
           </button>
         </div>
@@ -609,7 +659,16 @@ export default function MarketPage() {
 
       {/* 大盘情绪区：日期范围 + 行情状态 + 加载复盘数据统计（稳智同款控件行） */}
       <div className="apple-fade-in flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[17px] font-semibold">大盘情绪</div>
+        <div className="flex items-center gap-2">
+          <div className="text-[17px] font-semibold">大盘情绪</div>
+          {/* 口径如实标注：这批历史数是当天几点取的（每天首次打开取一次，当天不再重复请求→秒开） */}
+          {settledAt && (
+            <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px] text-muted-foreground"
+              title={`下方历史口径（成交额/5日线占比/涨跌停/连板梯队/指数）为当日沉淀：${settledAt} 取回后固定，收盘后自动更新一次；上面四个卡片仍是实时刷新`}>
+              当日沉淀 {settledAt}
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2 text-[13px]">
           <div className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-overlay px-2.5 py-1.5">
             <input type="date" value={trendFrom} max={trendTo || undefined} onChange={(e) => setTrendFrom(e.target.value)}
@@ -622,7 +681,7 @@ export default function MarketPage() {
             className="rounded-lg border border-border/70 bg-overlay px-2 py-1.5 text-[13px] text-foreground">
             {REGIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
           </select>
-          <button onClick={() => void loadTrend(trendFrom, trendTo)} disabled={trendBusy}
+          <button onClick={() => void loadTrend(trendFrom, trendTo, { force: true }) } disabled={trendBusy}
             className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-1.5 text-[13.5px] font-medium text-white transition-colors hover:bg-sky-500 disabled:opacity-50">
             {trendBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 加载复盘数据统计
           </button>

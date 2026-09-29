@@ -113,6 +113,9 @@ export default function ScreenerWorkbench() {
   const [quoteDate, setQuoteDate] = useState("");
   /** 滞后原因（服务端按交易日历+时段判定下发；页面只显示不推断） */
   const [quoteLag, setQuoteLag] = useState<{ lagging: boolean; badge: string; note: string } | null>(null);
+  /** 因子缓存口径（服务端 warning 带回）：说清手上这批因子值是「盘中口径」还是「收盘口径」 */
+  const [cacheNote, setCacheNote] = useState("");
+  const [warmNotice, setWarmNotice] = useState("");
   const [selCols, setSelCols] = useState<CatalogField[]>([]);
   const [showAiRecords, setShowAiRecords] = useState(false);
   /** 正在展开查看的 AI优选记录（点记录展开它的冻结候选） */
@@ -227,6 +230,9 @@ export default function ScreenerWorkbench() {
       setAsOf(j.as_of_trade_date ?? "");
       setQuoteDate(j.quote_date ?? "");
       setQuoteLag(j.quote_lag ?? null);
+      // 缓存口径 warning 存下来（角标用）；服务端文案是唯一出处，前端不再自己拼
+      const warns: string[] = Array.isArray(j.warnings) ? j.warnings : [];
+      setCacheNote(warns.find((w) => w.startsWith("全市场因子值来自预计算缓存")) ?? "");
     } catch (e) {
       setError(String((e as Error).message || e));
       setRows(null);
@@ -234,6 +240,50 @@ export default function ScreenerWorkbench() {
       setBusy(false);
     }
   }, [buildBody]);
+
+  /**
+   * 每天第一次进页面：确保当日因子缓存存在；若手上那份是**盘中口径**而现在已经收盘，
+   * 服务端会按收盘口径重算一遍（用户 2026-09-29：「收盘后需要再刷新一下，防止定在盘中」），
+   * 算完这里自动重筛一次，用户不用管。
+   * 只跑一次（ensureRan 闸）——预热是加速手段，失败或重复调用都不影响筛选本身。
+   */
+  const ensureRan = useRef(false);
+  useEffect(() => {
+    if (ensureRan.current) return;
+    ensureRan.current = true;
+    let stopped = false;
+    void (async () => {
+      try {
+        const j = await (await fetch("/api/quant/factor-warm?ensure=1")).json();
+        if (stopped || !j?.kicked) return;
+        const closeRefresh = j.kickedBy === "ensure_close_refresh";
+        setWarmNotice(closeRefresh
+          ? "手上的因子缓存是盘中口径，正在按收盘口径重算（完成后本页自动重筛一次）…"
+          : "当日因子缓存尚未生成，正在后台预热（这一轮可能慢些，之后秒开）…");
+        // 最多等 15 分钟（整轮预热实测约 5 分钟）
+        for (let i = 0; i < 60 && !stopped; i++) {
+          await new Promise((r) => setTimeout(r, 15000));
+          const s = await (await fetch("/api/quant/factor-warm")).json().catch(() => null);
+          if (!s || s.warming) continue;
+          if (closeRefresh) {
+            setWarmNotice(`已按${s.phase === "closed" ? "收盘" : "最新"}口径重算因子缓存，正在重筛…`);
+            void runScreener(1);
+          } else {
+            setWarmNotice("因子缓存已生成，下次筛选秒开");
+          }
+          setTimeout(() => setWarmNotice(""), 8000);
+          return;
+        }
+      } catch { /* 预热失败不影响筛选 */ }
+    })();
+    return () => { stopped = true; };
+  }, [runScreener]);
+
+  /** 从服务端 warning 里抽出「盘中口径 10:32 / 收盘口径 15:05」，做成角标 */
+  const cachePhaseShort = useMemo(() => {
+    const m = /（(盘中口径[^）]*|收盘口径[^）]*)）/.exec(cacheNote);
+    return m?.[1] ?? "";
+  }, [cacheNote]);
 
   /** 保证手上有候选：没筛过就先筛一轮（稳智同款：不要求先手点筛选——AI优选自带一次全量筛选）。
    *  · limit：页面列表 20/页；建池按稳智口径要「页面排序前 300」。
@@ -602,6 +652,16 @@ export default function ScreenerWorkbench() {
               <Sparkles size={13} /> AI 优选
             </button>
             {total != null && <span className="text-[13px] text-muted-foreground" title="K线类因子列按流动性Top600现场计算；稳智的5152全量靠盘后预计算——S2接入后放开上限">共 {total} 条{asOf ? ` · ${asOf}` : ""}</span>}
+            {/* 因子缓存口径角标：让用户一眼知道这批因子值是「盘中取的」还是「收盘后算的」
+                （用户实测过「定在盘中」——不标口径就无从判断手上的价是几点钟的） */}
+            {cachePhaseShort && (
+              <span className={`rounded border px-1.5 py-0.5 text-[11.5px] ${cachePhaseShort.startsWith("盘中")
+                ? "border-amber-400/30 bg-amber-400/10 text-amber-300/90"
+                : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300/90"}`}
+                title={cacheNote}>
+                因子值：{cachePhaseShort}
+              </span>
+            )}
             {/* 数据日 ≠ 今天时的如实角标：文案由服务端按【交易日历 + 当前时段】判定后下发
                 （quote_lag），前端不再自己拼「X 休市」——2026-09-29 09:25 集合竞价中曾被错标成
                 「9/29 休市」，因为旧代码只要 quoteDate≠asOf 就写死「休市」。 */}
@@ -614,6 +674,12 @@ export default function ScreenerWorkbench() {
           </div>
         </div>
         {error && <div className="mt-2 rounded-lg border border-red-400/25 bg-red-400/10 px-3 py-2 text-[13.5px] text-red-300">{error}</div>}
+        {/* 因子缓存预热/收盘重算进度：页面全自动，用户只需知道「在算」。 */}
+        {warmNotice && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12.5px] text-amber-200/90">
+            <Loader2 size={12} className="animate-spin" /> {warmNotice}
+          </div>
+        )}
         {rows?.length ? (
           <div className="mt-3 max-h-[620px] overflow-y-auto overflow-x-hidden rounded-lg border border-border/50 bg-background">
             <table className="w-full table-fixed text-[12.5px]">

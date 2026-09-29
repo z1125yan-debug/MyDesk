@@ -18,7 +18,8 @@ import { quoteLagOf, type QuoteLag } from "./quote-lag-core.ts";
 import { buildFieldPanel, lastValues, factorCatalog, FACTOR_FIELD_MAP, limitRatio, type BarsLike } from "../factors/fields.ts";
 import { cmpWithOp, historicalWinProbability, type ScreenerCond, type WinProbStats } from "../factors/probability.ts";
 import { partitionUnavailableSnapConds } from "./snapshot-avail-core.ts";
-import { loadFactorCache, type CachedFactorRow } from "./factor-cache.ts";
+import { loadFactorCache, factorCacheMeta, type CachedFactorRow } from "./factor-cache.ts";
+import { warmPhaseLabel } from "./warm-phase-core.ts";
 import { detectKlinePatterns, formatKlinePatterns, trendPressure, type KlineBar } from "./kline-pattern-core.ts";
 import { industryOf } from "../data/industry-map.ts";
 import { rpsSeedOf, rpsSeedMeta, sectorConceptMatches } from "../data/rps-seed.ts";
@@ -342,6 +343,8 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
   const klineCacheUsable = !body.bypass_cache
     && klineConds.every((c) => (c.type ?? "single") === "single") && !hasRolling && !isHistorical;
   let cacheRows: Map<string, CachedFactorRow> | null = null;
+  /** 命中的缓存属于哪个交易日 + 什么口径（盘中/收盘）：页面要如实标出，用户才不会被「昨天的价」骗 */
+  let cacheDateUsed = "";
   if (needKline && klineCacheUsable) {
     // 缓存按「行情源实际日期」优先查：休市日 quoteDate 才是数据真正所属的交易日，
     // 按 asOf（系统日期）查会命中一份可能是旧的/不完整的缓存（实测：北交所形态在
@@ -351,10 +354,11 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
       const hit = await loadFactorCache(d);
       if (hit && hit.size >= 4000) {
         cacheRows = hit;
+        cacheDateUsed = d;
         if (d !== asOf) warnings.push(`因子缓存按行情源日期 ${d} 命中（当日 ${asOf} 无新数据）`);
         break;
       }
-      if (!cacheRows || (hit && hit.size > cacheRows.size)) cacheRows = hit ?? cacheRows;
+      if (!cacheRows || (hit && hit.size > cacheRows.size)) { cacheRows = hit ?? cacheRows; if (hit) cacheDateUsed = d; }
     }
   }
   const cacheWarm = !!cacheRows && cacheRows.size >= 4000;
@@ -406,7 +410,13 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
       })
       .filter((r) => r !== null) as ScreenerRow[];
     klinePass = rows.length;
-    warnings.push("全市场因子值来自当日预计算缓存（" + cacheRows.size + " 只，trade_date " + asOf + "）");
+    // 如实标出这份缓存的口径：哪天的、什么时候生成的、盘中还是收盘。
+    // 用户实测过「页面定在盘中」——不标口径，读者无从判断手上的价是 10 点的还是收盘的。
+    const cacheMeta = cacheDateUsed ? await factorCacheMeta(cacheDateUsed) : null;
+    warnings.push(
+      `全市场因子值来自预计算缓存（${cacheRows.size} 只，trade_date ${cacheDateUsed || asOf}，` +
+      `${cacheMeta ? warmPhaseLabel(cacheMeta.phase, cacheMeta.generated_at) : "口径未知（旧缓存，无元数据）"}）`,
+    );
   } else if (needKline && subset.length) {
     // 4) 拉K线 + 建面板 + 逐日条件
     const lookback = Math.max(
