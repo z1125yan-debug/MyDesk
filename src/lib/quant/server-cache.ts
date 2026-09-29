@@ -15,8 +15,14 @@ interface Entry { at: number; status: number; body: string; ct: string }
 const store = new Map<string, Entry>();
 const inflight = new Map<string, Promise<Response>>();
 
-/** 只读市场数据的默认 TTL：30 秒（盘中数据 30 秒内视为同一份；页面另有手动刷新） */
-export const DEFAULT_TTL_MS = 30_000;
+/**
+ * 只读市场数据的默认 TTL：60 秒。
+ * 2026-09-29 从 30s 提到 60s——页面轮询/操作节奏是 60s，TTL 比它短等于**每次打开都必然过期重算**
+ * （实测菜单页首屏接口冷启动 1.3~9 秒，用户感受就是「点菜单要等」）。
+ * 60s 与轮询同档后：盘子上的读数最多滞后 60 秒，而点开菜单基本都命中热缓存（几十毫秒）。
+ * 需要更鲜的实时页面（盘口/逐笔/搜索）不走这层，各自直连。
+ */
+export const DEFAULT_TTL_MS = 60_000;
 
 function rebuild(e: Entry): Response {
   return new Response(e.body, { status: e.status, headers: { "content-type": e.ct } });

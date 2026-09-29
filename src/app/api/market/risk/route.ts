@@ -9,6 +9,7 @@ import { shanghaiDate } from "@/lib/desk/session";
 import { marketMainNetTdx } from "@/lib/desk/fund-flow";
 // R20：接力（晋级率）/ 梯队断层 / 昨日涨停股今日表现 —— 读本地涨停名单表，判定口径在纯核里
 import { readPromotionBlock, type PromotionRead } from "@/lib/quant/screener/limit-up-roster";
+import { ttlCache, DEFAULT_TTL_MS } from "@/lib/quant/server-cache";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -21,7 +22,14 @@ const SUGGEST: Record<string, string[]> = {
   事件风险: ["临近或正在发生映射后的宏观/产业事件", "等待资金验证，避免把新闻当涨跌成因"],
 };
 
+/**
+ * 2026-09-29 菜单打开提速：冷启动实测 13 秒（= 一次全 A 情绪快照 + 相似环境检索），
+ * 而「风险监控」是菜单页、会反复打开。包一层进程内 TTL 缓存（60s，与轮询同档）。
+ */
 export async function GET() {
+  return ttlCache("market/risk", DEFAULT_TTL_MS, () => getHandler());
+}
+async function getHandler() {
   quantBootstrap();
   try {
     const sent = await computeSentiment();

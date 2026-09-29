@@ -17,22 +17,44 @@ export async function register(): Promise<void> {
   warmApiCache();
 }
 
-/** 开机预热的目标：主菜单页首屏会用到的、算得慢的只读接口（与各 route 的缓存 key 一致）。 */
+/** 开机预热的目标：主菜单页首屏会用到的、算得慢的只读接口（与各 route 的缓存 key 一致）。
+ *  2026-09-29 用户：「优化一下所有菜单打开的缓存」——名单扩到**每个主菜单页的首屏接口**，
+ *  并与客户端声明表（src/lib/desk/prefetch-map.ts）保持一致：服务端先热，客户端再按同表预取。
+ *  口径：只列「可安全重复拉」的只读 GET；参数必须与页面真实默认值一致（缓存键含 query）。 */
 const WARM_TARGETS = [
-  "/api/market/themes",
-  "/api/market/review-stats",
-  "/api/market/sectors?kind=industry&size=200",
-  "/api/market/limitup",
-  "/api/quant/factor-matrix",
-  "/api/events",
-  "/api/radar",
-  "/api/market/breadth",
+  // 大盘情绪
   "/api/market/sentiment",
+  "/api/market/limitup",
   "/api/market/trend",
+  "/api/market/review-stats",
+  "/api/market/breadth?days=30&scope=all_markets",
+  // 风险监控（冷启动实测 13s：情绪快照 + 相似环境检索）
+  "/api/market/risk",
+  // 设置页模型通道状态（读取本身很轻，但首次命中要等路由编译）
+  "/api/llm/config",
+  // 量化因子选股
+  "/api/quant/factors?catalog=1",
+  "/api/quant/strategy-library?limit=2000",
+  "/api/quant/screener/trade-dates",
+  "/api/quant/factor-matrix",
+  // 行业（榜 + 跨市场/见顶风险）
+  "/api/market/sectors?kind=industry",
+  "/api/market/sectors/cross-market",
+  "/api/market/sectors/top-risk",
+  // 行情组：数据看板 / 全A列表
+  "/api/market/board?kind=industry&dir=in",
+  "/api/market/board?kind=industry&dir=out",
+  "/api/market/allstocks?page=1&page_size=50&order_by=amount_yi&dir=desc",
+  // 事件雷达 / LLM分析 / 主题热点 / 研究池
+  "/api/events",
+  "/api/events/history",
+  "/api/market/themes",
+  "/api/market/theme-heat",
+  "/api/radar",
+  "/api/pool/list",
   // 研报「受益标的」核对用的全 A 名册：单次要拉全量代码表（东财断源时走腾讯兜底更慢），
   // 不预热的话用户点完生成才第一次算，校验条会长时间停在"核对中"。
   "/api/market/stock-names",
-  "/api/pool/list",
 ];
 
 function warmApiCache(): void {

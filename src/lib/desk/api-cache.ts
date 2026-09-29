@@ -12,10 +12,13 @@
 //
 // 只缓存 **GET + 同源 + /api/**；POST/PUT/DELETE、SSE 流、外部域名一律原样透传，绝不缓存。
 // 变更类请求（POST 等）成功后，自动清掉同路径前缀的 GET 缓存，避免「扫完还显示旧的」。
+import { endpointsForPage, IDLE_PREFETCH_ORDER } from "./prefetch-map.ts";
+
 const TTL = 60_000;          // 超过这个时长的缓存仍先显示，但后台一定会重拉
 const MAX_ENTRIES = 240;     // 简单上限，防内存无限增长
 // 轮询类/实时状态接口：不缓存（缓存会让状态条显示旧值）。
 const NO_CACHE_PREFIXES = ["/api/tasks/"];
+
 
 interface Entry {
   at: number;
@@ -141,16 +144,45 @@ export function prefetchApi(url: string): void {
   void revalidate(key, window.fetch.bind(window));
 }
 
-/** 预取某个页面用过的所有接口（菜单 hover 时调用）；只补「缺失或过期」的，不重复拉。 */
+/** 预取某个页面用过的所有接口（菜单 hover 时调用）；只补「缺失或过期」的，不重复拉。
+ *  2026-09-29：**先吃声明表**（prefetch-map）——自学习表只在「访问过那一页」之后才有记录，
+ *  单靠它的话每个菜单项的第一次点击必然冷等；声明表让第一次悬停/空闲预热就命中。 */
 export function prefetchPage(page: string): void {
   if (typeof window === "undefined") return;
-  const set = pageEndpoints.get(page);
-  if (!set) return;
   const doFetch = window.fetch.bind(window);
-  for (const key of set) {
+  const keys = new Set<string>();
+  for (const url of endpointsForPage(page)) {
+    const k = sameOriginApiKey(url);
+    if (k) keys.add(k);
+  }
+  for (const k of pageEndpoints.get(page) ?? []) keys.add(k);
+  for (const key of keys) {
     const hit = cache.get(key);
     if (!hit || Date.now() - hit.at > TTL) void revalidate(key, doFetch);
   }
+}
+
+/**
+ * 进站空闲预热：按 IDLE_PREFETCH_ORDER 把主菜单各页的首屏接口依次拉进缓存。
+ * 串行 + 每页之间留间隔（默认 700ms）：预取是「让点开更快」，不能反过来跟当前页抢上游。
+ * 返回 stop 函数，组件卸载时调用。
+ */
+export function prefetchMenuPages(opts: { gapMs?: number; onPage?: (page: string) => void } = {}): () => void {
+  if (typeof window === "undefined") return () => {};
+  const gap = opts.gapMs ?? 700;
+  let stopped = false;
+  const run = async () => {
+    for (const page of IDLE_PREFETCH_ORDER) {
+      if (stopped) return;
+      // 当前正开着的页已经在取数了，跳过它
+      if (page === currentPage) continue;
+      prefetchPage(page);
+      opts.onPage?.(page);
+      await new Promise((r) => setTimeout(r, gap));
+    }
+  };
+  void run();
+  return () => { stopped = true; };
 }
 
 /** 测试/调试用：清空缓存。 */

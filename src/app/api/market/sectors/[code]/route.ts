@@ -5,10 +5,21 @@ import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { getProvider } from "@/lib/quant/data/index";
 import { shanghaiDate } from "@/lib/desk/session";
 import { latestTradeDate } from "@/lib/desk/trade-date";
+import { ttlCache, DEFAULT_TTL_MS } from "@/lib/quant/server-cache";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * 2026-09-29 菜单打开提速：板块成分股冷启动实测 11.6 秒（全 A 快照 + 成分过滤），
+ * 而行业页里点开板块会反复打它。包一层进程内 TTL 缓存（默认 60s）：
+ * 第二次起命中热缓存（百毫秒级），响应里的数据时间字段照旧如实标出。
+ */
 export async function GET(req: Request, { params }: { params: Promise<{ code: string }> }) {
+  const { code } = await params;
+  const kindQs = new URL(req.url).searchParams.get("kind") === "concept" ? "concept" : "industry";
+  return ttlCache(`market/sectors/${code.toUpperCase()}?kind=${kindQs}`, DEFAULT_TTL_MS, () => getHandler(req, { params }));
+}
+async function getHandler(req: Request, { params }: { params: Promise<{ code: string }> }) {
   quantBootstrap();
   const { code } = await params;
   if (!/^BK\d+$/i.test(code)) {

@@ -446,25 +446,42 @@ export default function SectorsPage() {
         const usable = (list ?? []).filter((r) => !r.fundsMissing && r.main !== 0);
         const byFlow = usable.slice().sort((a, b) => b.main - a.main);
         const rows = [...byFlow.slice(0, 10), ...byFlow.slice(-10).reverse()];
-        // 图内按从小到大排（横条从上到下递增，视觉更像稳智的排序条）
-        const asc = rows.slice().reverse();
+        /**
+         * 2026-09-29 用户改版：「改成竖着的」——横条图看着别扭。
+         * 竖柱口径：**左→右按资金流向从大到小**（红的流入在左、绿的流出在右），
+         * 正数向上（零线之上）、负数向下（零线之下），板块名沿 x 轴斜排。
+         */
+        const desc = rows.slice().sort((a, b) => b.main - a.main);
         const barOption = {
-          grid: { left: 96, right: 28, top: 10, bottom: 18 },
+          grid: { left: 52, right: 18, top: 26, bottom: 74 },
           tooltip: {
             trigger: "axis", axisPointer: { type: "shadow" },
             formatter: (ps: { name: string; value: number }[]) =>
               `${ps[0]?.name ?? ""}<br/>资金流向：<b>${Number(ps[0]?.value ?? 0).toFixed(2)}</b> 亿`,
           },
           xAxis: {
+            type: "category", data: desc.map((r) => r.name),
+            // 20 个板块名必须全显（interval:0），斜排 45° 免得挤成一团
+            axisLabel: { color: "#8b949e", fontSize: 10, rotate: 45, interval: 0, hideOverlap: false },
+            axisLine: { lineStyle: { color: "#30363d" } },
+            axisTick: { alignWithLabel: true },
+          },
+          yAxis: {
             type: "value", name: "亿",
             axisLabel: { color: "#8b949e", fontSize: 10 },
             splitLine: { lineStyle: { type: "dashed", color: "#30363d" } },
           },
-          yAxis: { type: "category", data: asc.map((r) => r.name), axisLabel: { color: "#8b949e", fontSize: 10 } },
           series: [{
-            type: "bar", barMaxWidth: 14,
-            // A股习惯：流入红、流出绿
-            data: asc.map((r) => ({ value: r.main, itemStyle: { color: r.main >= 0 ? "#f85149" : "#3fb950" } })),
+            type: "bar", barMaxWidth: 26,
+            // A股习惯：流入红、流出绿（红柱在零线之上、绿柱在零线之下）
+            data: desc.map((r) => ({ value: r.main, itemStyle: { color: r.main >= 0 ? "#f85149" : "#3fb950" } })),
+            // 零线画出来，读者一眼分得清「净流入/净流出」的分界
+            markLine: {
+              silent: true, symbol: "none", animation: false,
+              lineStyle: { color: "#6e7681", width: 1 },
+              label: { show: false },
+              data: [{ yAxis: 0 }],
+            },
           }],
         };
         const pieOption = {
@@ -479,7 +496,7 @@ export default function SectorsPage() {
         return (
           <LineageSection
             title="资金流向分布"
-            hint="前10流入 + 后10流出（稳智同款合并图）· 柱图 ⇄ 饼图（资金为占位 0 的板块不进图，不画假柱）"
+            hint="前10流入 + 后10流出（稳智同款合并图）· 竖柱：左→右由流入到流出，红柱向上（净流入）/绿柱向下（净流出）· 资金为占位 0 的板块不进图"
             divided={alerted}
             actions={
               <div className="flex gap-1.5">
