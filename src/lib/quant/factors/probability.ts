@@ -107,7 +107,8 @@ export function cmpWithOp(
 }
 
 // 条件在「t 日」是否成立（基于逐日序列）
-function condMetAt(
+// 导出供策略池化回测复用（P33）：判定语义只有这一份，回测不许手搓第二套
+export function condMetAt(
   cond: ScreenerCond,
   seriesOf: (key: string) => (number | null)[] | undefined,
   t: number,
