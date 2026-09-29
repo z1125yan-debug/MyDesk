@@ -18,6 +18,20 @@ type LibStrategy = {
   n_total: number; n_mapped: number; conds: LibCond[];
   unmapped: { raw: Record<string, unknown>; reason: string }[]; approx: string[];
 };
+// 「预测」按钮（P33）：/api/quant/strategy-forecast 的返回形状（服务端 packForecast 纯核打包）
+type ForecastItem = {
+  kind: "combo" | "single"; key: string; name: string; memberIds: number[];
+  source: string; reason: string; record: null;
+};
+type ForecastData = {
+  ok: boolean; as_of: string;
+  tier: { score: number | null; tier: string; line: string; error: string; components: { name: string; score: number | null; available: boolean; reading: string }[] };
+  counts: { total: number; gated: number; pass: number; blocked: number; unknown: number };
+  gates: Record<string, { pass: boolean; unknown: boolean; threshold: number }>;
+  items: ForecastItem[];
+  marketProb: { state: "accumulating"; n: number; target: number; note: string };
+  tierOk: boolean;
+};
 
 const OPS = [">=", "<=", ">", "<", "=", "!="];
 
@@ -141,6 +155,18 @@ export default function ScreenerWorkbench() {
   const [libQuery, setLibQuery] = useState("");
   const [libLoading, setLibLoading] = useState(false);
   const [libErr, setLibErr] = useState("");
+  // 「预测」按钮（P33）：弹卡 + 推荐列表 + 组合名单状态
+  const [fcOpen, setFcOpen] = useState(false);
+  const [fcData, setFcData] = useState<ForecastData | null>(null);
+  const [fcLoading, setFcLoading] = useState(false);
+  const [fcErr, setFcErr] = useState("");
+  /** 正在「选它」的推荐项 key（防连点） */
+  const [fcPicking, setFcPicking] = useState("");
+  /** 组合名单（并集）：点了推荐里的「组合」后，rows 被合并名单顶掉，「来自」列标注来源。
+   *  任何一次普通筛选（runScreener）都会退出组合名单——它是展示层状态，不是筛选条件。 */
+  const [comboRes, setComboRes] = useState<{ rows: Record<string, unknown>[]; names: string[]; note: string } | null>(null);
+  /** 社区策略列表：被挡的默认收起（搜索时全量查） */
+  const [showBlocked, setShowBlocked] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -195,9 +221,11 @@ export default function ScreenerWorkbench() {
   };
 
   const [page, setPage] = useState(1);
-  const buildBody = useCallback((pg: number, limit = 20) => JSON.stringify({
+  // 请求体抽成 bodyFrom(condsArg)：「预测·选它」要用**刚选的策略条件**直接跑筛选，
+  // 不能等 setConds 异步落地后再跑（那会拿到旧条件）——runScreener 也从这里出请求体。
+  const bodyFrom = useCallback((cs: Cond[], pg: number, limit = 20) => JSON.stringify({
     universe: "all_a",
-    conditions: conds.map((c) => ({
+    conditions: cs.map((c) => ({
       type: c.type ?? "single", field: c.field, op: c.op,
       // in/not in：值是逗号分隔的多值串 → 拆回数组（稳智多值口径）；其余按数值/字符串原样
       value: (c.op === "in" || c.op === "not in")
@@ -212,15 +240,18 @@ export default function ScreenerWorkbench() {
     // 列表页按 20/页翻页；建池时按稳智口径一次拿「页面排序前 300」再冻结
     pagination: { limit, offset: (pg - 1) * limit },
     maxKlineSymbols: 6000, // K线类因子列按流动性 Top-600 现场计算；全量 5152 家待 S2 盘后预计算
-  }), [conds, orderBy, dir, selCols, tradeDate]);
+  }), [orderBy, dir, selCols, tradeDate]);
+  const buildBody = useCallback((pg: number, limit = 20) => bodyFrom(conds, pg, limit), [bodyFrom, conds]);
 
-  const runScreener = useCallback(async (gotoPage = 1) => {
+  // condsOverride：「预测·选它（单条）」用刚选的策略条件立即筛选（不走异步的 conds state）。
+  // 任何一次普通筛选都会退出组合名单（comboRes 只是展示层状态）。
+  const runScreener = useCallback(async (gotoPage = 1, condsOverride?: Cond[]) => {
     setPage(gotoPage);
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setComboRes(null);
     try {
       const r = await fetch("/api/quant/screener", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: buildBody(gotoPage),
+        body: bodyFrom(condsOverride ?? conds, gotoPage),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "筛选失败");
@@ -239,7 +270,7 @@ export default function ScreenerWorkbench() {
     } finally {
       setBusy(false);
     }
-  }, [buildBody]);
+  }, [bodyFrom, conds]);
 
   /**
    * 每天第一次进页面：确保当日因子缓存存在；若手上那份是**盘中口径**而现在已经收盘，
@@ -290,13 +321,15 @@ export default function ScreenerWorkbench() {
    *  · commit：建池用的那批（300 条）不写回页面 state，否则列表页会被撑成 300 行。
    *  返回 asOf/total 的**本次**读数，避免 setState 异步导致 createPoolAndGo 拿到旧值。 */
   const ensureRows = useCallback(async (limit = 20, commit = true): Promise<{ list: Record<string, unknown>[]; asOfDate: string; totalCount: number }> => {
+    // 组合名单是并集语义，不能拿已选条件重跑覆盖它——AI优选建池直接冻结这份合并名单
+    if (comboRes) return { list: comboRes.rows, asOfDate: asOf || quoteDate, totalCount: comboRes.rows.length };
     if (rows?.length && rows.length >= limit) return { list: rows, asOfDate: asOf || quoteDate, totalCount: total ?? rows.length };
     const sr = await fetch("/api/quant/screener", { method: "POST", headers: { "Content-Type": "application/json" }, body: buildBody(1, limit) });
     const sj = await sr.json();
     const list: Record<string, unknown>[] = sj.rows ?? sj.list ?? [];
     if (commit) { setRows(list); setTotal(sj.total ?? list.length); setAsOf(sj.as_of_trade_date ?? ""); setQuoteDate(sj.quote_date ?? ""); setQuoteLag(sj.quote_lag ?? null); }
     return { list, asOfDate: String(sj.as_of_trade_date ?? ""), totalCount: Number(sj.total ?? list.length) };
-  }, [rows, asOf, quoteDate, total, buildBody]);
+  }, [comboRes, rows, asOf, quoteDate, total, buildBody]);
 
   /**
    * 2026-09-26 稳智「交给稳智AI优选」对齐（源码实证 StockScreener-*.js 的 at()）：
@@ -337,7 +370,11 @@ export default function ScreenerWorkbench() {
         createdAt: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
         asOf: asOfDate,
         universe: "all_a",
-        conditions: conds.map((c) => ({ field: c.field, op: c.op, value: isNaN(Number(c.value)) ? c.value : Number(c.value) })),
+        // 组合名单：组合是「满足任一」的并集语义，不是 AND 条件——这里只写一条**记录用**伪条件，
+        // 候选池的真实名单在 rows 里（createPoolAndGo 冻结的就是 ensureRows 返回的组合名单）。
+        conditions: comboRes
+          ? [{ field: "__combo", op: "=", value: `组合（满足任一）：${comboRes.names.join(" + ")}` }]
+          : conds.map((c) => ({ field: c.field, op: c.op, value: isNaN(Number(c.value)) ? c.value : Number(c.value) })),
         source: "AI优选",
         rows: stored.map((r) => ({
           symbol: String(r.symbol ?? r.code ?? ""),
@@ -358,7 +395,7 @@ export default function ScreenerWorkbench() {
     } finally {
       setPoolBusy(false);
     }
-  }, [ensureRows, strategyName, conds, poolCount, poolRisk, poolNote, poolHorizon, addFrozenPool, askAiWithPool]);
+  }, [ensureRows, strategyName, conds, comboRes, poolCount, poolRisk, poolNote, poolHorizon, addFrozenPool, askAiWithPool]);
 
   const saveStrategy = () => {
     const name = strategyName.trim() || `策略-${new Date().toLocaleDateString("zh-CN")}`;
@@ -385,26 +422,120 @@ export default function ScreenerWorkbench() {
     }
   }, [libAll, libLoading]);
 
-  // 把社区策略的条件映射为本站 Cond（补 zh 标签；缺 zh 的字段回退 key）
-  const applyLib = (s: LibStrategy) => {
+  // 把社区策略的条件映射为本站 Cond（补 zh 标签；缺 zh 的字段回退 key）。
+  // 「预测·选它」也要用同一份映射——抽成 condsOfLib 供 applyLib / pickAndRun 共用。
+  const condsOfLib = useCallback((s: LibStrategy): Cond[] => {
     const zhOf = (k: string) => fields.find((f) => f.key === k)?.zh ?? k;
-    setConds(s.conds.map((c) => ({
+    return s.conds.map((c) => ({
       // in/not in 的多值用逗号拼成展示串，buildBody 再按 op 拆回数组（板块/概念名不含逗号）
       field: c.field, zh: zhOf(c.field), op: c.op,
       value: Array.isArray(c.value) ? c.value.join(",") : String(c.value),
       ...(c.type && c.type !== "single" ? { type: c.type } : {}),
       ...(c.window ? { window: c.window } : {}),
       ...(c.min_match_days ? { min_match_days: c.min_match_days } : {}),
-    })));
+    }));
+  }, [fields]);
+
+  const applyLib = (s: LibStrategy) => {
+    setComboRes(null);
+    setConds(condsOfLib(s));
     setShowStrategies(false);
   };
 
+  // 「预测」按钮（P33）：/api/quant/strategy-forecast（档位分 + 策略闸门 + 推荐打包 + 攒样本进度）。
+  // 服务端自带 5 分钟 TTL；开策略面板也预取——「默认收起被挡策略」要吃这里的 gates。
+  const loadForecast = useCallback(async () => {
+    if (fcLoading || fcData) return;
+    setFcLoading(true); setFcErr("");
+    try {
+      const r = await fetch("/api/quant/strategy-forecast");
+      const j = await r.json();
+      if (!j?.ok) throw new Error(j?.error || "预测数据读取失败");
+      setFcData(j as ForecastData);
+    } catch (e) {
+      setFcErr(String((e as Error).message || e));
+    } finally {
+      setFcLoading(false);
+    }
+  }, [fcLoading, fcData]);
+
+  // 「选它」：单条 = 装条件立即筛选；组合 = 成员分别跑、按代码合并（并集），每只标「来自」。
+  // 红线：选它只做筛选展示——不产出、不记录任何概率数字（使用台账是 P3 的事）。
+  const pickAndRun = useCallback(async (it: ForecastItem) => {
+    setFcPicking(it.key); setFcErr("");
+    try {
+      if (!libAll) await loadLibrary();
+      const members = (libAll ?? []).filter((s) => it.memberIds.includes(s.id) && s.n_mapped > 0);
+      if (!members.length) throw new Error("找不到这条策略的条件数据（或条件未映射到本站因子）");
+      if (members.length === 1) {
+        const c = condsOfLib(members[0]);
+        setShowStrategies(false);
+        await runScreener(1, c);
+        setConds(c); // 同步已选条件 chips：之后的「筛选」/「AI优选」与刚才看到的是同一份条件
+      } else {
+        setBusy(true);
+        let firstAsOf = ""; let firstQuote = "";
+        const lists: Record<string, unknown>[][] = [];
+        for (const m of members) {
+          const r = await fetch("/api/quant/screener", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: bodyFrom(condsOfLib(m), 1, 100),
+          });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || `组合成员「${m.name}」筛选失败`);
+          if (!firstAsOf) { firstAsOf = String(j.as_of_trade_date ?? ""); firstQuote = String(j.quote_date ?? ""); }
+          lists.push((j.rows ?? j.list ?? []) as Record<string, unknown>[]);
+        }
+        // 并集合并：同一只票两个策略都命中 → 「两条都命中」；其余标首次命中的策略名
+        const seen = new Map<string, Record<string, unknown>>();
+        for (let i = 0; i < members.length; i++) {
+          for (const r0 of lists[i]) {
+            const sym = String(r0.symbol ?? r0.code ?? "");
+            if (!sym) continue;
+            const prev = seen.get(sym);
+            if (prev) prev.__from = prev.__from === members[i].name ? prev.__from : "两条都命中";
+            else seen.set(sym, { ...r0, __from: members[i].name });
+          }
+        }
+        const merged = [...seen.values()];
+        setRows(merged);
+        setTotal(merged.length);
+        setPage(1);
+        setAsOf(firstAsOf); setQuoteDate(firstQuote); setQuoteLag(null); setCacheNote("");
+        setComboRes({
+          rows: merged, names: members.map((m) => m.name),
+          note: `名单来自组合「${members.map((m) => m.name).join(" + ")}」：满足任一策略即入选（每条成员取排序前 100 只合并），「来自」列标了命中的策略；已选条件未改动，点「筛选」即退出组合名单。`,
+        });
+        setFcOpen(false);
+      }
+    } catch (e) {
+      setFcErr(String((e as Error).message || e));
+    } finally {
+      setFcPicking(""); setBusy(false);
+    }
+  }, [libAll, condsOfLib, runScreener, bodyFrom]);
+
+  // 社区列表展示集：无搜索时默认收起「带前提且今天被挡」的策略（搜索时全量查，方便找特定策略）。
+  // 档位分没算出来（unknown）的不收——「没判」和「被挡」是两回事，页面如实分开显示。
   const libList = useMemo(() => {
     if (!libAll) return [];
     const q = libQuery.trim().toLowerCase();
-    if (!q) return libAll;
-    return libAll.filter((s) => String(s.name ?? "").toLowerCase().includes(q) || String(s.owner ?? "").toLowerCase().includes(q));
-  }, [libAll, libQuery]);
+    const matches = (s: LibStrategy) =>
+      !q || String(s.name ?? "").toLowerCase().includes(q) || String(s.owner ?? "").toLowerCase().includes(q);
+    if (q || showBlocked || !fcData) return libAll.filter(matches);
+    return libAll.filter((s) => {
+      const g = fcData.gates[String(s.id)];
+      return matches(s) && (!g || g.pass || g.unknown);
+    });
+  }, [libAll, libQuery, showBlocked, fcData]);
+  /** 被挡条数（unknown 不算被挡） */
+  const libBlockedCount = useMemo(() => {
+    if (!libAll || !fcData) return 0;
+    return libAll.filter((s) => {
+      const g = fcData.gates[String(s.id)];
+      return g && !g.pass && !g.unknown;
+    }).length;
+  }, [libAll, fcData]);
 
   const cols = useMemo(() => {
     if (!rows?.length) return [];
@@ -413,16 +544,18 @@ export default function ScreenerWorkbench() {
     const base = ["symbol", "code", "name", "close", "price", "change_pct"].filter((k) => k in first);
     // 引擎把 industry / kline_pattern / trend_pressure_60 放在**行顶层**（不在 values 里），
     // 只有因子目录类数值字段才在 values —— 取错层级会让这三列全显示「—」。
-    const TOP_LEVEL = new Set(["industry", "kline_pattern", "trend_pressure_60"]);
+    const TOP_LEVEL = new Set(["industry", "kline_pattern", "trend_pressure_60", "__from"]);
     const valCols = selCols.map((f) => ({ key: f.key, zh: f.zh, fromValues: !TOP_LEVEL.has(f.key) }));
-    const skip = new Set(["values", "fields", "industry", "kline_pattern", "trend_pressure_60", ...base, ...selCols.map((f) => f.key)]);
+    const skip = new Set(["values", "fields", "industry", "kline_pattern", "trend_pressure_60", "__from", ...base, ...selCols.map((f) => f.key)]);
     const rawKeys = Object.keys(first).filter((k) => !skip.has(k));
     return [
       ...base.map((k) => ({ key: k, zh: zhOf[k] ?? k, fromValues: false })),
+      // 组合名单：紧跟基础列插「来自」（标每只命中哪条策略），普通筛选下没有这一列
+      ...(comboRes ? [{ key: "__from", zh: "来自", fromValues: false }] : []),
       ...valCols,
       ...rawKeys.slice(0, 3).map((k) => ({ key: k, zh: k, fromValues: false })),
     ];
-  }, [rows, selCols]);
+  }, [rows, selCols, comboRes]);
 
   /**
    * 列宽（百分比，合计 100）。2026-09-29 用户：表格太宽「还得拉一下才能看完，参考稳智」。
@@ -433,7 +566,7 @@ export default function ScreenerWorkbench() {
     const out: Record<string, string> = {};
     if (!cols.length) return out;
     const FIXED: Record<string, number> = {
-      symbol: 6.5, code: 6.5, name: 8.5, close: 5.5, price: 5.5, change_pct: 6.5,
+      symbol: 6.5, code: 6.5, name: 8.5, close: 5.5, price: 5.5, change_pct: 6.5, __from: 8,
     };
     const fixedSum = cols.reduce((s, c) => s + (FIXED[c.key] ?? 0), 0);
     const rest = cols.filter((c) => !(c.key in FIXED));
@@ -519,7 +652,7 @@ export default function ScreenerWorkbench() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input value={strategyName} onChange={(e) => setStrategyName(e.target.value)} placeholder="策略名称" className="w-40 rounded-md border border-border/70 bg-card px-2 py-1.5 text-[13px] text-foreground [color-scheme:dark]" />
           <button onClick={saveStrategy} disabled={!conds.length} className="rounded-md bg-sky-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-sky-500 disabled:opacity-50">保存策略</button>
-          <button onClick={() => setShowStrategies((v) => !v)} className="rounded-md border border-border/70 bg-card px-3 py-1.5 text-[13px] text-muted-foreground hover:text-foreground">我的策略（{strategies.length}）</button>
+          <button onClick={() => { setShowStrategies((v) => !v); void loadForecast(); }} className="rounded-md border border-border/70 bg-card px-3 py-1.5 text-[13px] text-muted-foreground hover:text-foreground">我的策略（{strategies.length}）</button>
           <button onClick={() => setShowAiRecords((v) => !v)} className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-[13px] text-amber-200 hover:bg-amber-400/20">AI优选记录（{aiPools.length}）</button>
         </div>
         {showAiRecords && (
@@ -581,12 +714,17 @@ export default function ScreenerWorkbench() {
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <input value={libQuery} onChange={(e) => setLibQuery(e.target.value)} placeholder="搜索策略名/创建者" className="w-56 rounded-md border border-border/70 bg-card px-2 py-1 text-[13px] text-foreground [color-scheme:dark]" />
-                  <span className="text-[12.5px] text-muted-foreground">共 {libAll ? libList.length : "—"} 条{libQuery ? `（匹配）` : ""}</span>
+                  <span className="text-[12.5px] text-muted-foreground">
+                    共 {libAll ? libList.length : "—"} 条{libQuery ? `（匹配）` : ""}
+                    {!libQuery && libBlockedCount > 0 && !showBlocked ? ` · 已收起 ${libBlockedCount} 条今天被挡的` : ""}
+                  </span>
                 </div>
                 {libErr && <div className="px-1 py-1 text-[12.5px] text-red-300">策略库读取失败：{libErr}</div>}
                 {libLoading && <div className="flex items-center gap-2 px-1 py-1 text-[12.5px] text-muted-foreground"><Loader2 size={12} className="animate-spin" />加载策略库…</div>}
                 <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
-                  {libList.slice(0, 200).map((s) => (
+                  {libList.slice(0, 200).map((s) => {
+                    const g = fcData?.gates[String(s.id)];
+                    return (
                     <div key={s.id} className="flex items-center justify-between rounded-md border border-border/40 px-2.5 py-1.5 text-[13px]">
                       <div className="min-w-0">
                         <div className="truncate text-foreground" title={s.name}>{s.name}</div>
@@ -596,11 +734,26 @@ export default function ScreenerWorkbench() {
                           {s.approx.length > 0 && <span className="text-amber-300/80"> · 含近似映射</span>}
                         </div>
                       </div>
+                      {/* 闸门小圆标（P33）：带前提的策略按今天档位分判定，来源=稳智口径的 backtest_params */}
+                      {g && (
+                        <span title={g.unknown ? "档位分没算出来，今天不判" : g.pass ? `前提门槛 ${g.threshold} 成立（稳智口径）` : `前提门槛 ${g.threshold}，今天档位分不够`}
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${g.pass ? "bg-emerald-500/15 text-emerald-400" : g.unknown ? "bg-muted text-muted-foreground" : "bg-red-500/10 text-red-300"}`}>
+                          {g.pass ? "✓ 能用" : g.unknown ? "待判" : "✗ 挡"}
+                        </span>
+                      )}
                       <button onClick={() => applyLib(s)} disabled={!s.n_mapped} className="ml-2 shrink-0 rounded-md bg-sky-600 px-2.5 py-1 text-[12.5px] font-medium text-white hover:bg-sky-500 disabled:opacity-40">应用</button>
                     </div>
-                  ))}
+                    );
+                  })}
                   {libAll && libList.length > 200 && <div className="px-1 py-1 text-[12px] text-muted-foreground">仅显示前 200 条，请用搜索缩小范围。</div>}
                 </div>
+                {/* 被挡的默认收起（P33）：折叠行可复核「挡下了谁」——挡下可查，不是黑箱 */}
+                {!libQuery && fcData && libBlockedCount > 0 && (
+                  <button onClick={() => setShowBlocked((v) => !v)}
+                    className="w-full rounded-md border border-dashed border-border/60 px-2 py-1.5 text-[12.5px] text-muted-foreground hover:text-foreground">
+                    {showBlocked ? "收起被挡的策略" : `另有 ${libBlockedCount} 条今天条件不够，已收起 —— 点开查看`}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -642,6 +795,12 @@ export default function ScreenerWorkbench() {
             </div>
           )}
           <div className="flex items-center justify-center gap-3">
+            {/* 「预测」按钮（P33）：弹卡推荐今天成立的策略/组合+来源，选它自动筛选。概率红线见弹卡底注。 */}
+            <button onClick={() => { setFcOpen(true); void loadForecast(); }} disabled={fcLoading && !fcData}
+              title="根据今天的市场环境，推荐今天前提成立的策略与组合（附来源）；选它自动筛选"
+              className="flex items-center gap-1.5 rounded-md bg-violet-600 px-4 py-1.5 text-[13.5px] font-medium text-white hover:bg-violet-500 disabled:opacity-50">
+              {fcLoading ? <Loader2 size={13} className="animate-spin" /> : <span aria-hidden>🔮</span>} 预测
+            </button>
             <button onClick={() => void runScreener(1)} disabled={busy} className="flex items-center gap-1.5 rounded-md bg-sky-600 px-5 py-1.5 text-[13.5px] font-medium text-white hover:bg-sky-500 disabled:opacity-50">
               {busy ? <Loader2 size={13} className="animate-spin" /> : null} 筛选
             </button>
@@ -678,6 +837,15 @@ export default function ScreenerWorkbench() {
         {warmNotice && (
           <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12.5px] text-amber-200/90">
             <Loader2 size={12} className="animate-spin" /> {warmNotice}
+          </div>
+        )}
+        {/* 组合名单提示条：rows 被并集合并名单顶掉时如实说明口径与退出方式 */}
+        {comboRes && (
+          <div className="mt-2 flex items-start gap-2 rounded-lg border border-purple-400/30 bg-purple-400/5 px-3 py-2 text-[12.5px] text-purple-200/90">
+            <span className="flex-1">{comboRes.note}</span>
+            <button onClick={() => void runScreener(1)} className="shrink-0 rounded border border-purple-400/40 px-2 py-0.5 text-[12px] hover:bg-purple-400/10">
+              退出组合，按已选条件重筛
+            </button>
           </div>
         )}
         {rows?.length ? (
@@ -737,7 +905,7 @@ export default function ScreenerWorkbench() {
                 ))}
               </tbody>
             </table>
-            {total != null && total > 20 && (
+            {total != null && total > 20 && !comboRes && (
               <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-border/40 bg-surface px-3 py-2 text-[13px] text-muted-foreground">
                 <button disabled={page <= 1} onClick={() => void runScreener(page - 1)} className="rounded-md border border-border/60 px-2.5 py-1 hover:text-foreground disabled:opacity-40">上一页</button>
                 <span>第 {page} / {Math.ceil(total / 20)} 页</span>
@@ -748,6 +916,80 @@ export default function ScreenerWorkbench() {
         ) : rows && !rows.length ? <div className="mt-3 py-8 text-center text-[13px] text-muted-foreground">没有命中条件的候选</div> : null}
 
       </div>
+
+      {/* 「预测」弹卡（P33）：今天档位+全市场概率（单独一行，全市场一个数）+ 推荐（组合/社区，带来源）
+          +「选它 → 自动筛选」。红线：每条推荐的 record 恒空（还没建台账）→ 显示「还没记过账」，
+          绝不把市场级概率复制到单条头上；AI 优选负责选股写理由，不产出概率。 */}
+      {fcOpen && (
+        <div className="fixed inset-0 z-[120] flex items-start justify-center bg-black/50 p-4 pt-[7vh]" role="dialog" aria-label="预测：今天选什么策略"
+          onClick={() => setFcOpen(false)}>
+          <div className="w-full max-w-[600px] rounded-2xl border border-border bg-popover p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center gap-2">
+              <span aria-hidden>🔮</span>
+              <span className="flex-1 text-[16px] font-semibold">预测 · 今天选什么</span>
+              <button onClick={() => setFcOpen(false)} aria-label="关闭" className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
+            </div>
+            {fcErr && <div className="mb-2 rounded-lg border border-red-400/25 bg-red-400/10 px-3 py-2 text-[13px] text-red-300">{fcErr}</div>}
+            {fcLoading && !fcData && (
+              <div className="flex items-center gap-2 py-6 text-[13px] text-muted-foreground">
+                <Loader2 size={14} className="animate-spin" /> 正在读今天的市场环境与策略闸门（冷启动要算十几秒，之后 5 分钟内秒开）…
+              </div>
+            )}
+            {fcData && (
+              <div className="space-y-3">
+                {/* 今天档位 + 攒样本进度 */}
+                <div className="rounded-xl border border-violet-400/25 bg-violet-400/5 p-3">
+                  {fcData.tier.error ? (
+                    <div className="text-[13px] text-amber-300">{fcData.tier.error}——今天不判门槛，策略列表照常。</div>
+                  ) : (
+                    <>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-[24px] font-bold leading-none">{Math.round(fcData.tier.score ?? 0)}<span className="text-[12px] font-normal text-muted-foreground">/100</span></span>
+                        {fcData.tier.tier && <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[12px] text-amber-200">{fcData.tier.tier}</span>}
+                        <span className="text-[12.5px] text-muted-foreground">今天的市场环境</span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground">
+                        {fcData.tier.components.filter((c) => c.available).map((c) => (
+                          <span key={c.name} title={c.reading}>{c.name.split("（")[0]} <b className="font-semibold text-foreground">{c.score == null ? "—" : Math.round(c.score)}分</b></span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  <div className="mt-2 border-t border-dashed border-border/50 pt-2 text-[12.5px] text-muted-foreground">{fcData.marketProb.note}</div>
+                </div>
+                {/* 推荐列表：组合在前、单条在后；每条带来源与真实理由 */}
+                {fcData.tierOk && (
+                  <div className="space-y-2">
+                    {fcData.items.length ? fcData.items.map((it, idx) => (
+                      <div key={it.key} className="rounded-lg border border-border/60 bg-card/60 p-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="w-4 shrink-0 text-center text-[12px] font-bold text-muted-foreground">{idx + 1}</span>
+                          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${it.kind === "combo" ? "border-purple-400/40 text-purple-300" : "border-sky-400/40 text-sky-300"}`}>
+                            {it.kind === "combo" ? "组合" : "社区"}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[13px] text-foreground" title={it.name}>{it.name}</span>
+                          <span className="shrink-0 text-[12px] text-muted-foreground">还没记过账</span>
+                          <button onClick={() => void pickAndRun(it)} disabled={!!fcPicking}
+                            className="shrink-0 rounded-md bg-sky-600 px-2.5 py-1 text-[12.5px] font-medium text-white hover:bg-sky-500 disabled:opacity-50">
+                            {fcPicking === it.key ? <Loader2 size={11} className="animate-spin" /> : "选它 → 自动筛选"}
+                          </button>
+                        </div>
+                        <div className="mt-0.5 pl-6 text-[11.5px] leading-relaxed text-muted-foreground">{it.source} · {it.reason}</div>
+                      </div>
+                    )) : (
+                      <div className="text-[13px] text-muted-foreground">今天没有过闸的推荐（带前提的策略里没有成立的）——策略列表里的「✓ 能用」圆标同口径。</div>
+                    )}
+                  </div>
+                )}
+                <div className="border-t border-dashed border-border/50 pt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                  排名现在按「今天档位匹配 + 稳智赞/踩」；台账攒厚后按真实准头排。「还没记过账」= 这条策略/组合还没有可复核的使用记录——绝不拿市场级概率冒充单条的上涨概率。
+                  AI 优选负责选股写理由，不产出概率。本卡只回答「今天哪些策略的前提成立」，不构成投资建议，不给仓位指令。
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 「交给稳智AI优选」弹窗：4 参 + 底部说明 + 「创建候选池并前往稳智AI」（稳智 StockScreener-*.js 逐字对齐） */}
       {poolDlg && (

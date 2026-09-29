@@ -40,7 +40,9 @@ test("Sidebar 一级菜单：侧栏加宽到 w-64，菜单字号 15.5px、图标
 test("Sidebar 次级菜单与「最近」区字号同步放大（14px）", () => {
   const src = read("src/components/desk/Sidebar.tsx");
   assert.match(src, /rounded-lg px-3\.5 py-2 text-left text-\[14px\]/, "次级页 12.5→14px");
-  assert.match(src, /rounded-lg px-3 py-2 text-left text-\[14px\]/, "「最近」会话 12.5→14px");
+  // 2026-09-30 同步判据：「最近」会话行改 pl-3 pr-8（右侧留悬停 ❌ 删除键的位），14px 未变——
+  // 旧钉测写死 px-3 与现状失配（master 上即红，先于 P33 改动），按「同步判据不回滚写法」惯例修正
+  assert.match(src, /rounded-lg py-2 pl-3 pr-8 text-left text-\[14px\]/, "「最近」会话 12.5→14px");
   assert.match(src, /text-\[17px\] font-semibold tracking-tight">Kairo/, "品牌名 15→17px");
 });
 

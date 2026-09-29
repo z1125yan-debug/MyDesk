@@ -23,10 +23,11 @@ test("Sidebar：从 store 订阅 sessions / activeSessionId / switchSession（�
   assert.match(src, /useDesk\(\(s\) => s\.switchSession\)/, "必须订阅 switchSession（点击要真正切会话）");
 });
 
-test("Sidebar：最多 5 条 + 只保留有消息的会话（骨架'新会话'不占位）", () => {
+test("Sidebar：最多 3 条 + 只保留有消息的会话（骨架'新会话'不占位）", () => {
   const src = readSrc(SIDEBAR);
-  assert.match(src, /messages\.length\s*>\s*0/, "必须过滤空消息会话，否则一打开就是 5 条'新会话'占位");
-  assert.match(src, /\.slice\(0,\s*5\)/, "必须限到 5 条，稳智就是最近 5 条");
+  assert.match(src, /messages\.length\s*>\s*0/, "必须过滤空消息会话，否则一打开就是一堆'新会话'占位");
+  // 2026-09-30 同步判据：用户 9-29 拍板「只留最新 3 条」（store MAX_SESSIONS=3），旧的 5 条口径作废
+  assert.match(src, /\.slice\(0,\s*3\)/, "必须限到 3 条（用户 2026-09-29 拍板：只留最新 3 条）");
 });
 
 test("Sidebar：按 updatedAt 倒序排（最近活跃的浮到最上面）", () => {
