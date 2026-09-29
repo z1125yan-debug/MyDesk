@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Snowflake, ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
 import { fetchPoolList, fetchPoolDetail, runPoolVerify, type PoolDetailClient } from "@/lib/desk/quant-api";
+import { plainCode, codeTitle } from "@/lib/desk/code-format";
 
 type PoolSummary = import("@/lib/desk/quant-api").PoolSummaryClient;
 type PoolRow = PoolDetailClient["rows"][number];
@@ -208,7 +209,7 @@ export default function PoolPage() {
               const vs = v?.perSymbol?.[row.symbol];
               return (
                 <tr key={row.symbol} className="border-b border-border/40">
-                  <td className="px-3 py-1.5 font-mono">{row.symbol}</td>
+                  <td className="px-3 py-1.5 font-mono" title={codeTitle(row.symbol)}>{plainCode(row.symbol)}</td>
                   <td className="px-3 py-1.5">{row.name}</td>
                   <td className="px-3 py-1.5 text-right"><NumText value={row.close} /></td>
                   <td className="px-3 py-1.5 text-right"><PctText value={row.changePct} /></td>

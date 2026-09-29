@@ -12,6 +12,7 @@ import {
   fetchFactorCatalog, fetchTradeDates, runScreenerApi, aiChatTools,
   type FactorFieldDef, type ScreenerCond, type ScreenerRespClient,
 } from "@/lib/desk/quant-api";
+import { plainCode, codeTitle } from "@/lib/desk/code-format";
 
 // 操作符
 const OPS = ["=", ">=", ">", "<=", "<", "!=", "in", "not in"] as const;
@@ -320,7 +321,7 @@ export default function ScreenerPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
                     <span className="truncate text-[16px] font-medium">{r.name}</span>
-                    <span className="font-mono text-[12.5px] text-muted-foreground/60">{r.symbol}</span>
+                    <span className="font-mono text-[12.5px] text-muted-foreground/60" title={codeTitle(r.symbol)}>{plainCode(r.symbol)}</span>
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[13px] text-muted-foreground/80">
                     <span>成交 <NumText value={r.values.amount_yi} digits={1} /> 亿</span>

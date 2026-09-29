@@ -17,6 +17,7 @@ import { FactorsTab } from "./quant/FactorsTab";
 import { MiningTab } from "./quant/MiningTab";
 import { BacktestTab, SelectionTab, ExperimentsTab, KnowledgeTab, ResearchTab } from "./quant/LabTabs";
 import AiScanPage from "./pages/AiScanPage";
+import { plainCode, codeTitle } from "@/lib/desk/code-format";
 
 interface Health {
   ok: boolean;
@@ -261,7 +262,7 @@ export default function QuantPage() {
                     <tbody>
                       {universe.map((r) => (
                         <tr key={r.symbol} className="border-t border-border/60">
-                          <td className="px-2 py-1 font-mono">{r.symbol}</td>
+                          <td className="px-2 py-1 font-mono" title={codeTitle(r.symbol)}>{plainCode(r.symbol)}</td>
                           <td className="px-2 py-1">{r.name}{r.st && <span className="ml-1 text-red-400">ST</span>}{r.suspended && <span className="ml-1 text-amber-400">停</span>}</td>
                           <td className="px-2 py-1 text-muted-foreground">{r.industry ?? "-"}</td>
                           <td className="px-2 py-1 text-right font-mono">{r.price?.toFixed(2) ?? "-"}</td>

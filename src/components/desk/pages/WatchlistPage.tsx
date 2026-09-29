@@ -17,6 +17,7 @@ import { useLivePoll } from "@/hooks/use-live-poll";
 import { clockZh } from "@/lib/desk/plain-core";
 // P14：视图过滤与 store 的建/删/移同住纯核，页面不自己抄一份 filter 语义
 import { filterWatchlist } from "@/lib/desk/watchlist-group-core";
+import { plainCode, codeTitle } from "@/lib/desk/code-format";
 
 interface QuoteRow {
   symbol: string;
@@ -189,7 +190,7 @@ export default function WatchlistPage() {
                         {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                       </button>
                     </td>
-                    <td className="px-3 py-1.5 font-mono cursor-pointer" onClick={() => openProfile(r.symbol)}>{r.symbol}</td>
+                    <td className="px-3 py-1.5 font-mono cursor-pointer" title={codeTitle(r.symbol)} onClick={() => openProfile(r.symbol)}>{plainCode(r.symbol)}</td>
                     <td className="px-3 py-1.5 cursor-pointer" onClick={() => openProfile(r.symbol)}>{r.name}</td>
                     <td className="px-3 py-1.5">
                       <select className={selectCls + " max-w-24"} value={w?.groupId ?? ""} title="移入/移出分组（只挪成员关系，不删票）"

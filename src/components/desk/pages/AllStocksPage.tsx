@@ -12,6 +12,7 @@ import { clockZh } from "@/lib/desk/plain-core";
 // 覆盖得到的显「自算」，覆盖不到的仍显「—」（绝不补 0，也不冒充全市场都有读数）
 import { fetchBoardRows } from "@/lib/desk/market";
 import { MAIN_FLOW_BASIS } from "@/lib/quant/screener/tdx-flow-core";
+import { plainCode, codeTitle } from "@/lib/desk/code-format";
 
 const SORTS: { key: string; label: string }[] = [
   { key: "amount_yi", label: "成交额" },
@@ -122,7 +123,7 @@ export default function AllStocksPage() {
           <tbody>
             {rows.map((r) => (
               <tr key={r.symbol} className="border-b border-border/40 hover:bg-sky-500/5">
-                <td className="cursor-pointer px-2.5 py-1.5 font-mono" onClick={() => openProfile(r.symbol)}>{r.symbol}</td>
+                <td className="cursor-pointer px-2.5 py-1.5 font-mono" title={codeTitle(r.symbol)} onClick={() => openProfile(r.symbol)}>{plainCode(r.symbol)}</td>
                 <td className="cursor-pointer px-2.5 py-1.5" onClick={() => openProfile(r.symbol)}>
                   {r.name}{r.st && <span className="ml-1 text-[10px] text-red-400">ST</span>}{r.suspended && <span className="ml-1 text-[10px] text-muted-foreground">停</span>}
                 </td>
