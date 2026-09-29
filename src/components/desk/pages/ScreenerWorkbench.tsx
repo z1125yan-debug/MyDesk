@@ -110,6 +110,8 @@ export default function ScreenerWorkbench() {
   const [asOf, setAsOf] = useState("");
   /** 行情源最新数据实际所属交易日（休市日与 asOf 不同，页面据此如实标注） */
   const [quoteDate, setQuoteDate] = useState("");
+  /** 滞后原因（服务端按交易日历+时段判定下发；页面只显示不推断） */
+  const [quoteLag, setQuoteLag] = useState<{ lagging: boolean; badge: string; note: string } | null>(null);
   const [selCols, setSelCols] = useState<CatalogField[]>([]);
   const [showAiRecords, setShowAiRecords] = useState(false);
   /** 正在展开查看的 AI优选记录（点记录展开它的冻结候选） */
@@ -223,6 +225,7 @@ export default function ScreenerWorkbench() {
       setTotal(j.total ?? list.length);
       setAsOf(j.as_of_trade_date ?? "");
       setQuoteDate(j.quote_date ?? "");
+      setQuoteLag(j.quote_lag ?? null);
     } catch (e) {
       setError(String((e as Error).message || e));
       setRows(null);
@@ -240,7 +243,7 @@ export default function ScreenerWorkbench() {
     const sr = await fetch("/api/quant/screener", { method: "POST", headers: { "Content-Type": "application/json" }, body: buildBody(1, limit) });
     const sj = await sr.json();
     const list: Record<string, unknown>[] = sj.rows ?? sj.list ?? [];
-    if (commit) { setRows(list); setTotal(sj.total ?? list.length); setAsOf(sj.as_of_trade_date ?? ""); setQuoteDate(sj.quote_date ?? ""); }
+    if (commit) { setRows(list); setTotal(sj.total ?? list.length); setAsOf(sj.as_of_trade_date ?? ""); setQuoteDate(sj.quote_date ?? ""); setQuoteLag(sj.quote_lag ?? null); }
     return { list, asOfDate: String(sj.as_of_trade_date ?? ""), totalCount: Number(sj.total ?? list.length) };
   }, [rows, asOf, quoteDate, total, buildBody]);
 
@@ -580,11 +583,13 @@ export default function ScreenerWorkbench() {
               <Sparkles size={13} /> AI 优选
             </button>
             {total != null && <span className="text-[13px] text-muted-foreground" title="K线类因子列按流动性Top600现场计算；稳智的5152全量靠盘后预计算——S2接入后放开上限">共 {total} 条{asOf ? ` · ${asOf}` : ""}</span>}
-            {/* 休市日如实标注：数据实际属于上一交易日，不能让它看起来像「今天的数据」 */}
-            {quoteDate && asOf && quoteDate !== asOf && (
+            {/* 数据日 ≠ 今天时的如实角标：文案由服务端按【交易日历 + 当前时段】判定后下发
+                （quote_lag），前端不再自己拼「X 休市」——2026-09-29 09:25 集合竞价中曾被错标成
+                「9/29 休市」，因为旧代码只要 quoteDate≠asOf 就写死「休市」。 */}
+            {quoteLag?.lagging && (
               <span className="rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[12.5px] text-amber-300/90"
-                title={`行情源最新数据为 ${quoteDate}，当日 ${asOf} 休市或无新数据`}>
-                数据截至 {quoteDate}（{asOf} 休市）
+                title={quoteLag.note}>
+                {quoteLag.badge}
               </span>
             )}
           </div>

@@ -11,8 +11,10 @@ import { getProvider } from "@/lib/quant/data/index";
 import { universeSource } from "@/lib/quant/data/tc-universe";
 import { fetchBarsHybrid, fetchBarsHybridTracked } from "@/lib/quant/data/hybrid";
 import { outcomeWarning, summarizeOutcomes } from "@/lib/quant/data/hybrid-core";
-import { shanghaiDate } from "@/lib/desk/session";
+import { shanghaiDate, marketSession } from "@/lib/desk/session";
+import { isTradingDay } from "@/lib/desk/trade-calendar";
 import { evalLimitSnapshot } from "./sentiment";
+import { quoteLagOf, type QuoteLag } from "./quote-lag-core.ts";
 import { buildFieldPanel, lastValues, factorCatalog, FACTOR_FIELD_MAP, limitRatio, type BarsLike } from "../factors/fields.ts";
 import { cmpWithOp, historicalWinProbability, type ScreenerCond, type WinProbStats } from "../factors/probability.ts";
 import { partitionUnavailableSnapConds } from "./snapshot-avail-core.ts";
@@ -68,6 +70,11 @@ export interface ScreenerResponse {
    * 而不是把上一交易日的行情说成今天的数据。
    */
   quote_date?: string;
+  /**
+   * 「数据日 ≠ 求值口径日」的如实说明（由交易日历 + 当前时段判定，纯事实）。
+   * 页面角标直接显示 badge，禁止再自行拼「X 休市」——休市只能由日历背书。
+   */
+  quote_lag: QuoteLag;
   trade_date_available: boolean;
   /** §二 是否为历史交易日回放（true=仅K线口径可回溯，快照口径已剔除） */
   trade_date_is_historical: boolean;
@@ -219,8 +226,17 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
   // （不能把 asOf 改成上一交易日——那会让 isHistorical 变 true，导致快照条件被整批剔除，
   //  休市日反而筛不出东西）。这里只**额外标注**数据实际所属日期，供前端如实显示。
   const quoteDate = dateValid && reqDate <= today ? asOf : deriveQuoteDate(metas, today);
-  if (!(dateValid && reqDate <= today) && quoteDate !== today) {
-    warnings.push(`行情源最新数据为 ${quoteDate}（当日 ${today} 休市或无新数据），页面按 ${quoteDate} 口径展示`);
+  // 「数据日 ≠ 今天」的原因交给日历+时段判定（不是一律喊「休市」）：
+  // 2026-09-29 09:25 事故——集合竞价中、正常交易日，页面却写「2026-09-29 休市」。
+  const session = marketSession();
+  const quoteLag = quoteLagOf({
+    quoteDate, asOf,
+    asOfIsTradingDay: isTradingDay(asOf),
+    phase: session.phase,
+    sessionLabel: session.label,
+  });
+  if (!(dateValid && reqDate <= today) && quoteLag.lagging) {
+    warnings.push(`${quoteLag.note}，页面按 ${quoteDate} 口径展示`);
   }
 
   // 行业 RPS 快照注入（稳智种子，data/rps-seed-latest.json）：把
@@ -611,6 +627,7 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     page: { limit, offset },
     as_of_trade_date: asOf,
     quote_date: quoteDate,
+    quote_lag: quoteLag,
     trade_date_available: true,
     trade_date_is_historical: isHistorical,
     funnel: { universe: universeCount, snapshot_pass: snapshotPass.length, kline_subset: subset.length, kline_pass: klinePass },
