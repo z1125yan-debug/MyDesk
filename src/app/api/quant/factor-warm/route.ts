@@ -50,9 +50,11 @@ export async function GET(req: Request) {
         }));
         // 缓存按**数据实际所属交易日**归档：休市日 as_of_trade_date 仍是系统日期，
         // 若用它做 key，会把上一交易日的行情存成今天，之后按今天查缓存就会拿到旧数据。
+        // 说明文案复用引擎给的 quote_lag（按交易日历+时段判定），本路由不再自己喊「休市」。
         const cacheDate = res.quote_date ?? res.as_of_trade_date;
         await saveFactorCache(cacheDate, rows);
-        warmNote = `saved ${rows.length} @ ${cacheDate}${cacheDate !== res.as_of_trade_date ? `（行情源日期，当日 ${res.as_of_trade_date} 休市）` : ""}`;
+        const lag = res.quote_lag?.lagging ? `（${res.quote_lag.badge}）` : "";
+        warmNote = `saved ${rows.length} @ ${cacheDate}${lag}`;
       } catch (e) {
         warmNote = `error: ${String((e as Error).message || e)}`;
       } finally {
