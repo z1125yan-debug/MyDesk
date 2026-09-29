@@ -13,20 +13,33 @@ import { marketMainNetTdx } from "@/lib/desk/fund-flow";
 // R20b：见顶压力分（判定与刻度全在 top-pressure-core 那份纯核里）
 import { computeTopPressure } from "@/lib/quant/screener/top-pressure";
 import type { MainNetTdxClient } from "@/lib/desk/main-net-core";
+import { beijingParts, isWeekend } from "@/lib/quant/scheduler/rules";
 
 export const dynamic = "force-dynamic";
 
 /**
- * 服务端 TTL：55 秒（默认 30 秒）。
+ * 服务端 TTL：盘中 55 秒。
  * 为什么单独给这条路由：它算一次要十几~二十五秒（腾讯批量快照兜底 95 个请求 + 通达信主力净额），
  * 而页面轮询是 60 秒一次——用默认 30 秒的话**每次轮询都必然过期重算**，四张卡就一直在转圈等。
  * 55 < 60：轮询基本都能命中热缓存（读数最多滞后约 55 秒，对累计成交额无感），
  * 冷启动只在「第一次/长时间没人看」时发生。
+ *
+ * 2026-09-30 补丁（用户：当天第二次打开要秒开）：休市时段（工作日 15:30 后 / 次日 09:15 前、
+ * 以及周末）行情不会变，TTL 放大到 30 分钟——盘后反复打开页面不再每次重算十几秒。
  */
 const SENTIMENT_TTL_MS = 55_000;
+const SENTIMENT_TTL_CLOSED_MS = 30 * 60_000;
+function sentimentTtlMs(): number {
+  try {
+    const p = beijingParts(new Date());
+    if (isWeekend(p.weekday)) return SENTIMENT_TTL_CLOSED_MS;
+    if (p.minuteOfDay >= 15 * 60 + 30 || p.minuteOfDay < 9 * 60 + 15) return SENTIMENT_TTL_CLOSED_MS;
+  } catch { /* 时钟异常回退盘中 TTL */ }
+  return SENTIMENT_TTL_MS;
+}
 
 export async function GET() {
-  return ttlCache("market/sentiment", SENTIMENT_TTL_MS, () => getHandler());
+  return ttlCache("market/sentiment", sentimentTtlMs(), () => getHandler());
 }
 async function getHandler() {
   quantBootstrap();

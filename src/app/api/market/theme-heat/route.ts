@@ -1,10 +1,13 @@
 // GET /api/market/theme-heat?date=YYYY-MM-DD — 主题热度（能力分层）：
 // ① date=今天 → 本地实时规则计算（板块涨幅贡献50(封顶5%) + 主力资金贡献30(封顶20亿) + RPS贡献20）；
 // ② date=2026-09-24 → 离线快照种子（抓取快照，含原版市场环境推理）；
-// ③ 其他历史日期 → 热度榜如实返回「无数据」（S2 攒数接入后自动补齐），不造假；
+// ②b 其他历史日期 → 有本地板块快照（15:20 定时任务留档）就用快照行算（RPS 项缺省，口径标注）；
+//    没有快照的日期才如实返回「无数据」（S2 攒数接入后自动补齐），不造假；
 //    但市场环境推理（inferMarketEnv）对所有复盘种子覆盖内的日期都给——
 //    输入口径复刻参考站（4 日宽度序列 + 当日情绪读数 + 连板极值），模板化生成、不接 LLM。
 import { NextResponse } from "next/server";
+import fs from "node:fs";
+import path from "node:path";
 import { fetchBoardRowsRescuedV2 } from "@/lib/desk/board-rescue";
 import { inferMarketEnv } from "@/lib/quant/review/market-inference";
 import { newsWindowLabel } from "@/lib/quant/review/theme-news-core";
@@ -58,6 +61,34 @@ interface RankRowLike {
 }
 
 /**
+ * 从本地板块快照读某日的行业/概念行并按同款公式算热度（RPS 项缺省 0，已在 source 标注）。
+ * 快照由行业榜每次算完留档（同日多次留档不覆盖，取 computedAt 最新的一份）。
+ */
+function snapshotHeat(date: string): { industries: HeatItem[]; concepts: HeatItem[] } | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(process.cwd(), "data", "sector-snapshots.json"), "utf8")) as {
+      days?: Record<string, { computedAt?: string; rows?: { name?: string; changePct?: number | null; main?: number | null }[] }>;
+    };
+    const days = raw.days ?? {};
+    const pick = (kind: "industry" | "concept"): HeatItem[] | null => {
+      const entry = days[`${date}|${kind}`];
+      if (!entry?.rows?.length) return null;
+      return entry.rows.map((r) => {
+        const pct = typeof r.changePct === "number" ? r.changePct : 0;
+        const main = typeof r.main === "number" ? r.main : 0;
+        const h = Math.round(50 * Math.min(Math.max(pct, 0) / 5, 1) + 30 * Math.min(Math.max(main, 0) / 20, 1));
+        return { n: r.name ?? "", h, pct, f: main };
+      }).sort((a, b) => b.h - a.h);
+    };
+    const industries = pick("industry"), concepts = pick("concept");
+    if (!industries && !concepts) return null;
+    return { industries: industries ?? [], concepts: concepts ?? [] };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 2026-09-29 菜单打开提速：本路由算一次要几秒（实测冷启动 1.3~6 秒），
  * 而菜单/切页会反复打它。包一层进程内 TTL 缓存（默认 60s，与页面轮询同档）：
  * 第二次起直接命中热缓存（几十毫秒），响应里的 asOf/tradeDate 照旧如实标数据时间。
@@ -72,6 +103,12 @@ async function getHandler(req: Request) {
   const newsDates = newsWindowDates(date || today);
   const newsWindow = { dates: newsDates, label: newsWindowLabel(newsDates) };
 
+  // 市场环境推理：所有复盘种子覆盖内的请求都给（休市日请求“今天”时，落到最近一个有读数的交易日）
+  const inference = inferMarketEnv(date || today);
+  const marketEnv = inference
+    ? { as_of_trade_date: inference.as_of_date, label: inference.market_bucket }
+    : undefined;
+
   if (date === seed.as_of_news_date) {
     return NextResponse.json({
       ok: true, date, source: `离线快照种子（${seed.as_of_news_date} 抓取）`,
@@ -81,11 +118,21 @@ async function getHandler(req: Request) {
     });
   }
 
-  // 市场环境推理：所有复盘种子覆盖内的请求都给（休市日请求“今天”时，落到最近一个有读数的交易日）
-  const inference = inferMarketEnv(date || today);
-  const marketEnv = inference
-    ? { as_of_trade_date: inference.as_of_date, label: inference.market_bucket }
-    : undefined;
+  // ③ 本地板块快照（P33b：15:20 定时任务每日留档 data/sector-snapshots.json）。
+  //    为什么：主题热度原先只认「今天」和种子日，**昨天（如 09-29）直接落空**——
+  //    用户看到「该日期无主题热度数据」但当天明明有主线。有该日快照就用快照行算：
+  //    涨幅贡献50(封顶5%) + 资金贡献30(封顶20亿)，RPS 贡献历史缺省为 0（口径如实标注）。
+  if (date && date !== today) {
+    const snap = snapshotHeat(date);
+    if (snap) {
+      return NextResponse.json({
+        ok: true, date, source: "本地板块快照（涨幅50+资金30；RPS 项历史缺省不计）",
+        industries: snap.industries, concepts: snap.concepts,
+        ...(inference ? { inference, market_env: marketEnv } : {}),
+        news_window: newsWindow,
+      });
+    }
+  }
 
   if (!date || date === today) {
     try {

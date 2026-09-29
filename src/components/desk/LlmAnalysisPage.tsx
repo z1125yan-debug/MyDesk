@@ -450,6 +450,8 @@ function SectorPanoramaView() {
     top_n?: number;
     all_count?: number;
     age_sec?: number | null;
+    source?: string;
+    day_scope?: "1d" | "3d";
     error?: string;
   } | null>(null);
   const [busy, setBusy] = useState(true);
@@ -487,6 +489,8 @@ function SectorPanoramaView() {
   };
 
   // 三卡定义（desc 与展示字段全部对齐稳智 Settings.js:116074-116893 hardcoded 文案）
+  // P33b：本地快照兜底（day_scope=1d）只有当日两个字段——标签如实切「当日」，不冒充 3日/MA20。
+  const oneDay = data?.day_scope === "1d";
   type CardDef = {
     title: string;
     desc: string;
@@ -497,36 +501,42 @@ function SectorPanoramaView() {
   const cardDefs: CardDef[] = [
     {
       title: "轮动上行",
-      desc: "资金流入 + 强度共振",
+      desc: oneDay ? "当日资金流入 + 当日上涨" : "资金流入 + 强度共振",
       tone: "amber",
       list: cards?.rotation,
-      fields: [
-        { key: "flow3d", label: "3日资金" },
-        { key: "pct3d", label: "3日涨跌" },
-        { key: "ma20", label: "MA20" },
-      ],
+      fields: oneDay
+        ? [{ key: "flow3d", label: "当日资金" }, { key: "pct3d", label: "当日涨跌" }]
+        : [
+            { key: "flow3d", label: "3日资金" },
+            { key: "pct3d", label: "3日涨跌" },
+            { key: "ma20", label: "MA20" },
+          ],
     },
     {
       title: "低吸观察",
-      desc: "回撤但结构未破",
+      desc: oneDay ? "其余板块（按当日资金净流入排序）" : "回撤但结构未破",
       tone: "emerald",
       list: cards?.dip,
-      fields: [
-        { key: "pct5d", label: "5日涨跌" },
-        { key: "flow1d", label: "当日资金" },
-        { key: "ma20", label: "MA20" },
-      ],
+      fields: oneDay
+        ? [{ key: "flow3d", label: "当日资金" }, { key: "pct3d", label: "当日涨跌" }]
+        : [
+            { key: "pct5d", label: "5日涨跌" },
+            { key: "flow1d", label: "当日资金" },
+            { key: "ma20", label: "MA20" },
+          ],
     },
     {
       title: "高位风险",
-      desc: "涨幅高 + 拥挤度高",
+      desc: oneDay ? "当日涨幅高（拥挤）" : "涨幅高 + 拥挤度高",
       tone: "red",
       list: cards?.high,
-      fields: [
-        { key: "pct7d", label: "7日涨跌" },
-        { key: "pop", label: "集中度" },
-        { key: "top100", label: "Top100" },
-      ],
+      fields: oneDay
+        ? [{ key: "pct3d", label: "当日涨跌" }, { key: "flow3d", label: "当日资金" }]
+        : [
+            { key: "pct7d", label: "7日涨跌" },
+            { key: "pop", label: "集中度" },
+            { key: "top100", label: "Top100" },
+          ],
     },
   ];
   const toneCls: Record<CardDef["tone"], string> = {
@@ -591,11 +601,20 @@ function SectorPanoramaView() {
         ))}
       </div>
       <div className="text-[11.5px] text-muted-foreground">
-        三卡分数公式（同源公开算法复刻）：
-        轮动 = flow_3d_sum_yi + pct_chg_3d + top100_ratio + ma20_ratio ·
-        低吸 = -pct_chg_5d + ma20_ratio + flow_1d_sum_yi - pop_concentration ·
-        高位 = pct_chg_7d + pop_concentration + top100_ratio ·
-        数据源：<code>aiwuchuan.com /api/sector-panorama</code>（公开、免登录）· 缓存：<code>scrape-aiwuchuan/cache/sector_insights_*.json</code>
+        {oneDay ? (
+          <>
+            本地口径（快照天数不足，暂以当日字段计）：轮动 = 当日涨跌×10 + 当日主力净额/10 · 高位 = 当日涨跌≥3% · 低吸 = 其余按当日净额排序。
+            数据源：<code>data/sector-snapshots.json（15:20 定时任务留档）</code>——3日/5日/7日/MA20 列随快照天数积累后自动恢复稳智口径。
+          </>
+        ) : (
+          <>
+            三卡分数公式（同源公开算法复刻）：
+            轮动 = flow_3d_sum_yi + pct_chg_3d + top100_ratio + ma20_ratio ·
+            低吸 = -pct_chg_5d + ma20_ratio + flow_1d_sum_yi - pop_concentration ·
+            高位 = pct_chg_7d + pop_concentration + top100_ratio ·
+            数据源：<code>aiwuchuan.com /api/sector-panorama</code>（公开、免登录）· 缓存：<code>scrape-aiwuchuan/cache/sector_insights_*.json</code>
+          </>
+        )}
       </div>
     </div>
   );
