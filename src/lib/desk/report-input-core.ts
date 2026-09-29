@@ -71,7 +71,11 @@ export function indexTrendZh(name: string, t: IndexTrend | null): string {
     ? (t.belowMas.length ? `收盘位于 ${t.belowMas.map((n) => "MA" + n).join("、")} 下方` : "收盘站上全部给出的均线")
     : "";
   const off = t.offHighPct === null ? "" : `；距最近 ${Math.min(60, t.bars)} 个交易日收盘高点 ${t.offHighPct}%`;
-  return `${name} ${t.date} 收 ${t.close}（当日 ${t.chgPct === null ? "数据不足" : t.chgPct + "%"}）；${mas}${pos ? " → " + pos : ""}${off}`;
+  // 涨跌必须带符号 + 方向词：曾因「当日 0.18%」无符号被模型按熊市语境脑补成「跌幅 0.18%」（实际是涨）
+  const chg = t.chgPct === null
+    ? "数据不足"
+    : `${t.chgPct >= 0 ? "+" : ""}${t.chgPct}%（${t.chgPct >= 0 ? "上涨" : "下跌"}）`;
+  return `${name} ${t.date} 收 ${t.close}（当日涨跌 ${chg}）；${mas}${pos ? " → " + pos : ""}${off}`;
 }
 
 /** 指标定义：把内部字段名的真实语义写死，模型不许自己猜（口径反了就是这么来的） */

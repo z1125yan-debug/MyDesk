@@ -7,7 +7,9 @@
 //   · 下跌家数 / 跌破 MA3 / 跌破 MA5 家数（当日宽度）
 //   · 涨停 / 跌停家数、最高连板（含近期极值对照）
 //   · （成交额稳智用了 3 日序列，本地种子没有这个字段——不编，理由里不写成交额）
-// 覆盖范围：review-stats 种子 2026-04-20 ~ 2026-09-24（110 个交易日）。
+// 覆盖范围：review-stats 种子 2026-04-20 ~ 2026-09-24（110 个交易日），外加调用方传入的
+// 每日沉淀自产行（market_daily_stats，09-25 起逐日累积）——不合并的话种子止日后会被套上旧读数
+// （2026-09-30 实测：09-29 涨日被标成 09-24 的「退潮下跌」）。
 // 请求日期落在覆盖内 → 用 ≤ 该日期的最近 4 行；覆盖外 → 返回 null，由页面如实说「无读数」。
 
 import reviewSeed from "./review-stats-seed.json";
@@ -38,10 +40,9 @@ const ROWS: ReviewRow[] = (reviewSeed as unknown as (string | number)[][]).map((
 
 const IDX = indexSeed as unknown as { d: string; allA: number; sh: number; dividend: number; small: number; mid: number; sz: number; cyb: number }[];
 
-/** ≤ date 的最近 n 行（种子按日期升序） */
-function rowsUpTo(date: string, n: number): ReviewRow[] {
-  const eligible = ROWS.filter((r) => r.date <= date);
-  return eligible.slice(-n);
+/** ≤ date 的最近 n 行（列表按日期升序） */
+function rowsUpToFrom(list: ReviewRow[], date: string, n: number): ReviewRow[] {
+  return list.filter((r) => r.date <= date).slice(-n);
 }
 
 function idxOf(date: string) {
@@ -49,17 +50,16 @@ function idxOf(date: string) {
 }
 
 /**
- * 阶段判定（透明规则，阈值写死在这里便于复核）：
- *   赚钱效应 = 最新 MA5 上方占比；斜率 = 4 日首尾差
- *   · 占比 ≥ 60 且斜率 ≥ 0        → 主升 / 强势
- *   · 占比 ≥ 40                    → 震荡（斜率 < -15 记「高位分歧」）
- *   · 占比 < 40 且斜率 < 0         → 退潮（最近 1 日跌幅收窄/占比回升记「退潮反抽」）
- *   · 占比 < 40 且斜率 ≥ 0         → 修复
- * 置信度 = 数据完整度（占比/指数/宽度三项齐不齐）× 信号一致度，封顶 0.85：
- * 规则版不把话说满，稳智 LLM 版给到 0.66 上下，本地规则不应比它更自信。
+ * inferMarketEnv(date, extraRows?)：
+ * extraRows = 每日沉淀的自产复盘行（market_daily_stats，每日收盘后落一行，同日以沉淀行为准）。
+ * 种子止于 2026-09-24——不合并 selfRows 的话，09-28/29 会被套上 09-24 的旧读数（用户实测的错）。
  */
-export function inferMarketEnv(date: string): MarketInference | null {
-  const win = rowsUpTo(date, 4);
+export function inferMarketEnv(date: string, extraRows?: ReviewRow[]): MarketInference | null {
+  const merged = extraRows?.length
+    ? [...ROWS.filter((r) => !extraRows.some((x) => x.date === r.date)), ...extraRows]
+        .sort((x, y) => x.date.localeCompare(y.date))
+    : ROWS;
+  const win = rowsUpToFrom(merged, date, 4);
   if (!win.length) return null;
   const last = win[win.length - 1];
   if (last.aboveMa5Pct === null) return null;
@@ -117,7 +117,7 @@ export function inferMarketEnv(date: string): MarketInference | null {
     parts.push(`最新一日MA5上方个股占比${pct.toFixed(2)}%，下跌家数${last.decliners}家。`);
   }
   // 最高连板对照近 20 个交易日极值（稳智句式里也有「由 X 板降至 Y 板」）
-  const recent = rowsUpTo(date, 20);
+  const recent = rowsUpToFrom(merged, date, 20);
   const peakBoards = recent.reduce((m, r) => Math.max(m, r.maxBoards), 0);
   parts.push(
     `涨停${last.limitUp}家、跌停${last.limitDown}家，最高连板${last.maxBoards}板` +
