@@ -1,6 +1,6 @@
 "use client";
 // 点开即有内容：导入即给同源 GET /api/* 装上 SWR 缓存（必须在页面组件首次 fetch 之前生效）
-import { setPrefetchPage } from "@/lib/desk/api-cache";
+import { setPrefetchPage, prefetchMenuPages } from "@/lib/desk/api-cache";
 import { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
@@ -102,6 +102,16 @@ export default function AppShell() {
 
   // 告诉缓存层「当前在哪一页」：它据此记住该页用过的接口，供菜单 hover 预热（点开即有内容）
   useEffect(() => { if (hydrated) setPrefetchPage(page); }, [page, hydrated]);
+
+  // 进站空闲预热（2026-09-29 用户：「优化一下所有菜单打开的缓存」）：
+  // 等首屏稳下来后，按声明表把各菜单页的首屏接口依次拉进客户端 SWR 缓存——
+  // 这样**每个菜单项的第一次点击**也是秒开（只靠 hover 预热的话，自学习表要访问过那一页才有记录）。
+  // 串行 + 700ms 间隔、跳过当前页：预取不许抢当前页的上游。
+  useEffect(() => {
+    if (!hydrated) return;
+    const stop = prefetchMenuPages({ gapMs: 700 });
+    return stop;
+  }, [hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;

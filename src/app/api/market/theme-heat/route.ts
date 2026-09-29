@@ -10,6 +10,7 @@ import { inferMarketEnv } from "@/lib/quant/review/market-inference";
 import { newsWindowLabel } from "@/lib/quant/review/theme-news-core";
 import seed from "@/lib/quant/review/theme-heat-seed.json";
 import reviewSeed from "@/lib/quant/review/review-stats-seed.json";
+import { ttlCache, DEFAULT_TTL_MS } from "@/lib/quant/server-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,15 @@ interface RankRowLike {
   code?: string; name?: string; changePct?: number; main?: number; rps?: number;
 }
 
+/**
+ * 2026-09-29 菜单打开提速：本路由算一次要几秒（实测冷启动 1.3~6 秒），
+ * 而菜单/切页会反复打它。包一层进程内 TTL 缓存（默认 60s，与页面轮询同档）：
+ * 第二次起直接命中热缓存（几十毫秒），响应里的 asOf/tradeDate 照旧如实标数据时间。
+ */
 export async function GET(req: Request) {
+  return ttlCache(`market/theme-heat${new URL(req.url).search}`, DEFAULT_TTL_MS, () => getHandler(req));
+}
+async function getHandler(req: Request) {
   const date = (new URL(req.url).searchParams.get("date") ?? "").trim();
   const today = shanghaiDateStr(new Date());
   // 新闻窗口（近 3 个交易日）随每一路响应一起给，前端不用自己再算「哪三天」
