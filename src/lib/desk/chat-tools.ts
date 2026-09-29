@@ -35,6 +35,19 @@ import { mainNetSelfNote, tdxMainNetOf } from "./fund-flow";
 import { resolveStockName, fetchStockNews, fetchStockAnnouncements } from "./stock-news";
 import { fetchBoardRowsRescued } from "./board-rescue";
 import { shanghaiDate } from "./session";
+// Serenity 落点②（2026-09-29）：个股主营/产品构成（china-stock-mcp get_product_info + get_stock_basic_info）。
+// 六问第 3 步「它到底卖什么、处在什么商业阶段」此前全靠模型先验，这两个接口后端早已实现、只是没进技能表。
+import { fetchMcpProductInfo, fetchMcpStockBasic } from "@/lib/quant/data/mcp-provider";
+// 成分股与行情同源：板块成分股按「最近交易日」取，休市日拿今天当数据日会把日期标错一天（与 sectors 路由同口径）
+import { latestTradeDate } from "./trade-date";
+// Serenity 落点 A（2026-09-29）：东财 b:BKxxxx 成分接口断源时的**行业板本地备胎**（读 data/sector-constituents.json）。
+// 刻意不复用东财那份，口径也不同：这是「本地行业归属快照」，返回值里必须写明它不是东财板块成分。
+import { constituentsOfIndustry, industrySnapshotMeta } from "@/lib/quant/data/industry-constituents";
+// Serenity 补数层（2026-09-29 第二轮）：板块 → 产业链环节（上/中/下游）与板块财务分量——
+// 「板块风险」页早就在用同一份本地映射，此前对话链路没接，于是「板块内子产业」「板块整体利润/订单」只能写「暂无数据」。
+import { chainOfSector, fundamentalsOfSector, sectorChainMeta } from "@/lib/quant/data/sector-chain";
+// 成分股只是把它转手列出来，类型用取数层的同一份（不在这里另造一个形状）
+import type { AssetMeta } from "@/lib/quant/types";
 import {
   BACKTEST_MIN_TRADING_DAYS, BACKTEST_POLL_INTERVAL_MS, TEXT_NOT_IN_WHITELIST, TEXT_POLL_TIMEOUT,
   TEXT_RANGE_TOO_SHORT, metricObject, pollAction, rangeVerdict, backtestReadout,
@@ -179,11 +192,194 @@ async function toolSectorRank(args: { kind?: string; size?: number }): Promise<u
       ? "同花顺板块资金流榜（净额=流入−流出口径，非主力拆分口径）"
       : "东财板块资金榜（主力净流入排序）",
     板块: rows.map((r, i) => ({
-      排名: i + 1, 名称: r.name, 涨跌幅: r.changePct,
+      排名: i + 1,
+      // 2026-09-29（Serenity 落点②）：板块代码必须一起给出，否则模型拿到榜单也没法顺着去取成分股——
+      // sector_constituents 只认 BK 代码，榜上只报名字的话那条「榜单 → 成分 → 主营」的链路根本走不通。
+      // 2026-09-29 补（模型把 THS881270 抄进标题）：**只放东财 BK 代码**。同花顺兜底行的 THS881270 是
+      // 同花顺自己的编码，下游一个工具都用不上（成分接口不认它），放在这里只会被抄进正文当板块名——
+      // 那种行给 null，并在「板块代码说明」里如实写清为什么没有。
+      板块代码: /^BK\d+$/i.test(String(r.code ?? "")) ? r.code : null,
+      ...(/^BK\d+$/i.test(String(r.code ?? "")) ? {} : { 板块代码说明: "同花顺兜底行没有东财板块代码（东财断源），取不了东财成分股；取成分请按板块名走本地行业归属快照" }),
+      名称: r.name, 涨跌幅: r.changePct,
       // 腾讯兜底榜行 main 是占位 0：报 null（缺读数），不拿 0.00 亿冒充「主力持平」；同花顺行是真净额，照常报
       主力净额亿: r.fundsMissing ? null : r.main,
       领涨股: r.leader,
     })),
+  };
+}
+
+/**
+ * 板块级附加信息（Serenity 补数层，2026-09-29 第二轮）：链上位置 / 板块整体市值 / 板块财务分量。
+ *
+ * 为什么单列：这三项此前在链研究回答里被反复写成「暂无数据」（板块内子产业、板块整体市值、
+ * 板块利润/订单/存货变化），但本仓**本地就有**——「板块风险」页早就用同一份数据做产业链诊断
+ * （data/sector-industry-map.json）、板块页用 data/sector-constituents.json、财务用 data/sector-fundamentals.json。
+ *
+ * 三个子项各自独立缺失：取不到就各自 null/说明，绝不因为一个缺就把整块吞掉（那是把「没取到」写成「没有」）。
+ */
+function sectorContextOf(boardName: string, totalMarketCapYi: number | null, capBasis: string): Record<string, unknown> {
+  const name = (boardName ?? "").trim();
+  const meta = sectorChainMeta();
+  const chain = name ? chainOfSector(name) : null;
+  const fund = name ? fundamentalsOfSector(name) : null;
+  return {
+    板块整体市值亿: totalMarketCapYi,
+    板块整体市值口径: totalMarketCapYi != null
+      ? `= 本轮成分股总市值之和（${capBasis}）`
+      : "本轮成分数据不含市值字段，无法合计——留空，不拿别的数顶上",
+    链上位置: chain
+      ?? (name ? `「${name}」不在本地产业链映射收录的 ${meta.mappedSectorCount} 个板块内（是映射表未收录，不是本轮没取）` : null),
+    板块财务分量: fund,
+    板块补数说明: `链上位置来自 data/sector-industry-map.json（生成于 ${meta.chainGeneratedAt?.slice(0, 10) ?? "未知"}）；板块财务来自 data/sector-fundamentals.json（生成于 ${meta.fundGeneratedAt?.slice(0, 10) ?? "未知"}，季度频度、按板块内已披露个股聚合，非市值加权）。两者都不是实时行情。`,
+  };
+}
+
+/**
+ * 板块成分股（Serenity 落点② 其一，2026-09-29；落点 A 补本地备胎）。
+ *
+ * 为什么必须由系统送到模型面前：六问第 2 步「沿供应链分层」的第一步就是「这个题材里到底有谁」，
+ * 而模型拿不到成分股名单时只会凭印象点名 —— 那正是「拿概念标签冒充主营」的起点。
+ * 数据通路与 GET /api/market/sectors/[code] 完全同一份（emProvider.listUniverse + boardCode），
+ * 不在服务端经 HTTP 自环（同 P13 candidate_pool 先例）；按最近交易日取，休市日不把旧成分挂上新日期。
+ *
+ * 两条路（Serenity 落点 A，2026-09-29）：
+ *  - code = BK 开头的东财板块代码 → 走东财真实板块成分（唯一能证明「这个东财板块里有谁」的通路）；
+ *  - name = 行业名（东财断源 / 只有同花顺榜单时）→ 走**本地行业归属快照** data/sector-constituents.json。
+ *    这条是备胎，口径与东财板成分不同（行业归属快照、≈77% 覆盖、无实时行情），返回值里逐条写明。
+ *
+ * 两条路都会顺带带上板块级附加信息（链上位置 / 板块整体市值 / 板块财务分量，见 sectorContextOf）。
+ *
+ * 代码非法 / 无返回一律回 missing，不返回空数组冒充「这个板块没有成分股」。
+ */
+async function toolSectorConstituents(args: { code?: string; name?: string; kind?: string; size?: number }): Promise<unknown> {
+  const code = (args.code ?? "").trim().toUpperCase();
+  const nameArg = (args.name ?? "").trim();
+  const kind = args.kind === "concept" ? "concept" : "industry";
+  const cap = Math.min(80, Math.max(5, Math.floor(args.size ?? 40)));
+
+  // ---------- 路①：东财真实板块成分（只有 BK 代码能走） ----------
+  if (/^BK\d+$/.test(code)) {
+    const tdate = await latestTradeDate().catch(() => shanghaiDate());
+    // 「取数失败」与「名单确实为空」必须分开写（项目数据纪律）：接口报错时说成「板块不存在」
+    // 会让人以为这个板块下架了，那是把一次网络抖动写成了一条事实。
+    let metas: AssetMeta[] = [];
+    let failReason: string | null = null;
+    try {
+      const provider = await getProvider("em");
+      metas = await provider.listUniverse({ kind, boardCode: code }, tdate);
+    } catch (e) {
+      failReason = (e as Error)?.message || "未知错误";
+    }
+    if (failReason) {
+      return { missing: `${code} 成分股取数失败：${failReason}（接口层报错，不代表这个板块没有成分股；可稍后重试。若东财持续不可用，可改传 name 行业名走本地行业归属快照）` };
+    }
+    if (!metas.length) {
+      return { missing: `${code} 成分股名单为空（接口正常返回但名单为空：可能是新板块、已下架，或该代码属于另一个市场口径）` };
+    }
+    const capKnown = metas.filter((m) => m.marketCap != null);
+    const capSum = capKnown.length ? Math.round((capKnown.reduce((s, m) => s + (m.marketCap as number), 0) / 1e8) * 100) / 100 : null;
+    return {
+      数据源: "东财板块成分股（emProvider.listUniverse · boardCode，与 /api/market/sectors 同一份通路）",
+      board_code: code,
+      板块类型: kind === "concept" ? "概念板块" : "行业板块",
+      交易日: tdate,
+      成分股数量: metas.length,
+      成分股: metas.slice(0, cap).map((m) => ({
+        代码: m.symbol,
+        名称: m.name,
+        行业: m.industry ?? null,
+        现价: m.price ?? null,
+        涨跌幅: m.changePct ?? null,
+        成交额亿: m.amount != null ? Math.round((m.amount / 1e8) * 100) / 100 : null,
+        换手率: m.turnover ?? null,
+        主力净额亿: m.mainNet != null ? Math.round((m.mainNet / 1e8) * 100) / 100 : null,
+        停牌: m.suspended ?? false,
+      })),
+      ...(metas.length > cap ? { 说明: `成分股共 ${metas.length} 只，这里按接口原始顺序只列前 ${cap} 只（不是涨跌幅排序）` } : {}),
+      ...sectorContextOf(nameArg, capSum, `东财成分快照口径，${capKnown.length}/${metas.length} 只有市值字段`),
+    };
+  }
+
+  // ---------- 路②：本地行业归属快照（备胎；只在只有行业名时走） ----------
+  // 触发条件：给了 name，或压根没给代码（模型只说了行业名）。有 code 但不是 BK 的走下面路③如实报错。
+  if (nameArg || !code) {
+    const key = nameArg || code;
+    const meta = industrySnapshotMeta();
+    if (!meta) {
+      return { missing: `本地行业归属快照不可用（data/sector-constituents.json 缺失或损坏），且未给出可用的东财 BK 板块代码——本轮取不到「${key}」的成分股` };
+    }
+    const hit = constituentsOfIndustry(key);
+    if (!hit) {
+      return { missing: `本地行业归属快照里没有「${key}」这个行业名（备胎只覆盖 ${meta.industryCount} 个行业名、且仅行业板；概念板无本地源）。请改用东财 BK 板块代码，或换一个行业名（如 元件 / 半导体 / 银行）` };
+    }
+    const TIER_ZH: Record<string, string> = { leader: "龙头", core: "核心", second: "二线" };
+    const capVals = hit.members.map((m) => m.mktCapYi).filter((v): v is number => v != null);
+    const capSum = capVals.length ? Math.round(capVals.reduce((s, v) => s + v, 0) * 100) / 100 : null;
+    return {
+      数据源: `本地行业归属快照（非东财板块成分）· data/sector-constituents.json，生成于 ${String(meta.generatedAt).slice(0, 10)}`,
+      口径: "行业=本地行业归属快照（口径名源自 china-stock-mcp 技术榜「所属行业」），只覆盖约 77% 个股、无市值个股已剔除；与东财 BK 板块成分**不是同一口径**，不能混着用",
+      board_code: null,
+      板块名: key,
+      板块类型: "行业（本地归属快照口径）",
+      成分股数量: hit.count,
+      展示: `按总市值降序列前 ${cap} 只（档位：龙头=前3大或≥中位3倍，核心=≥中位，二线=其余）`,
+      成分股: hit.members.slice(0, cap).map((m) => ({
+        代码: m.code,
+        名称: m.name,
+        总市值亿: m.mktCapYi,
+        档位: TIER_ZH[m.tier] ?? m.tier,
+        // 键名带「快照日」：这是快照生成当日的读数，**不是今天**——不写死这一点，模型会把它当实时涨跌幅
+        涨跌幅快照日: m.changePct,
+      })),
+      ...(hit.count > cap ? { 说明: `该行业共 ${hit.count} 只，这里只列前 ${cap} 只（市值降序，不是涨跌幅排序）` } : {}),
+      ...sectorContextOf(key, capSum, `本地快照口径，${capVals.length}/${hit.count} 只有市值`),
+      时效说明: "成分表与本块的「涨跌幅快照日」是快照生成当日的读数，不是今天；板块财务是季度频度。要今天的行情/盘口/消息，系统会在后续步骤按代表个股另取（或直接问某只票）。",
+    };
+  }
+
+  // ---------- 路③：给了代码但不是 BK，如实说清为什么用不了 ----------
+  if (/^THS\d+$/i.test(code)) {
+    return { missing: `同花顺板块代码 ${code} 取不了成分股：东财 b:BKxxxx 成分接口只认东财代码，同花顺只有榜单页、无成分接口。请改传 name 行业名（如 name："元件"）走本地行业归属快照，或等东财恢复后传 BK 代码` };
+  }
+  return { missing: `板块代码非法：${args.code ?? ""}（需 BK 开头，如 BK0448 / BK0475；或改传 name 行业名走本地行业归属快照）` };
+}
+
+/**
+ * 个股主营 / 产品构成（Serenity 落点② 其二，2026-09-29）。
+ *
+ * 六问第 3 步要求「它到底卖什么、卖给谁、处在什么商业阶段」，此前项目只有行业归属与概念标签，
+ * 模型只能拿标签猜主营。这里把已有后端（china-stock-mcp）的两条真实披露接出来：
+ *   - get_product_info  → 主营业务 / 产品类型 / 产品名称（公司自己的披露口径）
+ *   - get_stock_basic_info → 主营业务（互为交叉核对）
+ *
+ * **诚实声明（写进返回值，不让模型自己去猜）**：上游**不提供按产品的收入占比**，
+ * 所以这里给的是「卖什么」而不是「哪块赚多少」；需要收入结构时必须回落年报，本仓没有这条通路。
+ * 两条都取不到回 missing —— 骨架红线：不许拿行业/概念标签冒充主营。
+ */
+async function toolStockBusinessComposition(args: { symbol?: string }): Promise<unknown> {
+  const r = await resolveSymbolArg(args.symbol ?? "");
+  if (!r) return { missing: `认不出这只股票：${args.symbol ?? ""}（代码形态或东财搜索可命中的公司简称）` };
+  const code6 = r.symbol.split(".")[0];
+  const [product, basic] = await Promise.all([
+    fetchMcpProductInfo(code6).catch(() => null),
+    fetchMcpStockBasic(code6).catch(() => null),
+  ]);
+  const row = product?.data?.[0] ?? null;
+  const biz = (row?.主营业务 as string | undefined) ?? basic?.data?.主营业务 ?? null;
+  const nameZh = basic?.data?.公司名称 ?? basic?.data?.A股简称 ?? r.resolvedName ?? null;
+  if (!row && !biz) {
+    return { missing: `${r.symbol} 主营/产品构成暂无数据（china-stock-mcp 未配置，或上游未返回该票的 product_info）` };
+  }
+  return {
+    symbol: r.symbol,
+    ...resolvedNote(r),
+    名称: nameZh,
+    数据源: [row ? (product?.source ?? "china-stock-mcp · get_product_info") : null, basic ? (basic.source ?? "china-stock-mcp · get_stock_basic_info") : null].filter(Boolean).join(" + "),
+    主营业务: biz,
+    产品类型: (row?.产品类型 as string | undefined) ?? null,
+    产品名称: (row?.产品名称 as string | undefined) ?? null,
+    经营范围: (row?.经营范围 as string | undefined) ?? null,
+    口径说明: "以上为披露原文：说明公司「卖什么」。上游**不含按产品的收入占比**，需要「哪块业务赚多少」必须回落年报，本仓暂无该通路——请写「暂无数据」，不要自行拆分比例。",
   };
 }
 
@@ -931,12 +1127,18 @@ export const TOOLS: ChatTool[] = [
   { name: "market_sentiment", desc: "大盘情绪：情绪温度(0-100)/涨跌家数/涨停/跌停/成交额/主力净额/风险等级", fn: toolMarketSentiment, params: { type: "object", properties: {} }, phase: "local_data" },
   { name: "market_overseas", desc: "外盘与A50（隔夜真实行情）：纳指/标普/道指/半导体ETF/英伟达/恒生 + 富时A50期货，带各自行情时刻与时区。凡问「美股/外盘/隔夜/外部环境」必须用它——禁止拿财经快讯冒充外盘读数（2026-09-29 事故）", fn: toolMarketOverseas, params: { type: "object", properties: {} }, phase: "external_data" },
   { name: "market_calendar_effect", desc: "节假日日历效应（真实历史统计，非预测）：国庆前后一周上证指数的下跌/上涨概率与平均涨跌幅，附逐年明细与中信建投研报公开口径对照。凡写「日历效应/历史统计/国庆前后规律」必须用它——禁止自行编造百分比（2026-09-29 事故：模型曾凭空写「过去5年平均跌1.2%」）。只想说方向（节前偏弱/节后偏强）也要以它的数字为准。", fn: toolMarketCalendarEffect, params: { type: "object", properties: {} }, phase: "local_data" },
-  { name: "sector_rank", desc: "行业/概念板块资金榜（按主力净流入排序）", fn: toolSectorRank, params: { type: "object", properties: { kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number" } } }, phase: "local_data" },
+  { name: "sector_rank", desc: "行业/概念板块资金榜（按主力净流入排序）；返回里带板块代码：东财行为 BK0448 这类真代码（可接着喂给 sector_constituents）；同花顺兜底行没有东财代码（东财断源，取不了东财成分股），此时要取成分请按板块名走本地行业归属快照", fn: toolSectorRank, params: { type: "object", properties: { kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number" } } }, phase: "local_data" },
+  // Serenity 落点②（2026-09-29）：问「这个题材/板块里到底有谁」必须用它，不许凭印象点名。
+  // code 要 BK 开头的板块代码；只给板块名（如「印制电路板」）时先用 sector_rank 拿到 code 再调它。
+  { name: "sector_constituents", desc: "板块成分股（真实名单）：两选一——args.code 为 BK 开头的东财板块代码（如 BK0448，先用 sector_rank 从榜单拿）；东财取不到或只有行业名时，用 args.name 传行业名（如 元件/半导体/银行，走本地行业归属快照，口径不同、只覆盖约 77%、无实时行情）。凡要「这个题材里有哪些股票」必须用它取真实成分，禁止凭印象点名。东财行给代码/名称/行业/现价/涨跌幅/成交额/换手/主力净额；本地快照行给代码/名称/总市值/档位（龙头/核心/二线）", fn: toolSectorConstituents, params: { type: "object", properties: { code: { type: "string", description: "BK 开头的东财板块代码，如 BK0448" }, name: { type: "string", description: "行业名（如 元件 / 半导体 / 银行）：东财代码取不到时走本地行业归属快照，仅行业板、非东财板块成分" }, kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number", description: "最多返回几只，默认 40" } } }, phase: "local_data" },
   { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业；symbol 可传代码或公司简称（简称经东财搜索解析，解析结果如实标注）", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
   { name: "stock_depth", desc: "个股五档盘口（通达信网关）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
   { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标）", fn: toolStockTrades, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
   { name: "stock_kline_summary", desc: "个股技术状态：均线/MACD/KDJ/RSI/VWAP/RPS + 历史条件概率", fn: toolStockKline, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
   { name: "stock_fund_flow", desc: "个股近14日主力资金净额（东财）", fn: toolStockFundFlow, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  // Serenity 落点②（2026-09-29）：问「它到底卖什么 / 主营是什么 / 产业链哪个环节」必须用它。
+  // 上游不含按产品的收入占比 —— 工具自己会回一句口径说明，模型不许自行拆分比例。
+  { name: "stock_business_composition", desc: "个股主营与产品构成（披露原文）：主营业务 / 产品类型 / 产品名称 / 经营范围。凡涉及「这家公司到底卖什么、主营构成、产业链哪个环节」必须用它取真实披露，禁止用行业或概念标签冒充主营；上游不含按产品收入占比，缺收入结构就写「暂无数据」。symbol 可传代码或公司简称", fn: toolStockBusinessComposition, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "external_data" },
   { name: "market_news", desc: "最新宏观/市场快讯", fn: toolMarketNews, params: { type: "object", properties: { limit: { type: "number" } } }, phase: "external_data" },
   // R10 扩容：个股自己的消息面。谈个股结论必须引它，宏观快讯（market_news）替代不了——
   // 3014 实测「问中国海油答美国地产商」就是拿宏观快讯冒充个股消息面的事故现场。

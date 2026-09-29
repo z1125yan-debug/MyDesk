@@ -17,6 +17,14 @@ import { stepDetailOf, stepLabelFor } from "./chat-stream-core.ts";
 /** 注入给模型的一段取数结果（ok=false 的不进正文，只进「未取到」清单） */
 export interface DispatchRow {
   tool: string;
+  /**
+   * 这一步的人话标签（服务层注入/标签表兜底）。**为什么要进注入块**：块头原来只有英文工具名
+   * （`### stock_kline_summary`），实测模型会①照抄回正文（「可观察 sector_rank 主力净额变化」），
+   * ②把已给到的数据当成没有（`stock_kline_summary` 已经取到 3 只票的技术状态，回答里仍写「技术：暂无数据」）。
+   * 带上标签后块头变成「### stock_kline_summary（取日K并计算技术状态 · 002384.SZ）」，两件事一起解决。
+   * 不传＝维持原来的裸工具名（老测试构造的 rows 都不带它）。
+   */
+  label?: string;
   ok: boolean;
   text: string;
 }
@@ -125,8 +133,8 @@ export async function runDispatchPlan(opts: RunPlanOpts): Promise<RunPlanResult>
     // 注入块 / 未取到清单 / trace 都按计划顺序落（下面统一装配），不能按谁先返回排：
     // 用户看时间线、模型看数据块，两处顺序错位就会以为取的是不同的东西。
     const row: DispatchRow = errored || status === "missing"
-      ? { tool: call.tool, ok: false, text: "" }
-      : { tool: call.tool, ok: true, text: text.length > maxChars ? `${text.slice(0, maxChars)}…（已截断，共 ${text.length} 字）` : text };
+      ? { tool: call.tool, label: step.label, ok: false, text: "" }
+      : { tool: call.tool, label: step.label, ok: true, text: text.length > maxChars ? `${text.slice(0, maxChars)}…（已截断，共 ${text.length} 字）` : text };
     const gap = errored
       ? { tool: call.tool, why: `调用失败：${errored}` }
       : status === "missing" ? { tool: call.tool, why: judged.detail || "接口未返回该数据" } : null;

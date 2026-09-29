@@ -13,14 +13,14 @@
 import { getProvider } from "@/lib/quant/data/index";
 import { universeSource } from "@/lib/quant/data/tc-universe";
 import { fetchQuotesReal, type RealQuote } from "@/lib/desk/em";
-import { marketSession, shanghaiStamp } from "@/lib/desk/session";
+import { marketSession } from "@/lib/desk/session";
 import { latestTradeDate } from "@/lib/desk/trade-date";
 // R20：「高风险」档位的同拍升档判据（纯核，阈值只有一份、写在文件里）
 import { escalateToHighRisk } from "./top-risk-core.ts";
 import type { AssetMeta } from "../types.ts";
 
 export interface SentimentResult {
-  as_of: string; // 本地时间
+  as_of: string; // 行情时刻（YYYY-MM-DD HH:mm:ss 或 YYYY-MM-DD），来自数据源 quoteTime/quoteDate，非本地时间
   trade_date: string;
   live: boolean; // 是否交易时段
   total: number;
@@ -80,6 +80,21 @@ export async function computeSentiment(): Promise<SentimentResult> {
   const live = session.phase === "trading";
   const metas: AssetMeta[] = await provider.listUniverse({ kind: "all" }, tradeDate);
   if (!metas.length) throw new Error("全A快照为空（数据源无返回）");
+
+  // 行情时刻：以数据源自带的 quoteTime / quoteDate（腾讯 f[30] / 东财 f124 解析）为准，
+  // 而不是本地 new Date()。休市日/盘前上游仍返回上一交易日的快照，
+  // 用 quoteTime 才能如实标注「数据截至 X 日 HH:mm:ss」，避免把旧数据标成「今天实时」。
+  const quoteTimes = metas
+    .map((m) => m.quoteTime)
+    .filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(d));
+  const quoteDates = metas
+    .map((m) => m.quoteDate)
+    .filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d));
+  const asOf = quoteTimes.length
+    ? quoteTimes.reduce((a, b) => (a > b ? a : b))
+    : quoteDates.length
+      ? quoteDates.reduce((a, b) => (a > b ? a : b))
+      : tradeDate; // 兜底：全A快照没有任何行情时刻字段时，退回交易日（宁可保守，不冒充实时）
 
   let advancers = 0, decliners = 0, flat = 0, limitUp = 0, limitDown = 0;
   let touched = 0, broken = 0, limitUnknown = 0;
@@ -153,7 +168,7 @@ export async function computeSentiment(): Promise<SentimentResult> {
     .map((q) => ({ symbol: q.symbol, name: idxNames[q.symbol] ?? q.symbol, price: q.price, changePct: q.changePct }));
 
   return {
-    as_of: shanghaiStamp(now),
+    as_of: asOf,
     trade_date: tradeDate,
     live,
     total: pcts.length,

@@ -152,6 +152,151 @@ export function extractSymbols(text: string): string[] {
 }
 
 /**
+ * Serenity 落点②（2026-09-29）：从提问里抽板块代码（`BK` + 数字，如 BK0448）。
+ * 与 extractSymbols 同族——纯层只认代码形状，**不做「板块名 → 代码」的反查**：
+ * 那要查板块字典（取数层的事），纯层猜名字就是把猜测当事实。
+ * 用户只说了板块名时，正确路径是模型先用 sector_rank 拿到 code，再调 sector_constituents。
+ */
+export function extractBoardCodes(text: string): string[] {
+  const out: string[] = [];
+  for (const m of (text ?? "").matchAll(/\bBK\d{3,5}\b/gi)) {
+    const code = m[0].toUpperCase();
+    if (!out.includes(code)) out.push(code);
+  }
+  return out;
+}
+
+/**
+ * Serenity（白毛股神）六问纪律的**触发口径**（单一出处）：提问落在产业链 / 供应链类问题时为 true。
+ *
+ * 用途只有一个——决定「个股主营与产品构成」要不要随个股分析预取（skills-core 里那条 chain 闸）。
+ * 它**不参与场景判定**：classifyIntent 判哪个场景仍只看 SCENE_RULES，避免为了取一份主营构成
+ * 就把「AI 服务器产业链谁受益」这类问法从通用问答硬掰成别的场景（那是另一种说谎）。
+ * gate 用词刻意收窄：只收确定指向「链上关系」的词，不收「受益」「题材」这类过宽的词
+ * （「降息受益股」是选股，不是链研究）。
+ */
+const CHAIN_WORDS = ["产业链", "供应链", "上游", "下游", "卡点", "国产替代", "卡脖子", "环节"];
+
+export function wantsChain(question: string): boolean {
+  const q = question ?? "";
+  return CHAIN_WORDS.some((w) => q.includes(w));
+}
+
+/**
+ * 链研究补数层每只代表个股要补的个股级工具（顺序＝时间线顺序）。
+ * 为什么是这五个：实测里链研究回答把「今日实际成交和买卖盘」「技术面」「消息面」「主营/商业阶段」
+ * 全部写成「暂无数据」，而这些本仓本地都有真实通路（快照 / 日K技术状态 / 通达信五档 / 新闻公告 / 主营披露）。
+ * 不做「整个板块逐只扫」：只补成分股里市值最大的前几只，够挂回环节即可。
+ */
+const CHAIN_REP_STOCK_TOOLS: { tool: string; reason: string }[] = [
+  { tool: "stock_snapshot", reason: "链研究代表个股：今日行情与估值（六问第 5 步的行情依据）" },
+  { tool: "stock_kline_summary", reason: "链研究代表个股：技术状态（均线/MACD/KDJ/RSI），此前一直写成「暂无数据」" },
+  { tool: "stock_depth", reason: "链研究代表个股：五档盘口与委买卖比（「今日实际成交和买卖盘」）" },
+  { tool: "stock_business_composition", reason: "链研究代表个股：主营与产品构成（六问第 3 步「卖什么、什么商业阶段」）" },
+  { tool: "stock_news", reason: "链研究代表个股：新闻与公告（六问第 6 步反方理由的消息面依据）" },
+];
+/** 每轮最多补几只代表个股（成分股按市值降序取前几只；再多就是把一次链研究变成全板块扫描，慢且没必要） */
+export const CHAIN_REP_STOCK_MAX = 3;
+
+/** 从第一棒（或前几棒）结果里取「代表个股」：成分股名单前几只，统一成带后缀的 symbol */
+function chainRepSymbols(rounds: { tool: string; out: unknown }[]): string[] {
+  const cons = rounds.find((r) => r.tool === "sector_constituents")?.out as { 成分股?: unknown } | undefined;
+  const members = Array.isArray(cons?.成分股) ? (cons!.成分股 as { 代码?: unknown }[]) : [];
+  const out: string[] = [];
+  for (const m of members) {
+    const raw = String(m?.代码 ?? "").trim();
+    if (!raw) continue;
+    const six = raw.split(".")[0];
+    // 只认 6 位纯代码：认不出的一律跳过（不猜代码，也不拿名字去搜）
+    if (!/^\d{6}$/.test(six)) continue;
+    const sym = raw.includes(".") ? raw.toUpperCase() : `${six}.${suffixOf(six)}`;
+    if (!out.includes(sym)) out.push(sym);
+    if (out.length >= CHAIN_REP_STOCK_MAX) break;
+  }
+  return out;
+}
+
+/**
+ * 二阶段预取的判定（Serenity 落点② 的补数层，2026-09-29；第二轮扩到「两棒」）。
+ *
+ * 为什么需要这一层：链研究问法落在 sector 场景时，第一棒只拿到板块榜（名称 + 涨幅 + 净额），
+ * 拿不到「这个题材里到底有谁」——而 board_code 闸要求用户在提问里手打 BK 代码（现实中几乎不会发生），
+ * 于是六问第 2 步「沿供应链分层」永远填不上数，输出五段里多段只能写「暂无数据」。
+ *
+ * 两棒的顺序（每一棒都只在前一棒真跑完之后才产生）：
+ *   第一棒：板块 → 成分股（顺带带板块整体市值 / 链上位置 / 板块财务，见 chat-tools.sectorContextOf）；
+ *   第二棒：成分股里的代表个股（按市值降序前几只）→ 行情 / 技术 / 五档盘口 / 主营 / 消息 五个工具。
+ * 收窄口径：
+ *  1) 只在 wantsChain 命中时追——普通「哪个板块最强」不需要这些；
+ *  2) 只追榜首那一个板块（追前 15 个板块＝把覆盖面伪装成重要性，还是 15 次取数）；
+ *  3) 优先东财 BK 代码（唯一能证明「这个东财板块里有谁」的通路）；东财断源、榜单退同花顺时，
+ *     只在**行业名是本地行业归属快照认得的行业**时才追（args.name，走本地备胎）——
+ *     「本地认不认得这个名」是**事实**，由服务层通过 knownIndustries 递进来，纯层不查字典、不猜名字
+ *     （与 IntentInput.nameHits 同一条纪律）；服务层不递事实时本条不生效；
+ *  4) 第二棒只补前 CHAIN_REP_STOCK_MAX 只（不做全板块逐只扫描），且只在第一棒真拿到成分股时产生：
+ *     第一棒 missing → 没有名单 → 第二棒一个调用都不产生（不画注定失败的步骤）。
+ *
+ * 这是纯判定：只读前面几棒的结果、只吐下一棒的调用，不取数、不 import 服务层（可 node --test 直跑）。
+ */
+export function chainFollowUpCalls(
+  firstRound: { tool: string; out: unknown }[],
+  question: string,
+  /** 服务层递进来的「本地行业归属快照认得的行业名」（行业名列表）；不给＝不启用同花顺行业名那条路 */
+  knownIndustries?: Iterable<string>,
+): DispatchCall[] {
+  if (!wantsChain(question)) return [];
+  const rank = firstRound.find((r) => r.tool === "sector_rank")?.out as { 板块?: unknown } | undefined;
+  const rows = Array.isArray(rank?.板块) ? (rank!.板块 as { 板块代码?: unknown; 名称?: unknown }[]) : [];
+  // sector_rank 都没跑（个股分析 / 通用场景）：无从追起，不硬造一个
+  if (!rows.length) return [];
+  const kind = question.includes("概念") ? "concept" : "industry";
+  const has = (t: string) => firstRound.some((r) => r.tool === t);
+
+  // ---------- 第一棒：板块 → 成分股（+ 板块整体市值 / 链上位置 / 板块财务） ----------
+  if (!has("sector_constituents")) {
+    // 用户自己点了板块代码：planDispatch 的 board_code 闸已把那个板块的成分取过，不再追榜首
+    if (extractBoardCodes(question).length > 0) return [];
+    const topBk = rows.find((r) => typeof r?.板块代码 === "string" && /^BK\d+$/i.test(r.板块代码 as string));
+    if (topBk) {
+      const code = (topBk.板块代码 as string).toUpperCase();
+      const name = typeof topBk.名称 === "string" ? (topBk.名称 as string).trim() : "";
+      return [{
+        tool: "sector_constituents",
+        // name 一起带上：板块整体市值/链上位置/板块财务要按板块名查本地映射，只有代码查不到链上位置
+        args: { code, ...(name ? { name } : {}), kind, size: 30 },
+        // 说辞与 planDispatch 的 reason 同族：用户看时间线时要能看出这一棒是从哪冒出来的
+        reason: "链研究问法：顺着榜首板块自动追一层成分股名单（六问第 2 步「这个题材里到底有谁」）",
+      }];
+    }
+    // 东财行没有（断源退同花顺），若榜首的行业名是本地快照认得的行业，就用它走本地备胎
+    const known = knownIndustries ? new Set(knownIndustries) : null;
+    if (known && known.size) {
+      const topName = rows.find((r) => typeof r?.名称 === "string" && known.has((r.名称 as string).trim()));
+      if (topName) {
+        return [{
+          tool: "sector_constituents",
+          args: { name: (topName.名称 as string).trim(), kind: "industry", size: 30 },
+          reason: "链研究问法：东财板块成分不可用，顺着榜首行业名取本地行业归属快照（六问第 2 步「这个题材里到底有谁」；口径=本地行业归属快照，非东财板块成分）",
+        }];
+      }
+    }
+    return [];
+  }
+
+  // ---------- 第二棒：代表个股 → 行情 / 技术 / 五档盘口 / 主营 / 消息 ----------
+  // 已经补过就不重复（幂等：同一轮里跑两次也不会翻倍）
+  if (!has("stock_snapshot")) {
+    const syms = chainRepSymbols(firstRound);
+    return syms.flatMap((symbol) => CHAIN_REP_STOCK_TOOLS.map((t) => ({
+      tool: t.tool,
+      args: { symbol },
+      reason: `${t.reason}`,
+    })));
+  }
+  return [];
+}
+
+/**
  * R10 扩容：从提问里露出「可能是公司名」的候选片段（纯函数：只提议，不断言）。
  * 用户说票说的是名字（「中国电影卖的怎么样」），代码形状识别拿不到标的——
  * 这里把疑问词/功能词/场景词剔掉，剩下的 2~6 字连续中文段就是候选，交给服务层
@@ -527,6 +672,9 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
       case "watchlist": return `按「${SCENE_LABELS.watchlist}」取全部自选的实时行情`;
       case "screener_pool": return "按「量化选股」现跑候选池（条件从提问抽取，抽不到按系统默认活跃池并如实标注）";
       case "stock_news": return "取这只票自己的新闻/公告（结论须结合消息面）";
+      // Serenity 落点②：两条新增项的说辞（与 skills-core 的 reason 键一一对应）
+      case "sector_constituents": return "提问里点了板块代码，取该板块的真实成分股名单";
+      case "business_composition": return "问的是产业链/供应链类问题，取这只票的主营与产品构成（六问第 3 步「卖什么、什么商业阶段」）";
     }
   };
   const argsOf = (a: SkillArgs, symbol: string): Record<string, unknown> => {
@@ -534,6 +682,12 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
       case "symbol": return { symbol };
       case "news8": return { limit: 8 };
       case "sector_kind": return { kind: intent.question.includes("概念") ? "concept" : "industry", size: 15 };
+      // Serenity 落点②：板块成分股。只认提问里真出现的 BK 代码（extractBoardCodes 纯层形状判定）；
+      // 概念/行业按提问口径，抽不到就是没这个参数 —— gate 已经保证只有抽到代码才会走到这里。
+      case "board_code": {
+        const codes = extractBoardCodes(intent.question);
+        return { code: codes[0], kind: intent.question.includes("概念") ? "concept" : "industry" };
+      }
       // P10 择优轮：选股场景的候选池。条件由纯核从提问里确定性抽取（抽不到给空数组，
       // 工具层按默认活跃池跑并如实标注 origin）——「把猜的条件当用户要求」仍是事故，
       // 所以 matched 原话片段随参数一起走，注入块里要摆给用户看。
@@ -560,6 +714,11 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
       }
       return true;
     }
+    // Serenity 落点②的两道条件闸（与 news 同口径：没触发＝没有这个步骤，不留 skipped，不画假步骤）：
+    //  - board_code：提问里没点 BK 代码就不取成分股（哪来的板块都不知道，硬猜一个＝替用户决定看什么）；
+    //  - chain：不是产业链/供应链类问法就不取主营构成（每只多打一次 china-stock-mcp 云接口不值）。
+    if (e.gate === "board_code") return extractBoardCodes(intent.question).length > 0;
+    if (e.gate === "chain") return wantsChain(intent.question);
     return true;
   };
 
@@ -614,17 +773,21 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
  * 一条都没取到时返回空串：没有真实数据可注入，宁可让模型按提示词回「暂无数据」。
  */
 export function renderDispatchBlock(
-  rows: { tool: string; ok: boolean; text: string }[],
+  rows: { tool: string; label?: string; ok: boolean; text: string }[],
   missing?: { tool: string; why: string }[],
 ): string {
   const ok = (rows ?? []).filter((r) => r.ok && r.text.trim());
   const gaps = (missing ?? []).filter((m) => m?.tool);
   if (!ok.length) return "";
+  // 块头带人话标签（服务层注入）：只写英文工具名会被照抄进正文、也会让模型认不出「这一步到底取了什么」。
+  // 标签本身就是「调用 <工具>」这种兜底时不再重复（那等于没加）。
+  const head = (r: { tool: string; label?: string }) =>
+    `### ${r.tool}${r.label && !r.label.includes(r.tool) ? `（${r.label}）` : ""}`;
   return [
     "[系统按场景自动取数]",
     "以下是本轮提问前系统替你取的真实数据（来源见每块内的标注），不是用户提供的，也不是你算出来的：",
-    ...ok.map((r) => `### ${r.tool}\n${r.text}`),
-    "字段缺失以块内写的「缺失」为准，不要当成 0。",
+    ...ok.map((r) => `${head(r)}\n${r.text}`),
+    "字段缺失以块内写的「缺失」为准，不要当成 0。这些块里**已经有**的维度不许在回答里写成「暂无数据」。",
     ...(gaps.length
       ? [`[本轮未取到的数据]\n${gaps.map((m) => `- ${m.tool}：${m.why}`).join("\n")}\n这些维度本轮没有数据：回答里直接写「暂无数据」，不得凭印象或记忆补数。`]
       : []),

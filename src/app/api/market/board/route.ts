@@ -76,11 +76,14 @@ async function getHandler(req: Request) {
     if (kind === "stock") {
       const univ = await tdxMainFlowUniverse();
       if (univ?.rows.length) {
+        // 板块码防线（2026-09-29）：不是「6 位代码 + .SH/.SZ/.BJ」的行一律不进个股榜——
+        // 上游/网关口径再怎么变，榜上也不许出现「银行」这类板块行冒充个股。
+        const stockRows = univ.rows.filter((r) => /^\d{6}\.(SH|SZ|BJ)$/i.test(r.symbol));
         const picked = pickMainFlowSide(
-          univ.rows.map((r) => ({ name: r.name, code: r.symbol, changePct: r.changePct, flow: r.flow })),
+          stockRows.map((r) => ({ name: r.name, code: r.symbol, changePct: r.changePct, flow: r.flow })),
           dir,
         );
-        const bySymbol = new Map(univ.rows.map((r) => [r.symbol, r]));
+        const bySymbol = new Map(stockRows.map((r) => [r.symbol, r]));
         // pickMainFlowSide 已把「逐笔没取到」的行滤掉（不占位、不补 0），这里只保留真有读数的行
         const out = picked.flatMap((p, i) => {
           const src = bySymbol.get(p.code);

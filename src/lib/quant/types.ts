@@ -47,6 +47,12 @@ export interface AssetMeta {
    * 有了它上层才能如实标注「数据截至 X 日」，而不是把旧数据标成今天。
    */
   quoteDate?: string;
+  /**
+   * 行情时刻（YYYY-MM-DD HH:mm:ss，完整时间戳）。
+   * 盘中是「最后一次成交/快照的秒级时刻」，休市日是「上一交易日收盘时刻」。
+   * 上层 as_of 应优先用这个，而不是本地 new Date()——否则休市日会把旧数据标成「今天实时」。
+   */
+  quoteTime?: string;
 }
 
 export type UniverseKind = "all" | "custom" | "industry" | "concept";

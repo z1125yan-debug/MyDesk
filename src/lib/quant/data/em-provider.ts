@@ -89,7 +89,9 @@ const FS_ALL_A = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048";
 const EM_HOSTS = ["https://push2delay.eastmoney.com", "https://push2.eastmoney.com"];
 // f12代码 f13市场 f14名称 f2价 f3涨跌幅 f5量(手) f6额(元) f7振幅 f8换手 f9PE f10量比
 // f15最高 f18昨收（P0补齐·炸板率口径需要） f20总市值 f21流通 f23PB f26上市日 f62主力净额 f100行业
-const UNIVERSE_FIELDS = "f12,f13,f14,f2,f3,f5,f6,f7,f8,f9,f10,f15,f18,f20,f21,f23,f26,f62,f100";
+// f124 行情时刻（东财 clist 的秒级时间戳，格式 YYYYMMDDHHmmss）——与腾讯 f[30] 对齐，
+// 用于 quoteDate/quoteTime，避免休市日把旧快照标成「今天实时」。
+const UNIVERSE_FIELDS = "f12,f13,f14,f2,f3,f5,f6,f7,f8,f9,f10,f15,f18,f20,f21,f23,f26,f62,f100,f124";
 const UNIVERSE_PAGE_SIZE = 200;
 
 function isBjCode(code: string): boolean {
@@ -106,6 +108,15 @@ function emDate(v: unknown): string | undefined {
   if (!n || String(n).length !== 8) return undefined;
   const s = String(n);
   return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+}
+
+// 东财 f124 是秒级行情时间戳（YYYYMMDDHHmmss 数字），转成 YYYY-MM-DD HH:mm:ss。
+// 与腾讯 f[30] 的 quoteTime 口径对齐；解析失败返回 undefined（宁缺，不冒充实时）。
+function emQuoteTime(v: unknown): string | undefined {
+  const n = num(v);
+  const s = String(v ?? "").trim();
+  if (!s || !/^\d{14}$/.test(s)) return undefined;
+  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)} ${s.slice(8, 10)}:${s.slice(10, 12)}:${s.slice(12, 14)}`;
 }
 
 function toSymbol(market: unknown, code: string): string | null {
@@ -135,6 +146,7 @@ function rowToMeta(d: Record<string, unknown>): AssetMeta | null {
   const symbol = toSymbol(d.f13, String(d.f12 ?? ""));
   if (!symbol) return null;
   const price = num(d.f2);
+  const qt = emQuoteTime(d.f124);
   return {
     symbol,
     name: String(d.f14 ?? symbol),
@@ -156,6 +168,8 @@ function rowToMeta(d: Record<string, unknown>): AssetMeta | null {
     amount: num(d.f6) ?? undefined,
     st: /ST/i.test(String(d.f14 ?? "")),
     suspended: price === null, // 无价 = 当日停牌/无成交（快照口径）
+    quoteDate: qt?.slice(0, 10),
+    quoteTime: qt,
   };
 }
 

@@ -109,7 +109,8 @@ test("scene-dispatch：名字验证只在无代码时发生；预取步骤标签
   assert.match(sceneDispatch, /if \(!extractSymbols\(question\)\.length\) \{/, "带代码的提问一次搜索都不打（零回归）");
   assert.match(sceneDispatch, /nameHits,/);
   const labelUses = (sceneDispatch.match(/labelFor: prefetchLabel/g) ?? []).length;
-  assert.equal(labelUses, 2, "首跑与 P8-④ 补轮都要用人话标签，不能补轮退回「调用 stock_news」");
+  // 首跑 / 链研究第二棒（顺榜首板块追成分）/ P8-④ 补轮，三轮都要用人话标签，不能退回「调用 stock_news」
+  assert.equal(labelUses, 3, "三轮取数都要用人话标签，不能任一轮退回「调用 stock_news」");
   assert.match(sceneDispatch, /stock_news: "取个股新闻与公告/, "步骤条文案是人话不是工具名");
 });
 

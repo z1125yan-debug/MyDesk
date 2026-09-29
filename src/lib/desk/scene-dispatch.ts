@@ -29,6 +29,10 @@ import {
   type DispatchCall,
   type Intent,
 } from "./intent-core";
+// Serenity 落点 A：二阶段预取的事实注入层（读本地行业名快照递给纯核，判定仍在 intent-core）
+import { planChainFollowUps } from "./chain-followup";
+// 链研究补数层的「代表个股速览」（纯核，零依赖）：把 15 份个股结果压成一只票一行放注入块最前面
+import { buildChainDigest } from "./chain-digest-core";
 import { resolveStockName } from "./stock-news";
 import { runDispatchPlan, type DispatchTrace } from "./dispatch-core";
 import { SKILLS } from "./skills-core";
@@ -60,6 +64,12 @@ const CALENDAR_LOOKBACK = 40;
 const PREFETCH_STEP_LABELS: Record<string, string> = {
   stock_news: "取个股新闻与公告（这只票自己的消息面）",
   candidate_pool: "读取已冻结候选池（择优素材，池序不是推荐）",
+  // Serenity 落点② 的两阶段预取：第二棒（顺榜首板块追成分）也要有人话标签，
+  // 否则时间线里只会出现裸工具名，用户看不出这一棒是从哪冒出来的。
+  sector_constituents: "取板块成分股真实名单",
+  // 第二轮补数：主营构成也不在 chat-stream-core 的标签表里（那是个不动清单），标签在注入侧补。
+  // 其余补数工具（快照/日K技术/五档/新闻）标签表里已有，走 stepLabelFor 兜底即可，不在这里重复。
+  stock_business_composition: "取主营与产品构成（披露原文）",
 };
 function prefetchLabel(call: DispatchCall): string | null {
   const base = PREFETCH_STEP_LABELS[call.tool];
@@ -67,7 +77,12 @@ function prefetchLabel(call: DispatchCall): string | null {
   const sym = typeof call.args.symbol === "string" ? call.args.symbol : "";
   if (sym) return `${base} · ${sym}`;
   const pid = typeof call.args.pool_id === "string" ? call.args.pool_id : "";
-  return pid ? `${base} · ${pid}` : base;
+  if (pid) return `${base} · ${pid}`;
+  const code = typeof call.args.code === "string" ? call.args.code : "";
+  if (code) return `${base} · ${code}`;
+  // 落点 A：东财断源时第二棒带的是行业名（走本地行业归属快照），时间线里同样要标出是哪个行业
+  const boardName = typeof call.args.name === "string" ? call.args.name : "";
+  return boardName ? `${base} · ${boardName}` : base;
 }
 
 export interface PrefetchResult {
@@ -132,11 +147,51 @@ export async function prefetchForScene(opts: {
     phaseFor: (call) => phaseOfTool(call.tool),
   });
 
+  // ---------- Serenity 落点② 的补数层（2026-09-29，第二轮扩到「两棒」）----------
+  // 判定在 intent-core.chainFollowUpCalls（纯核、可测）；「本地行业归属快照认得哪些行业名」这一事实
+  // 由 desk 层 chain-followup 注入（本层保持「不引别的量化依赖」的接线纪律），这里只负责把补数棒跑掉、把结果合流。
+  //   第一棒：板块 → 成分股（顺带板块整体市值 / 链上位置 / 板块财务）
+  //   第二棒：成分股里的代表个股 → 行情 / 技术 / 五档盘口 / 主营 / 消息
+  // 每棒都只在前一棒真跑完之后才产生；跑完再问一次，纯核说没有了就停（最多两棒，不会自转）。
+  // 东财断源、榜单退同花顺时第一棒改带行业名走本地备胎；本地不认得的行业名不追，不会多一个注定失败的步骤。
+  const followSteps: StepInfo[] = [];
+  const followRows: typeof result.rows = [];
+  const followMissing: typeof result.missing = [];
+  const followTrace: typeof result.trace = [];
+  const followNotRun: string[] = [];
+  for (let round = 0; round < 2; round++) {
+    const followUps = planChainFollowUps(raws, opts.intent.question);
+    if (!followUps.length) break;
+    const r = await runDispatchPlan({
+      calls: followUps,
+      stepStart: stepStart + result.steps.length + followSteps.length,
+      isCancelled: opts.isCancelled,
+      onStep: (s) => opts.emit?.({ type: "step", data: s }),
+      execute,
+      labelFor: prefetchLabel,
+      phaseFor: (call) => phaseOfTool(call.tool),
+    });
+    followSteps.push(...r.steps);
+    followRows.push(...r.rows);
+    followMissing.push(...r.missing);
+    followTrace.push(...r.trace);
+    followNotRun.push(...r.notRun);
+  }
+
   // ---------- P8-④：校验数据完整性 -> 不足则补一轮（判定全在 agent-loop-core，这里只接线） ----------
-  let rows = result.rows;
-  let missing = result.missing;
-  const steps = [...result.steps];
-  const trace = [...result.trace];
+  // 补数棒与第一棒同批合流：注入块、时间线、trace 三者都按同一顺序落，避免几套步骤号打架。
+  let rows = [...result.rows, ...followRows];
+  let missing = [...result.missing, ...followMissing];
+  const steps = [...result.steps, ...followSteps];
+  const trace = [...result.trace, ...followTrace];
+
+  // ---------- 链研究「代表个股速览」：压成一只票一行，放到注入块最前面 ----------
+  // 为什么：15 份原始结果（≈15k 字）会让模型漏读后面的块，实测同一提示词下「技术/消息」时填时缺。
+  // 这里只做**可读性**（字段逐条抄自各工具结果，不跨字段推算），原始块照旧全在后面，一份都不少。
+  const digest = buildChainDigest(raws);
+  if (digest) {
+    rows = [{ tool: "chain_rep_digest", label: "链研究速览（板块段 + 代表个股段：本轮已取到的资金/整体市值/产业链归属/板块财务/个股行情·技术·盘口·主营·消息）", ok: true, text: digest }, ...rows];
+  }
   let stepNo = stepStart + steps.length;
   const required = SKILLS.requiredToolsForScene(opts.intent.scene);
   if (required.size && calls.length) {
@@ -183,7 +238,7 @@ export async function prefetchForScene(opts: {
     steps,
     trace,
     // 没执行的调用（客户端断开）也要留痕：静默消失会被当成「取过了但没内容」
-    skipped: [...skipped, ...result.notRun.map((t) => `${t}：客户端已断开，本轮未执行`)],
+    skipped: [...skipped, ...[...result.notRun, ...followNotRun].map((t) => `${t}：客户端已断开，本轮未执行`)],
     nextStep: stepNo,
     raws,
   };

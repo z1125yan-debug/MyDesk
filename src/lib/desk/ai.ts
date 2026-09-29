@@ -7,6 +7,7 @@ import type { AiProvider, AiSettings } from "./types";
 import type { ChatHorizon, ChatMode } from "./modes";
 import type { IntentBadge, StepInfo } from "./chat-core";
 import { pickChatEndpoint } from "./chat-stream-core.ts";
+import { CHAIN_RESEARCH_SKELETON } from "./modes.ts";
 import { FOLLOWUP_NOTE } from "./followups-core.ts";
 // R20 说人话 / 说两面：与 /api/ai/chat、/api/ai/proxy 共用同一份（plain-talk.ts）
 import { PLAIN_AND_BALANCED_NOTE } from "./plain-talk.ts";
@@ -253,6 +254,10 @@ export function assistantSystemPrompt(context: string): string {
     // 服务端那份同源），换模型不改这里 —— 它属于对话层，不属于模型接入层。
     "",
     renderAnalysisFrames(),
+    // 产业链六问骨架（Serenity / 白毛股神本地化纪律）：与 /api/ai/chat 服务端那份同一常量（modes.ts），
+    // 自带触发条件（只在问产业链 / 供应链 / 卡点 / 国产替代 / 谁真受益时才生效），
+    // 所以挂在纯对话端点与浏览器凭据直连这条路同样不会污染个股/大盘问答。
+    CHAIN_RESEARCH_SKELETON,
     // P59 追问推荐：三个下发口（/api/ai/chat 工具端点、/api/ai/proxy 纯对话端点、这份浏览器凭据直连的
     // 客户端提示词）都拼这同一句收尾纪律——少一处，那一处配置的用户就永远看不到推荐芯片。
     FOLLOWUP_NOTE,

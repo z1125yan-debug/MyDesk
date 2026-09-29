@@ -7,7 +7,7 @@
 // 只列有消息的会话，点击切到 AI 对话页并把 activeSessionId 切过去。
 // P32 稳智对齐 P3 #17：品牌区加折叠按钮（稳智 nav-header 位置），点击后折叠侧栏。
 import { useMemo, useState } from "react";
-import { Bot, Brain, ChevronDown, ChevronUp, Flame, Gauge, History, LayoutGrid, ListVideo, MessageSquare, PanelLeftClose, Puzzle, Settings, ShieldAlert, Star, Wand2 } from "lucide-react";
+import { Bot, Brain, ChevronDown, ChevronUp, Flame, Gauge, History, LayoutGrid, ListVideo, MessageSquare, PanelLeftClose, Puzzle, Settings, ShieldAlert, Star, Wand2, X } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { MENU, SYSTEM_ITEMS, entryTarget, menuGroupOf, type MenuEntry } from "@/lib/desk/nav-core";
 import { prefetchPage } from "@/lib/desk/api-cache";
@@ -36,12 +36,14 @@ export default function Sidebar() {
   const sessions = useDesk((s) => s.sessions);
   const activeSessionId = useDesk((s) => s.activeSessionId);
   const switchSession = useDesk((s) => s.switchSession);
+  const dropSession = useDesk((s) => s.dropSession);
   const toggleSidebar = useDesk((s) => s.toggleSidebar); // P32：折叠按钮
   const [menuOpen, setMenuOpen] = useState(false);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const activeGroup = menuGroupOf(page)?.id ?? null;
 
-  // P20：最近 5 条有消息的会话（按 updatedAt 倒序）
+  // P20：最近会话（按 updatedAt 倒序）。2026-09-29 用户拍板：只留最新 3 条（上限闸在 store 的
+  // MAX_SESSIONS=3，被顶掉的会话直接删）；悬停条目出现 ❌，可手动删除该会话。
   // - 空消息会话（"新会话"骨架）跳过，避免一堆"新会话"占位
   // - 标题从消息里现算，和 titleFromMessages 一致（会话被重命名过就用重命名后的）
   const recent = useMemo(() => {
@@ -49,7 +51,7 @@ export default function Sidebar() {
       .filter((s) => s.messages.length > 0)
       .slice()
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 5)
+      .slice(0, 3)
       .map((s) => ({
         id: s.id,
         title: s.title && s.title !== "新会话" ? s.title : titleFromMessages(s.messages),
@@ -164,7 +166,7 @@ export default function Sidebar() {
             {recent.map((r) => {
               const active = page === "copilot" && activeSessionId === r.id;
               return (
-                <li key={r.id}>
+                <li key={r.id} className="group relative flex items-center">
                   <button
                     onClick={() => {
                       switchSession(r.id);
@@ -172,7 +174,7 @@ export default function Sidebar() {
                     }}
                     title={r.title}
                     className={
-                      "flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left text-[14px] transition-colors " +
+                      "flex w-full items-start gap-2 rounded-lg py-2 pl-3 pr-8 text-left text-[14px] transition-colors " +
                       (active
                         ? "bg-overlay-strong text-foreground"
                         : "text-muted-foreground hover:bg-overlay hover:text-foreground")
@@ -181,6 +183,18 @@ export default function Sidebar() {
                     <MessageSquare size={12} className="mt-0.5 shrink-0 opacity-60" aria-hidden />
                     <span className="flex-1 truncate leading-tight">{r.title}</span>
                     {active && <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-sky-400" />}
+                  </button>
+                  {/* 悬停出现的 ❌：删这条会话（store 的 dropSession，删的是真会话） */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dropSession(r.id);
+                    }}
+                    title="删除该会话"
+                    aria-label={`删除会话：${r.title}`}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-overlay hover:text-red-400 group-hover:opacity-100"
+                  >
+                    <X size={12} />
                   </button>
                 </li>
               );

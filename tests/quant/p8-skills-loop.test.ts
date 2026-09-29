@@ -26,8 +26,12 @@ function intent(question: string, extra: Partial<Intent> = {}): Intent {
 
 // ---------- ③ 注册表本体 ----------
 
-test("内置技能表形状：13 个工具、plan 覆盖 6 个自动调度场景（P10 起含选股；个股分析含盘口与逐笔）", () => {
-  assert.equal(BUILTIN_SKILLS.length, 13, "与 chat-tools TOOLS 的注册项数一致（多了/少了都要两边同步改）");
+test("内置技能表形状：15 个工具、plan 覆盖 6 个自动调度场景（P10 起含选股；个股分析含盘口与逐笔）", () => {
+  // 口径迁移（Serenity / 白毛股神落点②，2026-09-29）：13 → 15，新增两项都进 chat-tools 的 TOOLS，
+  // 与内置表逐项对齐。sector_constituents 挂 sector（board_code 闸：提问里点了 BK 代码才取）；
+  // stock_business_composition 挂 stock_analysis（chain 闸：产业链/供应链类问法才逐只取）。
+  // 两者都不标 required（上游是东财/云 MCP，取不到留 missing 不拖整轮）。既有场景的调度逐字未动。
+  assert.equal(BUILTIN_SKILLS.length, 15, "与 chat-tools TOOLS 的注册项数一致（多了/少了都要两边同步改）");
   // 口径迁移（P10 择优轮，用户裁定改口径）：本条原钉「深水区与选股类工具不进自动调度
   // （预取＝替用户猜条件、每轮多打接口）」——factor_screener 按 aiwuchuan「候选池→择优」
   // 链路改为预取（抽不到的条件走默认活跃池并如实标注，不再替用户猜）。
@@ -244,8 +248,9 @@ test("④ 接线在预取之后、注入之前：校验步进时间线、补充�
   assert.match(sceneSrc, /stepStart: stepNo/, "补充轮步骤号接着首轮往下编，两套不能都从 1 开始");
   assert.match(sceneSrc, /const merged = mergeSupplement\(\{ rows, missing \}, gaps, r2\);[\s\S]{0,120}rows = merged\.rows;[\s\S]{0,60}missing = merged\.missing;/);
   assert.match(sceneSrc, /if \(still\) skipped\.push\(still\)/, "补不齐的要在「本轮没做成什么」里看得到");
-  // 补充轮走的是同一个 execute：新鲜度 raws 自动包含补回来的 kline/fund 原始结果
-  assert.equal((sceneSrc.match(/execute,/g) ?? []).length, 2, "首轮与补充轮共用同一份 execute 闭包");
+  // 首轮 / 链研究第二棒（顺榜首板块追成分）/ 补充轮，三轮都走同一个 execute 闭包：
+  // 新鲜度 raws 自动包含补回来的 kline/fund 原始结果，三处步骤号也同源，不会各编各的。
+  assert.equal((sceneSrc.match(/execute,/g) ?? []).length, 3, "三轮取数共用同一份 execute 闭包");
   assert.match(sceneSrc, /raws\.push\(\{ tool: call\.tool, args: call\.args, out \}\)/, "A 轮口径不破：新鲜度仍吃序列化前的原始结果");
 });
 

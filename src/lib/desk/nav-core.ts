@@ -57,13 +57,14 @@ export const MENU: MenuEntry[] = [
     id: "quotes",
     label: "行情",
     children: [
-      // 2026-09-25：新增「个股行情」页（稳智 /overview 复刻）作为本组首页——点「行情」即进此页
-      { key: "quotes", label: "个股行情" },
+      // 2026-09-29 用户拍板行情子菜单顺序：全A 列表 → 数据看板 → 风险监控 → 个股行情 → 个股画像 → 历史行情。
+      // 默认落点即 children[0] = 全A 列表（点「行情」进此页）。
       { key: "allstocks", label: "全A 列表" },
-      { key: "history", label: "历史行情" },
-      { key: "profile", label: "个股画像" },
-      { key: "risk", label: "风险监控" },
       { key: "board", label: "数据看板" },
+      { key: "risk", label: "风险监控" },
+      { key: "quotes", label: "个股行情" },
+      { key: "profile", label: "个股画像" },
+      { key: "history", label: "历史行情" },
     ],
   },
   // 对方把「自选」单列一级（第 5 位），照做——它不是行情的子集，是每天打开的那一页
