@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
+import { db } from "@/lib/db";
 import { fetchBoardRowsRescuedV2 } from "@/lib/desk/board-rescue";
 import { inferMarketEnv } from "@/lib/quant/review/market-inference";
 import { newsWindowLabel } from "@/lib/quant/review/theme-news-core";
@@ -103,8 +104,29 @@ async function getHandler(req: Request) {
   const newsDates = newsWindowDates(date || today);
   const newsWindow = { dates: newsDates, label: newsWindowLabel(newsDates) };
 
-  // 市场环境推理：所有复盘种子覆盖内的请求都给（休市日请求“今天”时，落到最近一个有读数的交易日）
-  const inference = inferMarketEnv(date || today);
+  // 市场环境推理：种子 + 每日沉淀自产行（market_daily_stats）合并。
+  // 只读种子的话 09-28/29 会被套上 09-24 的「退潮下跌」——09-29 实际是涨日（用户实测抓到的错）。
+  let inference: ReturnType<typeof inferMarketEnv> = null;
+  try {
+    const selfRowsAsc = await db.marketDailyStats.findMany({
+      where: { tradeDate: { lte: date || today } },
+      orderBy: { tradeDate: "desc" },
+      take: 30, // 取「最近」30 行——升序+take 会拿到最早的 4 月份行，最新日期反而进不来（实测踩过）
+    });
+    const selfRows = selfRowsAsc.reverse();
+    inference = inferMarketEnv(
+      date || today,
+      selfRows.map((m) => ({
+        date: m.tradeDate, limitUp: m.limitUp ?? 0, limitDown: m.limitDown ?? 0,
+        t3: m.t3 ?? 0, t4: m.t4 ?? 0, t5: m.t5 ?? 0, maxBoards: m.maxBoards ?? 0,
+        decliners: m.decliners ?? 0, belowMa5: m.belowMa5 ?? 0, belowMa3: m.belowMa3 ?? 0,
+        aboveMa5Pct: m.aboveMa5Pct ?? null,
+      })),
+    );
+  } catch {
+    // DB 不可用退回纯种子口径（覆盖止于种子末日，至少不编数）
+    inference = inferMarketEnv(date || today);
+  }
   const marketEnv = inference
     ? { as_of_trade_date: inference.as_of_date, label: inference.market_bucket }
     : undefined;
