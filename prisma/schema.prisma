@@ -617,3 +617,35 @@ model MarketLimitUp {
   @@index([tradeDate])
   @@map("market_limit_up")
 }
+
+// P0 类型B预测数据底座：每日收盘后沉淀一行（宽度/风险/次日涨跌），次日回填次日涨跌。
+// 与 MarketDailyStats 的区别：本表带 next_day_* 回填字段——那是 Brier 校准回收的落点，类型B方向概率预测的唯一训练/回测源。
+// 写入口径：tradeDate 唯一，同日重跑 upsert（收盘后口径可能微调，以最后一次为准，basis 记出身）；只认收盘后（15:05 后）+ 交易日。
+// 当前只攒数据，不放行任何概率预测（禁区代码未触碰）。
+// 方向靶：stock_daily_close 只存个股收盘价（不含指数 000001.SH），故「次日市场方向」取 T→T+1 全市场中位个股收盘涨跌幅。
+model DailySnapshot {
+  id            String   @id @default(cuid())
+  tradeDate     String   @unique // 北京时间交易日 YYYY-MM-DD
+  aboveMa5Pct   Float? // 站上5日线占比 %
+  belowMa5      Int? // 低于5日线家数（三市全A）
+  belowMa3      Int? // 低于3日线家数
+  limitUp       Int? // 涨停家数
+  limitDown     Int? // 跌停家数
+  decliners     Int? // 全市场下跌家数
+  t3            Int? // 3 连板家数
+  t4            Int? // 4 连板家数
+  t5            Int? // 5 连板及以上家数
+  maxBoards     Int? // 当日最高板
+  breadthCount  Int? // 当日有收盘价的全A家数（宽度分母）
+  riskLevel     String   @default("") // 本地由宽度推导：正常|注意|偏高|高风险（P1 将用量价回标重校，当前为占位）
+  // 次日涨跌（T+1 回填，T 日不知）：方向靶 = T→T+1 全市场中位个股收盘涨跌幅 %
+  nextDayUp     Boolean? // T+1 全市场是否收涨（中位个股涨跌幅 ≥ 0）
+  nextDayMktChg Float? // T+1 全市场中位个股收盘涨跌幅 %
+  nextDayBasis  String   @default("") // 回填依据（如「T+1=2026-09-30 全市场中位个股收盘涨跌幅（N=5530 只）」）
+  basis         String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tradeDate])
+  @@map("daily_snapshot")
+}

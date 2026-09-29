@@ -1,5 +1,5 @@
 // POST 手动触发一次后台任务（P2-自动化 11/12：补跑、失败重试、验证链路；P3 增加口径选择；P15-R2b 加 breadth 宽度沉淀）
-// body: { kind: "radar" | "events" | "breadth", force?: boolean, mode?: "full" | "incremental" }
+// body: { kind: "radar" | "events" | "breadth" | "review" | "roster" | "dailysnap", force?: boolean, mode?: "full" | "incremental" }
 // breadth（收盘后全A收盘价沉淀）不吃 mode 口径：写库本就是「唯一键 + 不重写」；收盘前/周末触发会被拒并如实报错。
 // 默认不强制：走与调度器完全相同的幂等判定（当日已有成功结果 → 返回 skipped(already_success)，不重复打数据源）。
 // force=true 才跳过该拦截（仍受 running 互斥限制），用于人工补跑；每次执行都写 task_run，trigger=manual。
@@ -24,9 +24,9 @@ export async function POST(req: Request) {
   }
   const kind = body.kind === "events" ? "events" : body.kind === "radar" ? "radar"
     : body.kind === "breadth" ? "breadth" : body.kind === "review" ? "review"
-    : body.kind === "roster" ? "roster" : null;
+    : body.kind === "roster" ? "roster" : body.kind === "dailysnap" ? "dailysnap" : null;
   if (!kind) {
-    return NextResponse.json({ ok: false, error: "kind 只能是 radar、events、breadth、review 或 roster" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "kind 只能是 radar、events、breadth、review、roster 或 dailysnap" }, { status: 400 });
   }
   if (body.mode !== undefined && body.mode !== "full" && body.mode !== "incremental") {
     return NextResponse.json({ ok: false, error: 'mode 只能是 "full" 或 "incremental"（不传=自动判定；breadth/review/roster 不吃这个口径）' }, { status: 400 });
