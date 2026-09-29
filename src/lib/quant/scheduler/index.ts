@@ -24,6 +24,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { archiveBreadthScan } from "@/lib/quant/screener/breadth-collect";
 import { archiveReviewScan } from "@/lib/quant/screener/review-daily-collect";
+// P0 类型B预测数据底座：每日收盘后沉淀一行 daily_snapshot（宽度/风险/次日涨跌），次日回填次日涨跌。
+import { archiveDailySnapshot } from "@/lib/quant/screener/daily-snapshot-collect";
 // R20：收盘后涨停名单沉淀（晋级率/梯队断层/昨日涨停表现这三组读数的唯一来源）
 import { archiveLimitUpRoster } from "@/lib/quant/screener/limit-up-collect";
 import { shanghaiDate } from "@/lib/desk/session";
@@ -36,12 +38,12 @@ export { SKIP_REASON_TEXT, type TaskKind } from "./rules";
 
 const TICK_MS = 60_000;
 const INDEX_SYMBOL = "000001.SH"; // 交易日判据：上证指数日线（与选股器交易日历同源）
-const KINDS: TaskKind[] = ["radar", "events", "breadth", "review", "roster", "sectorsnap"];
+const KINDS: TaskKind[] = ["radar", "events", "breadth", "review", "roster", "sectorsnap", "dailysnap"];
 /**
  * 没有「增量游标」概念的任务：幂等落在写库层的唯一键上，不是游标上。
  * R20 加 roster 时一并把这段从三元表达式里抽出来——三个 kind 挤一条三元已经读不动了。
  */
-const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster", "sectorsnap"]);
+const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster", "sectorsnap", "dailysnap"]);
 /** 有游标的那两类：写成守卫而不是在调用点 cast —— 以后再加 kind 会在类型层提醒我们分流没更新 */
 const isCursorKind = (k: TaskKind): k is ScanKind => k === "radar" || k === "events";
 const NO_CURSOR_BASIS: Partial<Record<TaskKind, string>> = {
@@ -49,6 +51,7 @@ const NO_CURSOR_BASIS: Partial<Record<TaskKind, string>> = {
   breadth: "宽度管线不设增量游标：口径是「当日已有收盘价行不重写（收盘价不可变），重跑只补新票」",
   roster: "涨停名单不设增量游标：口径是「按（票 × 交易日）唯一键 upsert，同日重跑以最后一次为准」",
   sectorsnap: "行业快照不设增量游标：口径是「按交易日 upsert（盘中多次抓刷新同日），见顶引擎/回测读这份 JSON」",
+  dailysnap: "每日留档不设增量游标：口径是「按交易日唯一键 upsert，同日重跑以最后一次为准」",
 };
 const UNCONFIRMED_PROBE_MS = 15 * 60_000; // 确证不了交易日时，最多每 15 分钟再问一次数据源
 
@@ -268,6 +271,7 @@ export async function runTaskTracked(
       : kind === "review" ? await archiveReviewScan()
       : kind === "breadth" ? await archiveBreadthScan()
       : kind === "sectorsnap" ? await archiveSectorSnapshot()
+      : kind === "dailysnap" ? await archiveDailySnapshot()
       : await archiveLimitUpRoster();
     const writeLine = `写入：新增 ${out.delta.inserted}、更新 ${out.delta.updated}、未变 ${out.delta.unchanged}`
       + (out.delta.skippedByCursor ? `、游标跳过 ${out.delta.skippedByCursor}` : "")
