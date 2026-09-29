@@ -12,7 +12,12 @@ import type { AssetMeta } from "../types.ts";
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const BATCH = 60; // 腾讯批量报价单次上限（保守值）
-const CONC = 6; // 并发批数：5700 只 ≈ 95 请求 ÷ 6 ≈ 16 波
+// 并发批数：5700 只 ≈ 95 请求 ÷ 12 ≈ 8 波。
+// 2026-09-29 实测（36 请求 × 60 只，100% 成功）：
+//   并发 6 → 2.63s（单请求均 0.40s）；并发 12 → 0.97s（0.30s）；并发 18 → 0.69s（0.29s）
+// 取 12 而不是 18：对上游留余量（这是别人家的公开接口），而冷启动已从 25s 级降到十几秒、
+// 配合 30~55s 的服务端 TTL，四卡刷新不用再干等。
+const CONC = 12;
 const REQ_TIMEOUT_MS = 8000;
 
 // 模块实例可能因说明符不同被打包成两份（见 data/index.ts 的 globalThis 教训），标记必须放全局

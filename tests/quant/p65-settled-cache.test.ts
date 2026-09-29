@@ -85,16 +85,29 @@ test("beijingDayTime 用北京时区（UTC 深夜不许退回前一天）", () =
   assert.equal(t.hm, "00:30");
 });
 
-test("接线：大盘情绪页下方三条链路都走当日沉淀缓存，四个卡片仍是实时轮询", () => {
+test("成交额卡＝实时口径、图＝只画已完成交易日（用户实测：刷新后卡片还停在 0.48 万亿）", () => {
+  const ui = read("src/components/desk/pages/MarketPage.tsx");
+  // 用户 2026-09-29 10:19 实测：页面刷新后成交额仍是 0.48 万亿（真实已 0.62）。
+  // 根因是这张卡读了「当日沉淀」的趋势序列最后一根 —— 沉淀把它定在了第一次打开那一刻。
+  assert.match(ui, /const turnoverLiveYi = sent && \(sent\.amount_known \?\? 0\) > 0 \? sent\.amount_total_yi : null/,
+    "成交额卡必须读实时快照（sentiment 轮询源），且过 amount_known 闸");
+  assert.ok(!/\{tLatest \?/.test(ui), "卡片不许再读被定住的趋势序列");
+  assert.ok(!/const tLatest = trend \?/.test(ui), "被定住的那条读数路径要删干净");
+  assert.match(ui, /const completedThrough = useMemo/, "图要按「已完成交易日」切一刀");
+  assert.match(ui, /option=\{turnoverOption\(trendDaysDone/, "成交额图画的是已完成交易日序列（不含今天那根半截柱）");
+  assert.match(ui, /盘中累计/, "盘中要标明这是当日累计口径");
+});
+
+test("接线：只有「收盘后沉淀」的两条链路走当日缓存；连板梯队与四卡走实时轮询", () => {
   const ui = read("src/components/desk/pages/MarketPage.tsx");
   assert.match(ui, /const KEY = "market-breadth:30";/);
   assert.match(ui, /readSettled<BreadthClient>\(KEY\)/);
-  assert.match(ui, /const KEY = "market-tiers";/);
-  assert.match(ui, /readSettled<LimitUpClient>\(KEY\)/);
   assert.match(ui, /market-trend:\$\{from\}:\$\{to\}/);
   assert.match(ui, /writeSettled\(/, "取回后必须写回缓存");
-  assert.match(ui, /if \(poll\.tick > 0\) load\(\);/, "四卡仍按轮询实时刷新（只刷 sentiment）");
-  assert.match(ui, /结算|当日沉淀/);
+  // 连板梯队＝当日实时结构（用户拍板「盘中和盘后能一样吗」）→ 不许进当日沉淀缓存
+  assert.ok(!/readSettled<LimitUpClient>/.test(ui), "连板梯队必须实时，不能走当日沉淀缓存");
+  assert.match(ui, /if \(poll\.tick > 0\) \{ load\(\); void loadTiers\(\); \}/, "四卡与连板梯队都按轮询实时刷新");
+  assert.match(ui, /当日沉淀/);
 });
 
 /* ---------------- ② 因子缓存口径 ---------------- */
