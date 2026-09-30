@@ -3,6 +3,7 @@
 export type PageKey =
   | "aihome"       // 实时选股 · AI 对话首页（重定位后的一级入口）
   | "aiscan"       // AI 实时选股（全A扫描漏斗）——R3c 起为路由别名：导航收口到 quant 门户（nav-core ROUTE_REDIRECTS）
+  | "trackrecord"  // 战绩（P36-C）：哪天推了哪几只票、次日各自涨跌、跟单净值 vs 全A中位
   | "aiscreener"   // 量化选股工作台（稳智 /screener 复刻：条件卡片组 + 筛选 + AI 优选 + 策略）
   | "pool"         // 候选池（冻结 + 次日验证）
   | "screener"     // 因子选股器
@@ -179,6 +180,7 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   aihome: "AI分析",
   aiscan: "AI 实时选股",
   aiscreener: "量化选股",
+  trackrecord: "战绩",
   pool: "候选池",
   screener: "因子选股器",
   profile: "个股资金画像",

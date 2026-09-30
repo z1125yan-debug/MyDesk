@@ -28,6 +28,9 @@ import { archiveReviewScan } from "@/lib/quant/screener/review-daily-collect";
 import { archiveDailySnapshot } from "@/lib/quant/screener/daily-snapshot-collect";
 // R20：收盘后涨停名单沉淀（晋级率/梯队断层/昨日涨停表现这三组读数的唯一来源）
 import { archiveLimitUpRoster } from "@/lib/quant/screener/limit-up-collect";
+// P36-C：收盘后把「推荐过的具体票」按 T+1/T+2 真实行情回填，攒战绩证据链（不许手工补）
+import { fillPicks } from "@/lib/quant/strategy/pick-fill-collect";
+import { syncPickSymbols } from "@/lib/quant/strategy/pick-symbol-collect";
 import { shanghaiDate } from "@/lib/desk/session";
 import {
   DEFAULT_SCHEDULER_CONFIG, SKIP_REASON_TEXT, decideRun, isDueWindow, judgeTradingDay, nextSlot, slotAtForDate,
@@ -38,12 +41,12 @@ export { SKIP_REASON_TEXT, type TaskKind } from "./rules";
 
 const TICK_MS = 60_000;
 const INDEX_SYMBOL = "000001.SH"; // 交易日判据：上证指数日线（与选股器交易日历同源）
-const KINDS: TaskKind[] = ["radar", "events", "breadth", "review", "roster", "sectorsnap", "dailysnap"];
+const KINDS: TaskKind[] = ["radar", "events", "breadth", "review", "roster", "sectorsnap", "dailysnap", "picksym", "pickfill"];
 /**
  * 没有「增量游标」概念的任务：幂等落在写库层的唯一键上，不是游标上。
  * R20 加 roster 时一并把这段从三元表达式里抽出来——三个 kind 挤一条三元已经读不动了。
  */
-const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster", "sectorsnap", "dailysnap"]);
+const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster", "sectorsnap", "dailysnap", "picksym", "pickfill"]);
 /** 有游标的那两类：写成守卫而不是在调用点 cast —— 以后再加 kind 会在类型层提醒我们分流没更新 */
 const isCursorKind = (k: TaskKind): k is ScanKind => k === "radar" || k === "events";
 const NO_CURSOR_BASIS: Partial<Record<TaskKind, string>> = {
@@ -272,6 +275,8 @@ export async function runTaskTracked(
       : kind === "breadth" ? await archiveBreadthScan()
       : kind === "sectorsnap" ? await archiveSectorSnapshot()
       : kind === "dailysnap" ? await archiveDailySnapshot()
+      : kind === "picksym" ? await syncPickSymbols()
+      : kind === "pickfill" ? await fillPicks()
       : await archiveLimitUpRoster();
     const writeLine = `写入：新增 ${out.delta.inserted}、更新 ${out.delta.updated}、未变 ${out.delta.unchanged}`
       + (out.delta.skippedByCursor ? `、游标跳过 ${out.delta.skippedByCursor}` : "")

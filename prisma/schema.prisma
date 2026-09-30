@@ -699,6 +699,23 @@ model StrategyPick {
   statWin      Float? // 展示时次日胜率 %
   statAvg      Float? // 展示时次日均益 %
   pickedAt     DateTime @default(now())
+  // P36-C（2026-10-01）：具体票台账——「推了哪几只」必须落到票级，否则次日无从回填，
+  // 「跟着推荐到底赚没赚」永远答不上来（旧口径只有策略名，库里 8 行全 null）。
+  // symbols 是 JSON 数组：[{symbol,name,close,limitRatio}]，取不到具体票的行就是空，不许拿策略名冒充。
+  symbols         String?
+  /** 为什么这行没有具体票（算不出来 / 当天一只没命中），说人话；空数组=已处理但确实没票 */
+  symbolsNote     String?
+  // 次日回填（T+1、T+2 两天都走完才知道）：口径与 B 的事件回测完全一致
+  // ——T+1 开盘买、T+2 开盘卖、扣往返手续费；T+1 一字涨停/停牌的票直接剔除，不记 0 收益。
+  nextDaySymWin   Float? // 这批票次日平均净收益 %（扣费后，等权）
+  nextDaySymUp    Int? // 上涨只数
+  nextDaySymCount Int? // 参与统计只数（剔除买不进之后）
+  nextDaySymSkip  Int? // 因一字涨停/停牌被剔除的只数
+  nextDayBenchNet Float? // 同期「全A中位个股」净收益 %（及格线：跑不赢它等于白干）
+  nextDayBasis    String? // 口径说明：T+1/T+2 是哪天、数据源、剔除规则
+  /** 逐票明细 JSON：[{symbol,name,net,reason}]——页面要能展开看「哪只赚了哪只亏了」，只有汇总数就是黑箱 */
+  nextDaySymDetail String?
+  symBackfilledAt DateTime?
   // 次日回填（T+1 才知道）：靶=全市场中位个股收盘涨跌幅（与 daily_snapshot.nextDayMktChg 同源）
   nextDayMktChg Float?
   nextDayUp     Boolean?

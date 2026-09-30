@@ -8,6 +8,10 @@
 //   node --experimental-strip-types scripts/backfill-daily-bars.ts --limit 50        # 试点
 //   node --experimental-strip-types scripts/backfill-daily-bars.ts                   # 全量
 //   node --experimental-strip-types scripts/backfill-daily-bars.ts --resume          # 断点续跑
+//   node --experimental-strip-types scripts/backfill-daily-bars.ts --bars 3           # 每日增量（收盘后跑，约 45s）
+//
+// P36-C 起这条是战绩链的起点：粮仓不更新到当天，picksym 补不出当天命中的票、
+// pickfill 也拿不到 T+1/T+2 的开盘价。收盘后按「bars 增量 → picksym → pickfill」顺序跑。
 //
 // 参数：
 //   --limit N        只处理前 N 只（默认全A）
