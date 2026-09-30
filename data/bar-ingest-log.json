@@ -1,0 +1,43 @@
+{
+  "batches": [
+    {
+      "batch": "20260930-1625-qfq800",
+      "at": "2026-09-30T08:25:13.511Z",
+      "gateway": "http://127.0.0.1:8756",
+      "adjust": "qfq",
+      "barsRequested": 800,
+      "symbolsQueued": 5,
+      "symbolsOk": 5,
+      "rowsWritten": 4000,
+      "droppedRows": 0,
+      "seconds": 0.5,
+      "note": "全A前复权日K；指数 amount/volume 为成分股汇总口径，与个股不可比"
+    },
+    {
+      "batch": "20260930-1629-qfq800",
+      "at": "2026-09-30T08:29:29.394Z",
+      "gateway": "http://127.0.0.1:8756",
+      "adjust": "qfq",
+      "barsRequested": 800,
+      "symbolsQueued": 30,
+      "symbolsOk": 30,
+      "rowsWritten": 22448,
+      "droppedRows": 0,
+      "seconds": 5.5,
+      "note": "全A前复权日K；指数 amount/volume 为成分股汇总口径，与个股不可比"
+    },
+    {
+      "batch": "20260930-1629-qfq800",
+      "at": "2026-09-30T08:51:46.547Z",
+      "gateway": "http://127.0.0.1:8756",
+      "adjust": "qfq",
+      "barsRequested": 800,
+      "symbolsQueued": 5580,
+      "symbolsOk": 5574,
+      "rowsWritten": 4277374,
+      "droppedRows": 0,
+      "seconds": 1320.3,
+      "note": "全A前复权日K；指数 amount/volume 为成分股汇总口径，与个股不可比"
+    }
+  ]
+}

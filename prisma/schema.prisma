@@ -542,6 +542,38 @@ model StockDailyClose {
   @@map("stock_daily_close")
 }
 
+// B0 日K粮仓（2026-09-30）：全A前复权日K，**六字段全存**（开/高/低/收/量/额）。
+//
+// 为什么必须有这张表（此前所有"复算不出来"的根因都在这里）：
+// 1) `stock_daily_close` 是别人的种子，只有 113 天且**只有 close 一列**——连"放量"都算不了；
+// 2) 分档回测 `scripts/build-strategy-regime.ts` 每次现去 eltdx 网关拉一遍，**不落库**——
+//    结果依赖外部接口，数据源一更新（复权调整/补数据）跑出来的数就漂，谁也证明不了谁；
+// 3) 前端 `/api/market/kline` 有硬上限 160 根，页面拿不到两年日线。
+//
+// 写入口径（实现在 scripts/backfill-daily-bars.ts）：
+// 1) 只存行情源真给的字段：open/high/low/close 任一非有限值 → 整行丢弃，不许补 0、不许拿前一日顶替；
+// 2) volume 单位=股（网关 volume_lots 是手，×100）；amount 单位=元；两者都可能是 0（停牌日），0 是真实值不是缺失；
+// 3) 复权方式固定 qfq（前复权），写死在 batch 里——不同 adjust 之间不可比，混着算 IC 会出错；
+// 4) batch 字段记出身批次（见 data/bar-ingest-log.json）：这批数据什么时候拉的、拉了多少根，
+//    没有它就无法回答"你算的那个数字是用哪一份数据算的"。
+model StockDailyBar {
+  symbol    String // 688256.SH
+  tradeDate String // 北京时间交易日 YYYY-MM-DD（行情源 K 线自带日期）
+  adjust    String   @default("qfq") // 复权方式：qfq=前复权（当前唯一来源）
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    Float // 股
+  amount    Float // 元
+  batch     String // 出身批次号（data/bar-ingest-log.json 可查）
+  updatedAt DateTime @updatedAt
+
+  @@id([symbol, tradeDate, adjust])
+  @@index([tradeDate])
+  @@map("stock_daily_bar")
+}
+
 // R21 每日复盘统计（收盘后自产）：把当日的涨跌停/连板梯队/下跌家数钉成一行，
 // 让首页「涨跌停板分布对比」「连板梯队结构」两张图不再只有一份不续写的离线种子。
 //
