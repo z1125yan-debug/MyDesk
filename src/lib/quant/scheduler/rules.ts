@@ -6,7 +6,8 @@
 // P15-R20 加 "roster"：收盘后把当日涨停名单（哪几只、几连板）钉进 market_limit_up，
 // 晋级率 / 梯队断层 / 昨日涨停股今日表现这三组读数只有名单攒起来之后才算得出来。
 // sectorsnap（R21b）：见顶引擎/回测吃的 sector-daily-snapshots.json 刷新（此前只写 custom.db，双数据源不一致）。
-export type TaskKind = "radar" | "events" | "breadth" | "review" | "roster" | "sectorsnap" | "dailysnap";
+// pickfill（P36-C）：收盘后把「推荐过的具体票」按 T+1/T+2 真实行情回填，攒战绩证据链
+export type TaskKind = "radar" | "events" | "breadth" | "review" | "roster" | "sectorsnap" | "dailysnap" | "picksym" | "pickfill";
 
 export interface SchedulerConfig {
   /** 收盘时刻（北京时间当日分钟数，15:00 = 900） */

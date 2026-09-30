@@ -44,9 +44,14 @@ export const MENU: MenuEntry[] = [
   { id: "market", label: "大盘情绪", key: "market" },
   {
     // S3 稳智复刻：量化选股收敛为单一工作台（条件卡组+筛选+AI 优选+策略）；旧研究台/因子库等仍可 hash 直达
+    // P36-C：组内第 2 项是「战绩」——跟着推荐到底赚没赚，是这个工作台唯一的实证出口。
     id: "quant",
     label: "量化因子选股",
-    key: "aiscreener",
+    // 有 children 时不再写 key：点父项默认落 children[0]（选股工作台），写两遍会被登记去重判成重页
+    children: [
+      { key: "aiscreener", label: "选股工作台" },
+      { key: "trackrecord", label: "战绩" },
+    ],
     legacyPages: ["quant", "screener", "factorlab", "pool", "radar", "problab"],
   },
   // 2026-09-28：行业组挂「行业板块排行」(默认落点) 与「板块风险」(见顶预警扫描器 + 回撤性质识别器)。

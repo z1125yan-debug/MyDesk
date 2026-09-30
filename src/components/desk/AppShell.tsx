@@ -20,6 +20,8 @@ import AiScanPage from "./pages/AiScanPage";
 import PoolPage from "./pages/PoolPage";
 import ScreenerPage from "./pages/ScreenerPage";
 import ScreenerWorkbench from "./pages/ScreenerWorkbench";
+// P36-C 战绩：跟着推荐到底赚没赚（票级明细 + 跟单 vs 全A中位两条线）
+import TrackRecordPage from "./pages/TrackRecordPage";
 import SectorsPage from "./pages/SectorsPage";
 import FactorLabPage from "./pages/FactorLabPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -142,6 +144,7 @@ export default function AppShell() {
             {page === "pool" && <PoolPage />}
             {page === "screener" && <ScreenerPage />}
             {page === "aiscreener" && <ScreenerWorkbench />}
+            {page === "trackrecord" && <TrackRecordPage />}
             {page === "profile" && <ProfilePage />}
             {page === "market" && <MarketPage />}
             {page === "sectors" && <SectorsPage />}
