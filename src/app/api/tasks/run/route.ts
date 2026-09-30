@@ -22,11 +22,15 @@ export async function POST(req: Request) {
   } catch {
     /* 允许空 body */
   }
+  // P36-C：picksym（补当天命中的票）/ pickfill（次日回填战绩）/ dailybars（粮仓增量）也要能手动补跑，
+  // 否则某天服务没开着，这条链的缺口只能靠改数据补——那就不是真实战绩了。
   const kind = body.kind === "events" ? "events" : body.kind === "radar" ? "radar"
     : body.kind === "breadth" ? "breadth" : body.kind === "review" ? "review"
-    : body.kind === "roster" ? "roster" : body.kind === "dailysnap" ? "dailysnap" : null;
+    : body.kind === "roster" ? "roster" : body.kind === "dailysnap" ? "dailysnap"
+    : body.kind === "picksym" ? "picksym" : body.kind === "pickfill" ? "pickfill"
+    : body.kind === "dailybars" ? "dailybars" : null;
   if (!kind) {
-    return NextResponse.json({ ok: false, error: "kind 只能是 radar、events、breadth、review、roster 或 dailysnap" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "kind 只能是 radar、events、breadth、review、roster、dailysnap、picksym、pickfill 或 dailybars" }, { status: 400 });
   }
   if (body.mode !== undefined && body.mode !== "full" && body.mode !== "incremental") {
     return NextResponse.json({ ok: false, error: 'mode 只能是 "full" 或 "incremental"（不传=自动判定；breadth/review/roster 不吃这个口径）' }, { status: 400 });

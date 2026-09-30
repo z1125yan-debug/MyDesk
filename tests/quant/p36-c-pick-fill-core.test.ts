@@ -149,12 +149,23 @@ import path from "node:path";
 // 从仓库根读（node --test 在项目根执行，cwd 即根）
 const read = (p: string): string => readFileSync(path.join(process.cwd(), p), "utf8");
 
-test("调度器已登记 picksym / pickfill 两个收盘后任务（删了战绩就永远不涨）", () => {
+test("调度器已登记 dailybars → picksym → pickfill 三个收盘后任务（删了战绩就永远不涨）", () => {
   const src = read("src/lib/quant/scheduler/index.ts");
-  for (const k of ["picksym", "pickfill"]) {
+  for (const k of ["dailybars", "picksym", "pickfill"]) {
     assert.match(src, new RegExp(`"${k}"`), `调度器 KINDS 里应该有 ${k}`);
   }
-  assert.match(read("src/lib/quant/scheduler/rules.ts"), /"picksym" \| "pickfill"/);
+  assert.match(read("src/lib/quant/scheduler/rules.ts"), /"dailybars" \| "picksym" \| "pickfill"/);
+});
+
+test("KINDS 里 dailybars 必须排在 picksym 之前（顺序反了当天票就补不出来）", () => {
+  const src = read("src/lib/quant/scheduler/index.ts");
+  const m = /const KINDS: TaskKind\[\] = \[([^\]]+)\]/.exec(src);
+  assert.ok(m, "找不到 KINDS 定义");
+  const kinds = m[1].split(",").map((s) => s.trim().replace(/"/g, ""));
+  assert.ok(
+    kinds.indexOf("dailybars") >= 0 && kinds.indexOf("dailybars") < kinds.indexOf("picksym"),
+    `dailybars 必须排在 picksym 之前，实际顺序：${kinds.join(" → ")}`,
+  );
 });
 
 test("台账表字段不许被删：具体票 + 回填结果 + 逐票明细", () => {
