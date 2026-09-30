@@ -54,3 +54,11 @@ test("condToZh：rolling_return 字段说「涨幅」而非「收盘价」", () 
 test("condToZh：命中不到的字段回退原始字段名（仍比「1」强）", () => {
   assert.equal(condToZh({ field: "weird_field", op: ">=", value: 5 }), "weird_field≥5");
 });
+
+test("humanName：同字段条件去重，不拼出「底分型 · 底分型 · 底分型」的口吃名", () => {
+  // 真实案例：社区策略 #620 的条件就是 9 条一模一样的 chan_bottom_fractal=1，
+  // 反推名曾原样把「底分型」重复三遍上屏
+  const conds: NameCond[] = Array.from({ length: 9 }, () => ({ field: "chan_bottom_fractal", op: "=", value: 1 }));
+  const got = humanName("1", conds, 620);
+  assert.equal(got, "底分型", `应去重成单个短语：得到「${got}」`);
+});

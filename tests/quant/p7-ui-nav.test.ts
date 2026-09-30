@@ -198,7 +198,10 @@ test("Sidebar：主导航从 MENU 派生（唯一清单出处），源码里不�
   // R3a 新增钉：一级平铺 + 组内子项是唯一形态，不许回潮「点工作台再出第二栏」
   assert.match(src, /entryTarget\(entry\)/, "点组名要直达该组主页面（不再先切一个空工作台壳）");
   assert.match(src, /aria-label="主菜单"/, "一级菜单要有语义地标（对方左栏就是可扫读的平铺列表）");
-  assert.match(src, /已连接实时行情/, "底部状态条口径不能丢（工程状态词不外露）");
+  // P36 后底部状态条改成「今日休市/盘中」诚实口径（marketSession + useTradeDate 背书），
+  // 旧文案「已连接实时行情」已删——钉意图不变：状态条必须来自会话真值，不外露工程状态词。
+  assert.match(src, /今日休市/, "底部状态条要有诚实的休市口径（节假日不假装实时）");
+  assert.match(src, /marketSession\(/, "底部状态条必须由本地会话推算（marketSession），不硬编码文案");
 });
 
 test("WorkbenchShell：不再画第二层左栏；legacy 兼容路由挂横幅指回对话，而不是白屏或静默替换", () => {

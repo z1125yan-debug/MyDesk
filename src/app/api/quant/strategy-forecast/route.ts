@@ -111,6 +111,9 @@ export async function GET(req: NextRequest) {
     }
 
     // ② 策略闸门 + 推荐打包（纯核）
+    // 条件反查表：榜单出接口、写台账两处共用，人话名口径只有一处
+    const condsById = new Map<number, NameCond[]>();
+    for (const s of strategyLibrary()) condsById.set(s.id, (s.conds as NameCond[] | undefined) ?? []);
     const strategies: GateStrategy[] = strategyLibrary().map((s) => ({
       id: s.id,
       name: s.name,
@@ -154,6 +157,9 @@ export async function GET(req: NextRequest) {
       // 导致删掉 43 条涨停策略后 n=29 的噪音照样占榜首（胜率 48.3% 排第 1）；
       // 而且现算出来的 items 没有 winCi（CI 是加载层 enrichWinCi 加的）。
       const ranked = { items: (r && lib?.rank?.[r] ? lib.rank[r] : []).slice(0, 5) };
+      // 榜单条目原样读自预计算文件，name 里大量是社区原名「1/2/3」——出接口前统一反推成人话名，
+      // 否则弹卡推荐列表上屏的就是数字（台账段用的同一个 humanName，口径只有一处）。
+      ranked.items = ranked.items.map((it) => ({ ...it, name: humanName(it.name, condsById.get(it.id), it.id) }));
       // P34-4（2026-09-30）：样本外检验警示。validate-regime-oos.ts（前70%训练/后30%检验）结论：
       // 档位排序**不保序**（弱势期全A中位次日收益反而为正）——排序参考价值有限，必须让用户看到，
       // 不能只躺在脚本和 worklog 里。
@@ -201,8 +207,7 @@ export async function GET(req: NextRequest) {
       try {
         const td = shanghaiDate();
         // 社区策略名大量是「1/我的/test」，台账里存反推出来的人话名，战绩页才看得懂
-        const condsById = new Map<number, NameCond[]>();
-        for (const s of strategyLibrary()) condsById.set(s.id, (s.conds as NameCond[] | undefined) ?? []);
+        // （condsById 在 ② 建好，榜单出接口与台账共用，保证两处同名同源）
         const rows: PickRow[] = [];
         for (const it of regime.items as { id: number; name: string; stat?: { n?: number; win?: number; avg?: number } }[]) {
           rows.push({
