@@ -54,7 +54,7 @@ test("regimeSeriesOf 与 latestRegimeOf / regimeAt 同源（不各判一套）",
   assert.equal(latestRegimeOf([1, 2, 3]), null, "不足 20 根算不出档位，返回 null");
 });
 
-const row = (id: number, name: string, st: Partial<Record<Regime, { n: number; win: number; avg: number; avg5: number } | null>>, n1 = 100) =>
+const row = (id: number, name: string, st: Partial<Record<Regime, { n: number; win: number; avg: number; avg5: number } | null>>, n1 = 1000) =>
   ({
     id, name, condsText: "", n1, win1: 55, avg1: 1, avg5: 1, n110: 10, win110: 50,
     强势: st.强势 ?? null, 震荡: st.震荡 ?? null, 弱势: st.弱势 ?? null,
@@ -62,24 +62,40 @@ const row = (id: number, name: string, st: Partial<Record<Regime, { n: number; w
 
 test("regimeRankOf：按该档次日均益降序，且只排有该档成绩的", () => {
   const rows = [
-    row(1, "低收益", { 弱势: { n: 50, win: 50, avg: 0.5, avg5: 0.5 } }),
-    row(2, "高收益", { 弱势: { n: 50, win: 60, avg: 2.5, avg5: 3 } }),
-    row(3, "无该档成绩", { 强势: { n: 50, win: 60, avg: 9, avg5: 9 } }),
-    row(4, "中收益", { 弱势: { n: 50, win: 55, avg: 1.5, avg5: 1 } }),
+    row(1, "低收益", { 弱势: { n: 500, win: 50, avg: 0.5, avg5: 0.5 } }),
+    row(2, "高收益", { 弱势: { n: 500, win: 60, avg: 2.5, avg5: 3 } }),
+    row(3, "无该档成绩", { 强势: { n: 500, win: 60, avg: 9, avg5: 9 } }),
+    row(4, "中收益", { 弱势: { n: 500, win: 55, avg: 1.5, avg5: 1 } }),
   ];
   const r = regimeRankOf(rows, "弱势");
   assert.equal(r.regime, "弱势");
   assert.deepEqual(r.items.map((i) => i.name), ["高收益", "中收益", "低收益"]);
 });
 
-test("regimeRankOf：双门槛过滤（该档≥20、全期≥30），噪声样本不上榜", () => {
+// 2026-09-30 门槛从「该档≥20 / 全期≥30」提到「≥100 / ≥150」。
+// 起因：删掉 43 条涨停类策略后，minHits=20 让 n=22/29 的噪音占了榜首，
+// 出现「胜率 48.3% 排第 1」这种结果（Wilson 95%CI 半宽 ±17%，等于没测）。
+test("regimeRankOf：双门槛过滤（该档≥100、全期≥150），噪声样本不上榜", () => {
   const rows = [
-    row(1, "样本不足该档", { 弱势: { n: 5, win: 100, avg: 99, avg5: 99 } }, 1000),
-    row(2, "全期不足", { 弱势: { n: 100, win: 60, avg: 3, avg5: 3 } }, 10),
-    row(3, "够格", { 弱势: { n: 100, win: 60, avg: 1, avg5: 1 } }, 100),
+    row(1, "样本不足该档", { 弱势: { n: 99, win: 100, avg: 99, avg5: 99 } }, 1000),
+    row(2, "全期不足", { 弱势: { n: 500, win: 60, avg: 3, avg5: 3 } }, 149),
+    row(3, "够格", { 弱势: { n: 500, win: 60, avg: 1, avg5: 1 } }, 1000),
   ];
   const r = regimeRankOf(rows, "弱势");
-  assert.deepEqual(r.items.map((i) => i.name), ["够格"], "5 次 100% 不许压过 100 次的真实样本");
+  assert.deepEqual(r.items.map((i) => i.name), ["够格"], "99 次 100% 不许压过 500 次的真实样本");
+});
+
+// 钉测：门槛不许被改回 20/30。踩过一次——build-strategy-regime.ts 里硬编码了
+// { minHits: 20, minTotal: 30 }，把 regime-core 的默认值盖掉了。
+test("钉：默认门槛必须是该档≥100 / 全期≥150（不许被改回 20/30）", () => {
+  const justUnder = row(1, "差一点", { 弱势: { n: 99, win: 100, avg: 99, avg5: 99 } }, 1000);
+  const justOver = row(2, "刚够", { 弱势: { n: 100, win: 60, avg: 1, avg5: 1 } }, 1000);
+  assert.equal(regimeRankOf([justUnder], "弱势").items.length, 0, "n=99 必须被挡住");
+  assert.equal(regimeRankOf([justOver], "弱势").items.length, 1, "n=100 必须放行");
+  const totalUnder = row(3, "全期差一点", { 弱势: { n: 500, win: 60, avg: 1, avg5: 1 } }, 149);
+  const totalOver = row(4, "全期刚够", { 弱势: { n: 500, win: 60, avg: 1, avg5: 1 } }, 150);
+  assert.equal(regimeRankOf([totalUnder], "弱势").items.length, 0, "全期 n1=149 必须被挡住");
+  assert.equal(regimeRankOf([totalOver], "弱势").items.length, 1, "全期 n1=150 必须放行");
 });
 
 test("regimeRankOf：档位为 null（算不出）→ 空榜，不猜、不退回全期榜", () => {
@@ -91,7 +107,7 @@ test("regimeRankOf：档位为 null（算不出）→ 空榜，不猜、不退�
 
 test("regimeRankOf：limit 生效（弹卡只摆 5 条）", () => {
   const rows = Array.from({ length: 12 }, (_, i) =>
-    row(i + 1, `s${i}`, { 强势: { n: 100, win: 50 + i, avg: i, avg5: i } }));
+    row(i + 1, `s${i}`, { 强势: { n: 500, win: 50 + i, avg: i, avg5: i } }));
   assert.equal(regimeRankOf(rows, "强势", { limit: 5 }).items.length, 5);
 });
 
