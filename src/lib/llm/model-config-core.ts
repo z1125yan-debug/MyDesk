@@ -60,9 +60,9 @@ export interface ServerLlmPublic {
   reason?: string;
 }
 
-export const TEXT_BAD_BASE = "LLM_BASE_URL 不是合法的 http(s) 地址（需要形如 http://127.0.0.1:7861/v1 的完整地址；漏了 scheme 的 localhost:7861 会被 URL 解析器当成名为 localhost 的协议）";
+export const TEXT_BAD_BASE = "LLM_BASE_URL 不是合法的 http(s) 地址（需要形如 https://api.example.com/v1 的完整地址；漏了 scheme 的会被 URL 解析器当成协议名）";
 export const TEXT_OFFICIAL_NO_KEY =
-  "官方 API 模式下必须填 LLM_API_KEY（非本机/内网地址不做无 Key 直连）；想用免 Key 的本地豆包大脑，把 LLM_BASE_URL 指回 http://localhost:7861/v1 即可";
+  "官方 API 模式下必须填 LLM_API_KEY（非本机/内网地址不做无 Key 直连）；到「设置 → AI 接口」填写自有凭据，或在 .env 配好 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL_NAME 后重启";
 
 /** 本机与内网判定：与 proxy 路由原有 isLanUrl 同一份口径（这里成为唯一实现，路由改为引用它）。 */
 export function isLanBaseUrl(base: string): boolean {
@@ -183,5 +183,5 @@ export function shouldRetryNonStream(errMessage: string, emittedAnyDelta: boolea
 
 /** 本地网关连不上时的指路文案：指向真正的病根（网关没启动），而不是笼统的「无法连接上游」。 */
 export function gatewayUnreachableText(baseUrl: string): string {
-  return `无法连接模型通道 ${baseUrl}：本地豆包网关未启动或端口不对。先启动 D:\\doubao2API-main（python start.py，默认监听 7861），或在 .env 里改 LLM_BASE_URL 切到官方 API 模式`;
+  return `无法连接模型通道 ${baseUrl}：请检查 .env 的 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL_NAME 是否正确、服务是否重启生效；或到「设置 → AI 接口」填写自有凭据`;
 }

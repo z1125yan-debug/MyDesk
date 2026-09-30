@@ -619,7 +619,7 @@ export async function POST(req: NextRequest) {
       return sseResponse(async (emit) => { emit({ type: "error", data: { message: invalid, error_code: "ai_not_configured" } }); });
     }
     if (r.channel.mode === "gateway") {
-      const invalid = "本地豆包网关不支持工具调用环（只收最后一条提问、不走 function call），AI 交易员这条路需要 OpenAI 兼容的工具能力：请在 .env 把 LLM_BASE_URL 指向官方 API 模式，或到设置页填写浏览器侧凭据；普通对话与奇门解盘不受影响，走网关照常可用（智能助手页的对话自 R14 起可经工作台文本协议补取数据）。";
+      const invalid = "当前模型通道不支持工具调用环（只收最后一条提问、不走 function call），AI 交易员这条路需要 OpenAI 兼容的工具能力：请在 .env 把 LLM_BASE_URL 指向支持 function call 的官方 API 通道，或到设置页填写浏览器侧凭据；普通对话不受影响。";
       if (!wantStream) return NextResponse.json({ error: invalid, trace: [] }, { status: 400 });
       // P23：error_code=ai_not_configured（映射文案："AI 服务暂不可用，请稍后重试"）
       return sseResponse(async (emit) => { emit({ type: "error", data: { message: invalid, error_code: "ai_not_configured" } }); });

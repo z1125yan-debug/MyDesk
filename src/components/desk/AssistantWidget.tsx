@@ -164,7 +164,7 @@ export default function AssistantWidget({
         ))}
         {!configured && (
           <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[12px] text-amber-300">
-            未配置 AI 接口，且服务端 .env 模型通道也不可用：到「设置 → AI 接口」填写，或启动本地豆包网关（见 worklog P7-⑩）。
+            未配置 AI 接口，且服务端 .env 模型通道也不可用：到「设置 → AI 接口」填写自有凭据。
           </div>
         )}
         <div ref={endRef} />

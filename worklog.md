@@ -3548,3 +3548,38 @@ R20 的后半。要回答的不再是「此刻哪几条读数难看」（那是�
 - 「放大量」真相：14 项条件里无任何量能因子（今日涨停×7 重复 + MACD金叉 + 底分型×2 + 站上MA5 + 流通市值≥100×4 快照不参与），名不符实；有效条件=涨停+MACD金叉+底分型+站上MA5。
 - 修正后变体对比：基准 N=1389/63.9%/+2.46%（5日+3.07%）；+倍量 62.3%/+2.48%；+量能信号 60.7%/+2.29%；+VWAP突破放量 59.5%/+2.08%——**加放量条件不提升反略降**（涨停本身就是最大放量）。
 - 修正版排名：总榜第1仍是放大量（64%/+2.45%，5日+2.90%，近110根62%）；新上榜 kimi（底分型+低PE，1日 60%）、右侧启动（吸筹+攻击力）、简化（吸筹+庄家线）、哈哈（涨停+超级共振）；分档：弱势期放大量 69%/+2.86%（更猛）、哈哈 57%/+2.39%、右侧启动 56%/+2.08%；组合并集依旧稀释（放大量+test_0 = 63%/+2.32% < 单独）。全量 JSON 已更新（fixedVolume:true）。
+
+### P33b 修复两批（2026-09-30，接手方补记——Zcode 三个 commit 交接时未留痕，此段由 Codex 据已核实事实补写）
+
+**第一批 `48d3d0e`「用户七项反馈的第一批」**（文件级核实）：
+- `src/app/api/desk/sector-insights/route.ts`（+99）：板块洞察数据新鲜度与口径修复。
+- `src/app/api/market/sentiment/route.ts`（+17）：大盘情绪休市 TTL 55s→30min（盘后二次打开秒开）。
+- `src/app/api/market/theme-heat/route.ts`（+59）：主题热度历史日期不再空——有本地板块快照就按同款公式算（09-29 实测 90 个行业，口径如实标「RPS 项缺省」）。
+- `src/components/desk/LlmAnalysisPage.tsx`（+65）：配套展示调整。
+- `src/app/api/market/theme-heat/route.ts`（同 commit 第二处改动）：全景看板爬虫缓存（停在 09-26）过期时自动切本地 15:20 快照，组件标签如实切「当日」、不冒充 3 日/MA20。
+
+**第二批 `fdbd4ab`「09-29 被标『退潮下跌』根因修复」**（文件级核实）：
+- `src/lib/quant/review/market-inference.ts`（32 行）：根因 = 推理只读种子（止于 09-24）→ 修为合并每日沉淀自产行；顺带修「升序 + take 取到最早四月行」的二次 bug（prisma 升序 take 取最早行，见 forecast-button-p33.md 坑 2）。
+- `src/lib/desk/report-input-core.ts`（+6）：研报指数涨跌渲染补正负号+方向词（曾因「当日 0.18%」无符号被模型按熊市语境脑补成跌幅）。
+- `src/app/api/market/theme-heat/route.ts`（+26）：主题热度/全景看板历史数据第二批。
+
+**`e13bb96`**：`tests/quant/p64-report-input.test.ts` 同步 `indexTrendZh` 钉测到带符号涨跌格式。
+
+**教训**：这批修复数据链已核实正确，但三个 commit 的 worklog 留痕在交接时缺失（交接清单声称有「P33 三节」实为四节且无 P33b）——跨 agent 交接的锚点文件必须实测存在性。
+
+## P33-交接日收尾（2026-09-30 12:1x，Codex 接手后）
+
+### 一、豆包网关引导剔除（用户令「不需要豆包网关，我们有自己的 Key」）
+当前通道 = Inception Mercury-2（官方 API 模式，走 v2rayN 10808），豆包网关（127.0.0.1:7861）仅是 .env 备选且未启用。剔除范围 = **用户可见文案 4 处**（`model-config-core.ts` 的 `gatewayUnreachableText` / `TEXT_OFFICIAL_NO_KEY` / `TEXT_BAD_BASE` 示例、`AssistantWidget.tsx`、`LlmAnalysisOverview.tsx`、`chat/route.ts` 网关工具环报错），全部改为指向「设置 → AI 接口」与 .env 三元组。gateway 模式代码路径保留（.env 指向本地网关仍能跑），不再主动引导。tsc 0。
+
+### 二、「AI 回答慢/卡住」诊断（实测，非猜测）
+- 逐帧计时脚本（`exports/tmp/timing-probe.mjs`）流式调 `/api/ai/chat` 用用户真实问题：**18.1s 完成、14 帧、步骤时间线正常流转**（板块资金榜三次取数 654/296/278/523ms）——**上游与预取链路都不卡**。
+- mercury-2 实测：短问答 1.25s、800 token 生成 1.87s（走 10808 代理）。注意其特性：reasoning token 先烧（max_tokens=20 时 content=null），小预算调用会空正文。
+- 用户 12:00 的「卡住」根因 = **dev 模式首次编译路由（截图左上 Compiling）** + 首帧前的意图分类（≤6s）——不是算法回归、不是上游挂。
+- 代理口径核实：AI_PROXY_URL=10808 只被 /api/ai/chat 与 /api/ai/proxy 读取（AI 出境必须走）；行情类 /api/market/* 刻意原生 fetch 直连（国内接口走境外代理反而慢），这是设计不是遗漏。
+
+### 三、全局打开卡顿 → 切 production
+dev 模式每页首次打开都要 Compiling（几秒~几十秒），这就是「全局卡顿」主因。已停 dev（PID 28956），`next build --webpack` 重建后 `next start` 接管 :3000。预测弹卡冷启动 32s 在 production 仍存在但只发生一次（5min TTL），后续秒开。
+
+### 四、「预测按钮点了什么也没呈现」结论
+**不是算法错误**，三层原因叠加：① dev 模式编译路由 + 接口冷启动 32s，用户在出数前放弃；② 出数后档位分 28.2（正常档）< 99 条带门槛策略的最低门槛（50）→ `items=0`，推荐区显示空态文案「今天没有过闸的推荐」——前端空态/加载态齐全（核实过 JSX），闸门按设计工作；③ 设计本身的问题：门槛是社区拍的、与回测脱节（回测证明好策略弱势期反而最强却被 ≥50 挡住）。正解 = P34-2 接分档回测排名（见 P34-forecast-regime-plan.md）。

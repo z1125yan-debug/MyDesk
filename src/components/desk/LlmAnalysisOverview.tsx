@@ -262,7 +262,7 @@ ${newsLines || "（暂无命中事件）"}
 3. 只用上面给的真实数字，不要编造。
 4. 输出纯文本，不要 markdown 代码块，不要 JSON。`;
       const ai = useDesk.getState().ai;
-      if (!aiReady(ai)) throw new Error("AI 未配置：请在设置页填写凭据，或启动本地豆包网关（127.0.0.1:7861）");
+      if (!aiReady(ai)) throw new Error("AI 未配置：请到「设置 → AI 接口」填写自有凭据");
       const text = await aiChat(ai, [{ role: "user", content: prompt }], { timeoutMs: 90_000 });
       setAiText((s) => ({ ...s, [code]: { reason: text } }));
     } catch (e) {
