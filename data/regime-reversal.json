@@ -1,0 +1,41 @@
+{
+  "builtAt": "2026-09-30T20:58:38.566Z",
+  "source": "本地日K粮仓 stock_daily_bar（前复权，B0 落库）× regime-core 判档；脚本 scripts/build-regime-reversal.ts",
+  "window": {
+    "from": "2023-06-15",
+    "to": "2026-09-30",
+    "bars": 800,
+    "universe": 600,
+    "horizon": 5,
+    "lookback": 20,
+    "days": 775,
+    "skipped": 0
+  },
+  "byRegime": {
+    "强势": {
+      "days": 344,
+      "hot": 1.48,
+      "cold": 0.56,
+      "spread": -0.92,
+      "excess": -0.19,
+      "mkt": 0.75
+    },
+    "震荡": {
+      "days": 138,
+      "hot": 0.09,
+      "cold": 0.37,
+      "spread": 0.28,
+      "excess": 0.36,
+      "mkt": 0.01
+    },
+    "弱势": {
+      "days": 293,
+      "hot": 0.6,
+      "cold": 1.05,
+      "spread": 0.45,
+      "excess": 0.22,
+      "mkt": 0.83
+    }
+  },
+  "note": "每天把股票池按过去 20 天涨跌分成十档，取「涨最猛」和「跌最狠」两批，看它们往后 5 个交易日的平均涨跌；档位由上证最近一个月的平均价与方向判（regime-core，与线上同一处）。"
+}
