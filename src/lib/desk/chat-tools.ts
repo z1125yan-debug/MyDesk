@@ -43,6 +43,7 @@ import { latestTradeDate } from "./trade-date";
 // Serenity 落点 A（2026-09-29）：东财 b:BKxxxx 成分接口断源时的**行业板本地备胎**（读 data/sector-constituents.json）。
 // 刻意不复用东财那份，口径也不同：这是「本地行业归属快照」，返回值里必须写明它不是东财板块成分。
 import { constituentsOfIndustry, industrySnapshotMeta } from "@/lib/quant/data/industry-constituents";
+import { summarizeBreadth } from "./sector-breadth-core";
 // Serenity 补数层（2026-09-29 第二轮）：板块 → 产业链环节（上/中/下游）与板块财务分量——
 // 「板块风险」页早就在用同一份本地映射，此前对话链路没接，于是「板块内子产业」「板块整体利润/订单」只能写「暂无数据」。
 import { chainOfSector, fundamentalsOfSector, sectorChainMeta } from "@/lib/quant/data/sector-chain";
@@ -345,6 +346,83 @@ async function toolSectorConstituents(args: { code?: string; name?: string; kind
 }
 
 /**
+ * 板块均线广度（2026-09-30）。
+ *
+ * 为什么必须补：推荐问题卡的问法模板一直承诺「均线广度占比」（suggestion-cards-core），
+ * 但工具链里从来没有这个指标——模型只能写「暂无均线广度统计」（用户截图事故：半导体资金问答
+ * 三处「暂无数据」）。数据本地全有（行业成分快照 × stock_daily_close 收盘价），缺的只是这一步计算。
+ *
+ * 口径（sector-breadth-core 纯核，有钉测）：
+ * - 站上 MA-N = 最新收盘 ≥ N 日简单均线（含等于）；
+ * - K线不足 N 根的票**从分母剔除并如实报剔除家数**，不冒充 0%；
+ * - 广度是结构判断（板块内部强弱），不是涨跌预测——解读提示里写死，防模型包装成预测。
+ */
+async function toolSectorBreadth(args: { name?: string }): Promise<unknown> {
+  const nameArg = (args.name ?? "").trim();
+  if (!nameArg) {
+    return { missing: "sector_breadth 需要行业名（args.name，如 半导体/元件/银行）：均线广度按本地行业归属快照的成分股计算" };
+  }
+  const meta = industrySnapshotMeta();
+  if (!meta) {
+    return { missing: "本地行业归属快照不可用（data/sector-constituents.json 缺失或损坏），算不了板块均线广度" };
+  }
+  const hit = constituentsOfIndustry(nameArg);
+  if (!hit) {
+    return { missing: `本地行业归属快照里没有「${nameArg}」这个行业（覆盖 ${meta.industryCount} 个行业名）。换个行业名（如 元件/半导体/银行）` };
+  }
+  const codes = [...new Set(hit.members.map((m) => m.code).filter((c) => /^\d{6}$/.test(c)))]
+    .map((six) => `${six}.${suffixOf(six)}`);
+  if (!codes.length) {
+    return { missing: `「${nameArg}」成分股名单里没有可用的 6 位代码，算不了广度` };
+  }
+  const dates = await db.stockDailyClose.findMany({
+    distinct: ["tradeDate"],
+    orderBy: { tradeDate: "desc" },
+    take: 25,
+    select: { tradeDate: true },
+  });
+  const ds = dates.map((d) => d.tradeDate);
+  if (ds.length < 5) {
+    return { missing: `stock_daily_close 只有 ${ds.length} 个交易日（先跑 breadth 任务攒K线），算不了板块均线广度` };
+  }
+  const rows = await db.stockDailyClose.findMany({
+    where: { symbol: { in: codes }, tradeDate: { in: ds } },
+    select: { symbol: true, tradeDate: true, close: true },
+    orderBy: { tradeDate: "asc" },
+  });
+  if (!rows.length) {
+    return { missing: `「${nameArg}」的 ${codes.length} 只成分股在 stock_daily_close 里一行收盘价都没有（成分快照与K线库口径可能脱节），算不了广度` };
+  }
+  const bySym = new Map<string, number[]>();
+  for (const r of rows) {
+    const arr = bySym.get(r.symbol) ?? [];
+    arr.push(r.close);
+    bySym.set(r.symbol, arr);
+  }
+  const summary = summarizeBreadth([...bySym.entries()].map(([symbol, closes]) => ({ symbol, closes })));
+  if (summary.denomMa20 === 0) {
+    return { missing: `「${nameArg}」成分股的K线都不足 20 根（stock_daily_close 只有 ${ds.length} 个交易日），MA20 广度算不出；至少需要 20 个交易日` };
+  }
+  return {
+    数据源: "本地行业归属快照成分 × stock_daily_close 收盘价（本地计算，非上游接口）",
+    行业: nameArg,
+    成分股数量: hit.count,
+    参与判定家数: summary.n,
+    剔除家数: summary.skipped,
+    数据截至: ds[0],
+    均线广度: {
+      站上MA5占比: summary.aboveMa5Pct,
+      站上MA10占比: summary.aboveMa10Pct,
+      站上MA20占比: summary.aboveMa20Pct,
+      分母说明: `占比分母=有判定的家数（MA5 ${summary.denomMa5} / MA10 ${summary.denomMa10} / MA20 ${summary.denomMa20}），K线不足的票已剔除`,
+    },
+    口径: "站上=N日简单均线≤最新收盘（含等于）；「算不出」剔除出分母，不算 0%",
+    解读提示: "广度高=多数成分股在均线上方（板块内部偏强）；广度低=多数在下方（偏弱）。这是板块内部结构判断，不是涨跌预测",
+    时效说明: "基于最近已入库收盘价（含今日盘中未入库前的最新完整交易日）；盘后 15:20 breadth 任务跑完才含当日",
+  };
+}
+
+/**
  * 个股主营 / 产品构成（Serenity 落点② 其二，2026-09-29）。
  *
  * 六问第 3 步要求「它到底卖什么、卖给谁、处在什么商业阶段」，此前项目只有行业归属与概念标签，
@@ -422,7 +500,7 @@ async function toolStockDepth(args: { symbol: string }): Promise<unknown> {
   if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
   const d = (await tdxDepth([symbol]).catch(() => null))?.get(symbol);
-  if (!d) return { missing: "五档盘口暂无数据（本机通达信行情网关未开启）" };
+  if (!d) return { missing: "五档盘口暂无数据：本机 eltdx 行情网关（127.0.0.1:8756）未开启或不带五档能力——启动：eltdx-http --host 127.0.0.1 --port 8756" };
   const sum = (arr: { volume: number }[]) => arr.reduce((s, l) => s + l.volume, 0);
   return {
     symbol, ...resolvedNote(r), 数据源: "通达信网关 · 五档盘口",
@@ -438,7 +516,7 @@ async function toolStockTrades(args: { symbol: string }): Promise<unknown> {
   if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
   const t = await tdxTradesMoney(symbol).catch(() => null);
-  if (!t) return { missing: "主动买卖数据暂无（本机通达信行情网关未开启）" };
+  if (!t) return { missing: "主动买卖数据暂无：本机 eltdx 行情网关（127.0.0.1:8756）未开启——启动：eltdx-http --host 127.0.0.1 --port 8756" };
   return {
     symbol, ...resolvedNote(r), 数据源: "通达信网关快照内外盘（全日累计，代理指标）",
     口径: t.basis,
@@ -1131,6 +1209,7 @@ export const TOOLS: ChatTool[] = [
   // Serenity 落点②（2026-09-29）：问「这个题材/板块里到底有谁」必须用它，不许凭印象点名。
   // code 要 BK 开头的板块代码；只给板块名（如「印制电路板」）时先用 sector_rank 拿到 code 再调它。
   { name: "sector_constituents", desc: "板块成分股（真实名单）：两选一——args.code 为 BK 开头的东财板块代码（如 BK0448，先用 sector_rank 从榜单拿）；东财取不到或只有行业名时，用 args.name 传行业名（如 元件/半导体/银行，走本地行业归属快照，口径不同、只覆盖约 77%、无实时行情）。凡要「这个题材里有哪些股票」必须用它取真实成分，禁止凭印象点名。东财行给代码/名称/行业/现价/涨跌幅/成交额/换手/主力净额；本地快照行给代码/名称/总市值/档位（龙头/核心/二线）", fn: toolSectorConstituents, params: { type: "object", properties: { code: { type: "string", description: "BK 开头的东财板块代码，如 BK0448" }, name: { type: "string", description: "行业名（如 元件 / 半导体 / 银行）：东财代码取不到时走本地行业归属快照，仅行业板、非东财板块成分" }, kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number", description: "最多返回几只，默认 40" } } }, phase: "local_data" },
+  { name: "sector_breadth", desc: "板块均线广度（本地计算）：给定行业名（args.name，如 半导体），返回该行业成分股里站上 MA5/MA10/MA20 的占比（真实数字+分母+剔除家数）。凡问「均线广度占比 / 多少成成分股站上均线 / 板块内部结构强弱 / 分化程度」**必须用它取真实占比**——推荐问题卡里的「均线广度占比」指的就是这个指标，不许再写「暂无均线广度统计」（2026-09-30 事故）", fn: toolSectorBreadth, params: { type: "object", properties: { name: { type: "string", description: "行业名（如 半导体 / 元件 / 银行），走本地行业归属快照口径" } }, required: ["name"] }, phase: "local_data" },
   { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业；symbol 可传代码或公司简称（简称经东财搜索解析，解析结果如实标注）", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
   { name: "stock_depth", desc: "个股五档盘口（通达信网关）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
   { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标）", fn: toolStockTrades, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },

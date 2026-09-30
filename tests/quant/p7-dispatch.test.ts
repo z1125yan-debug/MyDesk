@@ -161,8 +161,15 @@ test("分层不破：编排内核不碰 IO，服务层不写判定", () => {
   const quantImports = [...sceneSrc.matchAll(/from "@\/lib\/quant\/[^"]+"/g)].map((m) => m[0]);
   assert.deepEqual(
     [...new Set(quantImports)].sort(),
-    ['from "@/lib/quant/data/hybrid"', 'from "@/lib/quant/screener/decision-core"', 'from "@/lib/quant/screener/decision-service"'].sort(),
-    "@\/lib\/quant 依赖只能是新鲜度日历与结论卡两个既有入口（decision-core 只取契约纯函数）",
+    [
+      'from "@/lib/quant/data/hybrid"',
+      'from "@/lib/quant/data/industry-constituents"',
+      'from "@/lib/quant/screener/decision-core"',
+      'from "@/lib/quant/screener/decision-service"',
+    ].sort(),
+    "@/lib/quant 依赖只能是新鲜度日历、结论卡、本地行业名元数据三个既有入口（decision-core 只取契约纯函数；"
+    + "industry-constituents 是本地 JSON 元数据读取（行业名列表，供 sector_breadth 的 industry_hit 闸递进事实），"
+    + "不是自己算指标、不发上游请求——P35 2026-09-30 放行）",
   );
   assert.ok(!/case "sentiment"|SCENE_LABELS|toolsForScene\(/.test(sceneSrc), "场景判定不许在服务层重抄一遍");
   // 新鲜度/契约的「判定」也必须在纯核：服务层只许调用，不许自己写比对规则

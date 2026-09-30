@@ -1,6 +1,7 @@
 // 个股资金画像 API（需求文档 P0：输入代码 → 自动拉全量 → 结构化报告）
 // 每个数据块带来源/接口/时间/状态（REAL_DATA_ONLY：缺失块显式标「暂缺」，不冒充实数）。
 import { NextResponse } from "next/server";
+import { ttlCache } from "@/lib/quant/server-cache";
 import { quantBootstrap, } from "@/lib/quant/bootstrap";
 import { getProvider } from "@/lib/quant/data/index";
 import { fetchBarsHybrid } from "@/lib/quant/data/hybrid";
@@ -21,9 +22,16 @@ export const maxDuration = 60;
 const SYM_RE = /^\d{6}\.(SH|SZ|BJ)$/i;
 
 export async function GET(request: Request) {
+  const symbol = (new URL(request.url).searchParams.get("symbol") ?? "").trim().toUpperCase();
+  // 2026-09-30（P34-3）：加服务端 TTL 缓存（5min + SWR）。画像一次要跑全链路
+  // （K线/实时快照/五档/新闻/历史概率，maxDuration 60），此前只有浏览器端 HTTP 缓存，
+  // 换标签页/别的进程进来照样全量重算——用户体感「画像打开慢」。加后同 symbol 5 分钟内直返，
+  // 过期后 SWR 秒回旧值 + 后台刷新，不再阻塞。
+  return ttlCache(`stock/profile:${symbol}`, 5 * 60_000, () => profileHandler(symbol));
+}
+
+async function profileHandler(symbol: string) {
   quantBootstrap();
-  const url = new URL(request.url);
-  const symbol = (url.searchParams.get("symbol") ?? "").trim().toUpperCase();
   if (!SYM_RE.test(symbol)) {
     return NextResponse.json({ ok: false, error: "代码格式应为 688256.SH / 000001.SZ / 430047.BJ" }, { status: 400 });
   }

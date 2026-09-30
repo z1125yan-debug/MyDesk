@@ -12,6 +12,9 @@ export async function GET(req: Request) {
     const depth = (await tdxDepth([symbol]).catch(() => null))?.get(symbol) ?? null;
     return NextResponse.json({ depth, source: depth ? "tdx" : null });
   } catch {
-    return NextResponse.json({ depth: null, error: "五档盘口暂不可用（本机通达信行情网关未开启）" });
+    return NextResponse.json({
+      depth: null,
+      error: "五档盘口暂不可用：本机 eltdx 行情网关（127.0.0.1:8756）未开启，或当前网关版本不带五档（quotes.get_depth）能力。启动方式：eltdx-http --host 127.0.0.1 --port 8756；启动后本提示自动消失，不造数",
+    });
   }
 }

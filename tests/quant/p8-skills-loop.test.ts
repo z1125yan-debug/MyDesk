@@ -26,12 +26,15 @@ function intent(question: string, extra: Partial<Intent> = {}): Intent {
 
 // ---------- ③ 注册表本体 ----------
 
-test("内置技能表形状：15 个工具、plan 覆盖 6 个自动调度场景（P10 起含选股；个股分析含盘口与逐笔）", () => {
+test("内置技能表形状：16 个工具、plan 覆盖 6 个自动调度场景（P10 起含选股；个股分析含盘口与逐笔；P35 含板块均线广度）", () => {
   // 口径迁移（Serenity / 白毛股神落点②，2026-09-29）：13 → 15，新增两项都进 chat-tools 的 TOOLS，
   // 与内置表逐项对齐。sector_constituents 挂 sector（board_code 闸：提问里点了 BK 代码才取）；
   // stock_business_composition 挂 stock_analysis（chain 闸：产业链/供应链类问法才逐只取）。
   // 两者都不标 required（上游是东财/云 MCP，取不到留 missing 不拖整轮）。既有场景的调度逐字未动。
-  assert.equal(BUILTIN_SKILLS.length, 15, "与 chat-tools TOOLS 的注册项数一致（多了/少了都要两边同步改）");
+  // 口径迁移（P35，2026-09-30）：15 → 16，新增 sector_breadth 挂 sector（industry_hit 闸：
+  // 提问命中本地行业快照认得的行业名才取——推荐问题卡承诺「均线广度占比」但工具链一直没有，
+  // 模型只能写「暂无均线广度统计」的事故补口）。不标 required：本地算不出留 missing 不拖整轮。
+  assert.equal(BUILTIN_SKILLS.length, 16, "与 chat-tools TOOLS 的注册项数一致（多了/少了都要两边同步改）");
   // 口径迁移（P10 择优轮，用户裁定改口径）：本条原钉「深水区与选股类工具不进自动调度
   // （预取＝替用户猜条件、每轮多打接口）」——factor_screener 按 aiwuchuan「候选池→择优」
   // 链路改为预取（抽不到的条件走默认活跃池并如实标注，不再替用户猜）。

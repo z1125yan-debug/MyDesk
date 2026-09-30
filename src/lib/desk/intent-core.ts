@@ -607,6 +607,12 @@ export interface DispatchContext {
   watchlistCount?: number;
   /** 提问是否显式要消息面；省略则由 wantsNews(提问原文) 判 */
   news?: boolean;
+  /**
+   * P35（2026-09-30）：提问命中的行业名（服务层从本地行业归属快照的行业名列表里确定性匹配，
+   * 纯层不查字典）。只用于 sector_breadth 的 gate（industry_hit）与入参；没有命中就不取广度，
+   * 不猜行业名——「本地认不认得这个名」是事实，事实由服务层递进来。
+   */
+  knownIndustryHit?: string;
 }
 
 const NEWS_WORDS = ["为什么", "怎么回事", "消息", "利好", "利空", "公告", "新闻", "政策"];
@@ -675,6 +681,9 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
       // Serenity 落点②：两条新增项的说辞（与 skills-core 的 reason 键一一对应）
       case "sector_constituents": return "提问里点了板块代码，取该板块的真实成分股名单";
       case "business_composition": return "问的是产业链/供应链类问题，取这只票的主营与产品构成（六问第 3 步「卖什么、什么商业阶段」）";
+      // P35（2026-09-30）：板块均线广度。推荐问题卡模板承诺「均线广度占比」但工具链一直没有，
+      // 模型只能写「暂无均线广度统计」——现在第一轮就带真实占比。
+      case "sector_breadth": return "提问点了行业，取该行业成分股站上 MA5/MA10/MA20 的占比（均线广度，本地计算）";
     }
   };
   const argsOf = (a: SkillArgs, symbol: string): Record<string, unknown> => {
@@ -688,6 +697,8 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
         const codes = extractBoardCodes(intent.question);
         return { code: codes[0], kind: intent.question.includes("概念") ? "concept" : "industry" };
       }
+      // P35：板块均线广度按行业名取（行业名是服务层用本地快照确定性匹配出来的，gate 已保证非空）
+      case "sector_name": return { name: ctx.knownIndustryHit ?? "" };
       // P10 择优轮：选股场景的候选池。条件由纯核从提问里确定性抽取（抽不到给空数组，
       // 工具层按默认活跃池跑并如实标注 origin）——「把猜的条件当用户要求」仍是事故，
       // 所以 matched 原话片段随参数一起走，注入块里要摆给用户看。
@@ -719,6 +730,8 @@ export function planDispatch(ctx: DispatchContext, registry: SkillRegistry = SKI
     //  - chain：不是产业链/供应链类问法就不取主营构成（每只多打一次 china-stock-mcp 云接口不值）。
     if (e.gate === "board_code") return extractBoardCodes(intent.question).length > 0;
     if (e.gate === "chain") return wantsChain(intent.question);
+    // P35：industry_hit——提问命中本地行业快照认得的行业名才取均线广度（事实由服务层递进，纯层不猜）
+    if (e.gate === "industry_hit") return !!ctx.knownIndustryHit;
     return true;
   };
 

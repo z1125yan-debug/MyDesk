@@ -649,3 +649,30 @@ model DailySnapshot {
   @@index([tradeDate])
   @@map("daily_snapshot")
 }
+
+// P3 使用台账（2026-09-30）：预测弹卡**每次给出推荐时**沉淀一行——推荐了什么、当时档位与成绩读数。
+// 为什么必须有：弹卡此前只展示不记账，「按推荐操作了没有、跟着推荐走到底赚没赚」无从回答，
+// Brier/胜率回收缺一半。口径：tradeDate+strategyId+source 唯一，同日重开弹卡 upsert（不翻倍）；
+// 次日回填 nextDay*（靶=daily_snapshot 的全市场中位个股涨跌幅，与方向靶同源）。
+// 注意：这是「展示留痕」，不是「用户操作记录」——用户没点「选它」也记（展示即承诺）。
+model StrategyPick {
+  id           String   @id @default(cuid())
+  tradeDate    String // 建议日（北京时间 YYYY-MM-DD）
+  regime       String   @default("") // 展示时大盘档位（强势/震荡/弱势；过闸行也可能是空）
+  tierScore    Float? // 展示时档位分（0-100 见顶压力分）
+  strategyId   Int
+  strategyName String
+  source       String // gate=过闸推荐 | regime=分档回测推荐
+  statN        Int? // 展示时该档命中次数（回测行）
+  statWin      Float? // 展示时次日胜率 %
+  statAvg      Float? // 展示时次日均益 %
+  pickedAt     DateTime @default(now())
+  // 次日回填（T+1 才知道）：靶=全市场中位个股收盘涨跌幅（与 daily_snapshot.nextDayMktChg 同源）
+  nextDayMktChg Float?
+  nextDayUp     Boolean?
+  backfilledAt  DateTime?
+
+  @@unique([tradeDate, strategyId, source])
+  @@index([tradeDate])
+  @@map("strategy_pick")
+}
