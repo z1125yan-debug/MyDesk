@@ -3787,3 +3787,13 @@ breadth 之前 11s 是**体检脚本参数没对上页面**（页面用 `?days=3
 
 验证：tsc 0 / eslint 0 error（58 warning 为既有） / build 通过 /
 新增 `tests/quant/p36-e6-regime-switch.test.ts` 11 条 / 全量 **2067 项 2058 pass 0 fail 9 skip**（基线 2056/2047，+11）
+
+### 附：A 尾巴收口（同日）
+- 残留 7 条含 `is_limit_up` 的策略：3 条 `!= 1`（排除涨停，可成交，保留）；4 条恒真
+  （141/143/145 `<= 1`、1364 `< 3`）→ **把废条件剥掉**（`prune-untradeable-strategies.ts` 增 1.5 步）。
+  敢删的前提：恒真 = 没过滤任何票 → 命中集与已跑出来的分档成绩**完全不变**，不用重跑回测；
+  留痕 `data/vacuous-conds-removed.json`。实测这 7 条都不在任何一档榜单上。
+- 补进榜钉测 `tests/quant/p36-a-board-gate.test.ts`（4 条）：直接钉数据文件——库里不许有
+  untradeable/dead/vacuous 条件，分档榜 rows 与三档 rank 不许出现已删 id。
+  **负向实测**：注入两条假策略（要求涨停 + 恒真）→ 立刻 2 红；还原后 4 绿。
+- 全量 **2071 项 2062 pass 0 fail 9 skip**（+4）。
