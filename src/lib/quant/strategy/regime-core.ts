@@ -23,6 +23,9 @@ export interface RegimeStat {
   avg: number;
   /** 后 5 个交易日平均涨跌幅 % */
   avg5: number;
+  /** P1（2026-09-30）：胜率的 Wilson 95% 置信区间文本（如「69% [95%CI 63–74]（N=323）」）。
+   *  点估计不许当真值卖——样本小的时候区间会宽，模型/页面转述必须带区间。 */
+  winCi: string;
 }
 
 /** 一条策略的分档回测行（与 data/strategy-regime.json 的 rows[] 形状一致） */

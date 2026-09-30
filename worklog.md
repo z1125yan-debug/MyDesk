@@ -3685,3 +3685,68 @@ breadth 之前 11s 是**体检脚本参数没对上页面**（页面用 `?days=3
 所以「秒回+值更新」与「回 HIT」必须分成两个用例用不同 TTL 钉。）
 
 验证：tsc 0 / eslint 0 error / build 通过 / 全量 **1973 项 1964 pass 0 fail 9 skip**（基线 1960 +4）
+
+## P35 + 遗留清仓：AI 分析「暂无数据」根治 + 样本外验证 + P3 台账 + Wilson CI + BoardPage 冻结（2026-09-30）
+
+### 一、用户截图事故根治：半导体问答三处「暂无数据」（用户原话「不要每次都得调试来调试去的就一直缺数据」）
+**根因（不是数据缺，是工具链缺指标）**：推荐问题卡的问法模板（suggestion-cards-core）一直承诺
+「均线广度占比」，但 chat-tools 工具链里**从来没有这个工具**——模型只能写「暂无均线广度统计」。
+行业资金榜（sector_rank）其实取到了（半导体不在前 15 是真实结论），被误连着一起读成「缺数据」。
+
+**修法（sector_breadth 新工具 + 三层接线）**：
+- 纯核 `src/lib/desk/sector-breadth-core.ts`（maOf/aboveMa/verdictOf/summarizeBreadth，单测 5/5）：
+  站上 MA-N = 最新收盘 ≥ N 日均线（含等于）；**K线不足从分母剔除并如实报 skipped，不冒充 0%**；
+  「算不出」≠「没站上」。
+- 工具 `toolSectorBreadth`（chat-tools）：行业名 → 本地行业归属快照成分（半导体 148 只）→
+  stock_daily_close 最近 25 日 → 真实占比。desc 写死「凡问均线广度必须用它，不许再写暂无」。
+- 预取：skills-core 内置表 +1（15→16），gate=industry_hit（提问命中本地行业名才取，
+  行业名由服务层 industryHitOf 确定性匹配、**取最长命中**，纯层不查字典——与 nameHits 同纪律）；
+  intent-core DispatchContext 递 knownIndustryHit；scene-dispatch 组装。
+
+**端到端复现验证**（用户原话模板提问）：step2 `调用 sector_breadth ok 4468ms`，
+回答正文「半导体板块均线广度仅 **7.4%（MA5）/28.4%（MA10）/50.7%（MA20）** 显示内部弱势」
+——与直查库完全一致；**「暂无数据」零出现**；结论从「无法判断内部结构」变成「观望+内部弱势」。
+
+### 二、样本外验证（P34 收尾关键一刀）——结果给弹卡敲了警钟
+`scripts/validate-regime-oos.ts`（可复跑，产物 data/regime-oos-report.json 入库）：
+- 做法诚实声明：Zcode 的分档回测只有聚合统计无时间序列、原脚本未入库，**策略级样本外做不了**；
+  改做**档位级**样本外（档位=上证MA20趋势法，与线上同一纯核 × 全A**中位**次日收益，
+  stock_daily_close 04-20 起 112 交易日，前 70% 训练 / 后 30% 检验，111 对样本）。
+- **结果**：弱势期全A中位次日收益**反而为正**（+0.05%，胜率 54.8%），强势期 -0.38%；
+  **样本外排序不保序**（训练 弱势＞强势＞震荡 → 检验 震荡＞弱势＞强势）；强弱差符号一致但为负。
+  与 Zcode 回测「放大量弱势期反而最强」互相印证——这个市场是**均值回归/跷跷板结构**。
+- **产品落地**：弹卡 regime.note 追加样本外警示（读 report 的 verdict：partial/kept/reversed
+  三态文案）——「本榜按历史均值排序，仅供复盘参考，不构成按档选策略就更赚的承诺」。
+  警示必须用户可见，不能只躺在脚本里。
+
+### 三、P1 Wilson 置信区间（纯核 + 全链路）
+- `src/lib/quant/factors/wilson-core.ts`（wilsonCI/pctWithCI，单测 5/5）：非法入参 → null 不冒充 0；
+  极端比例（0/20、20/20）仍给区间不塌成一点；样本越小区间越宽。
+- regime-library 加载层派生 winCi（数据文件不动，刻度单一）；弹卡理由行已显示：
+  「次日胜率 69.3% [95%CI 64–74]（N=323）」。
+
+### 四、P3 使用台账（strategy_pick 表 + 展示即承诺）
+- schema：`StrategyPick`（tradeDate+strategyId+source 唯一，同日重开 upsert 不翻倍）。
+- forecast 路由 producer 落库：regime 行（带当时 statN/statWin/statAvg）+ 过闸行（组合拆成员）；
+  **历史回放不记**（复盘不是当时的建议，不污染台账）；顺手用 daily_snapshot.nextDayMktChg 回填历史行。
+- 实测：今日 5 行 regime picks 落库（09-30 弱势档，nextDayMktChg=null 待 T+1 回填）。
+- 顺带暴露数据质量问题：策略库里有名叫「1」「哈哈」的用户自建策略（另行清洗，挂账）。
+
+### 五、Zcode 遗留②③④
+- **② BoardPage 主力净额双源摆动 → 盘后冻结**：根因=东财历史口径与通达信逐笔自算口径互摆、
+  东财时好时坏。收盘后「全天总量」是定数：board 路由在盘后（北京 ≥15:20）或历史交易日时，
+  行业榜直接回 15:20 留档的 sector-snapshots.json 冻结行（source=frozen + frozenNote），
+  盘中仍走实时源。实测盘中仍 source=ths（正确），冻结 15:20 后自动生效。
+- **④ 五档盘口提示**：depth 报错文案带启动命令（eltdx-http --host 127.0.0.1 --port 8756）；
+  实测 depth 实际有数据（网关活着）——之前「网关未开启」多为瞬时。chat-tools 两处 missing 文案同步。
+- **④ 个股画像秒开**：/api/stock/profile 加服务端 ttlCache（5min+SWR）——此前只有浏览器端
+  HTTP 缓存，换标签页照样全量重算。实测二次调用 **8.3s → 0.02s**。
+
+### 六、钉测同步（不回滚写法）
+- p7-dispatch「分层不破」白名单 + `@/lib/quant/data/industry-constituents`（本地 JSON 元数据读取，
+  不算指标不发请求，P35 放行，理由写进断言 message）。
+- p8-skills-loop 内置表 15→16（sector_breadth，industry_hit 闸）。
+- 新增 p35-sector-breadth-core（5）、p1-wilson-core（5）。
+
+验证：tsc 0 / eslint 0 error / build 通过 / 全量 **1983 项 1974 pass 0 fail 9 skip** /
+端到端半导体问答无「暂无数据」/ profile 二次 0.02s / 台账 5 行落库

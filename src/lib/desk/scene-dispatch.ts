@@ -17,6 +17,19 @@
 //  - 完整性校验与补充轮计划来自 agent-loop-core：首轮取完，若「必读项」有洞，就原参数补一轮，
 //    补完仍缺的如实留在未取到清单——这就是「不是单轮直调大模型」的那一环。
 import { backtestWhitelist, findTool, phaseOfTool, BACKTEST_READY, type ToolCtx } from "./chat-tools";
+import { industryNames } from "@/lib/quant/data/industry-constituents";
+
+/**
+ * P35（2026-09-30）：提问命中的行业名（服务层确定性匹配，纯层不查字典——与 nameHits 同一条纪律）。
+ * 取最长命中：「半导体设备」命中时不许退回「半导体」；没有命中返回 null（gate 挡住，不猜行业名）。
+ */
+function industryHitOf(question: string): string | null {
+  const q = String(question ?? "");
+  if (!q) return null;
+  const hits = industryNames().filter((n) => n && q.includes(n));
+  if (!hits.length) return null;
+  return hits.sort((a, b) => b.length - a.length)[0] ?? null;
+}
 import { whitelistPromptLine, type WhitelistRow } from "./backtest-core";
 import {
   asScene,
@@ -122,6 +135,9 @@ export async function prefetchForScene(opts: {
     intent: opts.intent,
     snapshotSymbols: opts.snapshotSymbols,
     watchlistCount: opts.ctx.watchlist?.length ?? 0,
+    // P35（2026-09-30）：提问命中的行业名（本地行业快照确定性匹配，取最长命中——
+    // 「半导体设备」命中时不能退回「半导体」）。sector_breadth 的 gate 与入参靠它。
+    knownIndustryHit: industryHitOf(opts.intent.question ?? "") ?? undefined,
   });
   const stepStart = opts.stepStart ?? 0;
   // P8-①：新鲜度判的是结构里的日期（「最近5日」最后一根的日期），注入块截断过、不能当判据，

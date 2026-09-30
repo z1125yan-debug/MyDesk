@@ -6,11 +6,14 @@
 // （口径与分档阈值在 tdx-flow-core 纯核，行上挂 mainSelfComputed，页面必须标「自算」不冒充东财官方读数）。
 // 地域榜无对等替代源——缺就是缺，交回 rows:null 由页面显式声明，绝不落回演示数据。
 import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 import { fetchBoardReal } from "@/lib/desk/em";
 import { fetchThsBoards, thsToRankRow } from "@/lib/desk/ths";
 import { tdxMainFlowUniverse, type TdxMainFlowRow } from "@/lib/desk/tdx";
 import { pickMainFlowSide, type MainFlow } from "@/lib/quant/screener/tdx-flow-core";
 import { latestTradeDate } from "@/lib/desk/trade-date";
+import { shanghaiDate } from "@/lib/desk/session";
 import { ttlCache, DEFAULT_TTL_MS } from "@/lib/quant/server-cache";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +51,36 @@ function tdxToRankRow(r: TdxMainFlowRow, rank: number, flow: MainFlow) {
 export async function GET(req: Request) {
   return ttlCache(`market/board${new URL(req.url).search}`, DEFAULT_TTL_MS, () => getHandler(req));
 }
+
+/**
+ * Zcode 遗留② 根治（2026-09-30）：行业榜主力净额「一会多一会少」。
+ * 根因 = 两个源口径不同且**各自会抖**：东财历史口径（历史全天）vs 通达信逐笔自算（当日实时），
+ * 东财时好时坏就在两套数字间摆。收盘后「全天总量」是定数，不该再抖。
+ * 冻结口径：15:20 留档的 sector-snapshots.json 就是每日冻结的全天总量——
+ * 盘后（北京时间 ≥15:20）或查历史交易日时，行业榜直接回冻结行（source=frozen），
+ * 数字永远一致；盘中仍走实时源（盘中本来就该变）。
+ */
+interface FrozenRow { code?: unknown; name?: unknown; changePct?: unknown; main?: unknown; rank?: unknown }
+function frozenIndustryRows(tradeDate: string | null): FrozenRow[] | null {
+  if (!tradeDate) return null;
+  try {
+    const p = path.join(process.cwd(), "data", "sector-snapshots.json");
+    const j = JSON.parse(fs.readFileSync(p, "utf-8")) as { days?: Record<string, { rows?: FrozenRow[] }> };
+    const rows = j.days?.[`${tradeDate}|industry`]?.rows;
+    return Array.isArray(rows) && rows.length ? rows : null;
+  } catch {
+    return null;
+  }
+}
+
+function beijingNowMinutes(): { minutes: number; date: string } {
+  const b = new Date(Date.now() + 8 * 3600_000);
+  return {
+    minutes: b.getUTCHours() * 60 + b.getUTCMinutes(),
+    date: `${b.getUTCFullYear()}-${String(b.getUTCMonth() + 1).padStart(2, "0")}-${String(b.getUTCDate()).padStart(2, "0")}`,
+  };
+}
+
 async function getHandler(req: Request) {
   const url = new URL(req.url);
   const kindParam = url.searchParams.get("kind") ?? "industry";
@@ -56,6 +89,32 @@ async function getHandler(req: Request) {
   const asOf = new Date().toISOString(); // 本机取数完成时刻（回答「我们什么时候取的」，不是「这是哪天的数」）
   // 「这是哪天的数」由 tradeDate 回答：行情源给的最近交易日（休市日补上，页面才不会把 15:32 读成今天的行情）
   const tradeDate = await latestTradeDate().catch(() => null);
+  // 盘后/历史日期：行业榜直接回 15:20 冻结的全天总量（治双源摆动，数字永远一致）
+  if (kind === "industry") {
+    const bj = beijingNowMinutes();
+    const settled = bj.minutes >= 15 * 60 + 20;
+    const isHistorical = tradeDate != null && tradeDate !== bj.date;
+    if (settled || isHistorical) {
+      const frozen = frozenIndustryRows(tradeDate);
+      if (frozen) {
+        const rows = frozen.map((r, i) => ({
+          rank: typeof r.rank === "number" ? r.rank : i + 1,
+          code: typeof r.code === "string" ? r.code : "",
+          name: typeof r.name === "string" ? r.name : "",
+          changePct: typeof r.changePct === "number" ? r.changePct : null,
+          main: typeof r.main === "number" ? r.main : null,
+          ratio: null,
+          leader: "",
+        }));
+        if (rows.length) {
+          return NextResponse.json({
+            rows, source: "frozen", asOf, tradeDate,
+            frozenNote: `盘后冻结：${tradeDate} 15:20 留档的全天总量（治「一会多一会少」的双源摆动）；盘中才走实时源`,
+          });
+        }
+      }
+    }
+  }
   try {
     const rows = await fetchBoardReal(kind, dir);
     if (rows?.length && !rows.every((r) => r.fundsMissing)) {

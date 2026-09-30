@@ -12,13 +12,14 @@
 import fs from "fs";
 import path from "path";
 import type { RegimeRow } from "./regime-core.ts";
+import { pctWithCI } from "@/lib/quant/factors/wilson-core";
 
 const FILE = path.join(process.cwd(), "data", "strategy-regime.json");
 
 export interface RegimeRankItem {
   id: number;
   name: string;
-  stat: { n: number; win: number; avg: number; avg5: number };
+  stat: { n: number; win: number; avg: number; avg5: number; winCi?: string };
   win1: number;
   n1: number;
 }
@@ -45,11 +46,28 @@ export function regimeLibrary(): RegimeFile | null {
     if (cache && st.mtimeMs === cacheMtimeMs) return cache;
     const raw = JSON.parse(fs.readFileSync(FILE, "utf-8")) as RegimeFile;
     if (!raw || !Array.isArray(raw.rows)) return null;
+    // P1（2026-09-30）：胜率的 Wilson 95% CI 在加载层派生（数据文件不带，刻度只有一处）。
+    // 点估计不许当真值卖——样本小的策略区间会宽，模型/页面转述必须带区间。
+    enrichWinCi(raw);
     cache = raw;
     cacheMtimeMs = st.mtimeMs;
     return cache;
   } catch {
     return null;
+  }
+}
+
+function enrichWinCi(raw: RegimeFile): void {
+  for (const row of raw.rows) {
+    for (const k of ["强势", "震荡", "弱势"] as const) {
+      const s = row[k];
+      if (s && s.winCi == null) s.winCi = pctWithCI(s.win, s.n);
+    }
+  }
+  for (const key of ["强势", "震荡", "弱势"] as const) {
+    for (const item of raw.rank?.[key] ?? []) {
+      if (item.stat && item.stat.winCi == null) item.stat.winCi = pctWithCI(item.stat.win, item.stat.n);
+    }
   }
 }
 

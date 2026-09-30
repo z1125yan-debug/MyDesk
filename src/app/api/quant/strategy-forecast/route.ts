@@ -14,6 +14,8 @@
 // - 不给仓位建议、不给买卖指令——这个接口只回答「今天哪些策略的前提成立」。
 
 import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 import { ttlCache } from "@/lib/quant/server-cache";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { computeSentiment } from "@/lib/quant/screener/sentiment";
@@ -26,6 +28,7 @@ import { packForecast, type GateStrategy } from "@/lib/quant/strategy/strategy-g
 import { regimeAt, regimeRankOf } from "@/lib/quant/strategy/regime-core";
 import { regimeLibrary, regimeRows } from "@/lib/quant/strategy/regime-library";
 import { fetchKlinesReal } from "@/lib/desk/em";
+import { shanghaiDate } from "@/lib/desk/session";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +38,48 @@ const FORECAST_TTL_MS = 5 * 60_000;
 const SAMPLE_TARGET = 30;
 /** 大盘档位判据：上证指数日线（与调度器判交易日同源，不另起一套指数） */
 const INDEX_SYMBOL = "000001.SH";
+
+// ---------- P3 使用台账（2026-09-30） ----------
+// 弹卡此前只展示不记账，「跟着推荐走到底赚没赚」无从回答，Brier/胜率回收缺一半。
+// 口径：展示即承诺——弹卡给出的每条推荐落一行（含组合拆成员），同日同策略同来源 upsert 不翻倍；
+// 次日靶=全市场中位个股收盘涨跌幅（daily_snapshot.nextDayMktChg 同源），回填后即可算跟单胜率。
+// 注意这是「展示留痕」不是「用户操作记录」——用户没点「选它」也记。
+interface PickRow {
+  tradeDate: string; regime: string; tierScore: number | null;
+  strategyId: number; strategyName: string; source: string;
+  statN: number | null; statWin: number | null; statAvg: number | null;
+}
+
+async function recordPicks(rows: PickRow[]): Promise<void> {
+  for (const r of rows) {
+    await db.strategyPick.upsert({
+      where: { tradeDate_strategyId_source: { tradeDate: r.tradeDate, strategyId: r.strategyId, source: r.source } },
+      create: r,
+      update: { regime: r.regime, tierScore: r.tierScore, statN: r.statN, statWin: r.statWin, statAvg: r.statAvg },
+    });
+  }
+}
+
+/** 把已有 T+1 读数回填到还没回填的历史 picks；返回回填行数 */
+async function backfillPicks(): Promise<number> {
+  const snaps = await db.dailySnapshot.findMany({
+    where: { nextDayMktChg: { not: null } },
+    select: { tradeDate: true, nextDayMktChg: true },
+    orderBy: { tradeDate: "desc" },
+    take: 400,
+  });
+  let n = 0;
+  for (const s of snaps) {
+    const chg = s.nextDayMktChg;
+    if (chg == null) continue;
+    const r = await db.strategyPick.updateMany({
+      where: { tradeDate: s.tradeDate, nextDayMktChg: null },
+      data: { nextDayMktChg: chg, nextDayUp: chg > 0, backfilledAt: new Date() },
+    });
+    n += r.count;
+  }
+  return n;
+}
 
 export async function GET(req: NextRequest) {
   // P34：?date=YYYY-MM-DD = 历史回放（看那天该用什么策略）；不传 = 今天。
@@ -103,6 +148,22 @@ export async function GET(req: NextRequest) {
       const r = idx >= 0 ? regimeAt(closes, idx) : null;
       const lib = regimeLibrary();
       const ranked = regimeRankOf(regimeRows(), r, { minHits: 20, minTotal: 30, limit: 5 });
+      // P34-4（2026-09-30）：样本外检验警示。validate-regime-oos.ts（前70%训练/后30%检验）结论：
+      // 档位排序**不保序**（弱势期全A中位次日收益反而为正）——排序参考价值有限，必须让用户看到，
+      // 不能只躺在脚本和 worklog 里。
+      let oosNote = "";
+      try {
+        const oos = JSON.parse(
+          fs.readFileSync(path.join(process.cwd(), "data", "regime-oos-report.json"), "utf-8"),
+        ) as { verdict?: string; trainOrder?: string[]; testOrder?: string[] };
+        if (oos.verdict === "partial") {
+          oosNote = `样本外检验（前70%训练/后30%检验）：档位排序不保序（训练 ${oos.trainOrder?.join("＞")} → 检验 ${oos.testOrder?.join("＞")}），且强势期次日收益未必好于弱势期——本榜按历史均值排序，仅供复盘参考，不构成「按档选策略就更赚」的承诺`;
+        } else if (oos.verdict === "kept") {
+          oosNote = "样本外检验：档位排序保序、强弱差为正（data/regime-oos-report.json）";
+        } else if (oos.verdict === "reversed") {
+          oosNote = "样本外检验：强弱差反转，本榜排名参考价值低，仅供复盘";
+        }
+      } catch { /* 报告不存在就不加警示（首跑前） */ }
       regime = {
         regime: r,
         asOf: idx >= 0 ? dates[idx] ?? null : null,
@@ -110,7 +171,7 @@ export async function GET(req: NextRequest) {
         items: ranked.items,
         method: lib?.regimeMethod ?? "上证指数 MA20 趋势法",
         window: lib ? `${lib.window.universe} 只 × 约 ${lib.window.bars} 根日K（${lib.window.note}）` : "",
-        note: lib?.thresholds?.note ?? "",
+        note: [lib?.thresholds?.note ?? "", oosNote].filter(Boolean).join("；"),
         error: !lib
           ? "回测榜没读到（data/strategy-regime.json 缺失），本区不显示排名"
           : idx < 0
@@ -124,6 +185,33 @@ export async function GET(req: NextRequest) {
     }
 
     const pack = packForecast({ score, tier, strategies, snapshotRows, target: SAMPLE_TARGET });
+
+    // ⑤ P3 使用台账：只对「今天」记（历史回放是复盘不是当时的建议，不污染台账）；写失败不影响预测返回
+    if (!dateParam) {
+      try {
+        const td = shanghaiDate();
+        const rows: PickRow[] = [];
+        for (const it of regime.items as { id: number; name: string; stat?: { n?: number; win?: number; avg?: number } }[]) {
+          rows.push({
+            tradeDate: td, regime: regime.regime ?? "", tierScore: score,
+            strategyId: it.id, strategyName: it.name, source: "regime",
+            statN: it.stat?.n ?? null, statWin: it.stat?.win ?? null, statAvg: it.stat?.avg ?? null,
+          });
+        }
+        for (const it of pack.items) {
+          for (const id of it.memberIds) {
+            rows.push({
+              tradeDate: td, regime: regime.regime ?? "", tierScore: score,
+              strategyId: id, strategyName: it.kind === "single" ? it.name : `${it.name}·组合成员`,
+              source: "gate", statN: null, statWin: null, statAvg: null,
+            });
+          }
+        }
+        if (rows.length) await recordPicks(rows);
+        await backfillPicks();
+      } catch { /* 台账写失败不影响预测返回 */ }
+    }
+
     return NextResponse.json({
       ok: true,
       as_of: new Date().toISOString(),

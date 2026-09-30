@@ -13,11 +13,11 @@
 import type { Scene } from "./intent-core.ts";
 
 /** 入参形状判别符（具体拼法在 intent-core 的 planDispatch，文案单一出处） */
-export type SkillArgs = "empty" | "news8" | "sector_kind" | "symbol" | "screener_pool" | "board_code";
+export type SkillArgs = "empty" | "news8" | "sector_kind" | "symbol" | "screener_pool" | "board_code" | "sector_name";
 /** 「为什么取它」的文案键（渲染时套 SCENE_LABELS，与旧 switch 逐字一致；news 两变体照抄不统一） */
-export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "depth" | "trades" | "news" | "news_why" | "watchlist" | "screener_pool" | "stock_news" | "sector_constituents" | "business_composition";
-/** 出条件判别符：news=提问显式要消息面；watchlist_nonempty=本机自选非空；board_code=提问里点了 BK 板块代码；chain=提问落在产业链/供应链类（白毛股神六问的触发口径） */
-export type SkillGate = "news" | "watchlist_nonempty" | "board_code" | "chain";
+export type SkillReason = "scene" | "scene_snapshot" | "kline" | "fund_flow" | "depth" | "trades" | "news" | "news_why" | "watchlist" | "screener_pool" | "stock_news" | "sector_constituents" | "business_composition" | "sector_breadth";
+/** 出条件判别符：news=提问显式要消息面；watchlist_nonempty=本机自选非空；board_code=提问里点了 BK 板块代码；chain=提问落在产业链/供应链类（白毛股神六问的触发口径）；industry_hit=提问命中了本地行业快照认得的行业名（服务层递进，纯层不查字典） */
+export type SkillGate = "news" | "watchlist_nonempty" | "board_code" | "chain" | "industry_hit";
 
 export interface SkillPlanEntry {
   scene: Scene;
@@ -78,6 +78,14 @@ export const BUILTIN_SKILLS: Skill[] = [
     name: "sector_constituents",
     desc: "板块成分股（真实名单；东财 BK 代码 或 行业名走本地行业归属快照）",
     plan: [{ scene: "sector", spread: "once", args: "board_code", reason: "sector_constituents", gate: "board_code" }],
+  },
+  // 2026-09-30（P35）：板块均线广度。推荐问题卡模板一直承诺「均线广度占比」但工具链里从来没有，
+  // 模型只能写「暂无均线广度统计」（用户截图事故：半导体资金问答三处暂无数据）。
+  // gate=industry_hit：只有提问命中本地行业快照认得的行业名才取（行业名由服务层递进，纯层不查字典）。
+  {
+    name: "sector_breadth",
+    desc: "板块均线广度（成分股站上 MA5/MA10/MA20 占比，本地计算，非上游接口）",
+    plan: [{ scene: "sector", spread: "once", args: "sector_name", reason: "sector_breadth", gate: "industry_hit" }],
   },
   {
     name: "stock_snapshot",

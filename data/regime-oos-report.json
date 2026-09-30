@@ -1,0 +1,91 @@
+{
+  "generatedAt": "2026-09-30T06:29:01.423Z",
+  "method": "档位级样本外：档位=上证MA20趋势法(regime-core)；次日收益=全A中位个股涨跌幅(stock_daily_close)；前70%训练/后30%检验",
+  "klineRange": {
+    "first": "2025-07-10",
+    "last": "2026-09-30",
+    "bars": 300
+  },
+  "closeRange": {
+    "first": "2026-04-20",
+    "last": "2026-09-29"
+  },
+  "pairs": 111,
+  "trainDays": 77,
+  "testDays": 34,
+  "allStats": {
+    "强势": {
+      "n": 47,
+      "meanPct": -0.38,
+      "medianPct": -0.21,
+      "winPct": 42.6
+    },
+    "震荡": {
+      "n": 22,
+      "meanPct": -0.76,
+      "medianPct": -0.71,
+      "winPct": 40.9
+    },
+    "弱势": {
+      "n": 42,
+      "meanPct": -0.05,
+      "medianPct": 0.4,
+      "winPct": 54.8
+    }
+  },
+  "trainStats": {
+    "强势": {
+      "n": 28,
+      "meanPct": -0.35,
+      "medianPct": -0.17,
+      "winPct": 50
+    },
+    "震荡": {
+      "n": 16,
+      "meanPct": -1.06,
+      "medianPct": -1.02,
+      "winPct": 31.3
+    },
+    "弱势": {
+      "n": 33,
+      "meanPct": -0.07,
+      "medianPct": 0.48,
+      "winPct": 51.5
+    }
+  },
+  "testStats": {
+    "强势": {
+      "n": 19,
+      "meanPct": -0.41,
+      "medianPct": -0.21,
+      "winPct": 31.6
+    },
+    "震荡": {
+      "n": 6,
+      "meanPct": 0.05,
+      "medianPct": 0.5,
+      "winPct": 66.7
+    },
+    "弱势": {
+      "n": 9,
+      "meanPct": 0.03,
+      "medianPct": 0.34,
+      "winPct": 66.7
+    }
+  },
+  "trainOrder": [
+    "弱势",
+    "强势",
+    "震荡"
+  ],
+  "testOrder": [
+    "震荡",
+    "弱势",
+    "强势"
+  ],
+  "orderKept": false,
+  "trainSpreadPct": -0.28,
+  "testSpreadPct": -0.44,
+  "spreadSignKept": true,
+  "verdict": "partial"
+}
