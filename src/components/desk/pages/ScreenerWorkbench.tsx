@@ -1,13 +1,13 @@
 "use client";
 // 量化选股工作台（S3 稳智 /screener 复刻）：四栏条件卡 + 自定义条件 + 已选条件 + 筛选 + AI 优选 + 策略存取。
 // 全部功能走本站真引擎：POST /api/quant/screener（真筛选）、/api/ai/chat（真 AI 优选）、
-// 因子目录 GET /api/quant/factors?catalog=1（只列 implemented 字段，不做假因子）。策略存 localStorage。
+// 条件目录 GET /api/quant/factors?catalog=1（只列 implemented 字段，不做假条件）。策略存 localStorage。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Sparkles, Trash2, X } from "lucide-react";
 import { useDesk, type ChatHorizon, type FrozenPool } from "@/lib/desk/store";
 import { normalizeSectorKeyword } from "@/lib/quant/screener/sector-keyword-core";
 import { plainCode, codeTitle } from "@/lib/desk/code-format";
-// P36-D 因子真相：条件卡片要当场说清这个条件历史上有没有用、是不是反着走的
+// P36-D 条件真相：条件卡片要当场说清这个条件历史上有没有用、是不是反着走的
 import { condAuditOf, truthDetailOf, type FactorTruth } from "@/lib/quant/factors/factor-truth-core";
 import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 // P36-E6 档位切换条：强势 / 震荡 / 弱势（不用「牛市/熊市」，判的是最近几周的方向）
@@ -16,7 +16,7 @@ import RegimeSwitchBar from "@/components/desk/pages/RegimeSwitchBar";
 type CatalogField = { key: string; zh: string; category: string; source?: string; implemented?: boolean; unit?: string; truth?: FactorTruth | null };
 type CondType = "single" | "rolling_return" | "rolling_sum" | "rolling_any";
 type Cond = { field: string; zh: string; op: string; value: string; type?: CondType; window?: number; min_match_days?: number };
-// 社区策略库（稳智「我的策略」，条件字段已映射为本站因子 key）
+// 社区策略库（稳智「我的策略」，条件字段已映射为本站条件 key）
 type LibCond = { field: string; op: string; value: number | string | (number | string)[]; type?: CondType; window?: number; min_match_days?: number };
 type LibStrategy = {
   id: number; name: string; owner?: string; like: number; dislike: number; vote: number;
@@ -75,7 +75,7 @@ const POOL_HORIZONS: { value: string; label: string; local: ChatHorizon }[] = [
 const POOL_RISKS = ["稳健", "均衡", "激进"] as const;
 const POOL_COUNTS = [3, 5, 10] as const;
 // 预设条件芯片（稳智同款：每颗 chip=一条带阈值的完整条件，两列排布）。
-// fieldZh 必须与因子目录 zh 一致才渲染——目录没有的字段不摆假牌。
+// fieldZh 必须与条件目录 zh 一致才渲染——目录没有的字段不摆假牌。
 type ChipPreset = { chip: string; conds: { field: string; op: string; value: number }[] };
 const p = (chip: string, field: string, op: string, value: number): ChipPreset => ({ chip, conds: [{ field, op, value }] });
 // 区间型 chip（稳智「总市值50亿-200亿」这类）：一条 chip = 两个边界条件
@@ -85,7 +85,7 @@ const PRESET_CARDS: { title: string; sections: { section: string; chips: ChipPre
     { section: "估值与市值", chips: [p("市盈率≤30","pe_ttm","<=",30), p("市净率≤3","pb","<=",3), p("总市值≥500亿","market_cap_yi",">=",500), pr("总市值50亿-200亿","market_cap_yi",50,200), p("流通市值≥100亿","floatcap_yi",">=",100), p("流通市值≤50亿","floatcap_yi","<=",50)] },
     { section: "量能与活跃度", chips: [p("今日涨停","is_limit_up","=",1), p("换手率≥3%","turnover_rate",">=",3), p("换手率<1%(低)","turnover_rate","<",1), p("量比≥1.5","volume_ratio",">=",1.5), p("成交额≥1亿","amount_yi",">=",1), p("倍量信号","double_volume_signal","=",1), p("振幅≥8%(活跃)","amplitude",">=",8), p("量能信号","volume_signal","=",1)] },
     { section: "行业强度", chips: [p("行业整体RPS_50≥80","sector_rps_50",">=",80), p("行业整体RPS_120≥80","sector_rps_120",">=",80), p("行业RPS_50≥80","in_sector_rps_50",">=",80), p("行业RPS_120≥80","in_sector_rps_120",">=",80)] },
-    { section: "趋势与均线", chips: [p("站上MA5","above_ma_5","=",1), p("站上MA10","above_ma_10","=",1), p("站上MA20","above_ma_20","=",1), p("站上MA60","above_ma_60","=",1), p("站上MA90","above_ma_90","=",1), p("站上MA144","above_ma_144","=",1), p("RPS50≥70","rps_50",">=",70), p("RPS120≥70","rps_120",">=",70), p("RPS综合≥80","rps_composite",">=",80), p("EMA14>EMA26","ema14_gt_ema26","=",1)] },
+    { section: "趋势与均价", chips: [p("高于近一周均价","above_ma_5","=",1), p("高于近两周均价","above_ma_10","=",1), p("高于近一月均价","above_ma_20","=",1), p("高于近三月均价","above_ma_60","=",1), p("高于近四个半月均价","above_ma_90","=",1), p("高于近七个月均价","above_ma_144","=",1), p("RPS50≥70","rps_50",">=",70), p("RPS120≥70","rps_120",">=",70), p("RPS综合≥80","rps_composite",">=",80), p("EMA14>EMA26","ema14_gt_ema26","=",1)] },
   ]},
   { title: "技术与资金", sections: [
     { section: "动量与形态", chips: [p("MACD金叉","macd_cross","=",1), p("KDJ金叉","kdj_cross","=",1), p("RSI超卖","rsi_14","<=",30), p("RSI超买","rsi_14",">=",70), p("长上影线","upper_shadow_ratio",">=",3), p("长下影线","lower_shadow_ratio",">=",3)] },
@@ -152,7 +152,7 @@ export default function ScreenerWorkbench() {
   const [quoteDate, setQuoteDate] = useState("");
   /** 滞后原因（服务端按交易日历+时段判定下发；页面只显示不推断） */
   const [quoteLag, setQuoteLag] = useState<{ lagging: boolean; badge: string; note: string } | null>(null);
-  /** 因子缓存口径（服务端 warning 带回）：说清手上这批因子值是「盘中口径」还是「收盘口径」 */
+  /** 条件缓存口径（服务端 warning 带回）：说清手上这批条件值是「盘中口径」还是「收盘口径」 */
   const [cacheNote, setCacheNote] = useState("");
   const [warmNotice, setWarmNotice] = useState("");
   const [selCols, setSelCols] = useState<CatalogField[]>([]);
@@ -278,7 +278,7 @@ export default function ScreenerWorkbench() {
     sort: { order_by: orderBy, order_dir: dir },
     // 列表页按 20/页翻页；建池时按稳智口径一次拿「页面排序前 300」再冻结
     pagination: { limit, offset: (pg - 1) * limit },
-    maxKlineSymbols: 6000, // K线类因子列按流动性 Top-600 现场计算；全量 5152 家待 S2 盘后预计算
+    maxKlineSymbols: 6000, // K线类条件列按流动性 Top-600 现场计算；全量 5152 家待 S2 盘后预计算
   }), [orderBy, dir, selCols, tradeDate]);
   const buildBody = useCallback((pg: number, limit = 20) => bodyFrom(conds, pg, limit), [bodyFrom, conds]);
 
@@ -302,7 +302,7 @@ export default function ScreenerWorkbench() {
       setQuoteLag(j.quote_lag ?? null);
       // 缓存口径 warning 存下来（角标用）；服务端文案是唯一出处，前端不再自己拼
       const warns: string[] = Array.isArray(j.warnings) ? j.warnings : [];
-      setCacheNote(warns.find((w) => w.startsWith("全市场因子值来自预计算缓存")) ?? "");
+      setCacheNote(warns.find((w) => w.startsWith("全市场条件值来自预计算缓存")) ?? "");
     } catch (e) {
       setError(String((e as Error).message || e));
       setRows(null);
@@ -312,7 +312,7 @@ export default function ScreenerWorkbench() {
   }, [bodyFrom, conds]);
 
   /**
-   * 每天第一次进页面：确保当日因子缓存存在；若手上那份是**盘中口径**而现在已经收盘，
+   * 每天第一次进页面：确保当日条件缓存存在；若手上那份是**盘中口径**而现在已经收盘，
    * 服务端会按收盘口径重算一遍（用户 2026-09-29：「收盘后需要再刷新一下，防止定在盘中」），
    * 算完这里自动重筛一次，用户不用管。
    * 只跑一次（ensureRan 闸）——预热是加速手段，失败或重复调用都不影响筛选本身。
@@ -340,31 +340,31 @@ export default function ScreenerWorkbench() {
         const first = await poll();
         if (isReady(first)) {
           setWarmNotice(closeRefresh
-            ? `已按最新口径重算因子缓存（用时 ${secs()} 秒），正在重筛…`
-            : `因子缓存已就绪（用时 ${secs()} 秒），下次筛选秒开`);
+            ? `已按最新口径重算条件缓存（用时 ${secs()} 秒），正在重筛…`
+            : `条件缓存已就绪（用时 ${secs()} 秒），下次筛选秒开`);
           if (closeRefresh) void runScreener(1);
           setTimeout(() => setWarmNotice(""), 6000);
           return;
         }
         setWarmNotice(closeRefresh
-          ? "手上的因子缓存是盘中口径，正在按收盘口径重算（完成后本页自动重筛一次）…"
-          : "当日因子缓存还没生成，正在后台算（这一轮可能慢些，之后秒开）…");
+          ? "手上的条件缓存是盘中口径，正在按收盘口径重算（完成后本页自动重筛一次）…"
+          : "当日条件缓存还没生成，正在后台算（这一轮可能慢些，之后秒开）…");
         // 3 秒起步逐步退避到 15 秒（比固定 15s 更快发现"其实已经好了"），最多约 9 分钟
         for (let i = 0, wait = 3000; i < 45 && !stopped; i++, wait = Math.min(Math.round(wait * 1.5), 15000)) {
           await new Promise((r) => setTimeout(r, wait));
           const s = await poll();
           if (!isReady(s)) continue;
           if (closeRefresh) {
-            setWarmNotice(`已按最新口径重算因子缓存（用时 ${secs()} 秒），正在重筛…`);
+            setWarmNotice(`已按最新口径重算条件缓存（用时 ${secs()} 秒），正在重筛…`);
             void runScreener(1);
           } else {
-            setWarmNotice(`因子缓存已就绪（用时 ${secs()} 秒），下次筛选秒开`);
+            setWarmNotice(`条件缓存已就绪（用时 ${secs()} 秒），下次筛选秒开`);
           }
           setTimeout(() => setWarmNotice(""), 8000);
           return;
         }
         // 等到超时仍没好：如实说没好，不要继续挂着"正在算"骗人
-        if (!stopped) setWarmNotice(`因子缓存这一轮没算出来（已等 ${secs()} 秒），筛选照常可用，只是会慢一些`);
+        if (!stopped) setWarmNotice(`条件缓存这一轮没算出来（已等 ${secs()} 秒），筛选照常可用，只是会慢一些`);
       } catch { /* 预热失败不影响筛选 */ }
     })();
     return () => { stopped = true; };
@@ -531,7 +531,7 @@ export default function ScreenerWorkbench() {
     try {
       if (!libAll) await loadLibrary();
       const members = (libAll ?? []).filter((s) => it.memberIds.includes(s.id) && s.n_mapped > 0);
-      if (!members.length) throw new Error("找不到这条策略的条件数据（或条件未映射到本站因子）");
+      if (!members.length) throw new Error("找不到这条策略的条件数据（或条件未映射到本站条件）");
       if (members.length === 1) {
         const c = condsOfLib(members[0]);
         setShowStrategies(false);
@@ -608,7 +608,7 @@ export default function ScreenerWorkbench() {
     const zhOf: Record<string, string> = { symbol: "代码", code: "代码", name: "名称", close: "最新价", price: "最新价", change_pct: "涨跌幅" };
     const base = ["symbol", "code", "name", "close", "price", "change_pct"].filter((k) => k in first);
     // 引擎把 industry / kline_pattern / trend_pressure_60 放在**行顶层**（不在 values 里），
-    // 只有因子目录类数值字段才在 values —— 取错层级会让这三列全显示「—」。
+    // 只有条件目录类数值字段才在 values —— 取错层级会让这三列全显示「—」。
     const TOP_LEVEL = new Set(["industry", "kline_pattern", "trend_pressure_60", "__from"]);
     const valCols = selCols.map((f) => ({ key: f.key, zh: f.zh, fromValues: !TOP_LEVEL.has(f.key) }));
     const skip = new Set(["values", "fields", "industry", "kline_pattern", "trend_pressure_60", "__from", ...base, ...selCols.map((f) => f.key)]);
@@ -624,7 +624,7 @@ export default function ScreenerWorkbench() {
 
   /**
    * 列宽（百分比，合计 100）。2026-09-29 用户：表格太宽「还得拉一下才能看完，参考稳智」。
-   * 口径：base 列给固定小宽度，其余因子列平分剩余 —— 配 `table-fixed w-full` 后表格**恒等于容器宽**，
+   * 口径：base 列给固定小宽度，其余条件列平分剩余 —— 配 `table-fixed w-full` 后表格**恒等于容器宽**，
    * 无论用户加了多少列都不会再出现横向滚动条；表头允许换行（多行读得清，比拖滚动条强）。
    */
   const colWidth = useMemo(() => {
@@ -643,11 +643,11 @@ export default function ScreenerWorkbench() {
   return (
     <div className="w-full space-y-4 px-3 py-6">
       <div className="text-center apple-slide-up">
-        <h1 className="text-[25px] font-semibold tracking-tight">多因子量化模型</h1>
+        <h1 className="text-[25px] font-semibold tracking-tight">多条件量化模型</h1>
         <p className="mt-1 text-[13.5px] text-muted-foreground">所示结果仅为模型筛选结果与历史数据分析，不构成任何投资建议。投资有风险，决策需谨慎。</p>
       </div>
 
-      {/* P36-D 图例：两种标记什么意思，说人话（不许用「反向因子」「IC」这类词） */}
+      {/* P36-D 图例：两种标记什么意思，说人话（不许用「反向条件」「IC」这类词） */}
       <div className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-muted-foreground">
         <span><span className="text-amber-300">⚠</span>　历史上是反着走的：数值越高，之后几天反而越容易跌，命中它更接近「该回避」</span>
         <span><span className="border-b border-dashed border-muted-foreground">虚线</span>　没通过历史检验：历史上看不出稳定效果，别把它当买入理由</span>
@@ -664,7 +664,7 @@ export default function ScreenerWorkbench() {
         })}
       />
 
-      {/* 四栏条件卡（稳智同款版式；字段=本站已实现因子目录，点 chip 即加条件，带默认阈值） */}
+      {/* 四栏条件卡（稳智同款版式；字段=本站已实现条件目录，点 chip 即加条件，带默认阈值） */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
         {PRESET_CARDS.map((card, ci) => (
           <div key={card.title} className="factor-card card-bounce-in rounded-xl border border-border/60 bg-overlay p-4 transition-all hover:border-sky-400/40" style={{ animationDelay: `${ci * 150}ms` }}>
@@ -928,15 +928,15 @@ export default function ScreenerWorkbench() {
               className="flex items-center gap-1.5 rounded-md bg-amber-500 px-4 py-1.5 text-[13.5px] font-medium text-black hover:bg-amber-400 disabled:opacity-50">
               <Sparkles size={13} /> AI 优选
             </button>
-            {total != null && <span className="text-[13px] text-muted-foreground" title="K线类因子列按流动性Top600现场计算；稳智的5152全量靠盘后预计算——S2接入后放开上限">共 {total} 条{asOf ? ` · ${asOf}` : ""}</span>}
-            {/* 因子缓存口径角标：让用户一眼知道这批因子值是「盘中取的」还是「收盘后算的」
+            {total != null && <span className="text-[13px] text-muted-foreground" title="K线类条件列按流动性Top600现场计算；稳智的5152全量靠盘后预计算——S2接入后放开上限">共 {total} 条{asOf ? ` · ${asOf}` : ""}</span>}
+            {/* 条件缓存口径角标：让用户一眼知道这批条件值是「盘中取的」还是「收盘后算的」
                 （用户实测过「定在盘中」——不标口径就无从判断手上的价是几点钟的） */}
             {cachePhaseShort && (
               <span className={`rounded border px-1.5 py-0.5 text-[11.5px] ${cachePhaseShort.startsWith("盘中")
                 ? "border-amber-400/30 bg-amber-400/10 text-amber-300/90"
                 : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300/90"}`}
                 title={cacheNote}>
-                因子值：{cachePhaseShort}
+                条件值：{cachePhaseShort}
               </span>
             )}
             {/* 数据日 ≠ 今天时的如实角标：文案由服务端按【交易日历 + 当前时段】判定后下发
@@ -951,7 +951,7 @@ export default function ScreenerWorkbench() {
           </div>
         </div>
         {error && <div className="mt-2 rounded-lg border border-red-400/25 bg-red-400/10 px-3 py-2 text-[13.5px] text-red-300">{error}</div>}
-        {/* 因子缓存预热/收盘重算进度：页面全自动，用户只需知道「在算」。 */}
+        {/* 条件缓存预热/收盘重算进度：页面全自动，用户只需知道「在算」。 */}
         {warmNotice && (
           <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12.5px] text-amber-200/90">
             <Loader2 size={12} className="animate-spin" /> {warmNotice}

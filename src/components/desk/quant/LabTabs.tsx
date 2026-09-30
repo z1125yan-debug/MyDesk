@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { jobLookupVerdict, type JobLookup } from "@/lib/desk/backtest-core";
-// P13 门户轮：因子 pill 中文化（展示换脸、协议不换——选择串仍是 key@version[，权重，方向]）
+// P13 门户轮：条件 pill 中文化（展示换脸、协议不换——选择串仍是 key@version[，权重，方向]）
 import { groupFactorsByCategory, pillLabel, pillTitle, type PillFactor } from "@/lib/quant/screener/factor-pill-core";
 
 const inputCls = "h-8 rounded-md border border-border bg-background px-2 text-[14px]";
@@ -95,7 +95,7 @@ function num(v: unknown, d = 2): string {
 }
 
 /**
- * P13 门户轮：因子 pill 分组（选股/回测两个 Tab 共用一份渲染）。
+ * P13 门户轮：条件 pill 分组（选股/回测两个 Tab 共用一份渲染）。
  * 展示层口径：中文 name 优先、无 name 回退 key（不硬造翻译）；按 category 中文分组；
  * hover title 保留 factorKey@version——中文化是换脸不是藏身份。
  * **选择串由调用方给**：协议（key@version / key@version,权重,方向）一个字没动。
@@ -106,7 +106,7 @@ function FactorPillGrid({ factors, isSelected, onToggle, emptyText }: {
   onToggle: (f: PillFactor) => void;
   emptyText?: string;
 }) {
-  if (!factors.length) return <span className="text-[13px] text-muted-foreground">{emptyText ?? "因子库为空"}</span>;
+  if (!factors.length) return <span className="text-[13px] text-muted-foreground">{emptyText ?? "条件库为空"}</span>;
   return (
     <div className="space-y-1.5">
       {groupFactorsByCategory(factors).map((g) => (
@@ -151,7 +151,7 @@ export function BacktestJobCard({ job }: { job: JobView | null }) {
         <div>Sharpe <b>{num(metrics.sharpe)}</b></div>
         <div>Sortino <b>{num(metrics.sortino)}</b></div>
         <div>Calmar <b>{num(metrics.calmar)}</b></div>
-        <div>最大回撤 <b className="text-red-300">{pct(metrics.maxDrawdown)}</b></div>
+        <div>最惨亏多少 <b className="text-red-300">{pct(metrics.maxDrawdown)}</b></div>
         <div>胜率 <b>{pct(metrics.winRate, 0)}</b></div>
         <div>盈亏比 <b>{num(metrics.payoffRatio)}</b></div>
         <div>交易次数 <b>{metrics.tradeCount}</b></div>
@@ -195,7 +195,7 @@ export function BacktestTab() {
       const [factorKey, version] = kv.split("@");
       return { factorKey, version: parseInt(version, 10) || 1, weight: parseFloat(w) || 1, direction: (parseInt(d, 10) || 1) as 1 | -1 };
     });
-    if (!list.length) { toast({ title: "请至少选择一个因子" }); return; }
+    if (!list.length) { toast({ title: "请至少选择一个条件" }); return; }
     setBusy(true);
     try {
       const r = await fetch("/api/quant/backtest", {
@@ -241,11 +241,11 @@ export function BacktestTab() {
             启用 Walk-forward/OOS 验证
           </label>
           <div className="md:col-span-3">
-            <div className="text-[12.5px] text-muted-foreground">选择因子（可多选；格式 key@version,权重,方向）</div>
+            <div className="text-[12.5px] text-muted-foreground">选择条件（可多选；格式 key@version,权重,方向）</div>
             <div className="mt-1">
               <FactorPillGrid
                 factors={factors}
-                emptyText="因子库为空，先去挖掘"
+                emptyText="条件库为空，先去挖掘"
                 isSelected={(f) => sel.includes(`${f.factorKey}@${f.version},1,1`)}
                 onToggle={(f) => {
                   const tag = `${f.factorKey}@${f.version},1,1`;
@@ -289,7 +289,7 @@ export function SelectionTab() {
       const [factorKey, version] = s.split("@");
       return { factorKey, version: parseInt(version, 10) || 1, weight: 1, direction: 1 as const };
     });
-    if (!list.length) { toast({ title: "请至少选择一个因子" }); return; }
+    if (!list.length) { toast({ title: "请至少选择一个条件" }); return; }
     setBusy(true);
     try {
       const r = await fetch("/api/quant/selection", {
@@ -345,7 +345,7 @@ export function SelectionTab() {
           <div className="md:col-span-3">
             <FactorPillGrid
               factors={factors}
-              emptyText="因子库为空"
+              emptyText="条件库为空"
               isSelected={(f) => sel.includes(`${f.factorKey}@${f.version}`)}
               onToggle={(f) => {
                 const tag = `${f.factorKey}@${f.version}`;
@@ -373,7 +373,7 @@ export function SelectionTab() {
                 <th className="px-2 py-1.5 text-left font-normal">代码</th>
                 <th className="px-2 py-1.5 text-left font-normal">名称</th>
                 <th className="px-2 py-1.5 text-right font-normal">得分</th>
-                <th className="px-2 py-1.5 text-left font-normal">触发因子</th>
+                <th className="px-2 py-1.5 text-left font-normal">触发条件</th>
                 <th className="px-2 py-1.5 text-left font-normal">理由</th>
                 {picks && <th className="px-2 py-1.5 text-right font-normal">未来收益</th>}
                 <th className="px-2 py-1.5 text-left font-normal">风险</th>
@@ -416,7 +416,7 @@ export function ExperimentsTab() {
   }, []);
   return (
     <div className="space-y-2 pt-3">
-      <div className="text-[12.5px] text-muted-foreground">实验指纹去重：同输入（数据区间/股票池/因子版本/参数/成本）的实验不会重复执行。</div>
+      <div className="text-[12.5px] text-muted-foreground">实验指纹去重：同输入（数据区间/股票池/条件版本/参数/成本）的实验不会重复执行。</div>
       {rows.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-[14px] text-muted-foreground">暂无实验记录</CardContent></Card>
       ) : (
@@ -428,7 +428,7 @@ export function ExperimentsTab() {
                 <th className="px-2 py-1.5 text-left font-normal">类型</th>
                 <th className="px-2 py-1.5 text-left font-normal">状态</th>
                 <th className="px-2 py-1.5 text-left font-normal">数据区间</th>
-                <th className="px-2 py-1.5 text-left font-normal">因子版本</th>
+                <th className="px-2 py-1.5 text-left font-normal">条件版本</th>
                 <th className="px-2 py-1.5 text-left font-normal">失败原因</th>
               </tr>
             </thead>
@@ -463,7 +463,7 @@ export function KnowledgeTab() {
   }, [kind]);
   useEffect(load, [load]);
   const KIND_LABEL: Record<string, string> = {
-    valid_factor: "有效因子", invalid_factor: "无效因子", tested_param: "已试参数",
+    valid_factor: "有效条件", invalid_factor: "无效条件", tested_param: "已试参数",
     failed_strategy: "失败策略", retired_strategy: "退役策略", experiment_note: "实验备注",
     market_env: "市场环境", current_strategy: "当前策略",
   };

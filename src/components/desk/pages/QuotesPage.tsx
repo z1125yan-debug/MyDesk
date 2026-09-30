@@ -292,7 +292,7 @@ export default function QuotesPage() {
 
         {/* MACD 副图 */}
         {symbol && vis.macd && (
-          <LineageSection title="MACD" hint="DIF / DEA / 柱（服务端 macdCalc 口径，与选股因子一致）" divided>
+          <LineageSection title="MACD" hint="DIF / DEA / 柱（服务端 macdCalc 口径，与选股条件一致）" divided>
             <EChart ariaLabel="MACD 副图" height={150} state="ok" option={macdOption} />
           </LineageSection>
         )}

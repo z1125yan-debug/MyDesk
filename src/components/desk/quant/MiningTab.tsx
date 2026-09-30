@@ -1,5 +1,5 @@
 "use client";
-// 量化研究 — 因子挖掘 Tab（Phase 2/3）：配置漏斗 → 启动任务 → 进度 → 结果
+// 量化研究 — 条件挖掘 Tab（Phase 2/3）：配置漏斗 → 启动任务 → 进度 → 结果
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
@@ -120,7 +120,7 @@ export function MiningTab() {
           <label className="text-[12.5px] text-muted-foreground">候选上限 {limit}
             <input type="range" min={8} max={80} step={4} value={limit} onChange={(e) => setLimit(+e.target.value)} className="mt-2 w-full" />
           </label>
-          <label className="text-[12.5px] text-muted-foreground">初筛 |RankIC| ≥ {minAbsRankIc}
+          <label className="text-[12.5px] text-muted-foreground">初筛：按排名看准不准，绝对值 ≥ {minAbsRankIc}
             <input type="range" min={0.01} max={0.06} step={0.005} value={minAbsRankIc} onChange={(e) => setMinAbsRankIc(+e.target.value)} className="mt-2 w-full" />
           </label>
           <label className="text-[12.5px] text-muted-foreground">初筛 ICIR ≥ {minIcIr}
@@ -165,9 +165,9 @@ export function MiningTab() {
                 <table className="w-full text-[13px]">
                   <thead className="bg-card text-muted-foreground">
                     <tr>
-                      <th className="px-2 py-1.5 text-left font-normal">通过因子</th>
-                      <th className="px-2 py-1.5 text-right font-normal">RankIC</th>
-                      <th className="px-2 py-1.5 text-right font-normal">ICIR</th>
+                      <th className="px-2 py-1.5 text-left font-normal">通过条件</th>
+                      <th className="px-2 py-1.5 text-right font-normal">按排名看准不准</th>
+                      <th className="px-2 py-1.5 text-right font-normal">每个月都准吗</th>
                       <th className="px-2 py-1.5 text-right font-normal">稳定性</th>
                       <th className="px-2 py-1.5 text-right font-normal">多空年化</th>
                       <th className="px-2 py-1.5 text-right font-normal">换手</th>

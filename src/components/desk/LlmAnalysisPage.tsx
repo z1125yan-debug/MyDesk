@@ -1,7 +1,7 @@
 "use client";
 // LLM 分析（S10 稳智 /settings 五Tab复刻 v2）：主题热点 / 研究池 / 板块全景看板 / 个股评估矩阵 / 产业链研报分析。
 // 数据全部本地真实接口：主题=/api/market/themes、市场环境=/api/market/review-stats(稳智同源种子)、
-// 板块全景=/api/market/sectors、个股矩阵=/api/quant/factor-matrix(全A因子预计算)+/api/market/allstocks。
+// 板块全景=/api/market/sectors、个股矩阵=/api/quant/factor-matrix(全A条件预计算)+/api/market/allstocks。
 // 产业链研报=豆包2 基于当日真实数据生成（AI 生成·已标注），历史留档本地。
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
@@ -59,7 +59,7 @@ type ThemeHeatSeed = {
   concepts: { n: string; h: number; t: string; f: number }[];
 };
 
-/** 研报的「市场阶段」要用真实点位/均线，所以取日线**不复权**（前复权会把历史点位改小，跟交易所公布值不一致） */
+/** 研报的「市场阶段」要用真实点位/近一月均价，所以取日线**不复权**（前复权会把历史点位改小，跟交易所公布值不一致） */
 const klineUrl = (symbol: string) => `/api/market/kline?symbol=${symbol}&tf=${encodeURIComponent("日线")}&fq=none`;
 
 /** 快讯池：按指定交易日取全量窗口（服务端按 realSort 游标翻页；实测单日 300~840 条、池子只留最近约 14 天） */
@@ -509,7 +509,7 @@ function SectorPanoramaView() {
         : [
             { key: "flow3d", label: "3日资金" },
             { key: "pct3d", label: "3日涨跌" },
-            { key: "ma20", label: "MA20" },
+            { key: "ma20", label: "站上一月均价的比例" },
           ],
     },
     {
@@ -522,7 +522,7 @@ function SectorPanoramaView() {
         : [
             { key: "pct5d", label: "5日涨跌" },
             { key: "flow1d", label: "当日资金" },
-            { key: "ma20", label: "MA20" },
+            { key: "ma20", label: "站上一月均价的比例" },
           ],
     },
     {
@@ -604,7 +604,7 @@ function SectorPanoramaView() {
         {oneDay ? (
           <>
             本地口径（快照天数不足，暂以当日字段计）：轮动 = 当日涨跌×10 + 当日主力净额/10 · 高位 = 当日涨跌≥3% · 低吸 = 其余按当日净额排序。
-            数据源：<code>data/sector-snapshots.json（15:20 定时任务留档）</code>——3日/5日/7日/MA20 列随快照天数积累后自动恢复稳智口径。
+            数据源：<code>data/sector-snapshots.json（15:20 定时任务留档）</code>——3日/5日/7日/近一月均价 列随快照天数积累后自动恢复稳智口径。
           </>
         ) : (
           <>
@@ -672,7 +672,7 @@ function StockMatrixView() {
         </div>
       </div>
       {error && <div className="text-[13px] text-red-300">{error}</div>}
-      {busy && !rows.length ? <div className="py-10 text-center text-[13px] text-muted-foreground"><Loader2 className="mr-1 inline animate-spin" size={13} />载入全A因子矩阵...</div> : (
+      {busy && !rows.length ? <div className="py-10 text-center text-[13px] text-muted-foreground"><Loader2 className="mr-1 inline animate-spin" size={13} />载入全A条件矩阵...</div> : (
         <div className="max-h-[560px] overflow-auto rounded-lg border border-border/50">
           <table className="w-full text-[13px]">
             <thead className="sticky top-0 z-10 bg-surface text-muted-foreground"><tr>{cols.map((c) => <th key={c.key} className="px-3 py-2 text-left font-medium">{c.zh}</th>)}</tr></thead>
@@ -693,7 +693,7 @@ function StockMatrixView() {
           </table>
         </div>
       )}
-      <div className="mt-2 text-[11.5px] text-muted-foreground">因子值来自当日全A预计算缓存 × 实时快照联合；缺失读数如实显示「—」。</div>
+      <div className="mt-2 text-[11.5px] text-muted-foreground">条件值来自当日全A预计算缓存 × 实时快照联合；缺失读数如实显示「—」。</div>
     </div>
   );
 }
@@ -926,7 +926,7 @@ function IndustryReportView() {
       const dataDay = String((rv as { range?: { to?: string | null } }).range?.to ?? "").trim().slice(0, 10);
       const genDay = /^\d{4}-\d{2}-\d{2}$/.test(dataDay) ? dataDay : reportDay;
       // P64：数据块一律走 report-input-core 的中文口径（原来这里拼 `JSON.stringify(rows)` 直接塞英文字段，
-      // 模型不懂语义 → 把「站上5日均线占比 27.56%」写成「跌破率 27.56%」、把 microPct 写成「微观成交占比」，
+      // 模型不懂语义 → 把「站上最近5天平均占比 27.56%」写成「跌破率 27.56%」、把 microPct 写成「微观成交占比」，
       // 还会把 aboveMa5Pct 这种内部字段名原样漏进正文）。
       const flowsZh = themeFlowsZh(th?.industries, th?.concepts);
       const rowsZh = reviewRowsZh(rows);
@@ -1021,7 +1021,7 @@ function IndustryReportView() {
   "**免责声明**：本分析基于公开信息整理，不构成任何投资建议。A股市场受多重因素影响，历史表现不代表未来。投资者应结合自身风险承受能力独立决策，并对投资结果负责。",
   "",
   "【真实市场数据（全部来自本站真实接口；下面没给的读数一律不许出现在正文里）】",
-  "① 指数趋势（真实日K算出，正文里的点位 / 均线关系 / 回撤只能引用这里）：",
+  "① 指数趋势（真实日K算出，正文里的点位 / 与最近一个月均价的关系 / 回撤只能引用这里）：",
   ...indexZh,
   "② " + verdictZh,
   "③ 指标口径（照这个读，不许按字段名猜）：",
@@ -1037,7 +1037,7 @@ function IndustryReportView() {
   "【硬性纪律】",
   "1. 所有判断必须与上述数据一致，不得编造读数；数据不足的环节明确写「数据不足」，不编造公司或数字。",
   "1b. 指数与板块涨跌的「方向」只能照抄数据里带正负号的当日涨跌（如 +0.18%=上涨、-0.34%=下跌），",
-  "   严禁依据「均线下方」「退潮」等语境自行推测方向——实测曾把真实 +0.18% 写成「跌幅 0.18%」（方向写反）。",
+  "   严禁依据「价格在一个月均价下方」「退潮」等语境自行推测方向——实测曾把真实 +0.18% 写成「跌幅 0.18%」（方向写反）。",
   "2. 产业链受益环节列代表公司时，只用A股真实存在的上市公司。",
   "3. 标题层级只用 # / ## / ###，正文用 - 项目符号；不要表格、不要代码块、不要 JSON。",
   "4. 正文里不许出现内部字段名（aboveMa5Pct、microPct、decliners、limitUp 这类），指标一律用上面「指标口径」给的中文说法。",

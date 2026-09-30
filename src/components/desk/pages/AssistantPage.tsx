@@ -66,9 +66,9 @@ const CARD_ICONS: Record<string, typeof TrendingUp> = {
   持仓先拿还是减: Wallet,
   回踩低吸判断: ArrowDownToLine,
   接飞刀还是回踩: Activity,
-  回踩均线还能吸吗: Gauge,
+  跌到一个月均价附近还能买吗: Gauge,
   现价还能不能参与: Crosshair,
-  跌破均线怎么办: AlertTriangle,
+  跌破一个月均价怎么办: AlertTriangle,
   超短轻仓试错: Zap,
 };
 

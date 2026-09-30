@@ -239,7 +239,7 @@ export const buildKnifeOrPullback = (subject: string) => {
   return s ? `${s}现在是接飞刀还是接回踩？请结合实时走势、最新消息面/公告、量能、承接和资金流给我低吸纪律。` : "";
 };
 
-/** 回踩均线还能吸吗（稳智 `no`）：均线必选 */
+/** 跌到一个月均价附近还能买吗（稳智 `no`）：选哪条均价必填 */
 export const buildMaAbsorb = (subject: string, maLabel: string) => {
   const s = collapse(subject);
   const m = String(maLabel ?? "").trim();
@@ -255,7 +255,7 @@ export const buildCurrentEntry = (subject: string, horizon: string) => {
   return `${s}现价还能不能参与？结合最新消息面/公告，按${h}看，给我操作计划、买点、风险点和仓位安排。`;
 };
 
-/** 跌破均线怎么办（稳智 `ao`）：均线必选 */
+/** 跌破一个月均价怎么办（稳智 `ao`）：选哪条均价必填 */
 export const buildBreakMa = (subject: string, maLabel: string) => {
   const s = collapse(subject);
   const m = String(maLabel ?? "").trim();
@@ -468,8 +468,8 @@ export const EXTRA_SUGGESTION_CARDS: SuggestionCard[] = [
     build: (v) => buildKnifeOrPullback(v.subject),
   },
   {
-    label: "回踩均线还能吸吗", wzMode: "stock_ma_pullback_input",
-    dialogTitle: "回踩均线还能吸吗",
+    label: "跌到一个月均价附近还能买吗", wzMode: "stock_ma_pullback_input",
+    dialogTitle: "跌到一个月均价附近还能买吗",
     dialogSubtitle: "适合盘中问回踩 MA10 或 MA20 附近还能不能低吸。",
     confirmText: "生成并发送", subjectKind: "stock",
     subjectLabel: "股票名称或代码", subjectPlaceholder: "例如：宁德时代 / 300750",
@@ -488,8 +488,8 @@ export const EXTRA_SUGGESTION_CARDS: SuggestionCard[] = [
     build: (v) => buildCurrentEntry(v.subject, v.horizonEmbed),
   },
   {
-    label: "跌破均线怎么办", wzMode: "stock_break_ma_input",
-    dialogTitle: "跌破均线怎么办",
+    label: "跌破一个月均价怎么办", wzMode: "stock_break_ma_input",
+    dialogTitle: "跌破一个月均价怎么办",
     dialogSubtitle: "适合盘中问跌破 MA5、MA10 或 MA20 后的持仓纪律与止损处理。",
     confirmText: "生成并发送", subjectKind: "stock",
     subjectLabel: "股票名称或代码", subjectPlaceholder: "例如：中控技术 / 688777",

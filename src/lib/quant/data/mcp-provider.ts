@@ -402,7 +402,9 @@ export async function fetchMcpTechnicalSignals(
 ): Promise<{ data: McpTechnicalSignalName[]; source: string; failed: string[] } | null> {
   if (!mcpConfigured()) return null;
   const cacheKey = `mcp:tech:v6:${indicators.join(",")}:${perLimit}`;
-  return cached(cacheKey, 300_000, async () => {
+  // E1：技术指标是收盘口径、一天只变一次；5 分钟 TTL 意味着盘中每次缓存过期都会再吃一次 19 指标 × 3s 的慢调用。
+  // 提到 1 小时：正常交易时段内恒定命中热缓存（毫秒级），只有每天首次/缓存过期才会冷跑一次。
+  return cached(cacheKey, 3_600_000, async () => {
     const client = requireClient();
     const results: (McpTechnicalSignalName | null)[] = new Array(indicators.length).fill(null);
     const failed: string[] = [];

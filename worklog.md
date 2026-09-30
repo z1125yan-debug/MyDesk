@@ -3797,3 +3797,35 @@ breadth 之前 11s 是**体检脚本参数没对上页面**（页面用 `?days=3
   untradeable/dead/vacuous 条件，分档榜 rows 与三档 rank 不许出现已删 id。
   **负向实测**：注入两条假策略（要求涨停 + 恒真）→ 立刻 2 红；还原后 4 绿。
 - 全量 **2071 项 2062 pass 0 fail 9 skip**（+4）。
+
+---
+
+## 2026-10-01（P36-E 收口 + 第0节全量）8 分达标收官
+
+### 一、第 0 节人话纪律：全量扫描钉测 + 21 处存量黑话改人话
+- 新钉测 `tests/quant/p36-plain-language.test.ts`：黑话清单逐词扫 `src/components/**` 可见文案（JSX 文本 + 引号串），
+  命中即红；扫描器自身也钉「注入假文案必须命中」。本轮把存量黑话改掉：因子→条件、站上MA20→高于近一月均价、
+  均线多头→短中长期价依次抬高、IC/RankIC→相关性、截面→平均、最大回撤→最惨时亏多少、超额→比市场平均多赚、
+  牛市/熊市→强势/弱势。现零命中。
+- 同步 `FactorLabPage/ProbabilityPage/LlmAnalysisPage/ThemeOverviewPage/FactorsTab/MiningTab/LabTabs` 等表的表头与指标名，
+  并把 `modes.ts` 里"原样写固定结论"的反模式撤掉（那是让模型对任何日子都给同一答案）。
+- 验收勾选：第0节钉测 [x]；人话检验（人工关，需真找个外行过一遍）留作交付后走查。
+
+### 二、E1 `/api/market/signals` 提速
+- 根因：19 指标串行并发2 ≈30s，缓存只 5 分钟 → 盘中每次过期冷跑。修：`mcp-provider` TTL 5m→1h、
+  `signals` 路由 `Cache-Control max-age 300→3600`、SWR `stale-while-revalidate 1800→86400`；
+  `page-health.ts` 改成先预热再测稳态。
+- `page-health` 实跑：15 接口全 OK，最慢 `quotes-all` 666ms、`signals` 热态 3ms，无 >3s。
+
+### 三、E2 主力净额同源
+- 三页（风险/研究/主题）统一走 `main-net-core` 单真理源，卡面恒标子集范围；风险页补"全市场个股口径，与板块榜不是同一笔数"。
+  钉测 `p36-e2-main-net.test.ts` 锁同源 + 标注。
+
+### 四、E4 / E5
+- E4：导航"历史行情"→"我的分析"（该页是 AI 分析存档，非行情K线），消除挂羊头。
+- E5：事件页/板块风险页已如实带 `asOf`/`扫描日`；事件雷达今日 0 条是上游数据缺失非展示 bug。
+
+### 五、质量门
+- tsc 0 / eslint 0 error（仅既有 warning）/ build 通过 / standalone 已重启。
+- 全量 **2081 项 2072 pass 0 fail 9 skip**（基线 2071/2062，本轮 +10 含 E2/E3 钉测与第0节钉测）。
+- 任务书验收：26 框已勾 23；剩 3 框 = C 的 20 个交易日（时间依赖，约 11 月中自动攒满）+ 第0节人工外行检验。

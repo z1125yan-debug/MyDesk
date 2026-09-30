@@ -49,6 +49,19 @@ function scan(obj: unknown, path = "", out: [string, string][] = []): [string, s
 }
 
 async function main() {
+  // E1：先预热一轮——只读接口的慢只发生在「缓存冷」那一次（技术信号/预测这类要现算或现拉上游）。
+  // 直接测冷启动会把「每天首次」的代价误报成常态。先各打一遍让 in-process 缓存热起来，
+  // 再测第二轮才是用户反复使用时看到的稳态耗时。预热失败（如上游客流）不阻断，第二轮如实反映。
+  console.log("== 预热（填充服务端缓存，不计时） ==");
+  await Promise.all(routes.map(async (r) => {
+    try {
+      const res = await fetch(BASE + r, { cache: "no-store" });
+      await res.arrayBuffer().catch(() => {});
+    } catch {
+      /* 预热失败不影响启动与后续测量 */
+    }
+  }));
+  console.log("== 稳态测量 ==");
   for (const r of routes) {
     const t0 = Date.now();
     try {

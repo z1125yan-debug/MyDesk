@@ -32,8 +32,8 @@ function OneJobCard({ jobId }: { jobId: string }) {
 }
 
 /**
- * 一条回答里可能有几次回测（模型先被白名单挡一次、换个因子再跑一次），
- * 所以按步骤逐条画，不去重、也不合并成一张：两次跑的是不同因子组合，合成一张就说不清了。
+ * 一条回答里可能有几次回测（模型先被白名单挡一次、换个条件再跑一次），
+ * 所以按步骤逐条画，不去重、也不合并成一张：两次跑的是不同条件组合，合成一张就说不清了。
  */
 export default function ChatBacktestCards({ steps }: { steps?: StepInfo[] }) {
   const jobs = (steps ?? []).filter((s) => s.tool === "run_backtest" && typeof s.jobId === "string" && s.jobId);

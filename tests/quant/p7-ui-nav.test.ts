@@ -58,7 +58,7 @@ test("nav-core：一级菜单顺序文案钉死（稳智左栏顺序，用户要
     MENU.map((e) => [e.id, e.label] as const),
     [
       ["market", "大盘情绪"],
-      ["quant", "量化因子选股"],
+      ["quant", "量化条件选股"],
       ["sectors", "行业"],
       ["quotes", "行情"],
       ["watch", "自选"],

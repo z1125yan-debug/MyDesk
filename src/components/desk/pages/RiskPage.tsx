@@ -167,6 +167,7 @@ export default function RiskPage() {
               <div className="text-xs text-muted-foreground">主力净额</div>
               <div className="mt-1 text-2xl font-bold">{mn ? `${mn.value.toFixed(0)}亿` : "—"}</div>
               <div className="text-[11px] text-muted-foreground">{mn?.label ?? "全A口径"}</div>
+              <div className="mt-0.5 text-[10.5px] leading-tight text-muted-foreground/80">全市场个股口径，与「资金去向」板块榜不是同一笔数</div>
             </div>
           </div>
           {/* 一句建议 */}

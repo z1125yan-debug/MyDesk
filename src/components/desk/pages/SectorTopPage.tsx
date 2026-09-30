@@ -380,7 +380,7 @@ function Detail({ d, cross, crossError, onReloadCross }: { d: SectorTopRisk; cro
           <Pos label="60日" v={d.position.prevChange60} />
           <Pos label="120日" v={d.position.prevChange120} />
           <Pos label="距20日高" v={d.position.distFromHigh20} />
-          <Pos label="距MA60" v={d.position.distMA60} />
+          <Pos label="距近三月均价" v={d.position.distMA60} />
         </div>
       </div>
 
