@@ -7,8 +7,11 @@ import { Loader2, Sparkles, Trash2, X } from "lucide-react";
 import { useDesk, type ChatHorizon, type FrozenPool } from "@/lib/desk/store";
 import { normalizeSectorKeyword } from "@/lib/quant/screener/sector-keyword-core";
 import { plainCode, codeTitle } from "@/lib/desk/code-format";
+// P36-D 因子真相：条件卡片要当场说清这个条件历史上有没有用、是不是反着走的
+import { condAuditOf, truthDetailOf, type FactorTruth } from "@/lib/quant/factors/factor-truth-core";
+import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 
-type CatalogField = { key: string; zh: string; category: string; source?: string; implemented?: boolean; unit?: string };
+type CatalogField = { key: string; zh: string; category: string; source?: string; implemented?: boolean; unit?: string; truth?: FactorTruth | null };
 type CondType = "single" | "rolling_return" | "rolling_sum" | "rolling_any";
 type Cond = { field: string; zh: string; op: string; value: string; type?: CondType; window?: number; min_match_days?: number };
 // 社区策略库（稳智「我的策略」，条件字段已映射为本站因子 key）
@@ -212,6 +215,18 @@ export default function ScreenerWorkbench() {
     })();
   }, []);
 
+  // P36-D：字段 → 历史检验真相。chip 渲染与结果区体检共用这一份，口径只有一处。
+  const truthMap = useMemo(() => {
+    const m: Record<string, FactorTruth> = {};
+    for (const f of fields) if (f.truth) m[f.key] = f.truth;
+    return m;
+  }, [fields]);
+  // 本次筛选用到的条件体检：真实计数（几个没验过、几个历史上反着走），不是写死的提示
+  const audit = useMemo(
+    () => condAuditOf(conds.map((c) => ({ field: c.field, zh: c.zh })), truthMap),
+    [conds, truthMap],
+  );
+
   const addPreset = (p: ChipPreset) => {
     const newConds: Cond[] = p.conds.map((c) => ({ field: c.field, zh: p.chip, op: c.op, value: String(c.value) }));
     setConds((cs) => [...cs.filter((x) => x.zh !== p.chip), ...newConds]);
@@ -307,26 +322,47 @@ export default function ScreenerWorkbench() {
     let stopped = false;
     void (async () => {
       try {
+        const t0 = Date.now();
         const j = await (await fetch("/api/quant/factor-warm?ensure=1")).json();
         if (stopped || !j?.kicked) return;
         const closeRefresh = j.kickedBy === "ensure_close_refresh";
+        const secs = () => ((Date.now() - t0) / 1000).toFixed(1);
+        const poll = async () => (await fetch("/api/quant/factor-warm")).json().catch(() => null);
+        // 就绪判定不能只看「没在算」：runWarm 失败时 warming 也是 false，
+        // 那会把「失败了」说成「已就绪」。必须同时看缓存真的有货、且 note 不是 error。
+        const isReady = (s: { warming?: boolean; cached?: number; meta?: unknown; note?: string } | null): boolean =>
+          !!s && !s.warming && ((s.cached ?? 0) > 0 || !!s.meta) && !(typeof s.note === "string" && s.note.startsWith("error"));
+
+        // 先立刻查一次再决定说什么：整轮预热实测常常几秒就完（1.4s 也见过），
+        // 原来上来就喊「正在后台预热」然后盲等 15s 才第一次查 —— 那 15 秒全是谎报。
+        const first = await poll();
+        if (isReady(first)) {
+          setWarmNotice(closeRefresh
+            ? `已按最新口径重算因子缓存（用时 ${secs()} 秒），正在重筛…`
+            : `因子缓存已就绪（用时 ${secs()} 秒），下次筛选秒开`);
+          if (closeRefresh) void runScreener(1);
+          setTimeout(() => setWarmNotice(""), 6000);
+          return;
+        }
         setWarmNotice(closeRefresh
           ? "手上的因子缓存是盘中口径，正在按收盘口径重算（完成后本页自动重筛一次）…"
-          : "当日因子缓存尚未生成，正在后台预热（这一轮可能慢些，之后秒开）…");
-        // 最多等 15 分钟（整轮预热实测约 5 分钟）
-        for (let i = 0; i < 60 && !stopped; i++) {
-          await new Promise((r) => setTimeout(r, 15000));
-          const s = await (await fetch("/api/quant/factor-warm")).json().catch(() => null);
-          if (!s || s.warming) continue;
+          : "当日因子缓存还没生成，正在后台算（这一轮可能慢些，之后秒开）…");
+        // 3 秒起步逐步退避到 15 秒（比固定 15s 更快发现"其实已经好了"），最多约 9 分钟
+        for (let i = 0, wait = 3000; i < 45 && !stopped; i++, wait = Math.min(Math.round(wait * 1.5), 15000)) {
+          await new Promise((r) => setTimeout(r, wait));
+          const s = await poll();
+          if (!isReady(s)) continue;
           if (closeRefresh) {
-            setWarmNotice(`已按${s.phase === "closed" ? "收盘" : "最新"}口径重算因子缓存，正在重筛…`);
+            setWarmNotice(`已按最新口径重算因子缓存（用时 ${secs()} 秒），正在重筛…`);
             void runScreener(1);
           } else {
-            setWarmNotice("因子缓存已生成，下次筛选秒开");
+            setWarmNotice(`因子缓存已就绪（用时 ${secs()} 秒），下次筛选秒开`);
           }
           setTimeout(() => setWarmNotice(""), 8000);
           return;
         }
+        // 等到超时仍没好：如实说没好，不要继续挂着"正在算"骗人
+        if (!stopped) setWarmNotice(`因子缓存这一轮没算出来（已等 ${secs()} 秒），筛选照常可用，只是会慢一些`);
       } catch { /* 预热失败不影响筛选 */ }
     })();
     return () => { stopped = true; };
@@ -609,6 +645,12 @@ export default function ScreenerWorkbench() {
         <p className="mt-1 text-[13.5px] text-muted-foreground">所示结果仅为模型筛选结果与历史数据分析，不构成任何投资建议。投资有风险，决策需谨慎。</p>
       </div>
 
+      {/* P36-D 图例：两种标记什么意思，说人话（不许用「反向因子」「IC」这类词） */}
+      <div className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-muted-foreground">
+        <span><span className="text-amber-300">⚠</span>　历史上是反着走的：数值越高，之后几天反而越容易跌，命中它更接近「该回避」</span>
+        <span><span className="border-b border-dashed border-muted-foreground">虚线</span>　没通过历史检验：历史上看不出稳定效果，别把它当买入理由</span>
+      </div>
+
       {/* 四栏条件卡（稳智同款版式；字段=本站已实现因子目录，点 chip 即加条件，带默认阈值） */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
         {PRESET_CARDS.map((card, ci) => (
@@ -622,10 +664,27 @@ export default function ScreenerWorkbench() {
                   {sec.chips.map((p) => {
                     const active = conds.some((x) => x.zh === p.chip);
                     const known = p.conds.every((c) => fields.some((f) => f.key === c.field));
+                    const tr = truthMap[p.conds[0]?.field ?? ""] ?? null;
+                    const reverse = tr?.direction === "negative";
+                    const unverified = !!tr && !tr.passed;
+                    const tip = !known
+                      ? "字段待本地实现：筛选时会自动剔除"
+                      : reverse || unverified
+                        ? (truthDetailOf(tr ?? undefined, p.chip) ?? "点击加入/更新已选条件")
+                        : "点击加入/更新已选条件";
+                    const cls = active
+                      ? "border-sky-400/60 bg-sky-400/15 text-sky-200"
+                      : !known
+                        ? "border-border/40 bg-card/60 text-muted-foreground/60"
+                        : reverse
+                          ? "border-amber-500/60 bg-amber-500/10 text-amber-200 hover:border-amber-400/80"
+                          : unverified
+                            ? "border-dashed border-border/70 bg-card/50 text-muted-foreground/80 hover:border-sky-400/40"
+                            : "border-border/60 bg-card text-muted-foreground hover:border-sky-400/40 hover:text-foreground";
                     return (
-                      <button key={p.chip} onClick={() => addPreset(p)} title={known ? "点击加入/更新已选条件" : "字段待本地实现：筛选时会自动剔除"}
-                        className={`rounded-full border px-2 py-1.5 text-[13px] transition-colors ${active ? "border-sky-400/60 bg-sky-400/15 text-sky-200" : known ? "border-border/60 bg-card text-muted-foreground hover:border-sky-400/40 hover:text-foreground" : "border-border/40 bg-card/60 text-muted-foreground/60"}`}>
-                        {p.chip}
+                      <button key={p.chip} onClick={() => addPreset(p)} title={tip}
+                        className={`rounded-full border px-2 py-1.5 text-[13px] transition-colors ${cls}`}>
+                        {reverse ? "⚠ " : ""}{p.chip}
                       </button>
                     );
                   })}
@@ -789,6 +848,25 @@ export default function ScreenerWorkbench() {
 
       {/* 结果区 */}
       <div className="rounded-xl border border-border/60 bg-overlay p-4">
+        {/* P36-D：本次筛选条件的体检，真实计数（不是写死的假提示）；全过检就不显示，不为了显得严谨乱报警 */}
+        {audit.summary && (
+          <div className="mb-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12.5px] leading-relaxed text-amber-200">
+            <div>{audit.summary}</div>
+            {audit.lines.length > 0 && (
+              <div className="mt-1">
+                <DeskCollapse
+                  title={`逐条看（${audit.lines.length} 条）`}
+                  triggerClassName="text-[12px] text-amber-200/80 hover:text-amber-100"
+                  contentClassName="text-[12px] text-amber-100/80"
+                >
+                  <ul className="space-y-0.5">
+                    {audit.lines.map((l, i) => <li key={i}>· {l}</li>)}
+                  </ul>
+                </DeskCollapse>
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex flex-col items-center gap-2">
           <div className="flex flex-wrap items-center justify-center gap-2 text-[13px]">
             <input type="date" value={tradeDate} onChange={(e) => setTradeDate(e.target.value)}

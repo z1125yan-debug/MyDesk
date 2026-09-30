@@ -6,6 +6,7 @@ import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { getFactor, listFactors, listLatestFactors, saveFactorVersion } from "@/lib/quant/store";
 import { parseExpression, parseAndNormalize, auditExpression } from "@/lib/quant/factors/expression";
 import { factorCatalog } from "@/lib/quant/factors/fields";
+import { factorTruth } from "@/lib/quant/factors/factor-truth-library";
 import { FACTOR_CATEGORIES, FACTOR_STATUSES, type FactorCategory, type FactorStatus } from "@/lib/quant/types";
 
 export const dynamic = "force-dynamic";
@@ -14,8 +15,16 @@ export async function GET(request: Request) {
   quantBootstrap();
   const url = new URL(request.url);
   // ?catalog=1：选股器因子字段目录（需求文档 四：labels_zh + fields + category；均标未验证）
+  // P36-D：把「因子真相」并进每个字段——界面要能当场告诉用户这个条件历史上到底有没有用、
+  // 是不是反着走的。truth 为 null 表示该因子没做过检验，页面如实说"没验过"。
   if (url.searchParams.get("catalog")) {
-    return NextResponse.json({ ok: true, ...factorCatalog() });
+    const cat = factorCatalog();
+    const truth = factorTruth();
+    const fields = (cat.fields ?? []).map((f) => ({
+      ...f,
+      truth: truth?.factors[f.key] ?? null,
+    }));
+    return NextResponse.json({ ok: true, ...cat, fields, truthCounts: truth?.counts ?? null });
   }
   const status = url.searchParams.get("status") as FactorStatus | null;
   const category = url.searchParams.get("category") as FactorCategory | null;
