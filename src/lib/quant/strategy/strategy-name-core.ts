@@ -152,7 +152,9 @@ export function humanName(
     .filter((c) => c && c.field)
     .slice(0, 3)
     .map(condToZh)
-    .filter(Boolean);
+    .filter(Boolean)
+    // 同字段条件（如 3 条不同参数的底分型）会拼出「底分型 · 底分型 · 底分型」的口吃名，去重
+    .filter((p, i, arr) => arr.indexOf(p) === i);
   if (parts.length) return parts.join(" · ");
   if (typeof id === "number" && id > 0) return `策略 #${id}`;
   return String(name ?? "未命名策略").trim() || "未命名策略";

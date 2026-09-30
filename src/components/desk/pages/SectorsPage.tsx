@@ -66,6 +66,9 @@ export default function SectorsPage() {
   const [list, setList] = useState<SectorRow[] | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
   const [asOf, setAsOf] = useState("");
+  // 榜单真正的交易日（接口 trade_date）：休市日早上抓的是上一交易日行情，
+  // 日期列若用 as_of（抓取钟）会把 9/30 的行情标成今天，与顶栏休市横幅打架
+  const [tradeDate, setTradeDate] = useState("");
   const poll = useLivePoll();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -150,6 +153,7 @@ export default function SectorsPage() {
       setList(rows);
       setMissing(j.missing ?? []);
       setAsOf(j.as_of ?? "");
+      setTradeDate(j.trade_date ?? String(j.as_of ?? "").slice(0, 10));
       // 榜单到手才结算这一跳（await 之后，不在 effect 体内同步改状态）
       settleJump(rows, "");
     } catch (e) {
@@ -542,7 +546,7 @@ export default function SectorsPage() {
                   </td></tr>
                 )}
                 {view.map((b) => (
-                  <SectorBlock key={b.code} rank={rankByCode.get(b.code) ?? 0} board={b} asOf={asOf}
+                  <SectorBlock key={b.code} rank={rankByCode.get(b.code) ?? 0} board={b} asOf={asOf} tradeDate={tradeDate}
                     expanded={openBoard === b.code}
                     busy={membersBusy} error={membersError} members={members}
                     canScreen={canScreen(b.code)}
@@ -562,8 +566,8 @@ export default function SectorsPage() {
   );
 }
 
-function SectorBlock({ rank, board, asOf, expanded, busy, error, members, canScreen, onToggle, onOpenProfile, onScreen, onJumpScreener }: {
-  rank: number; board: SectorRow; asOf: string; expanded: boolean;
+function SectorBlock({ rank, board, asOf, tradeDate, expanded, busy, error, members, canScreen, onToggle, onOpenProfile, onScreen, onJumpScreener }: {
+  rank: number; board: SectorRow; asOf: string; tradeDate: string; expanded: boolean;
   busy: boolean; error: string; members: MemberRow[] | null;
   canScreen: boolean;
   onToggle: () => void; onOpenProfile: (s: string) => void; onScreen: () => void; onJumpScreener: () => void;
@@ -587,7 +591,8 @@ function SectorBlock({ rank, board, asOf, expanded, busy, error, members, canScr
             {board.name}
           </button>
         </td>
-        <td className="px-3.5 py-2.5 text-center text-[13px] text-muted-foreground whitespace-nowrap">{asOf ? asOf.slice(0, 10) : "—"}</td>
+        {/* 日期=行情所属交易日（接口 trade_date），不是抓取钟点；抓取时间在页头「数据截至」里说 */}
+        <td className="px-3.5 py-2.5 text-center text-[13px] text-muted-foreground whitespace-nowrap" title={`行情交易日 ${tradeDate || "未知"} · 数据抓取于 ${asOf || "未知"}`}>{tradeDate || (asOf ? asOf.slice(0, 10) : "—")}</td>
         <td className="px-3.5 py-2.5 text-center"><PctText value={board.changePct} /></td>
         <td className="px-3.5 py-2.5 text-center font-mono text-muted-foreground">{rank}</td>
         {/* 较上一交易日的排名变化：今日名次 − 上一交易日名次（负=前进）。没有上一交易日快照就显「—」，不编 0 */}
