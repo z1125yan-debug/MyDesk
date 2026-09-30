@@ -11,7 +11,7 @@ import { regimeRankOf, fmtPct, type Regime, type RegimeRow } from "../src/lib/qu
 
 const FILE = path.join(process.cwd(), "data", "strategy-regime.json");
 if (!fs.existsSync(FILE)) {
-  console.error("缺少 data/strategy-regime.json，先跑 scripts/build-strategy-regime.ts");
+  console.error("缺少 data/strategy-regime.json，先跑 scripts/backtest-strategy-regime.ts");
   process.exit(1);
 }
 const lib = JSON.parse(fs.readFileSync(FILE, "utf8"));

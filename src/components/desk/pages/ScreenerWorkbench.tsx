@@ -25,14 +25,22 @@ type ForecastItem = {
 };
 // P34-2 分档回测推荐：按大盘档位（强/震/弱）给该档历史表现最好的几条。
 // 与上面 items（过闸推荐）是两条独立的线——items 靠社区门槛，正常市况恒空；这条靠历史成绩，任何档位都有。
+// P36-B：stat 是「扣掉手续费后」的成绩；oos = 没参与挑选的那段行情单独验出来的成绩。
+// 界面主展示 oos（有的话），并且每个数字旁必须带口径标签——裸数字不许出门。
 type RegimeItem = {
   id: number; name: string;
-  stat: { n: number; win: number; avg: number; avg5: number };
+  stat: {
+    n: number; win: number; avg: number; avg5: number; winCi?: string;
+    oos?: { n: number; win: number; net1: number; net5: number | null; winCi: string } | null;
+  };
   win1: number; n1: number;
+  basis?: string;
 };
 type ForecastRegime = {
   regime: string | null; asOf: string | null; isReplay: boolean; items: RegimeItem[];
   method: string; window: string; note: string; error: string;
+  /** 口径说明（成交价/手续费/时间切分），人话，直接展示 */
+  basis?: { entry?: string; exit?: string; cost?: string; costAdjusted?: boolean; untradeable?: string; split?: string; caveat?: string };
 };
 type ForecastData = {
   ok: boolean; as_of: string;
@@ -1018,28 +1026,47 @@ export default function ScreenerWorkbench() {
                     <div className="mt-1.5 text-[12.5px] text-amber-300">{fcData.regime.error}</div>
                   ) : (fcData.regime?.items?.length ?? 0) > 0 ? (
                     <div className="mt-2 space-y-1.5">
-                      {fcData.regime!.items.map((it, idx) => (
+                      {fcData.regime!.items.map((it, idx) => {
+                        // P36-B：主数字用「没参与挑选的那段行情」验出来的成绩；没有就退回落全期，
+                        // 但口径标签会如实写「用同一段历史算的（可能只是运气好）」，不冒充。
+                        const oos = it.stat.oos ?? null;
+                        const n = oos ? oos.n : it.stat.n;
+                        const winTxt = oos ? (oos.winCi || `${oos.win.toFixed(0)}%`) : (it.stat.winCi || `${it.stat.win.toFixed(0)}%`);
+                        const avg = oos ? oos.net1 : it.stat.avg;
+                        return (
                         <div key={it.id} className="flex items-center gap-2 text-[12.5px]">
                           <span className="w-4 shrink-0 text-center text-[11.5px] font-bold text-muted-foreground">{idx + 1}</span>
                           <span className="min-w-0 flex-1 truncate text-foreground" title={it.name}>{it.name}</span>
                           <span className="shrink-0 text-[11.5px] text-muted-foreground">
-                            该档命中 {it.stat.n} 次 · 次日胜率 {it.stat.win.toFixed(0)}% · 次日均益 {it.stat.avg >= 0 ? "+" : ""}{it.stat.avg.toFixed(2)}%
+                            试了 {n} 次 · 第二天涨的比例 {winTxt} · 平均 {avg >= 0 ? "+" : ""}{avg.toFixed(2)}%
                           </span>
                           <button
-                            onClick={() => void pickAndRun({ kind: "single", key: `regime-${it.id}`, name: it.name, memberIds: [it.id], source: "来源：分档回测榜", reason: `该档命中 ${it.stat.n} 次·胜率 ${it.stat.win.toFixed(0)}%·次日均益 ${it.stat.avg.toFixed(2)}%`, record: null })}
+                            onClick={() => void pickAndRun({ kind: "single", key: `regime-${it.id}`, name: it.name, memberIds: [it.id], source: "来源：分档回测榜", reason: `试了 ${n} 次·第二天涨的比例 ${winTxt}·平均 ${avg >= 0 ? "+" : ""}${avg.toFixed(2)}%（${it.basis ?? "扣掉手续费后"}）`, record: null })}
                             disabled={!!fcPicking}
                             className="shrink-0 rounded-md bg-emerald-600 px-2 py-0.5 text-[11.5px] font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
                           >
                             {fcPicking === `regime-${it.id}` ? <Loader2 size={11} className="animate-spin" /> : "选它"}
                           </button>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
-                    <div className="mt-1.5 text-[12.5px] text-muted-foreground">该档位没有够样本门槛的策略（{fcData.regime?.note || "该档≥20 次且全期≥30 次"}）。</div>
+                    <div className="mt-1.5 text-[12.5px] text-muted-foreground">这个档位下没有够得上样本门槛的策略（{fcData.regime?.note || "每个档位都要够次数才上榜"}）。</div>
                   )}
-                  <div className="mt-2 border-t border-dashed border-border/50 pt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                    按大盘档位回放历史成绩（{fcData.regime?.window || "全A历史日K"}），是历史统计不是概率预测，不构成投资建议。
+                  <div className="mt-2 space-y-0.5 border-t border-dashed border-border/50 pt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                    <div>
+                      {fcData.regime?.items?.[0]?.basis
+                        ? `口径：${fcData.regime.items[0].basis}`
+                        : "口径：扣掉手续费后"}
+                      {fcData.regime?.basis?.untradeable ? `；${fcData.regime.basis.untradeable}` : ""}
+                    </div>
+                    {fcData.regime?.basis?.cost && (
+                      <div>每买卖一次要交的钱：{fcData.regime.basis.cost.replace("扣费后：", "")}</div>
+                    )}
+                    <div>
+                      回放的是过去（{fcData.regime?.window || "全A历史日K"}），是历史统计不是预测，不构成投资建议。
+                    </div>
                   </div>
                 </div>
                 {/* 推荐列表：组合在前、单条在后；每条带来源与真实理由 */}

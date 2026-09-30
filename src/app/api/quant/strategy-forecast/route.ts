@@ -135,6 +135,7 @@ export async function GET(req: NextRequest) {
     let regime: {
       regime: string | null; asOf: string | null; isReplay: boolean; items: unknown[];
       method: string; window: string; note: string; error: string;
+      basis?: { entry?: string; exit?: string; cost?: string; costAdjusted?: boolean; untradeable?: string; split?: string; caveat?: string };
     } = {
       regime: null, asOf: null, isReplay: !!dateParam, items: [], method: "", window: "", note: "", error: "",
     };
@@ -160,12 +161,13 @@ export async function GET(req: NextRequest) {
         const oos = JSON.parse(
           fs.readFileSync(path.join(process.cwd(), "data", "regime-oos-report.json"), "utf-8"),
         ) as { verdict?: string; trainOrder?: string[]; testOrder?: string[] };
+        // 文案说人话（第 0 节硬约束）：界面不许出现「样本外/保序/强弱差」这类黑话
         if (oos.verdict === "partial") {
-          oosNote = `样本外检验（前70%训练/后30%检验）：档位排序不保序（训练 ${oos.trainOrder?.join("＞")} → 检验 ${oos.testOrder?.join("＞")}），且强势期次日收益未必好于弱势期——本榜按历史均值排序，仅供复盘参考，不构成「按档选策略就更赚」的承诺`;
+          oosNote = `历史检验：拿前 70% 的时间挑出来的强弱顺序（${oos.trainOrder?.join("＞")}），在后面 30% 的时间里变了（${oos.testOrder?.join("＞")}）——大盘强的时候次日未必比弱的时候赚得多，本榜只供复盘，不构成「按档选策略就更赚」的承诺`;
         } else if (oos.verdict === "kept") {
-          oosNote = "样本外检验：档位排序保序、强弱差为正（data/regime-oos-report.json）";
+          oosNote = "历史检验：拿前一段挑出来的强弱顺序，在后一段时间里依然成立";
         } else if (oos.verdict === "reversed") {
-          oosNote = "样本外检验：强弱差反转，本榜排名参考价值低，仅供复盘";
+          oosNote = "历史检验：强弱顺序在后一段时间里反过来了，本榜排名参考价值低，只供复盘";
         }
       } catch { /* 报告不存在就不加警示（首跑前） */ }
       regime = {
@@ -176,6 +178,9 @@ export async function GET(req: NextRequest) {
         method: lib?.regimeMethod ?? "上证指数 MA20 趋势法",
         window: lib ? `${lib.window.universe} 只 × 约 ${lib.window.bars} 根日K（${lib.window.note}）` : "",
         note: [lib?.thresholds?.note ?? "", oosNote].filter(Boolean).join("；"),
+        // P36-B：把「成交价/手续费/时间切分」的口径一起给前端——
+        // 页面每个胜率/收益旁都要带口径，裸数字不许出门。
+        basis: lib?.basis,
         error: !lib
           ? "回测榜没读到（data/strategy-regime.json 缺失），本区不显示排名"
           : idx < 0
