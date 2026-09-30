@@ -48,7 +48,9 @@ const rows: RegimeRow[] = rawRows.map((r: any) => ({
 const REGIMES: Regime[] = ["强势", "震荡", "弱势"];
 const rank: Record<string, { id: number; name: string; stat: { n: number; win: number; avg: number; avg5: number }; win1: number; n1: number }[]> = {};
 for (const g of REGIMES) {
-  rank[g] = regimeRankOf(rows, g, { minHits: 20, minTotal: 30, limit: 15 }).items;
+  // 门槛只在 regime-core 里定义一处（2026-09-30 提到该档≥100 / 全期≥150）；
+  // 这里不许再写死 20/30——写过一次，删掉涨停策略后让 n=22 的噪音占了榜首。
+  rank[g] = regimeRankOf(rows, g, { limit: 15 }).items;
 }
 
 // ---- 交叉验证：与快照 txt 的三档第一名比对（口径一致性，不是回归测试） ----
@@ -90,7 +92,7 @@ const out = {
   source: "data/_probe-strategy-regime.json（一次性回测产物，.gitignore 排除）",
   window: { universe: 5369, bars: 300, note: "全A前复权日K，约 14 个月；量能因子口径已修正（eltdx 键 volume_wire_value）" },
   regimeMethod: "上证指数 MA20 趋势法：收盘在 MA20 上且 MA20 向上=强势；之下且向下=弱势；其余=震荡",
-  thresholds: { minHits: 20, minTotal: 30, note: "该档命中≥20 且全期≥30 才进榜" },
+  thresholds: { minHits: 100, minTotal: 150, note: "该档命中≥100 且全期≥150 才进榜（门槛在 regime-core，此处只作留痕）" },
   counts: {
     rows: rows.length,
     强势: (rank.强势 || []).length,

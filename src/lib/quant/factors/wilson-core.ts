@@ -39,12 +39,15 @@ export function wilsonCI(wins: number, n: number, z = 1.96): WilsonCI {
  * 输入 pct 为百分数值（0-100），n 为样本数。
  */
 export function pctWithCI(pct: number | null, n: number | null | undefined, z = 1.96): string {
+  // 胜率统一留 1 位小数（去尾 0）。原因：页面把它拼在「胜率 X%」后面当补充说明，
+  // 不格式化会显示成「59.5% 59.47302383939774% [95%CI 56–63]」——同一数字出现两遍且带 15 位小数。
+  const f = (v: number) => String(Number(v.toFixed(1)));
   if (pct == null || !Number.isFinite(pct)) return "CI算不出（无胜率读数）";
   const nInt = n != null && Number.isFinite(n) && Number.isInteger(n) && (n as number) > 0 ? (n as number) : null;
-  if (nInt == null) return `${pct}%（N未知，CI算不出）`;
+  if (nInt == null) return `${f(pct)}%（N未知，CI算不出）`;
   const ci = wilsonCI(Math.round((pct / 100) * nInt), nInt, z);
-  if (ci.lo == null || ci.hi == null) return `${pct}%（N=${nInt}，CI算不出）`;
+  if (ci.lo == null || ci.hi == null) return `${f(pct)}%（N=${nInt}，CI算不出）`;
   const lo = Math.round(ci.lo * 100);
   const hi = Math.round(ci.hi * 100);
-  return `${pct}% [95%CI ${lo}–${hi}]（N=${nInt}）`;
+  return `${f(pct)}% [95%CI ${lo}–${hi}]（N=${nInt}）`;
 }

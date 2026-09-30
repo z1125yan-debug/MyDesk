@@ -1,0 +1,350 @@
+{
+  "at": "2026-09-30T09:23:45.120Z",
+  "reason": "可成交性闸（自备份重算）",
+  "dropped": [
+    {
+      "id": 16,
+      "name": "热门股",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 113,
+      "name": "1",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第10",
+        "震荡第15",
+        "弱势第7"
+      ]
+    },
+    {
+      "id": 282,
+      "name": "强者恒强，短线",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 288,
+      "name": "强者恒强，短线",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 437,
+      "name": "恒强，短线",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 506,
+      "name": "自定",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 538,
+      "name": "倍量",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第13",
+        "震荡第6",
+        "弱势第14"
+      ]
+    },
+    {
+      "id": 565,
+      "name": "3",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 567,
+      "name": "4",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第2",
+        "震荡第4",
+        "弱势第8"
+      ]
+    },
+    {
+      "id": 570,
+      "name": "111",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 605,
+      "name": "右侧启动",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第9",
+        "震荡第9",
+        "弱势第2"
+      ]
+    },
+    {
+      "id": 611,
+      "name": "简化",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第3",
+        "震荡第10",
+        "弱势第3"
+      ]
+    },
+    {
+      "id": 663,
+      "name": "条麻妃",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第7",
+        "震荡第7",
+        "弱势第5"
+      ]
+    },
+    {
+      "id": 664,
+      "name": "哈哈",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第4"
+      ]
+    },
+    {
+      "id": 668,
+      "name": "趋势向上低吸_中枢向上突破",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "弱势第13"
+      ]
+    },
+    {
+      "id": 669,
+      "name": "趋势向上低吸_缠论底分型",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 670,
+      "name": "趋势向上低吸_入场信号",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 671,
+      "name": "趋势向上低吸_VWAP加速",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 680,
+      "name": "趋势向上低吸_VWAP加速&低吸",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 758,
+      "name": "休息",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第8",
+        "震荡第8",
+        "弱势第6"
+      ]
+    },
+    {
+      "id": 820,
+      "name": "趋势向上低吸_主力拉升",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 903,
+      "name": "123",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 915,
+      "name": "1",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第12",
+        "弱势第4"
+      ]
+    },
+    {
+      "id": 957,
+      "name": "gpt",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 959,
+      "name": "放大量",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第1",
+        "震荡第1",
+        "弱势第1"
+      ]
+    },
+    {
+      "id": 961,
+      "name": "1",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": [
+        "强势第11",
+        "震荡第5"
+      ]
+    },
+    {
+      "id": 968,
+      "name": "2",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1040,
+      "name": "打板",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1048,
+      "name": "选股1",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1089,
+      "name": "丸丸测试1",
+      "verdict": "dead",
+      "summary": "涨停标记只能是 0 或 1，写成 >1 永远选不出票",
+      "onBoard": []
+    },
+    {
+      "id": 1090,
+      "name": "丸丸测试3",
+      "verdict": "dead",
+      "summary": "涨停标记只能是 0 或 1，写成 >1 永远选不出票",
+      "onBoard": []
+    },
+    {
+      "id": 1091,
+      "name": "丸丸测试2",
+      "verdict": "dead",
+      "summary": "涨停标记只能是 0 或 1，写成 >1 永远选不出票",
+      "onBoard": []
+    },
+    {
+      "id": 1093,
+      "name": "丸丸测试4加强版",
+      "verdict": "dead",
+      "summary": "涨停标记只能是 0 或 1，写成 >1 永远选不出票",
+      "onBoard": []
+    },
+    {
+      "id": 1121,
+      "name": "上涨结构",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1122,
+      "name": "上涨结构-2",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1223,
+      "name": "短线擒牛",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1263,
+      "name": "隔夜",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1301,
+      "name": "5",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1302,
+      "name": "6",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1305,
+      "name": "7",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1337,
+      "name": "涨停选",
+      "verdict": "dead",
+      "summary": "涨停标记只能是 0 或 1，写成 >=2 永远选不出票",
+      "onBoard": []
+    },
+    {
+      "id": 1347,
+      "name": "快要启动低吸信号",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    },
+    {
+      "id": 1357,
+      "name": "强者恒强，短线-个人（主力拉升）",
+      "verdict": "untradeable",
+      "summary": "要求今天已经涨停——这种票收盘价就是涨停价，下单买不进去",
+      "onBoard": []
+    }
+  ],
+  "backup": "data/strategies.json.bak-20260930-1720"
+}

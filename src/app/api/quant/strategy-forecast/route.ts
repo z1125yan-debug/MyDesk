@@ -25,8 +25,8 @@ import type { MainNetTdxClient } from "@/lib/desk/main-net-core";
 import { strategyLibrary } from "@/lib/quant/data/strategy-library";
 import { packForecast, type GateStrategy } from "@/lib/quant/strategy/strategy-gate-core";
 // P34-2：分档回测推荐（治「非高风险日恒空」）——口径只有 regime-core 一处，这里只接线
-import { regimeAt, regimeRankOf } from "@/lib/quant/strategy/regime-core";
-import { regimeLibrary, regimeRows } from "@/lib/quant/strategy/regime-library";
+import { regimeAt } from "@/lib/quant/strategy/regime-core";
+import { regimeLibrary } from "@/lib/quant/strategy/regime-library";
 import { fetchKlinesReal } from "@/lib/desk/em";
 import { shanghaiDate } from "@/lib/desk/session";
 import { db } from "@/lib/db";
@@ -147,7 +147,11 @@ export async function GET(req: NextRequest) {
       const idx = dateParam ? dates.indexOf(dateParam) : dates.length - 1;
       const r = idx >= 0 ? regimeAt(closes, idx) : null;
       const lib = regimeLibrary();
-      const ranked = regimeRankOf(regimeRows(), r, { minHits: 20, minTotal: 30, limit: 5 });
+      // 直接读数据文件里算好的榜单，不在接口里再排一遍——刻度只有一处（regime-core + build 脚本）。
+      // 踩过：这里曾写死 { minHits: 20, minTotal: 30 } 把 regime-core 的 100/150 盖掉，
+      // 导致删掉 43 条涨停策略后 n=29 的噪音照样占榜首（胜率 48.3% 排第 1）；
+      // 而且现算出来的 items 没有 winCi（CI 是加载层 enrichWinCi 加的）。
+      const ranked = { items: (r && lib?.rank?.[r] ? lib.rank[r] : []).slice(0, 5) };
       // P34-4（2026-09-30）：样本外检验警示。validate-regime-oos.ts（前70%训练/后30%检验）结论：
       // 档位排序**不保序**（弱势期全A中位次日收益反而为正）——排序参考价值有限，必须让用户看到，
       // 不能只躺在脚本和 worklog 里。

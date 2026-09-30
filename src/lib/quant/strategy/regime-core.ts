@@ -106,9 +106,15 @@ export function regimeAt(closes: number[], index: number): Regime | null {
 }
 
 export interface RankOptions {
-  /** 该档最少命中次数（不足不上榜，避免 3 次 100% 这种噪声） */
+  /**
+   * 该档最少命中次数（不足不上榜）。
+   * 2026-09-30 从 20 提到 100：删掉 43 条涨停类策略后，minHits=20 让 n=22/29 的噪音占榜首，
+   * 出现「胜率 48.3% 排第 1」这种荒谬结果。用 Wilson 95%CI 半宽当尺子：
+   *   n=29  → 半宽 ±17%（等于没测）；n=100 → ±10%；n=797 → ±3.4%（可用）。
+   * 取 100：三档 Top1 的置信区间半宽都收在 ±5% 以内，且榜单仍有足够多样性。
+   */
   minHits?: number;
-  /** 全期最少命中次数 */
+  /** 全期最少命中次数（同步提到 150） */
   minTotal?: number;
   /** 最多返回几条 */
   limit?: number;
@@ -116,7 +122,7 @@ export interface RankOptions {
 
 /**
  * 分档排名：按该档「次日平均收益」降序。
- * 只排有该档成绩的、且样本够的（双门槛沿用回测快照口径：该档≥20、全期≥30）。
+ * 只排有该档成绩的、且样本够的（该档≥100、全期≥150）。
  * 理由行所需的真实数字全部随结果带出——页面不许自己再算一遍（刻度只有一处）。
  */
 export function regimeRankOf(
@@ -124,8 +130,8 @@ export function regimeRankOf(
   regime: Regime | null,
   opts: RankOptions = {},
 ): { regime: Regime | null; items: { id: number; name: string; stat: RegimeStat; win1: number; n1: number }[] } {
-  const minHits = opts.minHits ?? 20;
-  const minTotal = opts.minTotal ?? 30;
+  const minHits = opts.minHits ?? 100;
+  const minTotal = opts.minTotal ?? 150;
   const limit = opts.limit ?? 5;
   if (!regime) return { regime: null, items: [] };
 
