@@ -16,6 +16,19 @@ const store = new Map<string, Entry>();
 const inflight = new Map<string, Promise<Response>>();
 
 /**
+ * 过期后仍可「秒回旧值」的宽限窗口（SWR）。
+ *
+ * 为什么必须加：TTL 一到，**第一个**请求就得把整个重算扛下来。实测这几个接口冷启动
+ * 是 5s（情绪）/ 11s（宽度）/ 41s（预测）/ 45s+（技术信号，19 个 MCP 指标），
+ * 用户点开就是白等几十秒——「打开太慢」「点了什么也没出来」的根因就是这个，
+ * 不是算错，是**让用户在关键路径上等**。
+ *
+ * 加了 SWR 后：TTL 过期**不阻塞**，立即回旧值并后台重算。用户永远几十毫秒拿到内容，
+ * 数据滞后最多一个后台重算周期（对收盘口径/统计口径完全可接受）。
+ */
+export const DEFAULT_STALE_MS = 10 * 60_000;
+
+/**
  * 只读市场数据的默认 TTL：60 秒。
  * 2026-09-29 从 30s 提到 60s——页面轮询/操作节奏是 60s，TTL 比它短等于**每次打开都必然过期重算**
  * （实测菜单页首屏接口冷启动 1.3~9 秒，用户感受就是「点菜单要等」）。
@@ -24,23 +37,23 @@ const inflight = new Map<string, Promise<Response>>();
  */
 export const DEFAULT_TTL_MS = 60_000;
 
-function rebuild(e: Entry): Response {
-  return new Response(e.body, { status: e.status, headers: { "content-type": e.ct } });
+function rebuild(e: Entry, tag: string): Response {
+  const ageSec = Math.round((Date.now() - e.at) / 1000);
+  return new Response(e.body, {
+    status: e.status,
+    headers: {
+      "content-type": e.ct,
+      // 便于验证这层到底有没有生效：HIT=新鲜 / STALE=秒回旧值+后台刷新中
+      "x-cache": tag,
+      "x-cache-age": String(ageSec),
+    },
+  });
 }
 
-/**
- * 包一层 TTL 缓存。producer 返回 Response（通常是 `NextResponse.json(...)`）；
- * 非 200（502 等）不写缓存，原样返回，避免把一次失败固化 30 秒。
- */
-export async function ttlCache(key: string, ttlMs: number, producer: () => Promise<NextResponse | Response>): Promise<Response> {
-  const hit = store.get(key);
-  if (hit && Date.now() - hit.at < ttlMs) return rebuild(hit);
+/** 真正跑一次 producer 并写缓存；并发同 key 只跑一次（in-flight 去重）。 */
+function compute(key: string, producer: () => Promise<NextResponse | Response>): Promise<Response> {
   const running = inflight.get(key);
-  if (running) {
-    try { await running; } catch { /* 别人失败：落到下面自己算 */ }
-    const h2 = store.get(key);
-    if (h2) return rebuild(h2);
-  }
+  if (running) return running;
   const task = (async (): Promise<Response> => {
     const res = await producer();
     if (res.status === 200) {
@@ -56,8 +69,42 @@ export async function ttlCache(key: string, ttlMs: number, producer: () => Promi
     }
     return res;
   })();
-  inflight.set(key, task);
-  try { return await task; } finally { inflight.delete(key); }
+  // 只登记带清理的那一个：并发进来拿到的是同一个 promise，算完自动出队
+  const done = task.finally(() => {
+    if (inflight.get(key) === done) inflight.delete(key);
+  });
+  inflight.set(key, done);
+  return done;
+}
+
+/**
+ * 包一层 TTL 缓存（带 SWR）。producer 返回 Response（通常是 `NextResponse.json(...)`）；
+ * 非 200（502 等）不写缓存，原样返回，避免把一次失败固化。
+ *
+ * 三段式：
+ * 1. 新鲜（age < ttl）           → HIT，直接回
+ * 2. 过期但在宽限窗口（< ttl+stale）→ STALE，**立即回旧值**，后台重算（不阻塞用户）
+ * 3. 无缓存 / 彻底过期            → 只能同步等一次（冷启动，靠预热规避）
+ */
+export async function ttlCache(
+  key: string,
+  ttlMs: number,
+  producer: () => Promise<NextResponse | Response>,
+  opts?: { staleMs?: number },
+): Promise<Response> {
+  const staleMs = opts?.staleMs ?? DEFAULT_STALE_MS;
+  const hit = store.get(key);
+  const age = hit ? Date.now() - hit.at : Number.POSITIVE_INFINITY;
+
+  if (hit && age < ttlMs) return rebuild(hit, "HIT");
+
+  if (hit && age < ttlMs + staleMs) {
+    // 后台刷新：故意不 await——用户不该为重算买单。失败静默，下次请求再试。
+    void compute(key, producer).catch(() => { /* 后台刷新失败：旧值继续顶着 */ });
+    return rebuild(hit, "STALE");
+  }
+
+  return compute(key, producer);
 }
 
 /** 变更类路由成功后调用：清掉同前缀的 GET 缓存（"events" → "events" / "events?..." / "events/..."）。 */

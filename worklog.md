@@ -3631,3 +3631,57 @@ dev 模式每页首次打开都要 Compiling（几秒~几十秒），这就是�
 `p15-r14-gateway-tool-loop`（钉「不支持工具调用环」+ 反钉「豆包网关」）。
 
 验证：tsc 0 / eslint 0 error / build 通过 / 全量 **1969 项 1960 pass 0 fail 9 skip**（基线 1951 +9）
+
+## P34-3 治「打开加载太慢」：缓存层加 SWR + 补预热名单 + 数据体检工具（2026-09-30）
+
+### 一、实测定位：慢的接口是哪些（不是猜的）
+新写 `scripts/page-health.ts`（把所有主要接口真调一遍，列耗时 + 空字段）实测冷启动：
+
+| 接口 | 冷启动 | 预热后 |
+|---|---|---|
+| `/api/market/signals` | **45s+（超时）** | 7ms |
+| `/api/quant/strategy-forecast` | **41.4s** | 7ms |
+| `/api/market/breadth` | 11.4s | 13ms（参数对上后） |
+| `/api/market/sentiment` | 5.0s | 80ms |
+
+结论：**用户「点预测什么也没呈现」= 让用户干等 41s**，不是算法错（P34-2 已证闸门按设计工作）。
+
+### 二、根因：TTL 缓存没有 stale-while-revalidate
+`ttlCache` 只有「新鲜→回缓存 / 过期→同步重算」两段。TTL 一到，**第一个请求就要把整个
+重算扛下来**（41s），后面的人倒霉、自己还以为接口坏了。这不是算力问题，是**让用户在关键路径上等**。
+
+### 三、改法（两处，都是通用层，一次治所有慢接口）
+1. `src/lib/quant/server-cache.ts` 改三段式 SWR：
+   - 新鲜（age<ttl）→ `HIT`
+   - 过期但在宽限窗口（<ttl+stale，默认 `DEFAULT_STALE_MS=10min`）→ **`STALE`，立即回旧值**，
+     后台 `void compute(...)` 异步重算，失败静默、旧值继续顶
+   - 无缓存/彻底过期 → 同步等一次（冷启动，靠预热规避）
+   - 响应头加 `x-cache` / `x-cache-age` 让这层可观测（否则"到底命中没"只能猜）
+   - 顺带修 in-flight 登记：只登记带 `finally` 清理的那一个 promise，避免并发拿到无清理的版本
+2. `src/instrumentation.ts` 预热名单补两个最慢的（**原名单恰恰漏了它们**）：
+   `/api/quant/strategy-forecast`、`/api/market/signals`，放最后（串行预热，慢的别挡快的）。
+   实测预热 26/26 全成功。
+
+### 四、验证（SWR 三段式实测）
+`scripts/verify-swr.ts`：① HIT → ② HIT（不重算）→ ③ 等 65s 过期 → **`STALE` 8ms 秒回**（旧值）
+→ ④ 后台刷新完 → **`HIT`**（age 14/24/34 递增，证明刷新真落库）。
+breadth 之前 11s 是**体检脚本参数没对上页面**（页面用 `?days=30&scope=all_markets`，
+缓存键含 query），改用页面真实参数后 HIT 13ms——**教训：体检必须和页面用同一套参数，否则误报**。
+
+### 五、顺手建的两个体检工具（治「又缺数据、每次都要调试」）
+- `scripts/data-health.ts`：扫 DB 表新鲜度 + JSON 缓存内容日期 + 上游连通性，输出「缺什么/为什么/怎么补」。
+  - 已修自己的两个误报源：① 复合键 `2026-09-29|industry` 匹配不上日期正则（导致把最新的文件误报成停在 09-24）；
+    ② 盘中未到 15:20 就要求当天数据（每天上午必然误报，反而淹没真缺口）。
+  - 上游探活改为「连不上才算挂」——eltdx 根路径返回 404 但服务是活的，只看 HTTP 状态会误判。
+- `scripts/page-health.ts`：页面级体检，列每个接口的耗时与空字段。
+
+**当前体检结论：数据不缺。** breadth/roster/dailysnap 停在 09-29 是因为盘中 13:xx 还没到 15:20 窗口；
+`sector-snapshots.json` 内容实际到 09-30（此前误报）。用户看到的"缺数据"主要是**慢到白屏**引起。
+
+### 六、钉测
+`tests/quant/p34-server-cache-swr.test.ts` 4 条，钉住 SWR 契约：TTL 内只算一次 /
+**过期必须 STALE 且 <150ms 秒回**（谁改回"过期就等"会被拦）/ 后台刷新值真的更新 / 刷新后回 HIT。
+（写测试时踩了自己的坑：TTL 60ms 太短，刷新完随即又过期，x-cache 不会是 HIT——
+所以「秒回+值更新」与「回 HIT」必须分成两个用例用不同 TTL 钉。）
+
+验证：tsc 0 / eslint 0 error / build 通过 / 全量 **1973 项 1964 pass 0 fail 9 skip**（基线 1960 +4）

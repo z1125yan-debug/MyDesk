@@ -55,6 +55,10 @@ const WARM_TARGETS = [
   // 研报「受益标的」核对用的全 A 名册：单次要拉全量代码表（东财断源时走腾讯兜底更慢），
   // 不预热的话用户点完生成才第一次算，校验条会长时间停在"核对中"。
   "/api/market/stock-names",
+  // 2026-09-30 补：这两个是全场最慢的两个（实测冷启动 41s / 45s+），却在原预热名单里，
+  // 导致「点预测按钮白等一分钟、技术信号页打不开」。放**最后**（串行预热，慢的别挡住快的）。
+  "/api/quant/strategy-forecast",
+  "/api/market/signals",
 ];
 
 function warmApiCache(): void {
