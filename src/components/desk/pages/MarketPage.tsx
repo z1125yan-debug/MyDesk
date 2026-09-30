@@ -596,6 +596,14 @@ export default function MarketPage() {
   const ratio = sent && sent.decliners > 0 ? sent.advancers / sent.decliners : null;
   const asOfDay = sent?.as_of ? sent.as_of.slice(0, 10) : "";
   const delta = trend?.delta ?? null;
+  // 当前建议：基于已算出的情绪温度给一句行动话术（下结论，而不只是描述现状）。
+  // 纯派生、不产生新事实；温度缺席时不出建议，避免空口白话。
+  const actionHint = useMemo(() => {
+    if (temp == null || temp.temperature == null) return null;
+    if (temp.temperature < 45) return { tone: "defense" as const, text: "当前情绪偏弱：建议控制仓位、少追高，偏向防守，别急着下重手。" };
+    if (temp.temperature <= 60) return { tone: "balance" as const, text: "当前情绪中性：可以小仓位试错，挑相对强势、有成交支撑的票，别一把梭。" };
+    return { tone: "attack" as const, text: "当前情绪偏暖：可以比平时更积极，但仍要分仓、留好后手，别一次押满。" };
+  }, [temp]);
 
   const turnoverState: EChartState = trendBusy ? "loading"
     : trend && trend.days.some((d) => d.totalYi !== null) ? "ok" : "empty";
@@ -696,6 +704,18 @@ export default function MarketPage() {
       {!sent && !error && (
         <div className="apple-card flex items-center gap-2 px-4 py-3 text-[13.5px] text-muted-foreground">
           <Loader2 size={13} className="animate-spin" /> 正在加载市场快照...
+        </div>
+      )}
+
+      {/* 当前建议：温度已经算出来了，就下个结论——小白看完数据知道「我该偏防守还是偏进攻」 */}
+      {actionHint && (
+        <div className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-[13.5px] leading-relaxed ${
+          actionHint.tone === "defense" ? "border-emerald-400/30 bg-emerald-400/[0.06] text-emerald-200/90"
+            : actionHint.tone === "balance" ? "border-sky-400/30 bg-sky-400/[0.06] text-sky-200/90"
+              : "border-amber-400/30 bg-amber-400/[0.06] text-amber-200/90"
+        }`}>
+          <span className="shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-[12px] font-medium">当前建议</span>
+          <span>{actionHint.text}</span>
         </div>
       )}
 
