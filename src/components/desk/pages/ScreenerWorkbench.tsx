@@ -10,6 +10,8 @@ import { plainCode, codeTitle } from "@/lib/desk/code-format";
 // P36-D 因子真相：条件卡片要当场说清这个条件历史上有没有用、是不是反着走的
 import { condAuditOf, truthDetailOf, type FactorTruth } from "@/lib/quant/factors/factor-truth-core";
 import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
+// P36-E6 档位切换条：强势 / 震荡 / 弱势（不用「牛市/熊市」，判的是最近几周的方向）
+import RegimeSwitchBar from "@/components/desk/pages/RegimeSwitchBar";
 
 type CatalogField = { key: string; zh: string; category: string; source?: string; implemented?: boolean; unit?: string; truth?: FactorTruth | null };
 type CondType = "single" | "rolling_return" | "rolling_sum" | "rolling_any";
@@ -650,6 +652,17 @@ export default function ScreenerWorkbench() {
         <span><span className="text-amber-300">⚠</span>　历史上是反着走的：数值越高，之后几天反而越容易跌，命中它更接近「该回避」</span>
         <span><span className="border-b border-dashed border-muted-foreground">虚线</span>　没通过历史检验：历史上看不出稳定效果，别把它当买入理由</span>
       </div>
+
+      {/* P36-E6 档位切换条：强势 / 震荡 / 弱势。放在「基础与板块」正上方（用户 2026-09-30 要求的位
+          置）；默认自动跟随今天实判档，手动切到别的档 = 回看，条上自己会出提示。 */}
+      <RegimeSwitchBar
+        onPick={(it, regime) => void pickAndRun({
+          kind: "single", key: `regime-${it.id}`, name: it.name, memberIds: [it.id],
+          source: "来源：分档回测榜（档位切换条）",
+          reason: `${regime ? `【${regime}档】` : ""}试了 ${it.n} 次·第二天涨的比例 ${it.winCi || `${it.win.toFixed(0)}%`}·平均 ${it.net >= 0 ? "+" : ""}${it.net.toFixed(2)}%（${it.basis ?? "扣掉手续费后"}）`,
+          record: null,
+        })}
+      />
 
       {/* 四栏条件卡（稳智同款版式；字段=本站已实现因子目录，点 chip 即加条件，带默认阈值） */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
