@@ -3558,14 +3558,6 @@
         },
         {
           "op": "<=",
-          "type": "rolling_any",
-          "window": 10,
-          "min_match_days": 1,
-          "field": "is_limit_up",
-          "value": 1
-        },
-        {
-          "op": "<=",
           "type": "rolling_return",
           "window": 5,
           "field": "close",
@@ -3630,14 +3622,6 @@
           "op": ">=",
           "field": "in_sector_rps_50",
           "value": 80
-        },
-        {
-          "op": "<=",
-          "type": "rolling_any",
-          "window": 10,
-          "min_match_days": 1,
-          "field": "is_limit_up",
-          "value": 1
         },
         {
           "op": "=",
@@ -3712,14 +3696,6 @@
           "window": 5,
           "field": "close",
           "value": 5
-        },
-        {
-          "op": "<=",
-          "type": "rolling_any",
-          "window": 5,
-          "min_match_days": 1,
-          "field": "is_limit_up",
-          "value": 1
         },
         {
           "op": "=",
@@ -21743,14 +21719,6 @@
           "op": "=",
           "field": "macd_cross",
           "value": 1
-        },
-        {
-          "op": "<",
-          "type": "rolling_any",
-          "window": 15,
-          "min_match_days": 1,
-          "field": "is_limit_up",
-          "value": 3
         },
         {
           "op": ">=",

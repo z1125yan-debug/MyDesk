@@ -14,7 +14,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { verdictOfStrategy, shouldDrop } from "../src/lib/quant/strategy/tradeable-core.ts";
+import { verdictOfStrategy, verdictOfCond, shouldDrop } from "../src/lib/quant/strategy/tradeable-core.ts";
 
 const ROOT = process.cwd();
 const DRY = process.argv.includes("--dry");
@@ -78,10 +78,46 @@ for (const r of affected.sort((a, b) => b.onBoard.length - a.onBoard.length)) {
 console.log(`\n=== 不在榜上的 ${rows.length - affected.length} 条 ===`);
 console.log(rows.filter((r) => !r.onBoard.length).map((r) => `#${r.id}(${r.name})`).join(" | "));
 
+// ---- 1.5) 恒真废条件剥离（2026-10-01 补，A 尾巴）----
+// 为什么敢删：**恒真 = 没过滤任何票**，命中集与原来完全一致 → 已跑出来的分档成绩**不受影响**，
+// 不用重跑回测。留着它只会让人以为「这条策略排除了涨停」，那是误导（任务书 A 验收记过这一条）。
+// 幂等：剥完就没有了，再跑一遍改动数为 0。
+const vacuousLog: { id: number; name: string; removed: string[] }[] = [];
+for (const s of kept) {
+  const before = s.conds.length;
+  const keepC: typeof s.conds = [];
+  const gone: string[] = [];
+  for (const c of s.conds) {
+    const v = verdictOfCond(c);
+    if (v?.verdict === "vacuous") gone.push(`${c.field} ${c.op} ${String(c.value)}`);
+    else keepC.push(c);
+  }
+  // 一条都不剩的策略不剥（那会让它变成「无条件=全市场」，语义变了），留着人工判断
+  if (gone.length && keepC.length) {
+    s.conds = keepC;
+    vacuousLog.push({ id: Number(s.id), name: String(s.name ?? ""), removed: gone });
+    void before;
+  }
+}
+console.log(`\n恒真废条件：剥离 ${vacuousLog.length} 条策略上的 ${vacuousLog.reduce((n, r) => n + r.removed.length, 0)} 个废条件${DRY ? "（DRY 未写盘）" : ""}`);
+for (const r of vacuousLog) console.log(`  #${r.id} ${r.name.slice(0, 14)} 去掉：${r.removed.join(" / ")}`);
+
 if (!DRY) {
   // ---- 1) 策略库 ----
   if (Array.isArray(stratRaw)) fs.writeFileSync(STRAT, JSON.stringify(kept, null, 2));
   else { stratRaw.data = kept; fs.writeFileSync(STRAT, JSON.stringify(stratRaw, null, 2)); }
+
+  // 恒真剥离留痕（可回滚、可核对：写明「为什么成绩不受影响」）
+  if (vacuousLog.length) {
+    fs.writeFileSync(
+      path.join(ROOT, "data", "vacuous-conds-removed.json"),
+      JSON.stringify({
+        at: new Date().toISOString(),
+        reason: "恒真废条件（如 is_limit_up <= 1，值域只有 0/1 所以永远成立）：等于没过滤，命中集不变 → 已跑出来的分档成绩不受影响，无需重跑回测",
+        items: vacuousLog,
+      }, null, 2),
+    );
+  }
 
   // ---- 2) 分档榜单：rows 与三档 rank 同步剔除（不动成绩数字，只删已删 id）----
   let removedRows = 0, removedRank = 0;
