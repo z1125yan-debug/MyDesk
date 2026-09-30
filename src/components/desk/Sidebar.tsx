@@ -10,6 +10,8 @@ import { useMemo, useState } from "react";
 import { Bot, Brain, ChevronDown, ChevronUp, Flame, Gauge, History, LayoutGrid, ListVideo, MessageSquare, PanelLeftClose, Puzzle, Settings, ShieldAlert, Star, Wand2, X } from "lucide-react";
 import { useDesk } from "@/lib/desk/store";
 import { MENU, SYSTEM_ITEMS, entryTarget, menuGroupOf, type MenuEntry } from "@/lib/desk/nav-core";
+import { useTradeDate, shortDate } from "@/lib/desk/use-trade-date";
+import { marketSession } from "@/lib/desk/session";
 import { prefetchPage } from "@/lib/desk/api-cache";
 import { titleFromMessages, type ChatSession } from "@/lib/desk/chat-core";
 
@@ -61,6 +63,19 @@ export default function Sidebar() {
 
   // 组展开态：所在组默认展开（用户看得到自己在哪条血缘线上）；手动折叠优先于默认。
   const isOpen = (e: MenuEntry) => (folded[e.id] !== undefined ? !folded[e.id] : activeGroup === e.id);
+
+  // 诚实的市场状态：休市（节假日/周末）时如实说「今日休市」，不假装连着实时行情；
+  // 开盘/收盘由本地北京时间推算（marketSession），今天是否交易日由行情源真值（useTradeDate）背书，
+  // 这样国庆这种「工作日但不是交易日」不会被误标成「交易中」。
+  const td = useTradeDate();
+  const sess = marketSession();
+  const holidayClosed = !td.loading && !td.isTradingToday;
+  const liveOpen = !holidayClosed && sess.open;
+  const statusLabel = holidayClosed ? "今日休市" : sess.label;
+  const dotClass = liveOpen ? "bg-emerald-400 shadow shadow-emerald-400/60" : "bg-amber-400 shadow shadow-amber-400/50";
+  const statusTip = holidayClosed
+    ? `今日休市，数据停在最近交易日 ${shortDate(td.tradeDate)}（收盘快照，非实时）`
+    : `数据截至 ${shortDate(td.tradeDate)}${sess.open ? "，盘中实时刷新" : "（收盘快照，非实时）"}`;
 
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border/70 bg-sidebar">
@@ -227,12 +242,13 @@ export default function Sidebar() {
         )}
         <button
           onClick={() => setMenuOpen((v) => !v)}
+          title={statusTip}
           className="flex items-center gap-2.5 text-[14px] text-muted-foreground transition-colors hover:text-foreground"
         >
           <span className="flex h-2 w-2">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow shadow-emerald-400/60" />
+            <span className={`h-2 w-2 rounded-full ${dotClass}`} />
           </span>
-          已连接实时行情
+          {statusLabel}
           {menuOpen ? <ChevronUp size={14} className="ml-auto" /> : <Settings size={14} className="ml-auto opacity-60" />}
         </button>
       </div>

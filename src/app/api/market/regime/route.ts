@@ -22,6 +22,8 @@ import {
 } from "@/lib/quant/strategy/regime-switch-core";
 import { regimeReversal } from "@/lib/quant/strategy/regime-reversal";
 import { regimeLibrary } from "@/lib/quant/strategy/regime-library";
+import { strategyLibrary } from "@/lib/quant/data/strategy-library";
+import { humanName, type NameCond } from "@/lib/quant/strategy/strategy-name-core";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +86,10 @@ async function handler(picked: RegimeMode): Promise<NextResponse> {
   // 现算既慢又会漏掉 winCi（CI 是加载层 enrichWinCi 加的）。
   const lib = regimeLibrary();
   const rank = shown ? (lib?.rank?.[shown] ?? []).slice(0, 5) : [];
+  // 社区策略名大量是「1/我的/test」这类没法看的字，从条件反推一句人话当展示名
+  // （strategyLibrary 带 conds，纯本地只读，不影响档位判读那条链路）。
+  const condsById = new Map<number, NameCond[]>();
+  for (const s of strategyLibrary()) condsById.set(s.id, (s.conds as NameCond[] | undefined) ?? []);
   return NextResponse.json({
     today: snap,
     picked,
@@ -94,6 +100,7 @@ async function handler(picked: RegimeMode): Promise<NextResponse> {
     reversal: rev ? { source: rev.source, window: rev.window, note: rev.note, builtAt: rev.builtAt } : null,
     rank: rank.map((it) => ({
       id: it.id, name: it.name,
+      displayName: humanName(it.name, condsById.get(it.id), it.id),
       n: it.stat.oos?.n ?? it.stat.n,
       win: it.stat.oos?.win ?? it.stat.win,
       winCi: it.stat.oos?.winCi ?? it.stat.winCi ?? null,

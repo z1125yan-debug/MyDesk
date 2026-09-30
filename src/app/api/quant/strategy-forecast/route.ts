@@ -27,6 +27,7 @@ import { packForecast, type GateStrategy } from "@/lib/quant/strategy/strategy-g
 // P34-2：分档回测推荐（治「非高风险日恒空」）——口径只有 regime-core 一处，这里只接线
 import { regimeAt } from "@/lib/quant/strategy/regime-core";
 import { regimeLibrary } from "@/lib/quant/strategy/regime-library";
+import { humanName, type NameCond } from "@/lib/quant/strategy/strategy-name-core";
 import { fetchKlinesReal } from "@/lib/desk/em";
 import { shanghaiDate } from "@/lib/desk/session";
 import { db } from "@/lib/db";
@@ -199,11 +200,14 @@ export async function GET(req: NextRequest) {
     if (!dateParam) {
       try {
         const td = shanghaiDate();
+        // 社区策略名大量是「1/我的/test」，台账里存反推出来的人话名，战绩页才看得懂
+        const condsById = new Map<number, NameCond[]>();
+        for (const s of strategyLibrary()) condsById.set(s.id, (s.conds as NameCond[] | undefined) ?? []);
         const rows: PickRow[] = [];
         for (const it of regime.items as { id: number; name: string; stat?: { n?: number; win?: number; avg?: number } }[]) {
           rows.push({
             tradeDate: td, regime: regime.regime ?? "", tierScore: score,
-            strategyId: it.id, strategyName: it.name, source: "regime",
+            strategyId: it.id, strategyName: humanName(it.name, condsById.get(it.id), it.id), source: "regime",
             statN: it.stat?.n ?? null, statWin: it.stat?.win ?? null, statAvg: it.stat?.avg ?? null,
           });
         }
