@@ -53,8 +53,8 @@ export default function HistoryPage() {
   return (
     <div className="w-full p-5">
       <LineageCard
-        title={<span className="flex items-center gap-2"><HistoryIcon size={17} className="text-sky-400" /> 历史</span>}
-        note="AI 分析的存档，点击任意记录查看完整交易详情（最多保留 100 条）"
+        title={<span className="flex items-center gap-2"><HistoryIcon size={17} className="text-sky-400" /> 我的分析</span>}
+        note="这里存的是你做过的大盘/板块/个股 AI 分析结论（最多保留 100 条），不是行情历史 K 线。点击任意记录查看完整交易详情。"
         actions={history.length > 0 ? (
           <button onClick={clearHistory}
             className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[13.5px] text-muted-foreground hover:border-rose-500/40 hover:text-rose-300">

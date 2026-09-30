@@ -1,9 +1,9 @@
 "use client";
 // Quant Research Lab 页面（新增页面，不改任何现有页面）
-// 因子库 / 因子挖掘 / 选股 / 回测 / 实验 / 研究 / 知识库。
+// 条件库 / 条件挖掘 / 选股 / 回测 / 实验 / 研究 / 知识库。
 // P13 门户轮（对齐《量化板块改造方案》阶段一）：入口收敛成三层——主入口=AI 选股门户
 // （直接挂 AiScanPage 本体，一份实现两处用，不抄第二份选股页）；专业工具（选股引擎/回测/
-// 因子库/因子挖掘/自主研究）与系统页（实验跟踪/知识库/实验室状态）**一个 Tab 都不删**，
+// 条件库/条件挖掘/自主研究）与系统页（实验跟踪/知识库/实验室状态）**一个 Tab 都不删**，
 // 只是分组摆放：普通用户进门先见到「选股」，研究员要找的还在原位。
 import { useCallback, useEffect, useState } from "react";
 import { FlaskConical, RefreshCw, Pause, Play, Square, Database, Activity } from "lucide-react";
@@ -60,8 +60,8 @@ const TAB_GROUPS: { label: string; tabs: { key: string; label: string }[] }[] = 
     tabs: [
       { key: "selection", label: "选股引擎" },
       { key: "backtest", label: "回测" },
-      { key: "factors", label: "因子库" },
-      { key: "mining", label: "因子挖掘" },
+      { key: "factors", label: "条件库" },
+      { key: "mining", label: "条件挖掘" },
       { key: "research", label: "自主研究" },
     ],
   },
@@ -190,7 +190,7 @@ export default function QuantPage() {
                   <div className="text-sm text-red-300">{health.db.error}</div>
                 ) : (
                   <div className="text-sm leading-6">
-                    <div>因子 <b>{health?.db.counts?.factors ?? "-"}</b> · 策略 <b>{health?.db.counts?.strategies ?? "-"}</b></div>
+                    <div>条件 <b>{health?.db.counts?.factors ?? "-"}</b> · 策略 <b>{health?.db.counts?.strategies ?? "-"}</b></div>
                     <div>实验 <b>{health?.db.counts?.experiments ?? "-"}</b> · 知识 <b>{health?.db.counts?.knowledge ?? "-"}</b></div>
                   </div>
                 )}
@@ -283,7 +283,7 @@ export default function QuantPage() {
             </CardHeader>
             <CardContent>
               {jobs.length === 0 ? (
-                <div className="py-4 text-center text-[13.5px] text-muted-foreground">暂无任务。因子挖掘 / 回测 / 研究任务将在此显示进度。</div>
+                <div className="py-4 text-center text-[13.5px] text-muted-foreground">暂无任务。条件挖掘 / 回测 / 研究任务将在此显示进度。</div>
               ) : (
                 <div className="space-y-2">
                   {jobs.map((j) => (

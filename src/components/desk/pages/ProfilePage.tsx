@@ -17,8 +17,8 @@ import { clockZh } from "@/lib/desk/plain-core";
 import { LineageCard, LineageSection } from "../ui/LineageCard";
 
 const TECH_LABELS: Record<string, string> = {
-  above_ma_5: "站上MA5", above_ma_10: "站上MA10", above_ma_20: "站上MA20", above_ma_60: "站上MA60", above_ma_144: "站上MA144",
-  ma_struct: "均线多头", macd: "MACD柱", macd_cross: "MACD金叉", kdj_cross: "KDJ金叉", kdj_j: "KDJ-J",
+  above_ma_5: "高于近一周均价", above_ma_10: "高于近两周均价", above_ma_20: "高于近一月均价", above_ma_60: "高于近三月均价", above_ma_144: "高于近七个月均价",
+  ma_struct: "短中长期价依次抬高", macd: "MACD柱", macd_cross: "MACD金叉", kdj_cross: "KDJ金叉", kdj_j: "KDJ-J",
   rsi_14: "RSI14", rsi_24: "RSI24", atr_ratio_14: "相对波动%", vwap20_filter: "站上VWAP20", vwap_pos: "VWAP偏离%",
   rps_50: "RPS50(子集)", rps_120: "RPS120(子集)", is_limit_up: "今日涨停", amount_yi: "成交额(亿)",
 };

@@ -227,7 +227,7 @@ export default function AiScanPage() {
         <div className="text-lg font-bold">AI 实时选股</div>
         <div className="text-[12px] text-muted-foreground">
           扫描全A → 流动性 → 量价/资金/技术条件 → 历史胜率统计 · 所有数据来自真实接口 · 不构成投资建议
-          {result?.factor_verify ? ` · 本次涉及 ${result.factor_verify.enabled} 因子，${result.factor_verify.unverified} 未验证` : " · 因子验证状态见「因子实验室」"}
+          {result?.factor_verify ? ` · 本次涉及 ${result.factor_verify.enabled} 条件，${result.factor_verify.unverified} 未验证` : " · 条件验证状态见「条件实验室」"}
         </div>
       </div>
 
@@ -354,7 +354,7 @@ export default function AiScanPage() {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground">
-                {["代码", "名称", "现价", "涨跌幅", "成交额(亿)", "换手%", "量比", "主力净额(亿)", "RPS50", "站上MA20", "MACD金叉", "1日胜率", "5日胜率", "20日胜率", "入选原因"].map((h) => (
+                {["代码", "名称", "现价", "涨跌幅", "成交额(亿)", "换手%", "量比", "主力净额(亿)", "RPS50", "高于近一月均价", "MACD金叉", "1日胜率", "5日胜率", "20日胜率", "入选原因"].map((h) => (
                   <th key={h} className={`px-3 py-2 ${h.includes("胜率") || /净额|额\)|价/.test(h) ? "text-right" : ""}`}>{h}</th>
                 ))}
               </tr>

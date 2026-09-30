@@ -221,7 +221,7 @@ export function CapabilityPanel() {
               <div className="flex items-center gap-1.5">
                 <Search size={13} className="text-muted-foreground" />
                 <input value={need} onChange={(e) => setNeed(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void askNeed()}
-                  placeholder="我还缺什么数据？例：板块资金 / 事件 / 因子 / 留档"
+                  placeholder="我还缺什么数据？例：板块资金 / 事件 / 条件 / 留档"
                   className="w-[280px] rounded-md border border-border bg-transparent px-2 py-1.5 text-[13px] outline-none focus:border-sky-500/50" />
               </div>
               <button onClick={() => void askNeed()} disabled={needBusy || !need.trim()}

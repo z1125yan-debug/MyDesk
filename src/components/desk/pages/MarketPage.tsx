@@ -25,7 +25,7 @@ import type { EChartsCoreOption } from "echarts/core";
 
 // —— 图表 option 构造（纯函数，进 S0 底座统一渲染）——
 
-/** 大盘成交额趋势：蓝柱=沪深北/两市合计（万亿），黄平滑线=5 日均线（头部不足 5 根不画） */
+/** 大盘成交额趋势：蓝柱=沪深北/两市合计（万亿），黄平滑线=最近5天平均（头部不足 5 根不画） */
 function turnoverOption(days: TrendDayPoint[], marketLabel = "两市"): EChartsCoreOption {
   const pts = days.filter((d) => d.totalYi !== null);
   const dates = pts.map((d) => d.date);
@@ -37,7 +37,7 @@ function turnoverOption(days: TrendDayPoint[], marketLabel = "两市"): EChartsC
     animationEasing: CHART.anim.easing,
     grid: { left: 46, right: 16, top: 34, bottom: 28 },
     tooltip: { ...chartTooltip("axis"), valueFormatter: (v: number | null) => fmtWan(v) },
-    legend: { ...chartLegend({ top: 2, right: 4 }), data: [totalName, "5日均线"] },
+    legend: { ...chartLegend({ top: 2, right: 4 }), data: [totalName, "最近5天平均"] },
     xAxis: {
       type: "category", data: dates, boundaryGap: true,
       axisLine: { lineStyle: { color: CHART.color.axisLine } },
@@ -54,7 +54,7 @@ function turnoverOption(days: TrendDayPoint[], marketLabel = "两市"): EChartsC
       { name: totalName, type: "bar", data: vals, barMaxWidth: 22, itemStyle: { color: CHART.color.barBlue, borderRadius: [2, 2, 0, 0] }, animationDelay: (i: number) => i * 22 },
       {
         // 稳智同款画法：黄线贴着柱顶走（柱值的平滑连线，非均线值），spline 过点视觉一致
-        name: "5日均线", type: "line", data: vals, smooth: true, connectNulls: false,
+        name: "最近5天平均", type: "line", data: vals, smooth: true, connectNulls: false,
         symbol: "circle", symbolSize: 6.5, animationDuration: 1400,
         itemStyle: { color: CHART.color.maYellow, borderColor: "rgba(255,255,255,0.85)", borderWidth: 1 },
         lineStyle: { color: CHART.color.maYellow, width: 2 },

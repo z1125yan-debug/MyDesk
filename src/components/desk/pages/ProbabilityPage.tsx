@@ -169,11 +169,11 @@ export default function ProbabilityPage() {
                 <div className="text-[12px] text-muted-foreground">{h.h} 日上涨概率（样本加权）</div>
                 <div className="text-xl font-bold">{h.win_rate == null ? "—" : `${h.win_rate.toFixed(0)}%`}</div>
                 <div className="text-[11.5px] text-muted-foreground">样本 {h.sample_size} · {h.symbols_used} 只</div>
-                {/* §二/§六：最大回撤 + 基准收益 + 超额（基准缺失显示 —） */}
+                {/* §二/§六：最惨亏多少 + 大盘同期 + 比大盘多赚（基准缺失显示 —） */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-muted-foreground">
-                  <span>最大回撤 <PctText value={h.max_drawdown ?? null} digits={1} /></span>
-                  <span title="同期沪深300平均收益">基准 <NumText value={h.benchmark_return ?? null} digits={2} suffix="%" /></span>
-                  <span title="本策略样本平均收益 − 基准同期">超额 <PctText value={h.excess_return ?? null} digits={2} /></span>
+                  <span>最惨亏多少 <PctText value={h.max_drawdown ?? null} digits={1} /></span>
+                  <span title="同期沪深300平均收益">大盘同期 <NumText value={h.benchmark_return ?? null} digits={2} suffix="%" /></span>
+                  <span title="本策略样本平均收益 − 大盘同期">比大盘多赚 <PctText value={h.excess_return ?? null} digits={2} /></span>
                 </div>
               </div>
             ))}
@@ -182,15 +182,15 @@ export default function ProbabilityPage() {
           {!!result.benchmark && (
             <div className={`text-[11.5px] ${result.benchmark.bars > 0 ? "text-muted-foreground" : "text-amber-400"}`}>
               基准指数：{result.benchmark.name}（{result.benchmark.symbol}）K线 {result.benchmark.bars} 根
-              {result.benchmark.bars === 0 && " · 基准数据缺失，基准收益/超额以 — 显示，不以 0 代替"}
+              {result.benchmark.bars === 0 && " · 大盘数据缺失，大盘同期收益 / 比大盘多赚的部分以 — 显示，不以 0 代替"}
             </div>
           )}
           <table className="w-full text-left text-xs">
             <thead className="text-muted-foreground">
               <tr>
                 <th className="py-1">代码</th><th>名称</th><th>1日</th><th>5日</th><th>20日</th>
-                <th className="text-right" title="5日持有：命中样本复利净值最大回撤（≤0）">5日回撤</th>
-                <th className="text-right" title="5日持有：同期沪深300平均收益 / 超额">基准·超额</th>
+                <th className="text-right" title="5日持有：跟着买的话，最惨的时候亏了多少（不会大于 0）">5日最惨亏多少</th>
+                <th className="text-right" title="5日持有：同期沪深300平均收益 / 比大盘多赚多少">大盘同期·比大盘多赚</th>
                 <th>区间</th>
               </tr>
             </thead>

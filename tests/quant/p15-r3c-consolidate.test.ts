@@ -35,7 +35,7 @@ test("FactorLab：一张 LineageCard + 三节（因子选择/验证结果/测试
   const src = readSrc(LAB);
   assert.match(src, /from "\.\.\/ui\/LineageCard"/);
   assert.equal(src.match(/<LineageCard/g)?.length, 1, "只有一张详情大卡");
-  assert.match(src, /<LineageSection title="因子选择"/);
+  assert.match(src, /<LineageSection title="条件选择"/);
   assert.match(src, /<LineageSection title="验证结果"/);
   assert.match(src, /<LineageSection title="测试记录"/);
   // local Metric 卡函数必须消失（数字全走唯一源 StatCard），但图元 GroupBars/MonthlyBars 保留

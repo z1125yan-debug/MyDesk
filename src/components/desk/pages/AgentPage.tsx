@@ -301,7 +301,7 @@ export default function AgentPage() {
             title="同一步要挂在同一次运行上；同一个 id 再点一次是续跑（库里已有记录不清空、不重打上游）"
             className="w-[220px] rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-sky-500" />
           <input value={question} onChange={(e) => setQuestion(e.target.value.slice(0, 500))}
-            placeholder="研究问题：例：已验证因子账本里有没有能直接引用的条目？半导体板块今天涨得最多的那只靠什么？"
+            placeholder="研究问题：例：已验证条件账本里有没有能直接引用的条目？半导体板块今天涨得最多的那只靠什么？"
             className="min-w-[260px] flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs outline-none focus:border-sky-500" />
           {running
             ? <button onClick={() => { stopRef.current = true; }}

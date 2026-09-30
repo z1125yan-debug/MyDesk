@@ -1,8 +1,8 @@
 "use client";
-// 因子有效性测试台（P1-4，需求文档 五/三十）：选因子 → 跑测试 → IC/分层/月度胜率/回撤 + 历史记录
-// 通过标准（硬性）：|ICIR|>0.5 或 分层单调显著，且 月度胜率>60% → catalog 中该因子 verified 徽章自动转「已验证」。
-// P15-R3c 血缘卡制：原来 4 块手搓散卡（因子选择/参数条/结果/记录）+ local Metric 小卡收进一张 LineageCard——
-// 参数条升格为卡头控制面板（对齐板块页形态），卡内按「选因子 → 看结果 → 翻记录」的血缘分节；
+// 条件有效性测试台（P1-4，需求文档 五/三十）：选条件 → 跑测试 → IC/分层/月度胜率/回撤 + 历史记录
+// 通过标准（硬性）：|ICIR|>0.5 或 分层单调显著，且 月度胜率>60% → catalog 中该条件 verified 徽章自动转「已验证」。
+// P15-R3c 血缘卡制：原来 4 块手搓散卡（条件选择/参数条/结果/记录）+ local Metric 小卡收进一张 LineageCard——
+// 参数条升格为卡头控制面板（对齐板块页形态），卡内按「选条件 → 看结果 → 翻记录」的血缘分节；
 // 数字小卡走全仓库唯一源 StatCard，取数与判定逻辑一个字没动。
 import { useState, useEffect, useCallback } from "react";
 import { Microscope, Loader2 } from "lucide-react";
@@ -62,19 +62,19 @@ export default function FactorLabPage() {
 
   return (
     <div className="w-full space-y-4 px-6 py-4">
-      {/* P15-R3c 血缘收口：选因子→跑测试→看结果→翻记录是同一条验证链，
+      {/* P15-R3c 血缘收口：选条件→跑测试→看结果→翻记录是同一条验证链，
           原来是四块各套各的边框竖着散开——收成一张卡，参数条升格为卡头控制面板。 */}
       <LineageCard
-        title={<span className="flex items-center gap-2"><Microscope size={17} className="text-sky-400" />因子有效性测试台</span>}
+        title={<span className="flex items-center gap-2"><Microscope size={17} className="text-sky-400" />条件有效性测试台</span>}
         note={
           <>
-            口径：t 日因子值 ↔ t+{horizon} 日前向收益（防泄漏）· 样本=全A剔ST/停牌按流动性Top-N · 快照口径字段拒绝测试 ·
+            口径：t 日条件值 ↔ t+{horizon} 日前向收益（防泄漏）· 样本=全A剔ST/停牌按流动性Top-N · 快照口径字段拒绝测试 ·
             通过标准 |ICIR|&gt;0.5 或 分层单调显著，且 月度胜率&gt;60%
           </>
         }
         actions={
           <>
-            <span className="text-[13px] text-muted-foreground">因子 <span className="font-mono text-sky-300">{def?.zh ?? field}</span></span>
+            <span className="text-[13px] text-muted-foreground">条件 <span className="font-mono text-sky-300">{def?.zh ?? field}</span></span>
             <label className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
               前向天数
               <select value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}
@@ -97,8 +97,8 @@ export default function FactorLabPage() {
         }
       >
         <div className="grid grid-cols-1 gap-x-6 lg:grid-cols-[250px_1fr]">
-          {/* 因子选择：原独立侧栏卡→卡内首节。列表、已验证/快照徽章、不可测置灰的判定一个字没动 */}
-          <LineageSection title="因子选择" hint={`已验证 ${verifiedCount}/${catalog?.fields.length ?? "…"}`} divided={false}>
+          {/* 条件选择：原独立侧栏卡→卡内首节。列表、已验证/快照徽章、不可测置灰的判定一个字没动 */}
+          <LineageSection title="条件选择" hint={`已验证 ${verifiedCount}/${catalog?.fields.length ?? "…"}`} divided={false}>
             {catalog?.category
               ? Object.entries(catalog.category).map(([cat, keys]) => (
                 <div key={cat} className="mb-2 last:mb-0">
@@ -123,7 +123,7 @@ export default function FactorLabPage() {
                   </div>
                 </div>
               ))
-              : <div className="py-6 text-center text-xs text-muted-foreground">{error || "加载因子目录…"}</div>}
+              : <div className="py-6 text-center text-xs text-muted-foreground">{error || "加载条件目录…"}</div>}
           </LineageSection>
 
           <div className="min-w-0">
@@ -142,20 +142,20 @@ export default function FactorLabPage() {
                       (result.passed ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300")}>
                       {result.passed ? "✓ 通过（已写入验证状态）" : "✗ 未通过（保持未验证标记）"}
                     </span>
-                    <span className="text-[11.5px] text-muted-foreground">{result.metrics.dataRange} · 样本 {result.metrics.sample.stocks} 只 × {result.metrics.sample.dates} 日 · 有效截面 {result.metrics.sample.validPairs}</span>
+                    <span className="text-[11.5px] text-muted-foreground">{result.metrics.dataRange} · 样本 {result.metrics.sample.stocks} 只 × {result.metrics.sample.dates} 天 · 有效配对 {result.metrics.sample.validPairs}</span>
                   </div>
 
                   <div className="text-[11.5px] text-muted-foreground">{result.passRule}</div>
 
                   {/* 指标小卡走全仓库唯一源 StatCard（口径进 tooltip，措辞与 metrics.ts 实现一致） */}
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                    <StatCard label="IC" value={<NumText value={result.metrics.ic ?? null} digits={4} />} toneClass={metricTone(result.metrics.ic)} title="逐日截面 Pearson 相关（因子值 vs t+N 前向收益）的均值" />
-                    <StatCard label="RankIC" value={<NumText value={result.metrics.rankIc ?? null} digits={4} />} toneClass={metricTone(result.metrics.rankIc)} title="同上口径换成截面秩相关后的均值" />
-                    <StatCard label="ICIR" value={<NumText value={result.metrics.icIr ?? null} digits={3} />} toneClass={metricTone(result.metrics.icIr)} title="RankIC 序列均值 ÷ 标准差（方向稳定性，通过线 |ICIR|>0.5）" />
-                    <StatCard label="单调性ρ" value={<NumText value={result.metrics.monotonicity ?? null} digits={3} />} toneClass={metricTone(result.metrics.monotonicity)} title="5档序号 vs 各档年化的相关（越接近 ±1 越单调）" />
-                    <StatCard label="月度胜率" value={<NumText value={result.metrics.monthlyWinRate * 100} digits={1} suffix="%" />} toneClass={metricTone(result.metrics.monthlyWinRate)} title="方向调整后逐月 RankIC 为正的月份占比（通过线 >60%）" />
-                    <StatCard label="换手(日)" value={<NumText value={result.metrics.turnover ?? null} digits={3} />} title="因子截面排名日间变化度量（越高调仓越频繁）" />
-                    <StatCard label="最优档最大回撤" value={<NumText value={result.metrics.maxDrawdown * 100} digits={1} suffix="%" />} toneClass={metricTone(result.metrics.maxDrawdown, true)} title="方向调整后最优档 1日前瞻收益复权曲线的最大回撤" />
+                    <StatCard label="历史上准不准" value={<NumText value={result.metrics.ic ?? null} digits={4} />} toneClass={metricTone(result.metrics.ic)} title="逐日看：满足这个条件的票，后来是涨得多还是跌得多（取平均）" />
+                    <StatCard label="按排名看准不准" value={<NumText value={result.metrics.rankIc ?? null} digits={4} />} toneClass={metricTone(result.metrics.rankIc)} title="同上，但不看具体涨跌多少，只看排名先后（更不受几只极端票的影响）" />
+                    <StatCard label="每个月都准吗" value={<NumText value={result.metrics.icIr ?? null} digits={3} />} toneClass={metricTone(result.metrics.icIr)} title="上面那个数字稳不稳：平均值 ÷ 波动。越大越稳，一般要超过 0.5 才算稳" />
+                    <StatCard label="越强越准吗" value={<NumText value={result.metrics.monotonicity ?? null} digits={3} />} toneClass={metricTone(result.metrics.monotonicity)} title="把票按这个条件的强弱分成 5 档，看收益是不是一档比一档高" />
+                    <StatCard label="按月看准的比例" value={<NumText value={result.metrics.monthlyWinRate * 100} digits={1} suffix="%" />} toneClass={metricTone(result.metrics.monthlyWinRate)} title="方向调整后，逐月看这个条件准的月份占多少（一般要超过 60%）" />
+                    <StatCard label="换手(日)" value={<NumText value={result.metrics.turnover ?? null} digits={3} />} title="每天要换掉多少票：条件的排名一天到一天的变化（越高越频繁调仓，手续费也越贵）" />
+                    <StatCard label="最猛那档最惨亏多少" value={<NumText value={result.metrics.maxDrawdown * 100} digits={1} suffix="%" />} toneClass={metricTone(result.metrics.maxDrawdown, true)} title="方向调整后，最强那一档的收益曲线，从最高点跌到最低点的幅度" />
                     <div className="rounded-md bg-accent/40 p-2">
                       <div className="text-[11px] text-muted-foreground">5档分层年化（低→高）</div>
                       <GroupBars values={result.metrics.groupAnnual} />
@@ -171,12 +171,12 @@ export default function FactorLabPage() {
             {/* 测试记录：原独立卡→末节；表格、空态、可追溯口径原样 */}
             <LineageSection title="测试记录" hint="每次可追溯 · 最新在前" divided={Boolean(result)}>
               {history.length === 0 ? (
-                <div className="py-6 text-center text-xs text-muted-foreground">暂无记录 · 选一个K线因子点「跑测试」</div>
+                <div className="py-6 text-center text-xs text-muted-foreground">暂无记录 · 选一个K线条件点「跑测试」</div>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-border text-left text-muted-foreground">
-                      {["因子", "窗口", "RankIC", "ICIR", "单调", "月胜率", "最大回撤", "通过", "测试时间"].map((h) => (
+                      {["条件", "看几天后", "按排名看准不准", "每个月都准吗", "越强越准吗", "按月看准的比例", "最惨亏多少", "过没过检", "测试时间"].map((h) => (
                         <th key={h} className="px-3 py-1.5">{h}</th>
                       ))}
                     </tr>
@@ -236,7 +236,7 @@ function MonthlyBars({ months }: { months: { month: string; rankIc: number }[] }
   const max = Math.max(1e-6, ...months.map((m) => Math.abs(m.rankIc)));
   return (
     <div>
-      <div className="mb-1 text-[11.5px] text-muted-foreground">逐月 RankIC（方向已调整：正柱=当月有效）</div>
+      <div className="mb-1 text-[11.5px] text-muted-foreground">逐月：这个条件准不准（方向已调整：向上的柱子 = 当月有效）</div>
       <div className="flex h-16 items-end gap-0.5">
         {months.map((m) => (
           <div key={m.month} title={`${m.month}: ${m.rankIc.toFixed(4)}`} className="flex-1">

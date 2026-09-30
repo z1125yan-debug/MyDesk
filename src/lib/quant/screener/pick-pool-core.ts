@@ -24,12 +24,12 @@ export const PICK_FIELD_ZH: Record<string, string> = {
   volume_ratio: "量比",
   main_net_yi: "主力净额(东财)",
   market_cap_yi: "总市值(亿)",
-  above_ma_5: "站上MA5",
-  above_ma_10: "站上MA10",
-  above_ma_20: "站上MA20",
-  above_ma_60: "站上MA60",
+  above_ma_5: "高于近一周均价",
+  above_ma_10: "高于近两周均价",
+  above_ma_20: "高于近一月均价",
+  above_ma_60: "高于近三月均价",
   above_cost_20: "站上20日成本线",
-  ma_struct: "均线多头排列",
+  ma_struct: "短中长期价依次抬高",
   macd_cross: "MACD金叉",
   kdj_cross: "KDJ金叉",
   is_limit_up: "今日涨停",
@@ -129,7 +129,7 @@ export function extractPickConds(question: string): PickExtract {
     if (["5", "10", "20", "60"].includes(n)) push({ field: `above_ma_${n}`, op: ">=", value: 1 }, `站上MA${n}`);
   }
   if (/站上\s*20\s*日成本线/.test(q)) push({ field: "above_cost_20", op: ">=", value: 1 }, "站上20日成本线");
-  if (/均线多头|多头排列/.test(q)) push({ field: "ma_struct", op: ">=", value: 1 }, "均线多头排列");
+  if (/短中长期价依次抬高|多头排列/.test(q)) push({ field: "ma_struct", op: ">=", value: 1 }, "短中长期价依次抬高");
   if (/MACD\s*金叉|金叉/.test(q)) push({ field: "macd_cross", op: ">=", value: 1 }, "MACD金叉");
   if (/KDJ\s*金叉/.test(q)) push({ field: "kdj_cross", op: ">=", value: 1 }, "KDJ金叉");
   if (/涨停/.test(q) && !/=?\s*0\s*个?涨停|没有涨停|不涨停/.test(q)) push({ field: "is_limit_up", op: ">=", value: 1 }, "今日涨停");

@@ -107,9 +107,9 @@ describe("P58 提问模板逐字对齐稳智产物", () => {
 
   test("隐藏 7 张（稳智有、首页没排）同一引擎可拼", () => {
     assert.equal(EXTRA_SUGGESTION_CARDS.length, 7);
-    assert.equal(directish("回踩均线还能吸吗", { subject: "宁德时代", ma: "MA20" }),
+    assert.equal(directish("跌到一个月均价附近还能买吗", { subject: "宁德时代", ma: "MA20" }),
       "宁德时代回踩MA20附近，现在还能不能吸一口？结合盘中实时行情给我低吸策略和风险提示。");
-    assert.equal(directish("跌破均线怎么办", { subject: "中控技术", ma: "MA10" }),
+    assert.equal(directish("跌破一个月均价怎么办", { subject: "中控技术", ma: "MA10" }),
       "如果中控技术盘中跌破MA10怎么办？请区分盘中短暂跌破与收盘确认，结合量能给出持仓纪律、减仓条件和重新评估信号。");
     assert.match(directish("超短轻仓试错", { subject: "伟创电气" }), /^我想做伟创电气的1到2天超短/);
     assert.match(directish("持仓先拿还是减", { subject: "中控技术" }), /^我现在持有中控技术，盘中该继续拿还是先减一点/);
@@ -150,8 +150,8 @@ describe("P58 缺条件不发（稳智 beforeClose 语义）", () => {
   test("默认值来自卡自己（周期默认短线、操作默认买入、回踩均线默认 MA20、跌破均线默认 MA10）", () => {
     assert.equal(card("判断现在能否买入").defaults.horizon, "short");
     assert.equal(card("制定股票交易计划").defaults.action, "buy");
-    assert.equal(card("回踩均线还能吸吗").defaults.ma, "MA20");
-    assert.equal(card("跌破均线怎么办").defaults.ma, "MA10");
+    assert.equal(card("跌到一个月均价附近还能买吗").defaults.ma, "MA20");
+    assert.equal(card("跌破一个月均价怎么办").defaults.ma, "MA10");
   });
 
   test("确认按钮文案由卡给：多股卡是「开始分析」，其余「生成并发送」", () => {

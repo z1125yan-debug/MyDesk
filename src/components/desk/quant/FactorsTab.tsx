@@ -1,5 +1,5 @@
 "use client";
-// 量化研究 — 因子库 Tab（Phase 3）：版本化列表 + 手动录入 + 状态变更
+// 量化研究 — 条件库 Tab（Phase 3）：版本化列表 + 手动录入 + 状态变更
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -92,8 +92,8 @@ export function FactorsTab() {
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
-        <Button size="sm" variant="outline" onClick={() => setShowAdd(!showAdd)}>{showAdd ? "收起录入" : "+ 手动录入因子"}</Button>
-        <span className="text-[12.5px] text-muted-foreground">共 {factors.length} 个因子（每键显示最新版本；insert-only 版本化，禁止覆盖）</span>
+        <Button size="sm" variant="outline" onClick={() => setShowAdd(!showAdd)}>{showAdd ? "收起录入" : "+ 手动录入条件"}</Button>
+        <span className="text-[12.5px] text-muted-foreground">共 {factors.length} 个条件（每键显示最新版本；insert-only 版本化，禁止覆盖）</span>
       </div>
 
       {showAdd && (
@@ -116,18 +116,18 @@ export function FactorsTab() {
       )}
 
       {factors.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-[14px] text-muted-foreground">因子库为空。先在「因子挖掘」Tab 跑一次挖掘，或手动录入。</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-[14px] text-muted-foreground">条件库为空。先在「条件挖掘」Tab 跑一次挖掘，或手动录入。</CardContent></Card>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full text-[13px]">
             <thead className="bg-card text-muted-foreground">
               <tr>
-                <th className="px-2 py-1.5 text-left font-normal">因子</th>
+                <th className="px-2 py-1.5 text-left font-normal">条件</th>
                 <th className="px-2 py-1.5 text-left font-normal">类目</th>
                 <th className="px-2 py-1.5 text-left font-normal">状态</th>
-                <th className="px-2 py-1.5 text-right font-normal">IC</th>
-                <th className="px-2 py-1.5 text-right font-normal">RankIC</th>
-                <th className="px-2 py-1.5 text-right font-normal">ICIR</th>
+                <th className="px-2 py-1.5 text-right font-normal">历史上准不准</th>
+                <th className="px-2 py-1.5 text-right font-normal">按排名看准不准</th>
+                <th className="px-2 py-1.5 text-right font-normal">每个月都准吗</th>
                 <th className="px-2 py-1.5 text-right font-normal">多空年化</th>
                 <th className="px-2 py-1.5 text-right font-normal">稳定性</th>
                 <th className="px-2 py-1.5 text-right font-normal">换手</th>

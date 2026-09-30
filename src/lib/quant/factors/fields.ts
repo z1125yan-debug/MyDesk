@@ -17,7 +17,7 @@ export type FactorFieldSource = "kline" | "snapshot";
 export type FactorFieldCategoryZh =
   | "估值与市值"
   | "量能与活跃度"
-  | "趋势与均线"
+  | "趋势与均价"
   | "动量与形态"
   | "主力资金与成本"
   | "VWAP体系"
@@ -69,22 +69,22 @@ export const FACTOR_FIELD_DEFS: FactorFieldDef[] = [
   { key: "is_limit_up", zh: "今日涨停", category: "量能与活跃度", source: "kline", verified: false },
   { key: "double_volume_signal", zh: "倍量信号", category: "量能与活跃度", source: "kline", verified: false },
   { key: "volume_signal", zh: "量能信号", category: "量能与活跃度", source: "kline", verified: false },
-  // 趋势与均线
-  { key: "above_ma_5", zh: "站上MA5", category: "趋势与均线", source: "kline", verified: false },
-  { key: "above_ma_10", zh: "站上MA10", category: "趋势与均线", source: "kline", verified: false },
-  { key: "above_ma_20", zh: "站上MA20", category: "趋势与均线", source: "kline", verified: false },
-  { key: "above_ma_60", zh: "站上MA60", category: "趋势与均线", source: "kline", verified: false },
-  { key: "above_ma_90", zh: "站上MA90", category: "趋势与均线", source: "kline", verified: false },
-  { key: "above_ma_144", zh: "站上MA144", category: "趋势与均线", source: "kline", verified: false },
-  { key: "ma_struct", zh: "均线多头排列", category: "趋势与均线", source: "kline", verified: false },
-  { key: "ema14_gt_ema26", zh: "EMA14>EMA26", category: "趋势与均线", source: "kline", verified: false },
+  // 趋势与均价
+  { key: "above_ma_5", zh: "高于近一周均价", category: "趋势与均价", source: "kline", verified: false },
+  { key: "above_ma_10", zh: "高于近两周均价", category: "趋势与均价", source: "kline", verified: false },
+  { key: "above_ma_20", zh: "高于近一月均价", category: "趋势与均价", source: "kline", verified: false },
+  { key: "above_ma_60", zh: "高于近三月均价", category: "趋势与均价", source: "kline", verified: false },
+  { key: "above_ma_90", zh: "高于近四个半月均价", category: "趋势与均价", source: "kline", verified: false },
+  { key: "above_ma_144", zh: "高于近七个月均价", category: "趋势与均价", source: "kline", verified: false },
+  { key: "ma_struct", zh: "短中长期价依次抬高", category: "趋势与均价", source: "kline", verified: false },
+  { key: "ema14_gt_ema26", zh: "EMA14>EMA26", category: "趋势与均价", source: "kline", verified: false },
   {
-    key: "close", zh: "收盘价", category: "趋势与均线", source: "kline", verified: false, unit: "元",
+    key: "close", zh: "收盘价", category: "趋势与均价", source: "kline", verified: false, unit: "元",
     description: "当日收盘价（K线口径）。供「近N日涨幅」等 rolling 条件使用（稳智无 field 的 rolling_return 即口径=收盘价）。",
   },
-  { key: "rps_50", zh: "RPS50", category: "趋势与均线", source: "kline", verified: false },
-  { key: "rps_120", zh: "RPS120", category: "趋势与均线", source: "kline", verified: false },
-  { key: "rps_composite", zh: "RPS综合", category: "趋势与均线", source: "kline", verified: false },
+  { key: "rps_50", zh: "RPS50", category: "趋势与均价", source: "kline", verified: false },
+  { key: "rps_120", zh: "RPS120", category: "趋势与均价", source: "kline", verified: false },
+  { key: "rps_composite", zh: "RPS综合", category: "趋势与均价", source: "kline", verified: false },
   // 动量与形态
   { key: "macd_dif", zh: "MACD DIF", category: "动量与形态", source: "kline", verified: false },
   { key: "macd_dea", zh: "MACD DEA", category: "动量与形态", source: "kline", verified: false },
@@ -305,13 +305,13 @@ export const FACTOR_FIELD_DEFS: FactorFieldDef[] = [
     data_requirements: "需成交额K线",
   },
   {
-    key: "vwap_slope3", zh: "全周期VWAP三日斜率%", category: "VWAP体系", source: "kline", verified: false, unit: "%",
+    key: "vwap_slope3", zh: "全周期VWAP三天变化速度%", category: "VWAP体系", source: "kline", verified: false, unit: "%",
     description: "基于 vwap_full（vwap20 口径已有独立字段 vwap20_slope3，二者不混用）",
     formula: "slope3:=(VWAP_FULL-REF(VWAP_FULL,3))/REF(VWAP_FULL,3)*100;", dependencies: ["vwap_full"],
     data_requirements: "需成交额K线",
   },
   {
-    key: "vwap_slope6", zh: "全周期VWAP六日斜率%", category: "VWAP体系", source: "kline", verified: false, unit: "%",
+    key: "vwap_slope6", zh: "全周期VWAP六天变化速度%", category: "VWAP体系", source: "kline", verified: false, unit: "%",
     formula: "slope6:=(VWAP_FULL-REF(VWAP_FULL,6))/REF(VWAP_FULL,6)*100;", dependencies: ["vwap_full"],
     data_requirements: "需成交额K线",
   },
@@ -436,7 +436,7 @@ export const FACTOR_FIELD_DEFS: FactorFieldDef[] = [
     formula: "VOL/MA(VOL,20);", dependencies: ["VOL"], data_requirements: "仅日线成交量",
   },
   {
-    key: "close_dev_ma120", zh: "偏离120日线%", category: "趋势与均线", source: "kline", verified: false, unit: "%",
+    key: "close_dev_ma120", zh: "偏离120日线%", category: "趋势与均价", source: "kline", verified: false, unit: "%",
     formula: "(CLOSE-MA(CLOSE,120))/MA(CLOSE,120)*100;", dependencies: ["MA(C,120)"],
     data_requirements: "仅日线收盘价",
   },
@@ -554,7 +554,7 @@ export const FACTOR_FIELD_DEFS: FactorFieldDef[] = [
 export const FACTOR_FIELD_MAP: Map<string, FactorFieldDef> = new Map(FACTOR_FIELD_DEFS.map((f) => [f.key, f]));
 
 export const FACTOR_FIELD_CATEGORIES: FactorFieldCategoryZh[] = [
-  "估值与市值", "量能与活跃度", "趋势与均线", "动量与形态", "主力资金与成本", "VWAP体系", "支撑阻力",
+  "估值与市值", "量能与活跃度", "趋势与均价", "动量与形态", "主力资金与成本", "VWAP体系", "支撑阻力",
   "缠论", "TD序列", "江恩", "高斯通道", "庄家宝体系", "板块与概念", "共振与竞价",
 ];
 

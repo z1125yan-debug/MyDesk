@@ -45,5 +45,6 @@ export async function GET(request: Request) {
     succeeded: result.data.length,
     failed: result.failed,
     signals: result.data,
-  }, { headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=1800" } });
+    // E1：收盘口径，浏览器/CDN 缓存 1 小时，与上方 in-process 缓存同口径，避免重复冷跑慢接口
+  }, { headers: { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" } });
 }

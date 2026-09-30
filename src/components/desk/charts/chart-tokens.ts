@@ -6,7 +6,7 @@ export const CHART = {
   labelSize: 10.5,
   color: {
     barBlue: "#3f6ff7", // 稳智成交额柱
-    maYellow: "#f3c744", // 柱图上的平滑均线
+    maYellow: "#f3c744", // 柱图上的平滑线
     up: "#ef4444", // A股红涨
     down: "#10b981", // 绿跌
     breadth: "#f56c6c", // 高于5日线占比主线（稳智红）

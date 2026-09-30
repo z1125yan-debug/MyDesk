@@ -152,7 +152,7 @@ export default function SuggestionCardDialog({
   );
 }
 
-/** 单选行：稳智那三处单选（周期/操作/均线）都是横向 radio group，这里同一画法 */
+/** 单选行：稳智那三处单选（周期/操作/均价）都是横向 radio group，这里同一画法 */
 function RadioRow({ name, options, value, onChange }: {
   name: string;
   options: { value: string; label: string; hint?: string }[];

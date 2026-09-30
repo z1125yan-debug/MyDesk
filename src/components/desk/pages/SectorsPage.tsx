@@ -197,7 +197,7 @@ export default function SectorsPage() {
     go("aiscan");
   };
   /**
-   * P48（对齐稳智 /sectors）：点板块名 → 跳「量化因子选股」并预置一条 `sector_concept like <板块名>` 条件。
+   * P48（对齐稳智 /sectors）：点板块名 → 跳「量化条件选股」并预置一条 `sector_concept like <板块名>` 条件。
    * 稳智原实现：window.open("/screener?sector=<名>&type=<industry|concept>")，选股页把参数规整成
    * {field:"sector|concept", op:"like", value:<名>} 后立即筛。本站用 store 一次性交接同一棒。
    */
@@ -415,7 +415,7 @@ export default function SectorsPage() {
         const st = aggregateSectors(list);
         const cards: { label: string; value: string; tone: string; title: string }[] = [
           { label: `总${noun}数`, value: String(st.count), tone: "text-sky-300", title: "当前榜内去重后的条数（资金口径榜，非全市场板块总数）" },
-          { label: "平均涨跌幅", value: st.avgChangePct === null ? "—" : `${st.avgChangePct > 0 ? "+" : ""}${st.avgChangePct}%`, tone: (st.avgChangePct ?? 0) >= 0 ? "text-red-400" : "text-emerald-400", title: "榜内涨跌幅截面均值" },
+          { label: "平均涨跌幅", value: st.avgChangePct === null ? "—" : `${st.avgChangePct > 0 ? "+" : ""}${st.avgChangePct}%`, tone: (st.avgChangePct ?? 0) >= 0 ? "text-red-400" : "text-emerald-400", title: "榜内涨跌幅平均" },
           // 个股口径优先：MCP 板块汇总取到广度（up_count/down_count）就按家数求和，与稳智同名卡同口径；
           // 取不到才回落板块条数，且卡片名必须改成「板块数」——不拿板块条数冒充个股家数。
           st.upStocks != null
@@ -579,10 +579,10 @@ function SectorBlock({ rank, board, asOf, expanded, busy, error, members, canScr
       <tr onClick={onToggle} className="cursor-pointer border-b border-border/40 hover:bg-sky-500/5">
         <td className="px-3.5 py-2.5 text-center font-mono text-[13px] text-muted-foreground whitespace-nowrap">{board.code}</td>
         {/* 名称=可点搜索入口（对齐稳智 /sectors：点板块名开 /screener?sector=…）：
-            点击跳「量化因子选股」并预置 `sector_concept like <板块名>` 条件；stopPropagation 避免顺手展开成分股。 */}
+            点击跳「量化条件选股」并预置 `sector_concept like <板块名>` 条件；stopPropagation 避免顺手展开成分股。 */}
         <td className="px-3.5 py-2.5 text-center font-medium whitespace-nowrap">
           <button onClick={(e) => { e.stopPropagation(); onJumpScreener(); }}
-            title={`点「${board.name}」→ 去量化因子选股并预置「板块/概念 包含 ${board.name}」条件（对齐稳智）`}
+            title={`点「${board.name}」→ 去量化条件选股并预置「板块/概念 包含 ${board.name}」条件（对齐稳智）`}
             className="text-left text-sky-300 underline-offset-2 hover:text-sky-200 hover:underline">
             {board.name}
           </button>
@@ -625,7 +625,7 @@ function SectorBlock({ rank, board, asOf, expanded, busy, error, members, canScr
               ) : (
                 <span title="该榜行代码非东财 BK 口径（腾讯/同花顺兜底榜），无法解析成分池" className="text-[12px] text-muted-foreground">该板块代码非东财 BK 口径，无法解析成分池</span>
               )}
-              <span className="text-[12px] text-muted-foreground">点击上方「名称」可跳量化因子选股并预置板块条件</span>
+              <span className="text-[12px] text-muted-foreground">点击上方「名称」可跳量化条件选股并预置板块条件</span>
             </div>
             {busy && <div className="flex items-center gap-2 py-4 text-xs text-sky-400"><Loader2 size={12} className="animate-spin" /> 拉取成分股…</div>}
             {!busy && error && <div className="py-4 text-xs text-red-300">{error}</div>}

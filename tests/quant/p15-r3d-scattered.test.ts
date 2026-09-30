@@ -69,7 +69,7 @@ test("HistoryPage：列表收成一张卡（清空进 actions），详情收成�
   const src = readSrc(HISTORY);
   // 列表视图 + 详情视图各一张卡
   assert.equal(src.match(/<LineageCard/g)?.length, 2, "列表页与详情页各一张卡");
-  assert.match(src, /note="AI 分析的存档，点击任意记录查看完整交易详情（最多保留 100 条）"/);
+  assert.match(src, /note="这里存的是你做过的大盘\/板块\/个股 AI 分析结论（最多保留 100 条），不是行情历史 K 线。点击任意记录查看完整交易详情。"/);
   assert.match(src, /<LineageSection title=\{history\.length > 0 \? `存档记录/);
   assert.match(src, /还没有分析记录。在 AI 分析页点「开始分析」后会自动存档。/);
   // 交易计划/技术快照数字走统一 StatCard，缺数照旧显「—」

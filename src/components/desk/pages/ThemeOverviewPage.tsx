@@ -8,7 +8,7 @@
 //
 // 纪律（用户拍板「能真算的真算，算不出显暂无数据不造」）：
 // - 数据只来自既有真实接口：fetchThemes（主线发现·规则版）、fetchRisk（大盘情绪快照）、fetchEvents（事件雷达）；
-// - 稳智图里有、我们数据源里没有的维度（3日资金 / 3日涨跌 / 站上MA20占比 / 人气集中度 / 置信度 /
+// - 稳智图里有、我们数据源里没有的维度（3日资金 / 3日涨跌 / 高于近一月均价占比 / 人气集中度 / 置信度 /
 //   rising/avoid/nextday_risk_score 那种分层标签）——一律显式标「暂无数据」，绝不拿相近字段冒充、绝不为凑图造数；
 // - 不做行业/概念 Tab、不做日期选择器：fetchThemes 是行业+概念合并榜、且按当下快照重算不吃日期，
 //   硬塞这两个控件就是给用户两个点了没反应的假开关（宁缺不假）。
@@ -312,7 +312,7 @@ export default function ThemeOverviewPage() {
               </div>
               <div className="mt-2 rounded-lg border border-border/70 bg-card/40 px-2.5 py-1.5 text-[12px] leading-5 text-muted-foreground">
                 以下参考维度本页无数据源，不臆测、不拿相近字段顶替：
-                <span className="text-foreground/80"> 3日资金 · 3日涨跌 · 站上MA20占比（主题口径）· 人气集中度</span>
+                <span className="text-foreground/80"> 3日资金 · 3日涨跌 · 高于近一月均价占比（主题口径）· 人气集中度</span>
                 <span className="ml-1">（热度/置信/次日风险已改为上方 P15-R5 透明规则读数）</span>
               </div>
             </LineageSection>
