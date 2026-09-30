@@ -9,6 +9,7 @@ import { normalizeSectorKeyword } from "@/lib/quant/screener/sector-keyword-core
 import { plainCode, codeTitle } from "@/lib/desk/code-format";
 // P36-D 条件真相：条件卡片要当场说清这个条件历史上有没有用、是不是反着走的
 import { condAuditOf, truthDetailOf, type FactorTruth } from "@/lib/quant/factors/factor-truth-core";
+import { humanName, type NameCond } from "@/lib/quant/strategy/strategy-name-core";
 import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 // P36-E6 档位切换条：强势 / 震荡 / 弱势（不用「牛市/熊市」，判的是最近几周的方向）
 import RegimeSwitchBar from "@/components/desk/pages/RegimeSwitchBar";
@@ -194,6 +195,8 @@ export default function ScreenerWorkbench() {
   const [comboRes, setComboRes] = useState<{ rows: Record<string, unknown>[]; names: string[]; note: string } | null>(null);
   /** 社区策略列表：被挡的默认收起（搜索时全量查） */
   const [showBlocked, setShowBlocked] = useState(false);
+  /** 小白上手引导：默认展开，看完可收起（只是首屏提示，不影响功能） */
+  const [showGuide, setShowGuide] = useState(true);
 
   useEffect(() => {
     void (async () => {
@@ -647,6 +650,31 @@ export default function ScreenerWorkbench() {
         <p className="mt-1 text-[13.5px] text-muted-foreground">所示结果仅为模型筛选结果与历史数据分析，不构成任何投资建议。投资有风险，决策需谨慎。</p>
       </div>
 
+      {/* 小白上手引导（想赚钱的用户第一眼就能看懂怎么用这台机器）：三步走，说人话，不堆术语。 */}
+      {showGuide && (
+        <div className="apple-slide-up rounded-xl border border-sky-400/30 bg-sky-500/5 p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="rounded-md bg-sky-500/20 px-2 py-0.5 text-[12.5px] font-medium text-sky-200">新手三步</span>
+            <span className="text-[14px] font-semibold">想用这台机器找机会，照这三步走就行</span>
+            <button onClick={() => setShowGuide(false)} className="ml-auto rounded-md px-2 py-0.5 text-[12.5px] text-muted-foreground hover:text-foreground" title="收起引导">收起</button>
+          </div>
+          <ol className="grid gap-2 lg:grid-cols-3">
+            <li className="flex gap-2 rounded-lg bg-card/50 p-3 text-[13px] leading-relaxed">
+              <span className="shrink-0 font-semibold text-sky-300">1</span>
+              <span>先看顶部那条<span className="text-foreground">「行情档位」（强势 / 震荡 / 弱势）</span>——它用最近几周的真实走势告诉你大盘现在是涨势、横盘还是偏弱。偏弱时就别急着下重手。</span>
+            </li>
+            <li className="flex gap-2 rounded-lg bg-card/50 p-3 text-[13px] leading-relaxed">
+              <span className="shrink-0 font-semibold text-sky-300">2</span>
+              <span>点右上角<span className="text-foreground">「预测」</span>，看这一档历史上比较稳的做法（名字已经翻成大白话）。挑一条你看得懂的，点<span className="text-foreground">「选它」</span>会自动把条件填好。</span>
+            </li>
+            <li className="flex gap-2 rounded-lg bg-card/50 p-3 text-[13px] leading-relaxed">
+              <span className="shrink-0 font-semibold text-sky-300">3</span>
+              <span>条件填好后点<span className="text-foreground">「筛选」</span>，看现在有多少只股票符合；再用<span className="text-foreground">「交给稳智AI优选」</span>让它从这堆里帮你挑几只、讲清买卖点和风险。</span>
+            </li>
+          </ol>
+        </div>
+      )}
+
       {/* P36-D 图例：两种标记什么意思，说人话（不许用「反向条件」「IC」这类词） */}
       <div className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-muted-foreground">
         <span><span className="text-amber-300">⚠</span>　历史上是反着走的：数值越高，之后几天反而越容易跌，命中它更接近「该回避」</span>
@@ -826,7 +854,7 @@ export default function ScreenerWorkbench() {
                     return (
                     <div key={s.id} className="flex items-center justify-between rounded-md border border-border/40 px-2.5 py-1.5 text-[13px]">
                       <div className="min-w-0">
-                        <div className="truncate text-foreground" title={s.name}>{s.name}</div>
+                        <div className="truncate text-foreground" title={s.name}>{humanName(s.name, s.conds as NameCond[] | undefined)}</div>
                         <div className="truncate text-[12px] text-muted-foreground">
                           {s.owner || "—"} · 赞{s.like}/踩{s.dislike} · {s.n_mapped}/{s.n_total} 条件
                           {s.n_mapped < s.n_total && <span className="text-amber-300/80">（{s.n_total - s.n_mapped} 项本地暂不支持）</span>}

@@ -17,7 +17,7 @@ import { DeskCollapse } from "@/components/desk/ui/DeskCollapse";
 import { parseRegimeParam, type RegimeMode } from "@/lib/quant/strategy/regime-switch-core";
 
 export interface RegimeRankItem {
-  id: number; name: string; n: number; win: number; winCi: string | null; net: number; basis: string | null;
+  id: number; name: string; displayName?: string; n: number; win: number; winCi: string | null; net: number; basis: string | null;
 }
 interface RegimeResp {
   today: { regime: string | null; asOf: string | null; sinceDate: string | null; daysInRegime: number | null; error: string };
@@ -163,7 +163,7 @@ export default function RegimeSwitchBar(props: {
             {data.rank.slice(0, 3).map((it, i) => (
               <div key={it.id} className="flex items-center gap-2 text-[12.5px]">
                 <span className="w-4 shrink-0 text-center text-[11.5px] font-bold text-muted-foreground">{i + 1}</span>
-                <span className="min-w-0 flex-1 truncate text-foreground" title={it.name}>{it.name}</span>
+                <span className="min-w-0 flex-1 truncate text-foreground" title={it.displayName ?? it.name}>{it.displayName ?? it.name}</span>
                 <span className="shrink-0 text-[11.5px] text-muted-foreground">
                   试了 {it.n} 次 · 第二天涨的比例 {it.winCi || `${it.win.toFixed(0)}%`} · 平均 {it.net >= 0 ? "+" : ""}{it.net.toFixed(2)}%
                 </span>
