@@ -23,6 +23,17 @@ type ForecastItem = {
   kind: "combo" | "single"; key: string; name: string; memberIds: number[];
   source: string; reason: string; record: null;
 };
+// P34-2 分档回测推荐：按大盘档位（强/震/弱）给该档历史表现最好的几条。
+// 与上面 items（过闸推荐）是两条独立的线——items 靠社区门槛，正常市况恒空；这条靠历史成绩，任何档位都有。
+type RegimeItem = {
+  id: number; name: string;
+  stat: { n: number; win: number; avg: number; avg5: number };
+  win1: number; n1: number;
+};
+type ForecastRegime = {
+  regime: string | null; asOf: string | null; isReplay: boolean; items: RegimeItem[];
+  method: string; window: string; note: string; error: string;
+};
 type ForecastData = {
   ok: boolean; as_of: string;
   tier: { score: number | null; tier: string; line: string; error: string; components: { name: string; score: number | null; available: boolean; reading: string }[] };
@@ -31,6 +42,7 @@ type ForecastData = {
   items: ForecastItem[];
   marketProb: { state: "accumulating"; n: number; target: number; note: string };
   tierOk: boolean;
+  regime: ForecastRegime;
 };
 
 const OPS = [">=", "<=", ">", "<", "=", "!="];
@@ -160,6 +172,8 @@ export default function ScreenerWorkbench() {
   const [fcData, setFcData] = useState<ForecastData | null>(null);
   const [fcLoading, setFcLoading] = useState(false);
   const [fcErr, setFcErr] = useState("");
+  // P34：历史回放日期（空=今天）。回填到服务端 ?date= 由 regime 判档 + 分档回测排名回放。
+  const [fcDate, setFcDate] = useState("");
   /** 正在「选它」的推荐项 key（防连点） */
   const [fcPicking, setFcPicking] = useState("");
   /** 组合名单（并集）：点了推荐里的「组合」后，rows 被合并名单顶掉，「来自」列标注来源。
@@ -444,11 +458,16 @@ export default function ScreenerWorkbench() {
 
   // 「预测」按钮（P33）：/api/quant/strategy-forecast（档位分 + 策略闸门 + 推荐打包 + 攒样本进度）。
   // 服务端自带 5 分钟 TTL；开策略面板也预取——「默认收起被挡策略」要吃这里的 gates。
-  const loadForecast = useCallback(async () => {
-    if (fcLoading || fcData) return;
+  // date 非空 = 历史回放（看那天该用什么策略）；空 = 今天。两种结果各自缓存，不互相覆盖。
+  const loadForecast = useCallback(async (date?: string | null) => {
+    if (fcLoading) return;
+    if (!date && fcData && !fcData.regime?.isReplay) return;
     setFcLoading(true); setFcErr("");
     try {
-      const r = await fetch("/api/quant/strategy-forecast");
+      const url = date
+        ? `/api/quant/strategy-forecast?date=${encodeURIComponent(date)}`
+        : "/api/quant/strategy-forecast";
+      const r = await fetch(url);
       const j = await r.json();
       if (!j?.ok) throw new Error(j?.error || "预测数据读取失败");
       setFcData(j as ForecastData);
@@ -929,6 +948,28 @@ export default function ScreenerWorkbench() {
               <span className="flex-1 text-[16px] font-semibold">预测 · 今天选什么</span>
               <button onClick={() => setFcOpen(false)} aria-label="关闭" className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
             </div>
+            {/* P34 历史回放：选一个交易日，看那天的大盘档位 + 该档该看什么策略（六分量档位分无法历史重算，只回放分档这一路） */}
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+              <span>回放</span>
+              <input
+                type="date" value={fcDate} onChange={(e) => setFcDate(e.target.value)}
+                className="rounded border border-border bg-background px-1.5 py-0.5 text-[12px] text-foreground"
+              />
+              <button
+                onClick={() => fcDate && void loadForecast(fcDate)}
+                disabled={!fcDate || fcLoading}
+                className="rounded-md border border-emerald-400/40 px-2 py-0.5 text-[12px] text-emerald-200 hover:bg-emerald-400/10 disabled:opacity-40"
+              >
+                看这天
+              </button>
+              <button
+                onClick={() => { setFcDate(""); void loadForecast(null); }}
+                disabled={fcLoading}
+                className="rounded-md border border-border px-2 py-0.5 text-[12px] hover:bg-muted disabled:opacity-40"
+              >
+                回到今天
+              </button>
+            </div>
             {fcErr && <div className="mb-2 rounded-lg border border-red-400/25 bg-red-400/10 px-3 py-2 text-[13px] text-red-300">{fcErr}</div>}
             {fcLoading && !fcData && (
               <div className="flex items-center gap-2 py-6 text-[13px] text-muted-foreground">
@@ -956,6 +997,50 @@ export default function ScreenerWorkbench() {
                     </>
                   )}
                   <div className="mt-2 border-t border-dashed border-border/50 pt-2 text-[12.5px] text-muted-foreground">{fcData.marketProb.note}</div>
+                </div>
+                {/* P34-2 分档回测推荐：按大盘档位给该档历史表现最好的几条（治「非高风险日恒空」） */}
+                <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/5 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[13px] font-semibold text-emerald-200">分档回测推荐</span>
+                    {fcData.regime?.regime && (
+                      <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11.5px] text-emerald-200">
+                        大盘{fcData.regime.regime}期
+                      </span>
+                    )}
+                    {fcData.regime?.asOf && (
+                      <span className="text-[11.5px] text-muted-foreground">档位取自 {fcData.regime.asOf}</span>
+                    )}
+                    {fcData.regime?.isReplay && (
+                      <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-200">历史回放</span>
+                    )}
+                  </div>
+                  {fcData.regime?.error ? (
+                    <div className="mt-1.5 text-[12.5px] text-amber-300">{fcData.regime.error}</div>
+                  ) : (fcData.regime?.items?.length ?? 0) > 0 ? (
+                    <div className="mt-2 space-y-1.5">
+                      {fcData.regime!.items.map((it, idx) => (
+                        <div key={it.id} className="flex items-center gap-2 text-[12.5px]">
+                          <span className="w-4 shrink-0 text-center text-[11.5px] font-bold text-muted-foreground">{idx + 1}</span>
+                          <span className="min-w-0 flex-1 truncate text-foreground" title={it.name}>{it.name}</span>
+                          <span className="shrink-0 text-[11.5px] text-muted-foreground">
+                            该档命中 {it.stat.n} 次 · 次日胜率 {it.stat.win.toFixed(0)}% · 次日均益 {it.stat.avg >= 0 ? "+" : ""}{it.stat.avg.toFixed(2)}%
+                          </span>
+                          <button
+                            onClick={() => void pickAndRun({ kind: "single", key: `regime-${it.id}`, name: it.name, memberIds: [it.id], source: "来源：分档回测榜", reason: `该档命中 ${it.stat.n} 次·胜率 ${it.stat.win.toFixed(0)}%·次日均益 ${it.stat.avg.toFixed(2)}%`, record: null })}
+                            disabled={!!fcPicking}
+                            className="shrink-0 rounded-md bg-emerald-600 px-2 py-0.5 text-[11.5px] font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                          >
+                            {fcPicking === `regime-${it.id}` ? <Loader2 size={11} className="animate-spin" /> : "选它"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-1.5 text-[12.5px] text-muted-foreground">该档位没有够样本门槛的策略（{fcData.regime?.note || "该档≥20 次且全期≥30 次"}）。</div>
+                  )}
+                  <div className="mt-2 border-t border-dashed border-border/50 pt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                    按大盘档位回放历史成绩（{fcData.regime?.window || "全A历史日K"}），是历史统计不是概率预测，不构成投资建议。
+                  </div>
                 </div>
                 {/* 推荐列表：组合在前、单条在后；每条带来源与真实理由 */}
                 {fcData.tierOk && (
