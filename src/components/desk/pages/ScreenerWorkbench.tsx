@@ -101,6 +101,16 @@ const PRESET_CARDS: { title: string; sections: { section: string; chips: ChipPre
   ]},
 ];
 
+/** 新手起步组合：一条按钮就能填好的「看得懂、不踩雷」条件集。
+ *  小白第一眼就知道先选哪几条——都是最基础、最不容易被历史检验打“反着走/没验证”的字段。 */
+const STARTER_CHIPS: ChipPreset[] = [
+  p("站上20日线", "above_ma_20", "=", 1),
+  p("换手率≥3%", "turnover_rate", ">=", 3),
+  p("成交额≥1亿", "amount_yi", ">=", 1),
+  p("量比≥1.5", "volume_ratio", ">=", 1.5),
+  p("RPS50≥70", "rps_50", ">=", 70),
+];
+
 export default function ScreenerWorkbench() {
   const [fields, setFields] = useState<CatalogField[]>([]);
   const [conds, setConds] = useState<Cond[]>([]);
@@ -235,6 +245,14 @@ export default function ScreenerWorkbench() {
   const addPreset = (p: ChipPreset) => {
     const newConds: Cond[] = p.conds.map((c) => ({ field: c.field, zh: p.chip, op: c.op, value: String(c.value) }));
     setConds((cs) => [...cs.filter((x) => x.zh !== p.chip), ...newConds]);
+  };
+  // 新手起步组合：一键把上面那几条「看得懂」的条件填好，省得小白对着上百颗 chip 发懵
+  const applyStarter = () => {
+    const starter: Cond[] = STARTER_CHIPS.flatMap((c) =>
+      c.conds.map((x) => ({ field: x.field, zh: c.chip, op: x.op, value: String(x.value) })),
+    );
+    setConds(starter);
+    setShowGuide(false); // 点起步组合=已经动手了，引导默认收起，少挡视线
   };
 
   const addCond = (f: CatalogField, op?: string, value?: string) => {
@@ -647,7 +665,9 @@ export default function ScreenerWorkbench() {
     <div className="w-full space-y-4 px-3 py-6">
       <div className="text-center apple-slide-up">
         <h1 className="text-[25px] font-semibold tracking-tight">多条件量化模型</h1>
-        <p className="mt-1 text-[13.5px] text-muted-foreground">所示结果仅为模型筛选结果与历史数据分析，不构成任何投资建议。投资有风险，决策需谨慎。</p>
+        <div className="mx-auto mt-2 max-w-3xl rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-4 py-2 text-[12.5px] leading-relaxed text-amber-200/90">
+          ⚠ 本页只做历史数据分析与条件筛选，<span className="font-medium">不替你下单、也不保证赚钱</span>。所有结果仅供参考，买卖决策与盈亏都请你自己负责。
+        </div>
       </div>
 
       {/* 小白上手引导（想赚钱的用户第一眼就能看懂怎么用这台机器）：三步走，说人话，不堆术语。 */}
@@ -777,6 +797,7 @@ export default function ScreenerWorkbench() {
           )) : <span className="text-[12.5px] text-muted-foreground">未添加条件（当前交易日全量候选）</span>}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button onClick={applyStarter} className="rounded-md border border-sky-400/50 bg-sky-400/10 px-3 py-1.5 text-[13px] font-medium text-sky-200 hover:bg-sky-400/20" title="把一组新手也看得懂的基础条件一次填好，省得对着上百颗按钮发懵">一键填起步条件（新手友好）</button>
           <input value={strategyName} onChange={(e) => setStrategyName(e.target.value)} placeholder="策略名称" className="w-40 rounded-md border border-border/70 bg-card px-2 py-1.5 text-[13px] text-foreground [color-scheme:dark]" />
           <button onClick={saveStrategy} disabled={!conds.length} className="rounded-md bg-sky-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-sky-500 disabled:opacity-50">保存策略</button>
           <button onClick={() => { setShowStrategies((v) => !v); void loadForecast(); }} className="rounded-md border border-border/70 bg-card px-3 py-1.5 text-[13px] text-muted-foreground hover:text-foreground">我的策略（{strategies.length}）</button>

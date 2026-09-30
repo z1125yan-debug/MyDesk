@@ -40,7 +40,21 @@ import AgentPage from "./pages/AgentPage";
 import { useDesk } from "@/lib/desk/store";
 import { PAGE_TITLES, type PageKey } from "@/lib/desk/types";
 import { resolveRoute } from "@/lib/desk/nav-core";
+import { useTradeDate, shortDate } from "@/lib/desk/use-trade-date";
 import WorkbenchShell from "./WorkbenchShell";
+
+/** 全局统一的「今天为什么没数据」说明：非交易日才出现，告诉用户各页看到的是最近交易日的收盘口径，
+ *  避免每页各说各话。数据来自行情源真值（useTradeDate），加载中/交易日都不打扰。 */
+function HolidayBanner() {
+  const { today, tradeDate, isTradingToday, loading } = useTradeDate();
+  if (loading || isTradingToday || !today) return null;
+  return (
+    <div className="flex items-center gap-2 border-b border-border/60 bg-amber-500/[0.07] px-4 py-1.5 text-[12.5px] leading-relaxed text-amber-200/90">
+      <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 font-medium">休市日</span>
+      <span>今天（{today}）不交易，所以各页显示的是最近交易日 {shortDate(tradeDate)} 的收盘数据，<span className="font-medium">不是今天实时行情</span>。开盘后会自动更新。</span>
+    </div>
+  );
+}
 
 export default function AppShell() {
   const page = useDesk((s) => s.page);
@@ -130,6 +144,7 @@ export default function AppShell() {
       {!collapsed && <Sidebar />}
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
+        <HolidayBanner />
         <main className="min-h-0 flex-1 overflow-y-auto desk-scroll">
           {/* P7-⑪ 任务1：外面包一层工作台壳（左窄栏列表 + 右详情）。
               下面 25 个分支一个不删——旧 hash 路由全部保留做兼容跳转，右栏渲染的就是原页面组件本身。 */}
