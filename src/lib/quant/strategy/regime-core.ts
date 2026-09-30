@@ -13,16 +13,28 @@ export type Regime = "强势" | "震荡" | "弱势";
 
 export const REGIMES: Regime[] = ["强势", "震荡", "弱势"];
 
+/** 样本外（时间切分的最后一段）成绩。有它的时候，页面主展示这一段 */
+export interface RegimeOosStat {
+  n: number;
+  win: number;
+  /** 扣费后次日净收益 % */
+  net1: number;
+  net5: number | null;
+  winCi: string;
+}
+
 /** 单档回测成绩（历史统计，不是预测） */
 export interface RegimeStat {
   /** 该档命中次数 */
   n: number;
   /** 次日上涨占比 % */
   win: number;
-  /** 次日平均涨跌幅 % */
+  /** 次日平均涨跌幅 %（P36-B 起 = 扣费后净收益：T+1 开盘买、T+2 开盘卖） */
   avg: number;
-  /** 后 5 个交易日平均涨跌幅 % */
+  /** 后 5 个交易日平均涨跌幅 %（同上口径，持有 5 日） */
   avg5: number;
+  /** 样本外成绩（时间切分最后 20%）。老数据没有这个字段 → null */
+  oos?: RegimeOosStat | null;
   /** P1（2026-09-30）：胜率的 Wilson 95% 置信区间文本（如「69% [95%CI 63–74]（N=323）」）。
    *  点估计不许当真值卖——样本小的时候区间会宽，模型/页面转述必须带区间。 */
   winCi: string;
@@ -41,6 +53,16 @@ export interface RegimeRow {
   /** 近 110 根K线窗口 */
   n110: number;
   win110: number;
+  /** P36-B：全期毛收益（不扣费），只用于「扣费前后差多少」的对账，页面不展示 */
+  gross1?: number | null;
+  /** P36-B：该行收益是否已扣费（老数据为 undefined = 裸算，页面必须提示口径不明） */
+  costAdjusted?: boolean;
+  /** P36-B：按命中日的三段切分成绩（train/validation/test） */
+  split?: {
+    train: { n: number; win: number; net1: number; winCi: string } | null;
+    validation: { n: number; win: number; net1: number; winCi: string } | null;
+    test: { n: number; win: number; net1: number; winCi: string } | null;
+  };
   强势: RegimeStat | null;
   震荡: RegimeStat | null;
   弱势: RegimeStat | null;
@@ -118,6 +140,12 @@ export interface RankOptions {
   minTotal?: number;
   /** 最多返回几条 */
   limit?: number;
+  /**
+   * 样本外段最少命中次数（有样本外成绩时按样本外排名，不足则这条不进榜）。默认 50。
+   * 为什么是 50：样本外只占全期 20%，n=50 对应全期约 250 次命中、
+   * Wilson 半宽 ±14%；再低就是把噪音当排序依据了。
+   */
+  minOosHits?: number;
 }
 
 /**
@@ -125,24 +153,66 @@ export interface RankOptions {
  * 只排有该档成绩的、且样本够的（该档≥100、全期≥150）。
  * 理由行所需的真实数字全部随结果带出——页面不许自己再算一遍（刻度只有一处）。
  */
+export interface RankItem {
+  id: number;
+  name: string;
+  stat: RegimeStat;
+  win1: number;
+  n1: number;
+  /** 排名的依据（说人话，页面直接显示，不许自己另拼一套口径文案） */
+  basis: string;
+}
+
+/**
+ * 分档排名。
+ *
+ * P36-B 起排序键换成**样本外净收益**（时间切分最后 20%）：
+ * 全期数字里混着策略当年最风光的那段，拿来排序等于拿样本内挑出来的最好看数字做推荐；
+ * 样本外才是「这条规律在没见过的时间里还成不成立」。
+ * 老数据没有 oos 字段时回退按全期平均排（不至于让页面开天窗），
+ * 但 basis 会如实写「全期」，不冒充样本外。
+ */
 export function regimeRankOf(
   rows: RegimeRow[],
   regime: Regime | null,
   opts: RankOptions = {},
-): { regime: Regime | null; items: { id: number; name: string; stat: RegimeStat; win1: number; n1: number }[] } {
+): { regime: Regime | null; items: RankItem[]; basis: string } {
   const minHits = opts.minHits ?? 100;
   const minTotal = opts.minTotal ?? 150;
+  const minOos = opts.minOosHits ?? 50;
   const limit = opts.limit ?? 5;
-  if (!regime) return { regime: null, items: [] };
+  if (!regime) return { regime: null, items: [], basis: "" };
 
-  const items = rows
+  const candidates = rows
     .map((r) => ({ row: r, st: r[regime] }))
-    .filter((x): x is { row: RegimeRow; st: RegimeStat } => !!x.st && x.st.n >= minHits && x.row.n1 >= minTotal)
-    .sort((a, b) => b.st.avg - a.st.avg)
-    .slice(0, limit)
-    .map((x) => ({ id: x.row.id, name: x.row.name, stat: x.st, win1: x.row.win1, n1: x.row.n1 }));
+    .filter((x): x is { row: RegimeRow; st: RegimeStat } => !!x.st && x.st.n >= minHits && x.row.n1 >= minTotal);
 
-  return { regime, items };
+  const withOos = candidates.filter((x) => x.st.oos && x.st.oos.n >= minOos);
+  const useOos = withOos.length > 0;
+  const pool = useOos ? withOos : candidates;
+  const items = pool
+    .sort((a, b) => (useOos ? (b.st.oos as RegimeOosStat).net1 - (a.st.oos as RegimeOosStat).net1 : b.st.avg - a.st.avg))
+    .slice(0, limit)
+    .map((x) => ({
+      id: x.row.id,
+      name: x.row.name,
+      stat: x.st,
+      win1: x.row.win1,
+      n1: x.row.n1,
+      // 文案说人话（第 0 节硬约束）：界面不许出现「样本外/样本内」这类黑话
+      basis: useOos
+        ? `扣掉手续费后 · 用没参与挑选的那段行情验过 ${(x.st.oos as RegimeOosStat).n} 次`
+        : `扣掉手续费后 · 用同一段历史算的 ${x.st.n} 次（可能只是运气好）`,
+    }));
+
+  return { regime, items, basis: useOos ? "样本外" : "全期" };
+}
+
+/** 单个成绩格的口径标签（页面每个胜率/收益旁都要带） */
+export function basisLabelOf(st: RegimeStat | null | undefined, fallbackBasis = ""): string {
+  if (!st) return "";
+  if (st.oos && st.oos.n > 0) return `扣掉手续费后 · 用没参与挑选的那段行情验过 ${st.oos.n} 次`;
+  return `扣掉手续费后 · 用同一段历史算的 ${st.n} 次（可能只是运气好）`;
 }
 
 /** 百分比/收益数字的展示口径：统一保留 2 位去尾 0，避免各页面各写一份 toFixed */

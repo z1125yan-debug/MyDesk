@@ -195,7 +195,7 @@ async function main() {
     { file: "data/sector-snapshots.json", label: "板块快照 JSON", maxAgeDays: 1, fix: "curl -X POST :3000/api/tasks/run -d '{\"kind\":\"sectorsnap\",\"force\":true}'" },
     { file: "data/sector-daily-snapshots.json", label: "板块日快照 JSON", maxAgeDays: 1, fix: "同上（sectorsnap）" },
     { file: "data/market-trend-cache.json", label: "大盘走势缓存", maxAgeDays: 1, fix: "打开全景看板触发重算" },
-    { file: "data/strategy-regime.json", label: "分档回测排名", maxAgeDays: 30, fix: "node --experimental-strip-types scripts/build-strategy-regime.ts" },
+    { file: "data/strategy-regime.json", label: "分档回测排名", maxAgeDays: 30, fix: "node --experimental-strip-types scripts/backtest-strategy-regime.ts" },
   ];
   for (const c of jsonChecks) {
     const mt = fileMtime(c.file);

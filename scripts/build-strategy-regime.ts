@@ -1,3 +1,9 @@
+// ⚠ 已废弃（2026-09-30，P36-B）：真正的回测生产脚本换成了
+// `scripts/backtest-strategy-regime.ts`（读本地粮仓、扣费、样本外切分，可复跑）。
+// 本脚本只是把一次性产物 data/_probe-strategy-regime.json（被 .gitignore 排除、已不在仓库）
+// 洗成榜单格式，既不能重产出数据，也带着「当日快照值填满历史」的未来函数口径，
+// 保留仅作历史留痕，别再拿它更新 data/strategy-regime.json。
+//
 // P34-1：把一次性回测产物 data/_probe-strategy-regime.json 转为可入库的 data/strategy-regime.json，
 // 并用纯核 regime-core 的三档排名与快照「情绪分类策略选择.txt」交叉验证。
 //

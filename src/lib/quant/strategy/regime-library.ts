@@ -11,7 +11,7 @@
 
 import fs from "fs";
 import path from "path";
-import type { RegimeRow } from "./regime-core.ts";
+import type { RegimeRow, RegimeStat } from "./regime-core.ts";
 import { pctWithCI } from "@/lib/quant/factors/wilson-core";
 
 const FILE = path.join(process.cwd(), "data", "strategy-regime.json");
@@ -19,19 +19,33 @@ const FILE = path.join(process.cwd(), "data", "strategy-regime.json");
 export interface RegimeRankItem {
   id: number;
   name: string;
-  stat: { n: number; win: number; avg: number; avg5: number; winCi?: string };
+  stat: RegimeStat;
   win1: number;
   n1: number;
+  /** 这条是按什么排上来的（「扣费后 · 样本外 N=xxx」），页面直接显示 */
+  basis?: string;
 }
 
 export interface RegimeFile {
   generatedAt: string | null;
   builtAt: string;
   source: string;
-  window: { universe: number; bars: number; note: string };
+  window: { universe: number; bars: number; note: string; from?: string; to?: string };
   regimeMethod: string;
   thresholds: { minHits: number; minTotal: number; note: string };
-  counts: { rows: number; 强势: number; 震荡: number; 弱势: number };
+  /** P36-B：口径说明（成交价/成本/时间切分），页面上每个数字旁都要按它标口径 */
+  basis?: {
+    entry?: string;
+    exit?: string;
+    cost?: string;
+    costAdjusted?: boolean;
+    untradeable?: string;
+    split?: string;
+    caveat?: string;
+  };
+  /** 三档排序的实际依据：「样本外」或「全期」 */
+  rankBasis?: string;
+  counts: { rows: number; 强势: number; 震荡: number; 弱势: number; [k: string]: number };
   rank: { 强势?: RegimeRankItem[]; 震荡?: RegimeRankItem[]; 弱势?: RegimeRankItem[] };
   rows: RegimeRow[];
 }
