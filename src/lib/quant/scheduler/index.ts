@@ -31,6 +31,7 @@ import { archiveLimitUpRoster } from "@/lib/quant/screener/limit-up-collect";
 // P36-C：收盘后把「推荐过的具体票」按 T+1/T+2 真实行情回填，攒战绩证据链（不许手工补）
 import { fillPicks } from "@/lib/quant/strategy/pick-fill-collect";
 import { syncPickSymbols } from "@/lib/quant/strategy/pick-symbol-collect";
+import { ingestDailyBars } from "@/lib/quant/data/daily-bar-collect";
 import { shanghaiDate } from "@/lib/desk/session";
 import {
   DEFAULT_SCHEDULER_CONFIG, SKIP_REASON_TEXT, decideRun, isDueWindow, judgeTradingDay, nextSlot, slotAtForDate,
@@ -41,12 +42,12 @@ export { SKIP_REASON_TEXT, type TaskKind } from "./rules";
 
 const TICK_MS = 60_000;
 const INDEX_SYMBOL = "000001.SH"; // 交易日判据：上证指数日线（与选股器交易日历同源）
-const KINDS: TaskKind[] = ["radar", "events", "breadth", "review", "roster", "sectorsnap", "dailysnap", "picksym", "pickfill"];
+const KINDS: TaskKind[] = ["radar", "events", "breadth", "review", "roster", "sectorsnap", "dailysnap", "dailybars", "picksym", "pickfill"];
 /**
  * 没有「增量游标」概念的任务：幂等落在写库层的唯一键上，不是游标上。
  * R20 加 roster 时一并把这段从三元表达式里抽出来——三个 kind 挤一条三元已经读不动了。
  */
-const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster", "sectorsnap", "dailysnap", "picksym", "pickfill"]);
+const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster", "sectorsnap", "dailysnap", "dailybars", "picksym", "pickfill"]);
 /** 有游标的那两类：写成守卫而不是在调用点 cast —— 以后再加 kind 会在类型层提醒我们分流没更新 */
 const isCursorKind = (k: TaskKind): k is ScanKind => k === "radar" || k === "events";
 const NO_CURSOR_BASIS: Partial<Record<TaskKind, string>> = {
@@ -275,6 +276,7 @@ export async function runTaskTracked(
       : kind === "breadth" ? await archiveBreadthScan()
       : kind === "sectorsnap" ? await archiveSectorSnapshot()
       : kind === "dailysnap" ? await archiveDailySnapshot()
+      : kind === "dailybars" ? await archiveDailyBarsIngest()
       : kind === "picksym" ? await syncPickSymbols()
       : kind === "pickfill" ? await fillPicks()
       : await archiveLimitUpRoster();
@@ -331,6 +333,23 @@ export function scanFailMessage(outcome: TaskOutcome): string {
 }
 
 /** 一次 tick：进入窗口且当日未成功 → 顺序跑 radar、events（同一时刻只放行一个任务，避免打满数据源） */
+/** dailybars 的结果形状跟其他落库任务不一样（它是"每只拉最近几根"而不是"当日快照"），
+ *  这里适配成统一 ArchiveResult，好让 task_run 的写入 / 重试 / 状态展示复用同一条路径。
+ *  失败直接抛：runTask 的 catch 会把它记成 failure，页面如实显示"今天没更新"。 */
+async function archiveDailyBarsIngest(): Promise<ArchiveResult<never>> {
+  const r = await ingestDailyBars();
+  if (r.status === "failed") throw new Error(r.note ?? r.reason ?? "粮仓增量失败");
+  const today = shanghaiDate();
+  const delta: DeltaStats = {
+    scanned: r.scanned, inserted: r.results, updated: 0, unchanged: 0,
+    skippedByCursor: 0, superseded: 0, kept: 0, collapsed: 0,
+  };
+  return {
+    as_of: today, trade_date: today, missing: [], scanned: r.scanned, results: r.results,
+    items: [], unmatched: null, source: r.basis, mode: "incremental", delta,
+  };
+}
+
 export async function tick(now = new Date()): Promise<string> {
   const s = state();
   s.lastTickAt = now.getTime();
