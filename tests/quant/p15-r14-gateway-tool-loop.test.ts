@@ -216,7 +216,11 @@ test("proxy 接线：契约核对仍是三处（流式收口 / 降级补发 / �
   assert.equal(hits.length, 3);
 });
 
-test("chat 路由拒口话术更新：网关对话轮已能经文本环补数，但工具调用环仍需官方兼容模式", () => {
+test("chat 路由拒口话术：工具调用环仍需 OpenAI 兼容通道，且不再绑死豆包网关（P33 交接日口径）", () => {
   const chatSrc = readSrc("src/app/api/ai/chat/route.ts");
-  assert.match(chatSrc, /智能助手页的对话自 R14 起可经工作台文本协议补取/);
+  // 正面钉：仍要说清「不支持工具调用环」+ 出路指向官方兼容通道
+  assert.match(chatSrc, /不支持工具调用环/);
+  assert.match(chatSrc, /function call/);
+  // 反钉：豆包网关已剔除，这条话术不再只针对豆包（防回归）
+  assert.doesNotMatch(chatSrc, /豆包网关/);
 });

@@ -136,10 +136,14 @@ test("降级只在该降的时候降：吐过 delta 不重发、鉴权错不重�
   assert.equal(shouldRetryNonStream("", false), false);
 });
 
-test("网关连不上要说病根：指向启动命令与 .env 出路，不写「稍后再试」", () => {
+test("网关连不上要说病根：指向 .env 三元组与设置页出路，且不再引导豆包网关（P33 交接日口径）", () => {
   const t = gatewayUnreachableText("http://localhost:7861/v1");
-  assert.match(t, /start\.py/);
+  // 说清出路：.env 三元组 + 设置页凭据，用户照着就能自查
   assert.match(t, /LLM_BASE_URL/);
+  assert.match(t, /LLM_API_KEY/);
+  // 反钉：豆包网关已剔除，文案里不许再出现引导（防回归）
+  assert.doesNotMatch(t, /豆包|doubao/i);
+  assert.doesNotMatch(t, /start\.py/);
 });
 
 // ---------- 上游超时钳位（流式 / 非流式一份口径） ----------
