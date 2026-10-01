@@ -252,8 +252,8 @@ export async function tdxDayBars(symbol: string, count: number): Promise<TdxDail
   const tc = toTdxCode(symbol);
   if (!tc) return null;
   // 交易时段当天K线在跳动：缓存60秒；休市时历史K线不变：缓存10分钟
-  const { marketSession } = await import("./session");
-  const ttl = marketSession().open ? 60_000 : 600_000;
+  const { marketSessionHolidayAware } = await import("./session");
+  const ttl = marketSessionHolidayAware().open ? 60_000 : 600_000;
   const hit = dayBarsCache.get(tc);
   if (hit && Date.now() - hit.at < ttl) return hit.bars;
   const result = await rpc<{
@@ -287,8 +287,8 @@ export async function tdxDayBars(symbol: string, count: number): Promise<TdxDail
 let tradeDateCache: { at: number; date: string } | null = null;
 
 export async function tdxLatestTradeDate(): Promise<string | null> {
-  const { marketSession } = await import("./session");
-  const ttl = marketSession().open ? 60_000 : 600_000;
+  const { marketSessionHolidayAware } = await import("./session");
+  const ttl = marketSessionHolidayAware().open ? 60_000 : 600_000;
   if (tradeDateCache && Date.now() - tradeDateCache.at < ttl) return tradeDateCache.date;
   const result = await rpc<{ bars?: { time?: string }[] }>(
     "bars.get", { code: "sh000001", period: "day", count: 3, adjust: "qfq" }, 8000,
@@ -463,8 +463,8 @@ async function mapPool<T, R>(items: readonly T[], limit: number, fn: (item: T) =
  * 交易时段缓存 60 秒，休市后逐笔不再变化 → 缓存 10 分钟（与 tdxDayBars 同一把尺子）。
  */
 export async function tdxMainFlowUniverse(): Promise<{ rows: TdxMainFlowRow[]; asOf: string } | null> {
-  const { marketSession } = await import("./session");
-  const ttl = marketSession().open ? 60_000 : 600_000;
+  const { marketSessionHolidayAware } = await import("./session");
+  const ttl = marketSessionHolidayAware().open ? 60_000 : 600_000;
   if (flowCache && Date.now() - flowCache.at < ttl) return flowCache;
   const rank = await rpc<{ rows?: TdxRankRow[] }>(
     "helpers.stock_realtime_rank", { sort_by: "成交额", count: MAIN_FLOW_UNIVERSE }, 8000,
@@ -504,8 +504,8 @@ let oneCache: { at: number; ttl: number; map: Map<string, MainFlow | null> } | n
 export async function tdxMainFlowFor(symbol: string, amountYuan?: number | null): Promise<MainFlow | null> {
   const full = toTdxCode(symbol);
   if (!full) return null;
-  const { marketSession } = await import("./session");
-  const ttl = marketSession().open ? 60_000 : 600_000;
+  const { marketSessionHolidayAware } = await import("./session");
+  const ttl = marketSessionHolidayAware().open ? 60_000 : 600_000;
   if (oneCache && Date.now() - oneCache.at < oneCache.ttl && oneCache.map.has(symbol)) {
     return oneCache.map.get(symbol) ?? null;
   }
