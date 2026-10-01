@@ -9,7 +9,7 @@
 // pickfill（P36-C）：收盘后把「推荐过的具体票」按 T+1/T+2 真实行情回填，攒战绩证据链
 // dailybars（P36-C）：收盘后先把粮仓更新到当天；它是 picksym/pickfill 的数据前提，
 // 缺了这一段，后两个任务收盘后就是空转（粮仓没当天K线 → 算不出命中的票 → 没东西回填）。
-export type TaskKind = "radar" | "events" | "breadth" | "review" | "roster" | "sectorsnap" | "dailysnap" | "dailybars" | "picksym" | "pickfill";
+export type TaskKind = "radar" | "events" | "breadth" | "review" | "roster" | "sectorsnap" | "dailysnap" | "dailybars" | "picksym" | "pickfill" | "aipick";
 
 export interface SchedulerConfig {
   /** 收盘时刻（北京时间当日分钟数，15:00 = 900） */

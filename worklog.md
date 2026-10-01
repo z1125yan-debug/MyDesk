@@ -3933,3 +3933,9 @@ breadth 之前 11s 是**体检脚本参数没对上页面**（页面用 `?days=3
 - tsc 0；quant 全量 2097 项 2088 pass 0 fail 9 skip（overnight +7 项）。
 - 诚实披露：data/industry-reports.json、data/sector-snapshots.json 为运行态文件未入库；
   本轮查案用 exports/tmp/research-prompt.json 为实抓证据。
+
+### 五、P40 补遗（同一工作线的三处漏网 + 新增 AI优选管线）
+- tdx.ts 全部 TTL 调用点换 holiday-aware；调度器新增 aipick 任务（收盘后自动从当日 layer1 候选
+  收窄 AI优选战绩层，没配通道/没候选据实记空）；新增 api/quant/ai-pick 路由与
+  ai-pick-core / ai-pick-generate 纯核 + p39-ai-pick-core 钉测。
+- 质量门复跑：tsc 0；2097 项 2088 pass 0 fail 9 skip。
