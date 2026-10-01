@@ -13,7 +13,7 @@
 import { getProvider } from "@/lib/quant/data/index";
 import { universeSource } from "@/lib/quant/data/tc-universe";
 import { fetchQuotesReal, type RealQuote } from "@/lib/desk/em";
-import { marketSession } from "@/lib/desk/session";
+import { marketSessionHolidayAware } from "@/lib/desk/session";
 import { latestTradeDate } from "@/lib/desk/trade-date";
 // R20：「高风险」档位的同拍升档判据（纯核，阈值只有一份、写在文件里）
 import { escalateToHighRisk } from "./top-risk-core.ts";
@@ -76,7 +76,7 @@ export async function computeSentiment(): Promise<SentimentResult> {
   const provider = await getProvider("em");
   const now = new Date();
   const tradeDate = await latestTradeDate(now);
-  const session = marketSession(now);
+  const session = marketSessionHolidayAware(now);
   const live = session.phase === "trading";
   const metas: AssetMeta[] = await provider.listUniverse({ kind: "all" }, tradeDate);
   if (!metas.length) throw new Error("全A快照为空（数据源无返回）");

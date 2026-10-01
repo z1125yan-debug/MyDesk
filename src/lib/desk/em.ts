@@ -2,7 +2,9 @@
 // 数据来源：通达信 eltdx 网关（主）→ 腾讯行情（qt.gtimg.cn）→ 东方财富公开接口，
 // 全部由本机直连请求。仅供个人本地参考，行情可能有延迟，不构成投资建议。
 
-import { marketSession } from "./session";
+import fs from "fs";
+import path from "path";
+import { marketSessionHolidayAware, shanghaiDate } from "./session";
 import { tdxQuotes, tdxKlines, tdxNameOf, type TdxQuote } from "./tdx";
 import { parseTcBoardRankList } from "@/lib/quant/data/tc-snapshot-core";
 import { parseSinaFundFlow, sinaFundFlowUrl } from "@/lib/quant/data/sina-flow-core";
@@ -46,21 +48,61 @@ function fetchGbk(url: string, timeoutMs = 5000): Promise<string> {
 // ---------- 简单 TTL 缓存：避免刷新过快触发数据源限流 ----------
 
 const cache = new Map<string, { at: number; data: unknown }>();
-const TTL: Record<string, number> = { search: 300, quote: 15, kline: 20, board: 30, detail: 30, news: 90 };
+// 日K限流系统性缓解（P38 复检 #5）：kline TTL 从 20s 提到 180s——日/周/月 K 历史 bar 是静态的
+// （只有末根在盘内变化），3 分钟滞后对研报/情绪足够；闭市再 ×20 → 1h。磁盘缓存另见 klineDisk*。
+const TTL: Record<string, number> = { search: 300, quote: 15, kline: 180, board: 30, detail: 30, news: 90 };
+
+// 日K 限流系统性缓解（P38 复检 #5）之磁盘复用：腾讯 fqkline 对单 IP 容易限流，而日/周/月 K 历史 bar 当天不变。
+// 内存未命中时先查磁盘：日线按北京时间自然日留盘（当天有效），分钟线按 TTL（180s）兜底重启；
+// 命中即返、根本不碰源。任何 fs 异常都静默忽略，回退到网络。
+const KL_CACHE_DIR = path.join(process.cwd(), "data", "kline-cache");
+function klCacheFile(key: string): string {
+  const safe = String(key).replace(/[^A-Za-z0-9._-]/g, "_");
+  return path.join(KL_CACHE_DIR, `${safe}.json`);
+}
+function klineDiskRead<T>(key: string): T | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(klCacheFile(key), "utf-8")) as { at?: number; day?: string; data?: T };
+    if (key.includes(":mk:")) {
+      if (typeof raw.at !== "number" || Date.now() - raw.at >= 180_000) return null;
+    } else if (raw.day !== shanghaiDate()) {
+      return null; // 日/周/月：跨自然日失效，重抓
+    }
+    return (raw.data ?? null) as T | null;
+  } catch {
+    return null;
+  }
+}
+function klineDiskWrite<T>(key: string, data: T): void {
+  try {
+    fs.mkdirSync(KL_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(klCacheFile(key), JSON.stringify({ at: Date.now(), day: shanghaiDate(), data }), "utf-8");
+  } catch { /* 落盘失败不阻断：下次命中网络即可 */ }
+}
 
 async function cached<T>(kind: string, key: string, fn: () => Promise<T>): Promise<T> {
   const k = `${kind}:${key}`;
-  // 非交易时段上游不会有新数据：行情类缓存延长 20 倍，避免客户端轮询造成无意义请求
-  const closed = !marketSession().open && kind !== "news";
+  // 非交易时段（含法定节假日）上游不会有新数据：行情类缓存延长 20 倍，避免客户端轮询造成无意义请求
+  const closed = !marketSessionHolidayAware().open && kind !== "news";
   const ttl = (TTL[kind] ?? 30) * (closed ? 20 : 1) * 1000;
   const hit = cache.get(k);
   if (hit && Date.now() - hit.at < ttl) return hit.data as T;
+  // 日K 限流缓解：内存未命中时先查磁盘（日线按自然日、分钟线按 TTL），命中即返、不碰源
+  if (kind === "kline") {
+    const disk = klineDiskRead<T>(key);
+    if (disk !== null) {
+      cache.set(k, { at: Date.now(), data: disk });
+      if (cache.size > 800) { const first = cache.keys().next().value; if (first) cache.delete(first); }
+      return disk;
+    }
+  }
   const data = await fn();
   cache.set(k, { at: Date.now(), data });
   if (cache.size > 800) {
     const first = cache.keys().next().value;
     if (first) cache.delete(first);
   }
+  if (kind === "kline") void klineDiskWrite(key, data);
   return data;
 }
 

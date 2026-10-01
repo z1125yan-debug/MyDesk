@@ -3898,3 +3898,38 @@ breadth 之前 11s 是**体检脚本参数没对上页面**（页面用 `?days=3
 - tsc 0；quant 全量 2090 项 2081 pass 0 fail 9 skip。
 - 诚实披露：本轮走查新增台账一条（预测回放测试）+ 产业链研报存档一篇（生成功能实测）+
   data/industry-reports.json、data/trade-date-last-good.json 两个运行态文件变更未入库。
+
+---
+
+## P40 第三轮复检（2026-10-02）收口包
+
+ overnight WIP（服务端节假日闸 + 日K磁盘缓存 + 研报三案 + 战绩两层漏斗 + 条件墙白话title）与本轮体检修复一并入库：
+
+### 一、P0：整站 500（本轮开局事故）
+- 根因：session.ts 新增的 `marketSessionHolidayAware` 动态 import trade-date，把客户端不该碰的
+  trade-date→em 链（含 fs/path）接进了浏览器打包图 → Module not found: fs → 全站白屏。
+- 修：next.config 客户端构建 `resolve.fallback { fs:false, path:false }`——那条链在浏览器永远不会执行，
+  构建能过即可；服务端打包不受影响。
+
+### 二、 overnight WIP 复验（全部通过）
+- 节假日闸服务端版（session.ts）：computeIsTradingDay 用 resolveTradeDate 真值（要求 fromMarketData），
+  算不出保守按工作日；em.ts 缓存 TTL 全部换 holiday-aware 版本。
+- 日K限流缓解：TTL 20s→180s + 日/周/月K按自然日磁盘缓存（data/kline-cache/），实测 160 根秒回。
+- 研报三案闭环：① LlmAnalysisPage 喂「全A成交额锚点 ⑦」（真实 14500.9 亿）+ 红线 4「总量只能引用⑦，
+  不许另编」——1.61 万亿悬案的根因（管线没喂过任何成交额，模型自己编）就此堵死；
+  ② report-tickers-core 重写括号解析（否定括号整片丢弃），昨天的「华为概(虽非A股」误报案例单测通过；
+  ③ 仓位指令为用户拍板允许的功能，非越界，不改。
+- 战绩两层漏斗：策略选股层（稀释平均）与 AI优选层（聚焦子集）分账，AI优选未生成时据实说「未运行」。
+- 条件墙 COND_GLOSS：全部普通按钮有白话悬停解释（抽验 市盈率≤30/换手率≥3%/早晨之星/量比≥1.5 ✓）。
+- 新增钉测 p39-ai-pick-core；p51/p15-r16 两枚钉测同步 holiday-aware 形状。
+
+### 三、跨天检验（P39 修复的第二天）
+- 腾讯日K夜里自愈（160 根，末根 09-30）→ trade-date 今天全程诚实（09-30/非交易日/tencent-kline）；
+  客户端节假日闸第二天持续生效（全站「A股今日休市，自动刷新已暂停」）。
+- 已知边界：memo 只认当天存档——若断流跨天，第二天 tradeDate 会短暂退回日历口径（日期可能说谎、
+  但轮询被闸住不会冒充实时）；em.ts 磁盘缓存把这种断流概率大幅压低，暂不加长 memo 有效期。
+
+### 四、质量门
+- tsc 0；quant 全量 2097 项 2088 pass 0 fail 9 skip（overnight +7 项）。
+- 诚实披露：data/industry-reports.json、data/sector-snapshots.json 为运行态文件未入库；
+  本轮查案用 exports/tmp/research-prompt.json 为实抓证据。

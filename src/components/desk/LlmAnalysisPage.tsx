@@ -902,10 +902,13 @@ function IndustryReportView() {
     } catch { /* 保持当前 */ } finally { setBusy(false); }
   }, []);
 
+  // 全A真实成交额锚点（P38 复检 #1）：仅取用到的字段；amount_known>0 才代表全A快照真读到成交额。
+  type SentimentClient = { ok?: boolean; amount_total_yi?: number; amount_known?: number; as_of?: string };
+
   const generate = useCallback(async () => {
     setBusy(true); setError(""); setDraft(""); setStartedAt(Date.now());
     try {
-      const [rv, tj, shK, szK, cybK] = await Promise.all([
+      const [rv, tj, shK, szK, cybK, sent] = await Promise.all([
         getJson<{ rows: ReviewRow[] }>("/api/market/review-stats?from=" + shDay(10)).catch(() => ({ rows: [] as ReviewRow[] })),
         getJson<{ main?: Record<string, unknown>[] }>("/api/market/themes").catch(() => ({ main: [] })),
         // 快讯不在这个批次里：它要等 review-stats 回来才知道「研报区间是哪三个交易日」（P65）。
@@ -917,6 +920,11 @@ function IndustryReportView() {
         getJson<{ candles?: { date: string; c: number }[] }>(klineUrl("000001.SH")).catch(() => ({ candles: undefined })),
         getJson<{ candles?: { date: string; c: number }[] }>(klineUrl("399001.SZ")).catch(() => ({ candles: undefined })),
         getJson<{ candles?: { date: string; c: number }[] }>(klineUrl("399006.SZ")).catch(() => ({ candles: undefined })),
+        // 全A真实成交额锚点（P38 复检 #1 / 红线「AI不编数」）：研报里「全市场/两市成交额」必须有真实总量可引用，
+        // 否则模型会自己编（实测把 1.45 万亿写成 1.61 万亿）。amount_known>0 才算真读到，否则如实说没读到。
+        getJson<SentimentClient>("/api/market/sentiment").catch(
+          (): SentimentClient => ({ ok: false, amount_total_yi: undefined, amount_known: 0, as_of: undefined }),
+        ),
       ]);
       const rows = (rv.rows ?? []).slice(-3);
       const th = (rv as { themeHeat?: ThemeHeatSeed }).themeHeat ?? null;
@@ -931,6 +939,14 @@ function IndustryReportView() {
       const flowsZh = themeFlowsZh(th?.industries, th?.concepts);
       const rowsZh = reviewRowsZh(rows);
       const verdictZh = localVerdictZh(th);
+      // 全A真实成交额锚点（P38 复检 #1）：模型写研报时最爱自己编「两市成交额 X 万亿」，
+      // 实测 09-30 那份把 1.45 万亿编成 1.61 万亿。这里把全A快照真实合计喂进去当唯一可信总量，
+      // amount_known=0（一家都没带成交额字段）时如实说没读到，绝不编一个总量。
+      const turnoverYi = typeof sent.amount_total_yi === "number" && Number.isFinite(sent.amount_total_yi) ? sent.amount_total_yi : NaN;
+      const turnoverKnown = (sent.amount_known ?? 0) > 0 && Number.isFinite(turnoverYi);
+      const turnoverZh = turnoverKnown
+        ? `⑦ 全A当日成交额锚点（真实，来自 /api/market/sentiment 全A快照合计，数据截至 ${sent.as_of ?? "未知"}）：约 ${turnoverYi.toFixed(0)} 亿元（≈ ${(turnoverYi / 10000).toFixed(2)} 万亿元）。`
+        : `⑦ 全A成交额本次没读到（amount_known=0：全A快照里一家都没带成交额字段，合计 0 不是「今天只成交 0 亿」）。`;
       const indexZh = [
         indexTrendZh("上证指数(000001.SH)", indexTrendFromCandles(shK.candles)),
         indexTrendZh("深证成指(399001.SZ)", indexTrendFromCandles(szK.candles)),
@@ -1033,6 +1049,10 @@ function IndustryReportView() {
   `⑥ ${newsLabel}，已按主线预分组（每条标题后面的日期就是它真实发布的日期）：`,
   newsBlock,
   ...(unmatchedNews ? [unmatchedNews] : []),
+  turnoverZh,
+  turnoverKnown
+    ? "  正文里凡提到「全市场成交额 / 两市成交额 / 全A成交额 / 量能总量」这类**总量**读数，只能引用⑦给的数（约 " + (turnoverYi / 10000).toFixed(2) + " 万亿元），不许另编一个总量；分行业/分板块的成交额没给你，要写就写「数据不足」。"
+    : "  正文里所有「全市场成交额 / 两市成交额」一律写「数据不足」，不许编一个总量数（本次全A快照没读到成交额字段）。",
   "",
   "【硬性纪律】",
   "1. 所有判断必须与上述数据一致，不得编造读数；数据不足的环节明确写「数据不足」，不编造公司或数字。",
@@ -1046,6 +1066,8 @@ function IndustryReportView() {
   "   反面例子：原帖是「快递“反内卷”引发新一轮涨价 多家公司今起安徽区域单票最低上调0.15元」，",
   "   写成「快递单票价格同比+4%」就是编造（涨幅和口径都是换过的）——读者拿标题去搜搜不到，这种引用一次都不许出现。",
   "7. 受益标的只写 A 股上市公司。反面例子：**星际荣耀**、**华为海思**、**长江存储** 都不是 A 股上市公司，一次都不能作为标的出现；",
+  "7b. 全市场/全A成交额只能引用 ⑦ 给的真实总量（本次约 " + (turnoverKnown ? (turnoverYi / 10000).toFixed(2) + " 万亿元" : "未读到") + "），",
+  "   严禁自己编一个总量数（实测曾把 1.45 万亿写成 1.61 万亿，这种一眼假的数字一次都不许出现）；分行业成交额没给就写「数据不足」。",
   "   拿不准公司是否上市，就只写产业链环节名，不写公司名。",
   "   公司名必须用**A 股在册证券简称**，不许拿港/美那边的叫法顶替：「华虹半导体」是港股名，A 股在册叫「华虹宏力」；",
   "   「华润微电子」的 A 股在册简称是「华润微」；「金山云」不是 A 股公司，压根不能出现在受益栏。",

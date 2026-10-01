@@ -168,7 +168,7 @@ test("自算只覆盖当日成交额前 N 只：榜口径必须说清是这个�
   assert.match(tdx, /trades\.today/, "逐笔来自 trades.today，没有第二条数据管道");
   assert.match(tdx, /if \(pages >= MAX_TICK_PAGES\) \{ truncated = true; break; \}/, "翻页上限触发要标截断");
   assert.match(tdx, /flow: null,\s*\};?/, "单只没取到 ⇒ flow 留 null，不补 0");
-  assert.match(tdx, /marketSession\(\)\.open \? 60_000 : 600_000/, "交易时段 60s 缓存、休市 10min：与 tdxDayBars 同一把尺子");
+  assert.match(tdx, /marketSessionHolidayAware\(\)\.open \? 60_000 : 600_000/, "交易时段 60s 缓存、休市 10min：与 tdxDayBars 同一把尺子（节假日闸之后用 holiday-aware 版本）");
 });
 
 test("board 路由递棒顺序：东财优先 → 同花顺（行业/概念）→ 通达信自算（个股）→ 都没有就 null", () => {
