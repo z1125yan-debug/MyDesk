@@ -23,6 +23,13 @@ const TECH_LABELS: Record<string, string> = {
   rps_50: "RPS50(子集)", rps_120: "RPS120(子集)", is_limit_up: "今日涨停", amount_yi: "成交额(亿)",
 };
 
+// 初见屏示例：点一下直接看一只真实票的画像，别让人一进来对着输入框发懵
+const EXAMPLE_SYMBOLS = [
+  { symbol: "600519.SH", name: "贵州茅台" },
+  { symbol: "300750.SZ", name: "宁德时代" },
+  { symbol: "000001.SZ", name: "平安银行" },
+];
+
 export default function ProfilePage() {
   const focusSymbol = useDesk((s) => s.focusSymbol);
   const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
@@ -137,6 +144,27 @@ export default function ProfilePage() {
       </div>
 
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+
+      {/* 初见屏：还没出数据时，先说清楚这套数怎么来的 + 给几个示例，别让人对着输入框发懵 */}
+      {!data && !busy && !error && (
+        <div className="rounded-xl border border-border bg-card p-4 text-[13.5px] leading-relaxed text-muted-foreground">
+          <div className="font-medium text-foreground">这套数怎么来的</div>
+          <ul className="mt-1.5 list-disc space-y-1 pl-5">
+            <li>行情 / 资金 / 五档来自本机真实行情源（通达信优先、腾讯兜底）；拿不到的字段直接标「暂无数据」，不编点位、不画假线。</li>
+            <li>下方「AI 解读」是你的模型按真实数据生成的看法，分【事实 / 模型推断 / 风险】，不给买卖建议。</li>
+            <li>输入代码看某一只的真实画像，或点下面的示例直接试。</li>
+          </ul>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground/80">试试：</span>
+            {EXAMPLE_SYMBOLS.map((s) => (
+              <button key={s.symbol} onClick={() => { setInput(s.symbol); setSymbol(s.symbol); }}
+                className="rounded-full border border-border px-3 py-1 text-[12.5px] text-foreground transition-colors hover:border-sky-400/50 hover:text-sky-300">
+                {s.name} <span className="font-mono text-muted-foreground">{s.symbol}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {data && (
         <LineageCard

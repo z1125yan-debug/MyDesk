@@ -534,9 +534,16 @@ export default function SectorsPage() {
             <table key={kind} className="w-full text-[14px] apple-fade-in">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
-                  {["ID", "名称", "日期", "涨跌幅%", "排名", "排名变化", "上涨家数", "下跌家数", "涨停家数", "资金流向(亿)"].map((h) => (
-                    <th key={h} className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium">{h}</th>
-                  ))}
+                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium">ID</th>
+                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium">名称</th>
+                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium" title="行情所属交易日（接口 trade_date），不是抓取钟点">日期</th>
+                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium">涨跌幅%</th>
+                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium">排名</th>
+                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium" title="较上一交易日的排名变化：无上一交易日板块快照时显「—」，不编 0">排名变化</th>
+                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium" title="板块内上涨家数（MCP get_stock_board_industry_summary 口径）">上涨家数</th>
+                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium" title="板块内下跌家数（MCP get_stock_board_industry_summary 口径）">下跌家数</th>
+                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium" title="板块内涨停家数：本地涨停池 × 本地行业映射（data/industry-map.json）统计">涨停家数</th>
+                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap font-medium" title="榜内主力净额求和（亿）；缺读数显「—」不补 0">资金流向(亿)</th>
                 </tr>
               </thead>
               <tbody>

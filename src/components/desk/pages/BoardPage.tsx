@@ -184,7 +184,9 @@ export default function BoardPage() {
                 ))}
                 {!rows.length && !rowsLoading && (
                   <tr><td colSpan={6} className="px-4 py-8 text-center text-[13.5px] text-muted-foreground">
-                    没取到：{TABS.find((t) => t.key === kind)?.label}榜当前无可用数据源（不显示演示数据）
+                    {kind === "stock"
+                      ? "实时个股资金榜等开盘后自动来（交易日 9:30 起轮询刷新）；现在可以切到「行业 / 概念 / 地域」看最近交易日的板块口径。"
+                      : `「${TABS.find((t) => t.key === kind)?.label}」榜当前无可用数据源（不显示演示数据），可切到其它标签试试。`}
                   </td></tr>
                 )}
                 {rowsLoading && (
