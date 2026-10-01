@@ -203,7 +203,10 @@ test("页面口径：时间戳上屏、自算徽标、没取到的话说清楚�
   assert.match(page, /const quoteStamp = tradeDate && quoteTime \? `\$\{tradeDate\} \$\{quoteTime\}`/, "交易日 + 行情时刻拼成一个戳");
   assert.match(page, /自算/, "主力净额列头挂自算徽标");
   assert.match(page, /MAIN_FLOW_BASIS/, "口径整句原样上屏，不缩成「自算」两个字");
-  assert.match(page, /没取到：\{TABS\.find\(\(t\) => t\.key === kind\)\?\.label\}榜当前无可用数据源（不显示演示数据）/, "空榜说清楚是没取到");
+  // P38 把空榜文案改成了「开盘后自动来 + 引导切 Tab」，但钉意图不变：空榜必须说清没取到、绝不出演示数据；
+  // 页头 sourceLabel 同口径（2026-10-01 体检：行业榜有数时页头不得再挂「没取到」）。
+  assert.match(page, /无可用数据源（不显示演示数据）/, "空榜说清楚是没取到、不出演示数据");
+  assert.match(page, /rows\.length > 0\s*\? kind === "stock"/, "页头出身标注跟着 Tab/数据状态走，有数不说没取到");
   assert.doesNotMatch(page, /"real" \| "demo"|source === "demo"|演示数据（数据源暂不可用）/, "出身枚举里不许再有 demo");
   assert.match(page, /selected\.mainSelfComputed && !selected\.secid/, "自算行只在推不出东财 secid 时才断开明细联动");
   assert.match(page, /当日净额=通达信逐笔自算 · 近 14 日=东财历史（两端不同源，口径不逐分不差）/, "自算行取到真明细时，两端口径分开标出身，不合成一句「真实资金数据」");

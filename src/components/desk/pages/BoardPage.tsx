@@ -87,7 +87,17 @@ export default function BoardPage() {
     return () => { dead = true; };
   }, [selected, poll.tick]);
 
-  const sourceLabel = origin ? ORIGIN_LABEL[origin] : "没取到：当前榜单无可用数据源";
+  // 页头那行「没取到」必须跟着当前 Tab/数据状态走：行业/概念/地域榜有数时再说「没取到」就是睁眼说瞎话
+  // （2026-10-01 体检：行业 Tab 数据齐全，页头却挂「没取到：当前榜单无可用数据源」）。
+  const sourceLabel = origin
+    ? ORIGIN_LABEL[origin]
+    : rows.length > 0
+      ? kind === "stock"
+        ? "当前榜单口径见行内标注"
+        : "同花顺板块资金流榜（本地快照 · 口径见行内标注）"
+      : kind === "stock"
+        ? "实时个股资金榜开盘后自动来"
+        : "没取到：该榜当前无可用数据源";
   const truncatedCount = rows.filter((r) => r.flowSampleTruncated).length;
   // 看板 tab 决定图上文案的单位：实时榜摆的是个股，行业/概念/地域榜摆的是板块，写死一个就是口径错。
   const unit = kind === "stock" ? "个股" : "板块";
@@ -257,8 +267,7 @@ export default function BoardPage() {
             )}
             {!selected && (
               <div className="flex h-full min-h-[220px] items-center justify-center text-center text-[13.5px] text-muted-foreground">
-                点击左侧榜单任意一行
-                <br />查看资金明细联动
+                {rows.length > 0 ? (<>点击左侧榜单任意一行<br />查看资金明细联动</>) : (<>左侧榜单出数后，这里会联动显示该行的资金明细</>)}
               </div>
             )}
           </div>
