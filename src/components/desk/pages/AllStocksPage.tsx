@@ -1,6 +1,6 @@
 "use client";
 // 全A市场列表（需求文档 P0：真实全A快照 + 搜索/排序/分页）
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
 import { fetchAllStocks, type AllStockRow } from "@/lib/desk/quant-api";
@@ -41,6 +41,8 @@ export default function AllStocksPage() {
   const [asOf, setAsOf] = useState("");
   const poll = useLivePoll();
   const pageSize = 50;
+  // 失败自动重试一次：接口偶发抖动时不用用户手动点（只重试一次，避免死循环）
+  const autoRetried = useRef(false);
   // 通达信自算榜按 6 位代码建索引（服务端有 TTL 缓存，与数据看板共用同一份取数）
   const [flowByCode, setFlowByCode] = useState<Map<string, { main: number; truncated: boolean }>>(new Map());
 
@@ -67,7 +69,13 @@ export default function AllStocksPage() {
       setTotal(r.total);
       setTradeDate(r.trade_date);
       setAsOf(new Date().toISOString());
+      autoRetried.current = false;
     } catch (e) {
+      if (!autoRetried.current) {
+        autoRetried.current = true;
+        setTimeout(() => { void load(); }, 1000);
+        return;
+      }
       setError(String((e as Error).message || e));
     } finally {
       setBusy(false);
@@ -109,7 +117,12 @@ export default function AllStocksPage() {
         </div>
       </div>
 
-      {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+      {error && (
+        <div className="flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          <span className="flex-1">{error}</span>
+          <button onClick={() => void load()} className="rounded-md border border-red-400/40 px-2.5 py-1 text-red-200 transition-colors hover:bg-red-400/10">刷新一下</button>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <table className="w-full text-xs">

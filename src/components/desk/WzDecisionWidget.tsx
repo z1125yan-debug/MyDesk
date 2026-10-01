@@ -78,8 +78,9 @@ export default function WzDecisionWidget({ signal }: { signal: WzDecisionPayload
 
   return (
     <div className="mt-2 rounded-xl border border-border/60 bg-overlay/40 p-2.5">
-      <div className="mb-1.5 flex items-center gap-1.5">
+      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
         <span className="font-mono text-[11px] text-muted-foreground/70">决策信号</span>
+        <span className="text-[11px] text-muted-foreground/60">（规则单独抽取，可能与上方 AI 正文结论不一致，仅供参考）</span>
         <div className="flex flex-wrap items-center gap-1.5">
           {tags.map((t, i) => (
             <span key={i} className={"inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[12px] font-medium " + t.tone}>

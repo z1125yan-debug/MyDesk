@@ -49,8 +49,8 @@ function HolidayBanner() {
   const { today, tradeDate, isTradingToday, loading } = useTradeDate();
   if (loading || isTradingToday || !today) return null;
   return (
-    <div className="flex items-center gap-2 border-b border-border/60 bg-amber-500/[0.07] px-4 py-1.5 text-[12.5px] leading-relaxed text-amber-200/90">
-      <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 font-medium">休市日</span>
+    <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-[12.5px] leading-relaxed text-amber-700 dark:text-amber-200/90">
+      <span className="shrink-0 rounded bg-amber-500 px-1.5 py-0.5 font-semibold text-amber-950">休市日</span>
       <span>今天（{today}）不交易，所以各页显示的是最近交易日 {shortDate(tradeDate)} 的收盘数据，<span className="font-medium">不是今天实时行情</span>。开盘后会自动更新。</span>
     </div>
   );

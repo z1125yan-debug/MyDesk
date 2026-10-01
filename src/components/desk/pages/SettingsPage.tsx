@@ -154,6 +154,8 @@ export default function SettingsPage() {
   const providerKeys = Object.keys(PROVIDER_PRESETS) as AiProvider[];
   const configured = aiConfigured(ai);
   const serverLlm = useServerLlm();
+  // 服务端 .env 模型通道可用时，徽章读服务端通道状态，避免和顶栏「AI 就绪」口径打架
+  const channelReady = serverLlm?.available === true;
 
   return (
     <div className="w-full space-y-5 p-5">
@@ -168,8 +170,8 @@ export default function SettingsPage() {
           <div className="flex items-center gap-2 text-[14.5px] font-semibold">
             <PlugZap size={15} className="text-sky-400" /> AI 接口
           </div>
-          <span className={"rounded-full px-2.5 py-1 text-[12px] " + (configured ? "bg-emerald-500/12 text-emerald-300" : "bg-amber-500/12 text-amber-300")}>
-            {configured ? "已配置" : "未配置"}
+          <span className={"rounded-full px-2.5 py-1 text-[12px] " + (channelReady ? "bg-emerald-500/12 text-emerald-300" : configured ? "bg-emerald-500/12 text-emerald-300" : "bg-amber-500/12 text-amber-300")}>
+            {channelReady ? "已就绪（服务端通道）" : configured ? "已配置（本机）" : "未配置"}
           </span>
         </div>
         <div className="border-b border-border px-4 py-2 text-[12.5px] text-muted-foreground">

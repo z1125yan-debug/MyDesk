@@ -731,8 +731,8 @@ export default function ScreenerWorkbench() {
                     const tip = !known
                       ? "字段待本地实现：筛选时会自动剔除"
                       : reverse || unverified
-                        ? (truthDetailOf(tr ?? undefined, p.chip) ?? "点击加入/更新已选条件")
-                        : "点击加入/更新已选条件";
+                        ? (truthDetailOf(tr ?? undefined, p.chip) ?? `点击加入/更新「${p.chip}」`)
+                        : `点击加入/更新「${p.chip}」`;
                     const cls = active
                       ? "border-sky-400/60 bg-sky-400/15 text-sky-200"
                       : !known

@@ -273,29 +273,44 @@ if not defined MYDESK_DOUBAO_GATEWAY (
 
 )
 
-REM === 7. 端口占用检测：多半是本窗口重复双击，服务已在跑 ===
+REM === 7. 端口占用检测 + 白屏自检（防 P0：旧构建 standalone 白屏） ===
+REM    端口被占、且首页取回空白/报错（白屏，多为旧构建 standalone）时自动接管：
+REM    关掉占用进程、改用开发模式重启（改代码即时生效、最稳）。
+REM    健康服务（自检通过）原样打开、不动它——绝不误杀正在正常跑的实例。
 
 netstat -ano | findstr ":%PORT% " | findstr "LISTENING" >nul 2>nul
+if errorlevel 1 goto port_free
 
-if not errorlevel 1 (
+set "WS_PID="
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTENING"') do set "WS_PID=%%a"
+REM 白屏自检：绕开代理直连本机取首页；空响应/非 200 视为白屏
+powershell -NoProfile -Command "try{$r=Invoke-WebRequest -Uri 'http://127.0.0.1:%PORT%/' -NoProxy -UseBasicParsing -TimeoutSec 5; if($r.StatusCode -eq 200 -and $r.Content.Length -gt 200){exit 0}else{exit 2}}catch{exit 3}"
+if "%errorlevel%"=="0" goto svc_ok
 
-  echo.
-
-  echo  [!] 端口 %PORT% 已经有服务在监听，不再重复启动。
-
-  echo      若那就是 MyDesk（多半如此），直接打开 http://localhost:%PORT% 即可；
-
-  echo      若要同时跑第二个实例，用「启动.bat 3011」换个端口。
-
-  echo      若端口被别的程序占了，先结束它或换端口。
-
-  echo.
-
-  pause
-
-  exit /b 0
-
+echo.
+echo  [!] 端口 %PORT% 上的服务白屏自检未通过（页面空白/无法访问，多为旧构建 standalone）。
+if defined WS_PID (
+  echo      正在自动接管：关闭该进程并以开发模式重启（最稳路径）…
+  taskkill /PID %WS_PID% /F >nul 2>nul
+  set "MYDESK_MODE=dev"
+) else (
+  echo      未解析到监听进程，将直接以开发模式启动。
+  set "MYDESK_MODE=dev"
 )
+echo.
+goto after_port_check
+
+:svc_ok
+echo.
+echo  [OK] 端口 %PORT% 已有 MyDesk 正常运行（白屏自检通过），直接打开即可。
+echo       若想换端口跑第二个实例，用「启动.bat 3011」。
+echo.
+start "" http://localhost:%PORT%
+pause
+exit /b 0
+
+:port_free
+:after_port_check
 
 REM === 8. 启动服务 ===
 

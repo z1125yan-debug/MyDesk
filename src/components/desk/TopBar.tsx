@@ -13,7 +13,7 @@ export default function TopBar() {
   const ai = useDesk((s) => s.ai);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
-  const [results, setResults] = useState<{ type: string; label: string; value: string; target: "analysis" }[]>([]);
+  const [results, setResults] = useState<{ type: string; label: string; value: string; target: "profile" | "sectors" | "analysis" }[]>([]);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -23,7 +23,10 @@ export default function TopBar() {
       searchSymbols(kw)
         .then((items: SuggestItem[]) =>
           setResults(items.slice(0, 8).map((it) => ({
-            type: it.type || "品种", label: it.name, value: it.symbol, target: "analysis" as const,
+            // 股票直接落到「个股画像」（消费全局 focusSymbol，自动加载该票真实数据）；板块落到行业页。
+            // 不再跳 LLM分析（分析页作为二级入口，消除图表双入口混乱）。
+            type: it.type || "品种", label: it.name, value: it.symbol,
+            target: it.type === "板块" ? "sectors" : "profile",
           }))))
         .catch(() => setResults([]));
     }, 250);
@@ -31,7 +34,7 @@ export default function TopBar() {
   }, [q]);
 
   const pick = (r: (typeof results)[number]) => {
-    if (r.target === "analysis") setFocus(r.value);
+    if (r.target === "profile") setFocus(r.value);
     go(r.target);
     setQ("");
     setOpen(false);
