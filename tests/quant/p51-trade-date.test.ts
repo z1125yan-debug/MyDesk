@@ -53,10 +53,13 @@ test("trade-date：先问通达信 → 再问腾讯日K → 最后才退日历�
   assert.match(src, /const fromKline = await read\(klineLatestTradeDate\(\)\);/, "第二源排在日历之前");
   // P39（2026-10-01 国庆体检实测）：两条行情源同时断流时，日历兜底把国庆周三判成「交易日 10-01」，
   // 全站休市横幅消失、各页把没开过盘的日子标成交易日。补「最后已知真值」memo：
-  // 今天早些时候行情源确认过的日期，比日历猜可靠一档；memo 排在日历兜底之前、只认当天存档。
-  assert.match(src, /source: "last-good", fromMarketData: true/, "行情源全断时先用今天的最后已知真值");
-  assert.match(src, /if \(memo && memo\.savedAtDay === today\)/, "memo 只认当天存档，隔天作废不跨日滥用");
-  assert.match(src, /return \{ date: prevWeekday\(cutoff\), source: "calendar", fromMarketData: false \};/, "memo 也没有才退周末感知的日历兜底");
+  // 最近行情源确认过的日期，比日历猜可靠一档；memo 排在日历兜底之前。
+  // P40 复检 #1：只认当天存档挡不住长假链（国庆第 2 天就过期、又退回说谎的日历），
+  // 有效期放宽到 10 天——错的方向是「保守显示上一已知交易日」（漏刷），不是冒充实时。
+  assert.match(src, /source: "last-good", fromMarketData: true/, "行情源全断时先用最后已知真值");
+  assert.match(src, /if \(memoUsable\(memo, today, cutoff\)\)/, "memo 走统一的有效期判定（存档天数 + 不越 cutoff）");
+  assert.match(src, /trade-date-memo-core\.ts/, "有效期判定放纯核（node --test 直跑，不拽 fs/@ 别名链）");
+  assert.match(src, /return \{ date: prevWeekday\(cutoff\), source: "calendar", fromMarketData: false \};/, "memo 过期才退周末感知的日历兜底");
   // 2026-09-29 事故后收紧：上界从「今天」改成 cutoff——盘前/未开盘时行情源会返回一根「今天」的
   // 未完成占位 K（价格=昨收/0 成交），它不是已收盘的最新交易日，必须把上界退到昨天再取
   // （否则会把上一交易日收盘数据标成「截至今天」，sentiment 就是这么错的）。
@@ -92,4 +95,24 @@ test("大盘情绪的 trade_date 也用最近交易日（周六不该报成 09-2
   const src = read("src/lib/quant/screener/sentiment.ts");
   assert.match(src, /const tradeDate = await latestTradeDate\(now\);/, "情绪快照的交易日同样由行情源给");
   assert.equal(/const tradeDate = shanghaiDate\(now\);/.test(src), false, "不再拿本机今天当交易日");
+});
+
+// ─── ④ memoUsable：最后已知真值的有效期判定（P40 复检 #1，纯函数直跑） ────────────────
+
+test("memoUsable：当天/长假链内可用，超期与未来存档不可用", async () => {
+  const { memoUsable } = await import("../../src/lib/desk/trade-date-memo-core.ts");
+  const today = "2026-10-08", cutoff = "2026-10-08";
+  // 当天存档 ✓
+  assert.equal(memoUsable({ date: "2026-09-30", savedAtDay: "2026-10-08" }, today, cutoff), true, "当天存档直接可用");
+  // 国庆第 7 天，存档是 9/30（10 天内）✓ —— 长假链正是它要保的场景
+  assert.equal(memoUsable({ date: "2026-09-30", savedAtDay: "2026-10-01" }, today, cutoff), true, "长假链内（7 天）仍可用");
+  // 第 11 天过期 ✗
+  assert.equal(memoUsable({ date: "2026-09-30", savedAtDay: "2026-09-25" }, today, cutoff), false, "超 10 天作废");
+  // 存档日期在未来（时钟漂移）✗
+  assert.equal(memoUsable({ date: "2026-10-09", savedAtDay: "2026-10-08" }, today, "2026-10-08"), false, "memo 日期越过 cutoff 不认");
+  // 存档日也在未来 ✗
+  assert.equal(memoUsable({ date: "2026-09-30", savedAtDay: "2026-10-09" }, today, cutoff), false, "存档日晚于今天不认");
+  // 形状不合法 ✗
+  assert.equal(memoUsable({ date: "20260930", savedAtDay: "2026-10-01" }, today, cutoff), false, "日期形状不对不认");
+  assert.equal(memoUsable(null, today, cutoff), false, "没有 memo 不可用");
 });

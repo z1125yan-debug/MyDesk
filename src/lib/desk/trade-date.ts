@@ -18,8 +18,10 @@
 
 import fs from "fs";
 import path from "path";
-import { marketSession, prevWeekday, shanghaiDate } from "./session";
-import { tdxCalendarTradeDate, tdxLatestTradeDate } from "./tdx";
+// 带 .ts 扩展名：钉测要 node --test 直跑本文件的相关纯核（node ESM 不解析无扩展名相对导入）
+import { marketSession, prevWeekday, shanghaiDate } from "./session.ts";
+import { tdxCalendarTradeDate, tdxLatestTradeDate } from "./tdx.ts";
+import { memoUsable, type TradeDateMemo } from "./trade-date-memo-core.ts";
 
 export type TradeDateSource = "tdx" | "tencent-kline" | "tdx-calendar" | "last-good" | "calendar";
 export interface TradeDateInfo {
@@ -35,12 +37,15 @@ export interface TradeDateInfo {
 // 最后已知真值 memo（2026-10-01 国庆实测事故）：
 // 09:30 起两条行情源同时拿不到（腾讯日K疑似限流吐 0 根）→ 退到日历兜底 → 把国庆周三判成
 // 「交易日 2026-10-01」，全站休市横幅消失、各页把没开过盘的日子标成交易日。
-// 日历只认周末认不出法定节假日，它说谎是结构性的；而「今天早些时候行情源刚确认过的交易日」
-// 是可靠得多的兜底。成功解析时落一份 JSON，探测全挂且 memo 是今天存的就用它，跨重启也有效。
+// 日历只认周末认不出法定节假日，它说谎是结构性的；而「最近行情源确认过的交易日」
+// 是可靠得多的兜底。成功解析时落一份 JSON，探测全挂就先用 memo，跨重启也有效。
+// 有效期（P40 复检 #1）：只认当天存档挡不住长假链——国庆第 2 天 memo 就过期、又退回说谎的日历。
+// 放宽到 10 天：覆盖最长节假日链；代价是「真交易日+行情源断流多日」时会保守地把横幅留在休市、
+// 轮询保持暂停（错的方向是漏刷，不是冒充实时），行情源恢复后 self-correct。
 const LAST_GOOD_FILE = path.join(process.cwd(), "data", "trade-date-last-good.json");
-let lastGood: { date: string; savedAtDay: string } | null | undefined;
+let lastGood: TradeDateMemo | null | undefined;
 
-function readLastGood(): { date: string; savedAtDay: string } | null {
+function readLastGood(): TradeDateMemo | null {
   if (lastGood !== undefined) return lastGood;
   try {
     const raw = JSON.parse(fs.readFileSync(LAST_GOOD_FILE, "utf-8")) as { date?: string; savedAtDay?: string };
@@ -52,6 +57,8 @@ function readLastGood(): { date: string; savedAtDay: string } | null {
   }
   return lastGood;
 }
+
+// memoUsable / LAST_GOOD_MAX_AGE_DAYS 在 ./trade-date-memo-core.ts（纯核零依赖，钉测直跑）
 
 function saveLastGood(date: string, today: string): void {
   if (lastGood && lastGood.date === date && lastGood.savedAtDay === today) return;
@@ -103,11 +110,12 @@ export async function resolveTradeDate(now = new Date()): Promise<TradeDateInfo>
   // 它比 ③ 的「只认周末」强一档：2026-09-25 中秋那种日子，③ 会停在 09-25 并把休市日说成交易日。
   const fromCalendar = await read(tdxCalendarTradeDate(cutoff));
   if (fromCalendar) { saveLastGood(fromCalendar, today); return { date: fromCalendar, source: "tdx-calendar", fromMarketData: true }; }
-  // ③'' 全部行情源失败：今天早些时候若已从行情源确认过交易日，用它——比日历猜可靠一档。
-  // （国庆实测：日历把 10-01 判成交易日，横幅消失、全站日期说谎；memo 挡住这类翻车。）
+  // ③'' 全部行情源失败：最近 N 天内行情源确认过的交易日还在有效期内，就用它——比日历猜可靠一档。
+  // （国庆实测：日历把 10-01 判成交易日，横幅消失、全站日期说谎；memo 挡住这类翻车。
+  //  有效期 10 天覆盖最长节假日链；真交易日+断流多日时会保守显示上一已知交易日，源恢复即自愈。）
   const memo = readLastGood();
-  if (memo && memo.savedAtDay === today) {
-    return { date: memo.date, source: "last-good", fromMarketData: true };
+  if (memoUsable(memo, today, cutoff)) {
+    return { date: memo!.date, source: "last-good", fromMarketData: true };
   }
   return { date: prevWeekday(cutoff), source: "calendar", fromMarketData: false };
 }
