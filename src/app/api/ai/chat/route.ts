@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
-import { marketSession, shanghaiDate } from "@/lib/desk/session";
+import { marketSessionHolidayAware, shanghaiDate } from "@/lib/desk/session";
 // P64 数据时效：行情最新交易日（盘前已按 trade-date.ts 的新口径退到上一交易日）
 import { resolveTradeDate } from "@/lib/desk/trade-date";
 // P64 交易日历：真实年历（含法定节假日），回答「未来哪天开盘/休市」——通达信日历给不出未来
@@ -673,7 +673,7 @@ export async function POST(req: NextRequest) {
   // P64 数据时效：resolveTradeDate 已按新口径在盘前退到上一交易日；session 给「未开盘/交易中/已收盘」标签。
   // 两者都取不到时降级为 null（dataNote 为空），不阻断对话。
   const tradeMeta = await resolveTradeDate().catch(() => null);
-  const sessionMeta = marketSession();
+  const sessionMeta = marketSessionHolidayAware();
   const lastUserEcho = [
     typeof lastUser?.content === "string" && lastUser.content.trim() ? lastUser.content : "",
     modeNote,

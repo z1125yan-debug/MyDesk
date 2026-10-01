@@ -132,6 +132,63 @@ function splitNameTokens(raw: string): string[] {
   return cleaned.split(/[、，,；;]+/).map((s) => s.trim()).filter(Boolean);
 }
 
+// 受益栏「整栏都是例外说明」的正则：模型写「无 / 暂无 / 未明确 / 不明」这类，
+// 是"这一栏没有 A 股标的"的声明，连退化拆分都不做，直接跳过，
+// 绝不许把"无明确标的"这种说明文字当公司名抓出来点名。
+// 注意「明确 / 明显」可能夹在 opener 与「标的」之间（暂无明确标的 / 暂无明显受益标的）。
+const EXCEPTION_ROW_RE =
+  /^\s*(无|没有|暂无|未明确|不明[确显]|暂无明显|暂无明确|无明确|无明显|无直接受益|暂?未?明确|暂?未?明显)\s*((明确|明显|直接)?(标的|受益|公司|主体|直接受益)\s*)*[）)）]?\s*$/;
+
+// 受益栏「名(例外说明)」里，括号内容以否定词开头的（虽非 / 非A股 / 不在册 / 未上市 / 不列入 …），
+// 说明作者已经明确"不把这个当标的"，前面的名只是句子残片 / 自我否定，整片丢，不当标的点名。
+// 关键：只认"括号内容以否定词开头"——「B（C 为港股，不列入）」里括号说的是另一个主体 C，
+// 前面的 B 仍是真标的，不能跟着丢。
+const NEG_START_RE =
+  /^\s*(虽|非\s*A\s*股|不在[册沪深北]|未上市|不列|不予列入|不纳入|不计入|无明确|暂无|不视为|并非|不作为)/;
+
+/**
+ * 受益栏冒号后、没有显式加粗时的退化拆分（对应 extractBeneficiaryNames 的兜底分支）。
+ * 关键修正（2026-09 复检抓出的误报）：绝不能把"括号前的例外碎片"当标的——
+ * 「华为概(虽非A股，不列入)」拆出来"华为概"只是句子残片，整片丢；
+ * 「A、B（C 为港股，不列入）」里 A、B 仍是真标的，C 的说明在括号里，整段忽略。
+ * 处理要点：括号成对扫描、括号内容整体收集，**括号内部的顿号/逗号不当分隔符**
+ * （否则「虽非A股，不列入」会被逗号切散，残片「不列入)」反而被当成标的）；
+ * 某名字紧邻的括号若以否定词开头（虽非/非A股/不列入…），说明作者明确不列为标的，连名一起丢；
+ * 括号是中性注释（龙头/注：…）则只留名、忽略括号。
+ */
+function splitBeneficiaryAfter(after: string): string[] {
+  const s = String(after ?? "");
+  const out: string[] = [];
+  let buf = "";
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch === "（" || ch === "(") {
+      let j = i + 1;
+      let content = "";
+      while (j < s.length && s[j] !== "）" && s[j] !== ")") { content += s[j]; j++; }
+      const neg = NEG_START_RE.test(content.trim());
+      const name = buf.trim();
+      buf = "";
+      if (name && !neg) out.push(name); // 中性括号留名；否定括号连名一起丢
+      i = j < s.length ? j + 1 : j;     // 跳过闭合括号；未闭合则到行尾
+      continue;
+    }
+    if (/[、，,；;]/.test(ch)) {
+      const name = buf.trim();
+      if (name) out.push(name);
+      buf = "";
+      i++;
+      continue;
+    }
+    buf += ch;
+    i++;
+  }
+  const tail = buf.trim();
+  if (tail) out.push(tail);
+  return out;
+}
+
 /**
  * 从研报 markdown 正文里抽「核心受益 / 次级受益 / 受益标的」的公司名。
  * 只认这三类行，正文别处的加粗公司名（如风险提示、结论段）不算标的，避免误伤。
@@ -159,8 +216,11 @@ export function extractBeneficiaryNames(md: string): TickerItem[] {
       names.push(...splitNameTokens(b));
     }
     if (!names.length) {
-      for (const piece of splitNameTokens(after)) {
-        if (!/^(核心受益|次级受益|受益标的)$/.test(piece)) names.push(piece);
+      // 整栏是"无标的/例外说明"时直接跳过，不要把说明文字当公司名抓出来点名。
+      if (!EXCEPTION_ROW_RE.test(after.trim())) {
+        for (const piece of splitBeneficiaryAfter(after)) {
+          if (!/^(核心受益|次级受益|受益标的)$/.test(piece)) names.push(piece);
+        }
       }
     }
     for (const n of names) {

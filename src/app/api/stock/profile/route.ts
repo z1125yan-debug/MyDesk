@@ -11,7 +11,7 @@ import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, symbolToSecid } from "
 // R20 主力净额第三档备胎（通达信当日逐笔自算）
 import { mainNetSelfNote, tdxMainNetOf } from "@/lib/desk/fund-flow";
 import { fetchBoardRowsRescued } from "@/lib/desk/board-rescue";
-import { marketSession, shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
+import { marketSessionHolidayAware, shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import { computeSentiment, evalLimitSnapshot } from "@/lib/quant/screener/sentiment";
 import { buildFieldPanel, lastValues, type BarsLike } from "@/lib/quant/factors/fields";
 import { historicalWinProbability, type WinProbStats } from "@/lib/quant/factors/probability";
@@ -37,7 +37,7 @@ async function profileHandler(symbol: string) {
   }
   const now = new Date();
   const asOf = shanghaiStamp(now);
-  const session = marketSession(now);
+  const session = marketSessionHolidayAware(now);
   const statusLive = session.open ? "LIVE" : "HISTORICAL";
   const missing: string[] = [];
 

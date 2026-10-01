@@ -2,14 +2,14 @@
  * 验证 server-cache 的 SWR 三段式是否真生效：HIT（新鲜秒回）→ STALE（过期秒回旧值+后台刷新）。
  * 判据看响应头 x-cache / x-cache-age，以及实测耗时（关键：过期后也不许让用户等）。
  */
-const BASE = "http://127.0.0.1:3000";
+const BASE_SW = "http://127.0.0.1:3000";
 
 async function hit(path: string, label: string): Promise<void> {
   const t0 = Date.now();
   const ctl = new AbortController();
   const tm = setTimeout(() => ctl.abort(), 90000);
   try {
-    const r = await fetch(BASE + path, { signal: ctl.signal });
+    const r = await fetch(BASE_SW + path, { signal: ctl.signal });
     clearTimeout(tm);
     const ms = Date.now() - t0;
     await r.text();
@@ -28,7 +28,7 @@ async function hit(path: string, label: string): Promise<void> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function main(): Promise<void> {
+async function mainSwr(): Promise<void> {
   // sentiment 走 DEFAULT_TTL_MS=60s
   console.log("--- /api/market/sentiment（TTL 60s）---");
   await hit("/api/market/sentiment", "① 首次（应 MISS/同步算）");
@@ -40,4 +40,4 @@ async function main(): Promise<void> {
   await hit("/api/market/sentiment", "④ 后台刷新完（应 HIT）");
 }
 
-main();
+mainSwr();

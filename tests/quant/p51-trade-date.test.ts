@@ -77,7 +77,7 @@ test("tdxLatestTradeDate：用上证指数日K最后一根当交易日，认不�
   const src = read("src/lib/desk/tdx.ts");
   assert.match(src, /code: "sh000001", period: "day", count: 3/, "上证指数日K——它每个交易日都有K线，是最好的日历真值");
   assert.match(src, /if \(!\/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\/\.test\(last\)\) return tradeDateCache\?\.date \?\? null;/, "认不出形状就回旧值/ null，不猜");
-  assert.match(src, /const ttl = marketSession\(\)\.open \? 60_000 : 600_000;/, "交易时段缓存 60s、休市 600s（跟日K同一把尺子）");
+  assert.match(src, /const ttl = marketSessionHolidayAware\(\)\.open \? 60_000 : 600_000;/, "交易时段缓存 60s、休市 600s（节假日闸之后用 holiday-aware 版本，跟日K同一把尺子）");
 });
 
 // ─── ③ 接线：接口带回交易日、页面上屏 ────────────────────────────────────

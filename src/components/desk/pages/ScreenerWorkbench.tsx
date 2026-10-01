@@ -111,6 +111,105 @@ const STARTER_CHIPS: ChipPreset[] = [
   p("RPS50≥70", "rps_50", ">=", 70),
 ];
 
+/** 条件墙每个字段的白话说明（P38 复检 #3：普通按钮也要有「这是什么」的悬停解释，
+ *  不能只会说"点击加入/更新「X」"）。只覆盖条件墙出现过的字段；没覆盖的回退到字段中文名。 */
+const COND_GLOSS: Record<string, string> = {
+  // 估值与市值
+  pe_ttm: "按最近12个月盈利算的估值倍数，越低通常越便宜（但太低可能是业绩差）",
+  pb: "股价相对每股净资产的倍数，越低越显得'便宜'（银行地产常偏低）",
+  market_cap_yi: "公司整体值多少钱（亿元），越大越偏大盘蓝筹，越小越容易被炒",
+  floatcap_yi: "能在市场上自由买卖的那部分市值（亿元），越小越容易被资金拉起来",
+  // 量能与活跃度
+  turnover_rate: "一天里被买卖的股份占比，越高越活跃、多空分歧越大",
+  volume_ratio: "今天成交量相对近5日均量的倍数，≥1.5 表示明显放量",
+  amount_yi: "一天总共成交多少钱（亿元），越大流动性越好、越不容易买不进卖不出",
+  is_limit_up: "今天已经封死涨停板（涨幅到上限），短线情绪最强的状态之一",
+  double_volume_signal: "今天成交量是近期均量的两倍以上，资金明显介入",
+  amplitude: "一天最高价到最低价的幅度，越大说明当天波动越剧烈",
+  volume_signal: "量价配合发出的短线活跃信号",
+  // 行业强度
+  sector_rps_50: "整个行业相对全市场其他行业的强弱排名（近50日），≥80 算强势行业",
+  sector_rps_120: "整个行业相对全市场其他行业的强弱排名（近120日），≥80 算强势行业",
+  in_sector_rps_50: "个股在自身行业内的相对强弱排名（近50日），越高越领涨",
+  in_sector_rps_120: "个股在自身行业内的相对强弱排名（近120日），越高越领涨",
+  // 趋势与均价
+  above_ma_5: "股价站在近一周均价线之上，视为短线的上行状态",
+  above_ma_10: "股价站在近两周均价线之上，视为偏短线的上行状态",
+  above_ma_20: "股价站在近一月均价线之上，视为中短线的上行状态",
+  above_ma_60: "股价站在近三月均价线之上，视为中线的上行状态",
+  above_ma_90: "股价站在近四个半月均价线之上，视为中长线的上行状态",
+  above_ma_144: "股价站在近七个月均价线之上，视为长线的上行状态",
+  rps_50: "个股相对全市场其他股票的强弱分（0-100），越高越强势",
+  rps_120: "个股相对全市场其他股票的强弱分（0-100，近120日），越高越强势",
+  rps_composite: "个股综合强弱分（0-100），越高越相对全市场强势",
+  ema14_gt_ema26: "短期的平均价线在更长期的平均价线之上（金叉），看作短线上行",
+  // 动量与形态
+  macd_cross: "MACD快慢线刚由下向上交叉，常看作短线转强",
+  kdj_cross: "KDJ指标刚金叉，短线可能转强",
+  rsi_14: "相对强弱指标；≤30 超卖（跌多了易反弹）、≥70 超买（涨多了易回落）",
+  upper_shadow_ratio: "上影线相对实体的长度，越长越像'冲高回落'、抛压重",
+  lower_shadow_ratio: "下影线相对实体的长度，越长越像'探底回升'、有支撑",
+  // 主力资金与成本
+  zsb_dealer: "（庄股模型）主力控盘度，越高说明筹码越集中在主力手里",
+  zsb_accum: "主力在低位悄悄收集筹码的信号",
+  strong_acc_pick: "主力吸筹且价格已转强的高优信号",
+  strong_acc_conds_met: "强势吸筹模型里同时满足的条件数 ≥3，信号更可信",
+  zsb_attack: "主力主动买入攻击的信号",
+  zsb_trigger: "主力模型触发的买入信号",
+  zsb_rsi_v: "主力资金流向的RSI，>50 表示资金在流入",
+  break_cost_20: "股价向上突破近20日的平均持仓成本，短期套牢盘被解放",
+  break_cost_60: "股价向上突破近60日的平均持仓成本，中期套牢盘被解放",
+  zsb_rsi_reduce: "主力资金流向转弱/减仓的警示信号，偏空",
+  // VWAP 与高斯
+  vwap_score: "按成交量加权均价算的趋势评分，越高越偏多",
+  allow_long: "VWAP模型允许做多的状态",
+  vwap_lowpullback: "回踩VWAP（成交量加权均价）获得支撑的低吸点",
+  vwap_break_expand: "放量突破VWAP，趋势可能加速",
+  vwap_accel: "VWAP趋势在加速",
+  vwap_pos: "价格位于VWAP（成交量加权均价）上方（偏多）",
+  entry_signal: "模型给出的入场信号",
+  gauss_trend_up: "（高斯滤波）大趋势向上",
+  gauss_entry: "高斯滤波判断趋势刚启动",
+  gauss_trend_flip_up: "高斯滤波趋势刚由跌转涨",
+  // 信号与形态
+  super_resonance_signal: "多维度信号同时看多的最强共振，胜率相对更高",
+  super_resonance_main: "主力+趋势共振的拉升信号",
+  super_resonance_trend: "主力+趋势共振的起航信号",
+  bidding_reversal_signal: "开盘集合竞价由弱转强的信号，常是当天情绪拐点",
+  // 支撑阻力
+  support_near_60: "价格回到近60日的重要支撑区，可能获得支撑反弹",
+  support_near_144: "价格回到近144日的重要支撑区，可能获得支撑反弹",
+  resistance_breakout_60: "放量突破近60日的压力位，上方空间可能打开",
+  resistance_breakout_144: "放量突破近144日的压力位，上方空间可能打开",
+  // 缠论与形态
+  chan_bottom_fractal: "（缠论）下跌中可能转涨的底分型",
+  chan_top_fractal: "（缠论）上涨中可能转跌的顶分型",
+  chan_third_buy: "（缠论）类三买，趋势延续的买点",
+  chan_third_sell: "（缠论）类三卖，趋势转弱的信号",
+  cz_start: "（缠论）中枢开始",
+  cz_end: "（缠论）中枢结束",
+  cz_break_up: "（缠论）中枢向上突破，趋势可能延续",
+  gann_support_sig_1_1: "（江恩角度线）1:1 比例的支撑信号",
+  gann_support_sig_1_2: "（江恩角度线）1:2 比例的支撑信号",
+  gann_support_sig_2_1: "（江恩角度线）2:1 比例的支撑信号",
+  candle_bullish_engulf: "（K线形态）看涨吞没，反转看涨形态",
+  candle_morning_star: "（K线形态）早晨之星，底部反转看涨形态",
+  // TD 序列
+  td_buy_seq: "（TD序列）买入结构计数到9，可能临近反弹",
+  td13_buy_qualified: "（TD序列）13结构且满足条件的优选买点",
+  td_sell_seq: "（TD序列）卖出结构计数到9，可能临近回落",
+  td13_sell_qualified: "（TD序列）13结构且满足条件的优选卖点",
+};
+
+/** 普通（已知、正向、已过检）条件按钮的白话悬停文案：优先用语义说明，回退到「字段名：筛选X」。 */
+function plainTitleOf(p: ChipPreset, fields: CatalogField[]): string {
+  const f0 = p.conds[0];
+  if (!f0) return `筛选「${p.chip}」`;
+  const zh = fields.find((x) => x.key === f0.field)?.zh ?? f0.field;
+  const gloss = COND_GLOSS[f0.field];
+  return gloss ? `${gloss}（筛选「${p.chip}」）` : `${zh}：筛选「${p.chip}」`;
+}
+
 export default function ScreenerWorkbench() {
   const [fields, setFields] = useState<CatalogField[]>([]);
   const [conds, setConds] = useState<Cond[]>([]);
@@ -732,7 +831,7 @@ export default function ScreenerWorkbench() {
                       ? "字段待本地实现：筛选时会自动剔除"
                       : reverse || unverified
                         ? (truthDetailOf(tr ?? undefined, p.chip) ?? `点击加入/更新「${p.chip}」`)
-                        : `点击加入/更新「${p.chip}」`;
+                        : `${plainTitleOf(p, fields)}；点击加入/更新`;
                     const cls = active
                       ? "border-sky-400/60 bg-sky-400/15 text-sky-200"
                       : !known

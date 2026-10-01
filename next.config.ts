@@ -14,7 +14,17 @@ const nextConfig: NextConfig = {
   // Webpack 模式（--webpack）在 instrumentation 编译阶段默认不解析 Node 内置模块，
   // 需要显式声明 external；turbopack 模式不受影响。
   webpack: (config, ctx) => {
-    if (!ctx.isServer) return config;
+    if (!ctx.isServer) {
+      // 客户端打包允许 fs/path 被解析成空模块（2026-10-02 体检 P0）：
+      // session.ts 里对 trade-date/em 的**服务端专用**动态 import 会形成客户端 chunk 边缘，
+      // 那条链上的 fs/path 只是「要能通过构建」——浏览器里这条链永远不会被执行
+      // （holiday flag 只在服务端路由里算），不 fallback 整站直接 500。
+      config.resolve = {
+        ...(config.resolve ?? {}),
+        fallback: { ...((config.resolve as { fallback?: Record<string, boolean> } | undefined)?.fallback ?? {}), fs: false, path: false },
+      };
+      return config;
+    }
     const builtins = [
       "fs", "path", "os", "http", "https", "net", "tls", "stream", "buffer",
       "events", "url", "util", "crypto", "assert", "child_process", "dns",
