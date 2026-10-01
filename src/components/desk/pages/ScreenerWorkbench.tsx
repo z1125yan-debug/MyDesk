@@ -404,7 +404,12 @@ export default function ScreenerWorkbench() {
 
   // condsOverride：「预测·选它（单条）」用刚选的策略条件立即筛选（不走异步的 conds state）。
   // 任何一次普通筛选都会退出组合名单（comboRes 只是展示层状态）。
+  // 响应时序守卫（2026-10-02 体检实测）：进页自动全量筛选与用户手动筛选并发时，
+  // 先发起的旧响应可能后到并覆盖新结果（实测：新手点起步条件→筛选，上屏的是旧的全量 5371 而不是 114）。
+  // 单调序号：只有「最新一次发起」的响应才允许写状态，旧请求的响应/报错一律作废。
+  const runSeq = useRef(0);
   const runScreener = useCallback(async (gotoPage = 1, condsOverride?: Cond[]) => {
+    const seq = ++runSeq.current;
     setPage(gotoPage);
     setBusy(true); setError(""); setComboRes(null);
     try {
@@ -414,6 +419,7 @@ export default function ScreenerWorkbench() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "筛选失败");
+      if (seq !== runSeq.current) return; // 已有更新的筛选请求：旧响应作废，不上屏
       const list: Record<string, unknown>[] = j.rows ?? j.list ?? [];
       setRows(list);
       setTotal(j.total ?? list.length);
@@ -424,10 +430,11 @@ export default function ScreenerWorkbench() {
       const warns: string[] = Array.isArray(j.warnings) ? j.warnings : [];
       setCacheNote(warns.find((w) => w.startsWith("全市场条件值来自预计算缓存")) ?? "");
     } catch (e) {
+      if (seq !== runSeq.current) return; // 旧请求的报错同样不覆盖新状态
       setError(String((e as Error).message || e));
       setRows(null);
     } finally {
-      setBusy(false);
+      if (seq === runSeq.current) setBusy(false);
     }
   }, [bodyFrom, conds]);
 
