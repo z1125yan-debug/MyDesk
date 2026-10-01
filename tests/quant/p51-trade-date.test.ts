@@ -46,12 +46,17 @@ test("prevWeekday 只认周末、不认法定节假日——这条限制必须�
 test("trade-date：先问通达信 → 再问腾讯日K → 最后才退日历兜底（P63 补第二源）", () => {
   const src = read("src/lib/desk/trade-date.ts");
   assert.match(src, /const fromTdx = await read\(tdxLatestTradeDate\(\)\);/, "第一顺位仍是通达信行情源");
-  assert.match(src, /if \(fromTdx\) return \{ date: fromTdx, source: "tdx", fromMarketData: true \};/, "通达信给了就用它，不拿本地日历覆盖");
+  assert.match(src, /if \(fromTdx\) \{ saveLastGood\(fromTdx, today\); return \{ date: fromTdx, source: "tdx", fromMarketData: true \}; \}/, "通达信给了就用它，不拿本地日历覆盖");
   // P63 新增：2026-09-27 实测网关没起时只走日历兜底，把 09-25（中秋休市）算成了"最近交易日"。
   // 补一条不受网关影响的腾讯日K源，顺序必须排在日历兜底之前。
   assert.match(src, /fetchKlinesReal\("000001\.SH", "日线", 8, "none"\)/, "第二顺位是上证指数日K（腾讯源）");
   assert.match(src, /const fromKline = await read\(klineLatestTradeDate\(\)\);/, "第二源排在日历之前");
-  assert.match(src, /return \{ date: prevWeekday\(cutoff\), source: "calendar", fromMarketData: false \};/, "两源都拿不到才退周末感知的日历兜底");
+  // P39（2026-10-01 国庆体检实测）：两条行情源同时断流时，日历兜底把国庆周三判成「交易日 10-01」，
+  // 全站休市横幅消失、各页把没开过盘的日子标成交易日。补「最后已知真值」memo：
+  // 今天早些时候行情源确认过的日期，比日历猜可靠一档；memo 排在日历兜底之前、只认当天存档。
+  assert.match(src, /source: "last-good", fromMarketData: true/, "行情源全断时先用今天的最后已知真值");
+  assert.match(src, /if \(memo && memo\.savedAtDay === today\)/, "memo 只认当天存档，隔天作废不跨日滥用");
+  assert.match(src, /return \{ date: prevWeekday\(cutoff\), source: "calendar", fromMarketData: false \};/, "memo 也没有才退周末感知的日历兜底");
   // 2026-09-29 事故后收紧：上界从「今天」改成 cutoff——盘前/未开盘时行情源会返回一根「今天」的
   // 未完成占位 K（价格=昨收/0 成交），它不是已收盘的最新交易日，必须把上界退到昨天再取
   // （否则会把上一交易日收盘数据标成「截至今天」，sentiment 就是这么错的）。

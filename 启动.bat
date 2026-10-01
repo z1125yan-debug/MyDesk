@@ -281,17 +281,17 @@ REM    健康服务（自检通过）原样打开、不动它——绝不误杀正在正常跑的实例。
 netstat -ano | findstr ":%PORT% " | findstr "LISTENING" >nul 2>nul
 if errorlevel 1 goto port_free
 
-set "WS_PID="
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTENING"') do set "WS_PID=%%a"
+set "WS_PIDS="
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTENING"') do call :collect_pid %%a
 REM 白屏自检：绕开代理直连本机取首页；空响应/非 200 视为白屏
 powershell -NoProfile -Command "try{$r=Invoke-WebRequest -Uri 'http://127.0.0.1:%PORT%/' -NoProxy -UseBasicParsing -TimeoutSec 5; if($r.StatusCode -eq 200 -and $r.Content.Length -gt 200){exit 0}else{exit 2}}catch{exit 3}"
 if "%errorlevel%"=="0" goto svc_ok
 
 echo.
 echo  [!] 端口 %PORT% 上的服务白屏自检未通过（页面空白/无法访问，多为旧构建 standalone）。
-if defined WS_PID (
-  echo      正在自动接管：关闭该进程并以开发模式重启（最稳路径）…
-  taskkill /PID %WS_PID% /F >nul 2>nul
+if defined WS_PIDS (
+  echo      正在自动接管：关闭端口上全部监听进程并以开发模式重启（最稳路径）…
+  for %%p in (%WS_PIDS%) do taskkill /PID %%p /F >nul 2>nul
   set "MYDESK_MODE=dev"
 ) else (
   echo      未解析到监听进程，将直接以开发模式启动。
@@ -305,6 +305,11 @@ echo.
 echo  [OK] 端口 %PORT% 已有 MyDesk 正常运行（白屏自检通过），直接打开即可。
 echo       若想换端口跑第二个实例，用「启动.bat 3011」。
 echo.
+echo %WS_PIDS%| findstr /C:" " >nul
+if not errorlevel 1 (
+  echo  [!] 警告：端口 %PORT% 上有多个监听进程（%WS_PIDS%），连接会在进程间漂移。
+  echo      建议关闭本窗口后重新双击「启动.bat」，旧实例会被一并清掉。
+)
 start "" http://localhost:%PORT%
 pause
 exit /b 0
@@ -358,3 +363,10 @@ echo  服务已停止。重新双击 启动.bat 即可再次使用。
 
 pause
 
+
+:collect_pid
+if "%~1"=="%WS_PIDS%" goto :eof
+echo %WS_PIDS%| findstr /C:"\<%~1\>" >nul 2>nul
+if not errorlevel 1 goto :eof
+if defined WS_PIDS (set "WS_PIDS=%WS_PIDS% %~1") else set "WS_PIDS=%~1"
+goto :eof

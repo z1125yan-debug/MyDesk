@@ -145,8 +145,10 @@ export default function ProfilePage() {
 
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
 
-      {/* 初见屏：还没出数据时，先说清楚这套数怎么来的 + 给几个示例，别让人对着输入框发懵 */}
-      {!data && !busy && !error && (
+      {/* 初见屏：还没出数据时，先说清楚这套数怎么来的 + 给几个示例，别让人对着输入框发懵。
+          不能带 !busy：本页挂载即对 focusSymbol 自动取数，busy 首帧就是 true，
+          加上它这段引导一辈子显示不出来（P38 上过当，2026-10-01 体检复验钉死）。取数期间=引导+加载并行，数据到位后隐藏。 */}
+      {!data && !error && (
         <div className="rounded-xl border border-border bg-card p-4 text-[13.5px] leading-relaxed text-muted-foreground">
           <div className="font-medium text-foreground">这套数怎么来的</div>
           <ul className="mt-1.5 list-disc space-y-1 pl-5">

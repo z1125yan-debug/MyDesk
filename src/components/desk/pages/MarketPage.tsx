@@ -710,11 +710,11 @@ export default function MarketPage() {
       {/* 当前建议：温度已经算出来了，就下个结论——小白看完数据知道「我该偏防守还是偏进攻」 */}
       {actionHint && (
         <div className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-[13.5px] leading-relaxed ${
-          actionHint.tone === "defense" ? "border-emerald-400/30 bg-emerald-400/[0.06] text-emerald-200/90"
-            : actionHint.tone === "balance" ? "border-sky-400/30 bg-sky-400/[0.06] text-sky-200/90"
-              : "border-amber-400/30 bg-amber-400/[0.06] text-amber-200/90"
+          actionHint.tone === "defense" ? "border-emerald-400/30 bg-emerald-400/[0.06] text-emerald-700 dark:text-emerald-200/90"
+            : actionHint.tone === "balance" ? "border-sky-400/30 bg-sky-400/[0.06] text-sky-700 dark:text-sky-200/90"
+              : "border-amber-400/30 bg-amber-400/[0.06] text-amber-700 dark:text-amber-200/90"
         }`}>
-          <span className="shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-[12px] font-medium">当前建议</span>
+          <span className="shrink-0 rounded-md bg-black/5 px-2 py-0.5 text-[12px] font-medium dark:bg-white/10">当前建议</span>
           <span>{actionHint.text}</span>
         </div>
       )}

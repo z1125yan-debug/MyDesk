@@ -16,10 +16,12 @@
 // 于是把休市日说成"最近交易日"（/api/market/board 当场就吐了 tradeDate=2026-09-25）。
 // 腾讯日K不受网关影响，最后一根就是 09-24，把这类错挡在源头。
 
+import fs from "fs";
+import path from "path";
 import { marketSession, prevWeekday, shanghaiDate } from "./session";
 import { tdxCalendarTradeDate, tdxLatestTradeDate } from "./tdx";
 
-export type TradeDateSource = "tdx" | "tencent-kline" | "tdx-calendar" | "calendar";
+export type TradeDateSource = "tdx" | "tencent-kline" | "tdx-calendar" | "last-good" | "calendar";
 export interface TradeDateInfo {
   date: string;
   source: TradeDateSource;
@@ -30,6 +32,36 @@ export interface TradeDateInfo {
 // 上证指数（000001.SH → 腾讯 sh000001）日K最后一根的日期 = 行情源认的最近交易日。
 // em.ts 里 fetchKlinesReal 的内部顺序是「通达信网关优先 → 腾讯兜底」，这里传 fq=none
 // 直接走腾讯那条（日期与复权口径无关，且网关此刻可能没起，不白等一次超时）。
+// 最后已知真值 memo（2026-10-01 国庆实测事故）：
+// 09:30 起两条行情源同时拿不到（腾讯日K疑似限流吐 0 根）→ 退到日历兜底 → 把国庆周三判成
+// 「交易日 2026-10-01」，全站休市横幅消失、各页把没开过盘的日子标成交易日。
+// 日历只认周末认不出法定节假日，它说谎是结构性的；而「今天早些时候行情源刚确认过的交易日」
+// 是可靠得多的兜底。成功解析时落一份 JSON，探测全挂且 memo 是今天存的就用它，跨重启也有效。
+const LAST_GOOD_FILE = path.join(process.cwd(), "data", "trade-date-last-good.json");
+let lastGood: { date: string; savedAtDay: string } | null | undefined;
+
+function readLastGood(): { date: string; savedAtDay: string } | null {
+  if (lastGood !== undefined) return lastGood;
+  try {
+    const raw = JSON.parse(fs.readFileSync(LAST_GOOD_FILE, "utf-8")) as { date?: string; savedAtDay?: string };
+    lastGood = raw.date && /^\d{4}-\d{2}-\d{2}$/.test(raw.date)
+      ? { date: raw.date, savedAtDay: String(raw.savedAtDay ?? "") }
+      : null;
+  } catch {
+    lastGood = null;
+  }
+  return lastGood;
+}
+
+function saveLastGood(date: string, today: string): void {
+  if (lastGood && lastGood.date === date && lastGood.savedAtDay === today) return;
+  lastGood = { date, savedAtDay: today };
+  try {
+    fs.mkdirSync(path.dirname(LAST_GOOD_FILE), { recursive: true });
+    fs.writeFileSync(LAST_GOOD_FILE, JSON.stringify(lastGood), "utf-8");
+  } catch { /* 落盘失败不影响主路：下次成功解析会再写 */ }
+}
+
 async function klineLatestTradeDate(): Promise<string | null> {
   try {
     const { fetchKlinesReal } = await import("./em");
@@ -64,12 +96,18 @@ export async function resolveTradeDate(now = new Date()): Promise<TradeDateInfo>
     return d && d <= cutoff ? d : null;
   };
   const fromTdx = await read(tdxLatestTradeDate());
-  if (fromTdx) return { date: fromTdx, source: "tdx", fromMarketData: true };
+  if (fromTdx) { saveLastGood(fromTdx, today); return { date: fromTdx, source: "tdx", fromMarketData: true }; }
   const fromKline = await read(klineLatestTradeDate());
-  if (fromKline) return { date: fromKline, source: "tencent-kline", fromMarketData: true };
+  if (fromKline) { saveLastGood(fromKline, today); return { date: fromKline, source: "tencent-kline", fromMarketData: true }; }
   // ③' 两条 K 线都拿不到时，先问通达信自带的交易日历（含法定节假日，见 tdx.ts 的实测注释）。
   // 它比 ③ 的「只认周末」强一档：2026-09-25 中秋那种日子，③ 会停在 09-25 并把休市日说成交易日。
   const fromCalendar = await read(tdxCalendarTradeDate(cutoff));
-  if (fromCalendar) return { date: fromCalendar, source: "tdx-calendar", fromMarketData: true };
+  if (fromCalendar) { saveLastGood(fromCalendar, today); return { date: fromCalendar, source: "tdx-calendar", fromMarketData: true }; }
+  // ③'' 全部行情源失败：今天早些时候若已从行情源确认过交易日，用它——比日历猜可靠一档。
+  // （国庆实测：日历把 10-01 判成交易日，横幅消失、全站日期说谎；memo 挡住这类翻车。）
+  const memo = readLastGood();
+  if (memo && memo.savedAtDay === today) {
+    return { date: memo.date, source: "last-good", fromMarketData: true };
+  }
   return { date: prevWeekday(cutoff), source: "calendar", fromMarketData: false };
 }
