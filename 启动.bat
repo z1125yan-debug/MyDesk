@@ -273,46 +273,37 @@ if not defined MYDESK_DOUBAO_GATEWAY (
 
 )
 
-REM === 7. 端口占用检测 + 白屏自检（防 P0：旧构建 standalone 白屏） ===
-REM    端口被占、且首页取回空白/报错（白屏，多为旧构建 standalone）时自动接管：
-REM    关掉占用进程、改用开发模式重启（改代码即时生效、最稳）。
-REM    健康服务（自检通过）原样打开、不动它——绝不误杀正在正常跑的实例。
+REM === 7. 端口占用接管（P38 复检 #6 / 用户要求）===
+REM    新启动发现端口 %PORT% 已被占用（可能是上一次自己跑的实例、另一个模式、或别的服务），
+REM    按用户设定"直接杀掉占用者再以当前模式重启"，保证同一端口只保留一个 MyDesk 实例，
+REM    不会两个实例抢端口"打架"。只杀"监听该端口的进程"（=占用者本身），不影响别的端口的服务。
+REM    注：这一步会杀掉端口上正在运行的实例（无论它健不健康），符合"重启 dev"的预期；
+REM        想保留现有实例、另起一个，请用「启动.bat 3011」换端口。
 
 netstat -ano | findstr ":%PORT% " | findstr "LISTENING" >nul 2>nul
 if errorlevel 1 goto port_free
 
 set "WS_PIDS="
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTENING"') do call :collect_pid %%a
-REM 白屏自检：绕开代理直连本机取首页；空响应/非 200 视为白屏
-powershell -NoProfile -Command "try{$r=Invoke-WebRequest -Uri 'http://127.0.0.1:%PORT%/' -NoProxy -UseBasicParsing -TimeoutSec 5; if($r.StatusCode -eq 200 -and $r.Content.Length -gt 200){exit 0}else{exit 2}}catch{exit 3}"
-if "%errorlevel%"=="0" goto svc_ok
-
 echo.
-echo  [!] 端口 %PORT% 上的服务白屏自检未通过（页面空白/无法访问，多为旧构建 standalone）。
 if defined WS_PIDS (
-  echo      正在自动接管：关闭端口上全部监听进程并以开发模式重启（最稳路径）…
-  for %%p in (%WS_PIDS%) do taskkill /PID %%p /F >nul 2>nul
-  set "MYDESK_MODE=dev"
+  echo  [i] 端口 %PORT% 已被占用（监听进程 PID：%WS_PIDS%），按设定接管：关闭占用者后重启。
 ) else (
-  echo      未解析到监听进程，将直接以开发模式启动。
-  set "MYDESK_MODE=dev"
+  echo  [i] 端口 %PORT% 被占用但未解析到监听进程，直接重启。
 )
-echo.
-goto after_port_check
-
-:svc_ok
-echo.
-echo  [OK] 端口 %PORT% 已有 MyDesk 正常运行（白屏自检通过），直接打开即可。
-echo       若想换端口跑第二个实例，用「启动.bat 3011」。
-echo.
 echo %WS_PIDS%| findstr /C:" " >nul
 if not errorlevel 1 (
-  echo  [!] 警告：端口 %PORT% 上有多个监听进程（%WS_PIDS%），连接会在进程间漂移。
-  echo      建议关闭本窗口后重新双击「启动.bat」，旧实例会被一并清掉。
+  echo  [!] 警告：端口 %PORT% 上存在多个监听进程（%WS_PIDS%），将一并关闭。
 )
-start "" http://localhost:%PORT%
-pause
-exit /b 0
+REM 只杀监听该端口的进程（占用者本身），不等、不波及别的端口
+if defined WS_PIDS (
+  for %%p in (%WS_PIDS%) do taskkill /PID %%p /F >nul 2>nul
+)
+REM 等端口真正释放（最多 ~5 秒），避免新实例立刻绑定冲突"打架"
+powershell -NoProfile -Command "$p=[int]'%PORT%'; for($i=0;$i-lt 10;$i++){ try{ $c=Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue; if(-not $c){exit 0} }catch{}; Start-Sleep -Milliseconds 500 } exit 1"
+echo       已清理占用进程，继续启动（同一端口只保留这一个实例）。
+echo.
+goto after_port_check
 
 :port_free
 :after_port_check
