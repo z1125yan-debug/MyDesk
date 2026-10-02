@@ -130,15 +130,37 @@ function breadthOption(
   };
 }
 
-/** 涨跌停板分布对比（当日实数；历史逐日正负柱+趋势线等 S2 回填） */
-function limitTodayOption(limitUp: number, limitDown: number): EChartsCoreOption {
+/** 涨跌幅分布（当日实数）：10档直方，替代原来只有「涨停/跌停」两根柱子的简陋对比。
+ * 历史逐日正负柱+趋势线仍由 limitHistoryOption 负责。 */
+function limitTodayOption(sent: SentimentClient | null): EChartsCoreOption {
+  const dist = sent?.pct_distribution ?? [];
+  const data = dist.map((d) => {
+    // 颜色：大跌绿、小跌浅绿、横盘灰、小涨浅红、大涨红
+    // d.to == null 表示 +∞（涨停+桶）
+    let color: string;
+    if (d.to == null || d.to > 10) color = CHART.color.up;
+    else if (d.to > 7) color = "#fb923c";
+    else if (d.to > 3) color = "#fbbf24";
+    else if (d.to > 0) color = "#94a3b8";
+    else if (d.to > -3) color = "#34d399";
+    else if (d.to > -7) color = "#10b981";
+    else color = CHART.color.down;
+    return { value: d.count, itemStyle: { color, borderRadius: [2, 2, 0, 0] } };
+  });
   return {
     animationDuration: CHART.anim.duration,
     animationEasing: CHART.anim.easing,
     grid: { left: 40, right: 16, top: 26, bottom: 28 },
-    tooltip: { ...chartTooltip("item"), valueFormatter: (v: number | null) => (v == null ? "—" : `${v} 家`) },
+    tooltip: {
+      ...chartTooltip("item"),
+      formatter: (p: unknown) => {
+        const params = p as { name: string; value: number };
+        return `${params.name}<br/><b>${params.value} 家</b>`;
+      },
+    },
     xAxis: {
-      type: "category", data: ["涨停", "跌停"],
+      type: "category",
+      data: dist.map((d) => d.label),
       axisLine: { lineStyle: { color: CHART.color.axisLine } },
       axisTick: { show: false },
       axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize },
@@ -149,10 +171,7 @@ function limitTodayOption(limitUp: number, limitDown: number): EChartsCoreOption
       axisLabel: { color: CHART.color.label, fontSize: CHART.labelSize },
     },
     series: [{
-      type: "bar", barWidth: 52, data: [
-        { value: limitUp, itemStyle: { color: CHART.color.up, borderRadius: [3, 3, 0, 0] } },
-        { value: limitDown, itemStyle: { color: CHART.color.down, borderRadius: [3, 3, 0, 0] } },
-      ],
+      type: "bar", barMaxWidth: 38, data,
       label: { show: true, position: "top", color: CHART.color.label, fontSize: CHART.labelSize },
     }],
   };
@@ -793,9 +812,9 @@ export default function MarketPage() {
 
       {/* 涨跌停板分布对比：稳智同款独立一整行 */}
       <div className="apple-fade-in">
-        <ChartCard centerTitle title="涨跌停板分布对比" note={limitRows.length >= 2 ? `近10个交易日（同源切片）· ${limitRows.slice(-10)[0].date} ~ ${limitRows[limitRows.length - 1].date} · ${review?.source ?? ""}` : "当日真实快照 · 历史逐日正负柱与趋势线等数据同步后开放"} right={asOfDay ? <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px] text-muted-foreground">{asOfDay}</span> : undefined}>
-          <EChart ariaLabel="涨跌停板分布对比" height={300} state={limitState}
-            emptyText="市场快照未取到" option={limitRows.length >= 2 ? limitHistoryOption(limitRows) : limitTodayOption(sent?.limit_up ?? 0, sent?.limit_down ?? 0)} />
+        <ChartCard centerTitle title="涨跌幅分布" note={limitRows.length >= 2 ? `近10个交易日（同源切片）· ${limitRows.slice(-10)[0].date} ~ ${limitRows[limitRows.length - 1].date} · ${review?.source ?? ""}` : `当日真实快照 · 全A按涨跌幅分10档（涨停+ / -10~-7 / ... / 跌停+） · 涨停 ${sent?.limit_up ?? "—"} 家 / 跌停 ${sent?.limit_down ?? "—"} 家`} right={asOfDay ? <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px] text-muted-foreground">{asOfDay}</span> : undefined}>
+          <EChart ariaLabel="涨跌幅分布" height={300} state={limitState}
+            emptyText="市场快照未取到" option={limitRows.length >= 2 ? limitHistoryOption(limitRows) : limitTodayOption(sent)} />
         </ChartCard>
       </div>
 

@@ -91,6 +91,8 @@ export interface SentimentClient {
   touched_limit: number; // 触板数（含已封板）
   limit_up_broken: number; // 炸板数
   break_rate: number | null; // 炸板率 %（触板为0时 null）
+  /** 全A涨跌幅分布直方（10档）：跌停+ / -10~-7 / ... / 涨停+ */
+  pct_distribution: { label: string; from: number | null; to: number | null; count: number }[];
   amount_total_yi: number; main_net_sum_yi: number; median_pct: number;
   /**
    * R20：通达信当日逐笔自算的主力净额合计（成交额前 N 只的子集，不是全 A）。
