@@ -41,10 +41,30 @@ async function profileHandler(symbol: string) {
   const statusLive = session.open ? "LIVE" : "HISTORICAL";
   const missing: string[] = [];
 
+  // —— 并行拉取所有互相独立的外部源 ——
+  // 原实现是顺序 await（报价→盘口→逐笔→K线→资金→板块→新闻→概况→风险），
+  // 每个都是一次网络往返，冷路径被叠加到 6~7s；这些源彼此不依赖，并发后冷路径≈最慢单个源（约 2~3s）。
+  // 依赖关系只在「拿到结果后的本地计算/兜底」里发生，下面各自 await 收口（quote 仍走 eltdx→腾讯兜底）。
+  const pTdxQuotes = tdxQuotes([symbol]).catch(() => null);
+  const pDepth = tdxDepth([symbol]).catch(() => null);
+  const pTrades = tdxTradesMoney(symbol).catch(() => null);
+  const tradeDate = shanghaiDate(now);
+  const provider = await getProvider("em");
+  const pUniverse = provider.listUniverse({ kind: "custom", symbols: [symbol] }, tradeDate).catch(() => []);
+  const pBars = fetchBarsHybrid([symbol], tradeDate, 480).catch(() => null);
+  const secid = symbolToSecid(symbol);
+  const pDetail = secid ? fetchDetailReal(secid).catch(() => null) : Promise.resolve(null);
+  const pBoard = fetchBoardRowsRescued("industry", "in", 90).catch(() => ({ rows: null, fromThs: false }));
+  const pNews = fetchNewsReal(8).catch(() => null);
+  const code6 = symbol.split(".")[0];
+  const pStockNews = fetchMcpStockNews(code6, 6).catch(() => null);
+  const pBasic = fetchMcpStockBasic(code6).catch(() => null);
+  const pSentiment = computeSentiment().catch(() => null);
+
   // 1) 实时报价：eltdx → 腾讯
   let quote: { price: number; changePct: number; high: number; low: number; prevClose: number; amountYi: number } | null = null;
   let quoteSource = "";
-  const tq = await tdxQuotes([symbol]).catch(() => null);
+  const tq = await pTdxQuotes;
   if (tq?.get(symbol)) {
     const q = tq.get(symbol)!;
     quote = { price: q.price, changePct: q.changePct, high: q.high, low: q.low, prevClose: q.prevClose, amountYi: q.amountYi };
@@ -60,22 +80,18 @@ async function profileHandler(symbol: string) {
   if (!quote) missing.push("实时报价");
 
   // 2) 五档盘口（仅 eltdx）
-  const depth = (await tdxDepth([symbol]).catch(() => null))?.get(symbol) ?? null;
+  const depth = (await pDepth)?.get(symbol) ?? null;
   if (!depth) missing.push("五档盘口（本机通达信行情网关未开启或不可用）");
 
   // 3) 逐笔主动买卖（仅 eltdx，近2页近似口径）
-  const trades = await tdxTradesMoney(symbol).catch(() => null);
+  const trades = await pTrades;
   if (!trades) missing.push("逐笔主动买卖（本机通达信行情网关未开启或不可用）");
 
   // 4) 日K（腾讯带成交量）→ 技术指标 + 历史条件概率
-  const provider = await getProvider("em");
-  const tradeDate = shanghaiDate(now);
   let bars: BarsLike[] = [];
-  let meta = (await provider.listUniverse({ kind: "custom", symbols: [symbol] }, tradeDate).catch(() => []))[0];
-  try {
-    const barsMap = await fetchBarsHybrid([symbol], tradeDate, 480);
-    bars = (barsMap.get(symbol) ?? []) as BarsLike[];
-  } catch { /* 由技术面缺失兜底 */ }
+  let meta = (await pUniverse)[0];
+  const barsMap = await pBars;
+  if (barsMap) bars = (barsMap.get(symbol) ?? []) as BarsLike[];
   if (bars.length < 60) missing.push("日K历史不足，技术指标与历史统计不可用");
 
   const tech: Record<string, number | null> = {};
@@ -112,8 +128,7 @@ async function profileHandler(symbol: string) {
   // 5) 资金流：东财 14 日主力净额（断源时新浪日度净额备胎，source 三元如实分标）
   //    R20 第三档：前两条源都没通时，用通达信当日逐笔自算一个出来——
   //    自算只有当日一点（没有历史序列），所以 days 只放当日、并挂「自算」出身，不冒充东财序列。
-  const secid = symbolToSecid(symbol);
-  const detail = secid ? await fetchDetailReal(secid).catch(() => null) : null;
+  const detail = await pDetail;
   const selfFlow = detail ? null : await tdxMainNetOf(symbol, meta?.amount ?? null).catch(() => null);
   if (!detail && !selfFlow) missing.push("主力资金流（资金明细、新浪日度净额、通达信逐笔自算三条源都没通）");
 
@@ -123,7 +138,7 @@ async function profileHandler(symbol: string) {
   let sector: { name: string; changePct: number; rank: number; mainYi: number | null; count: number; source: string } | null = null;
   let sectorFromThs = false;
   if (meta?.industry) {
-    const { rows: boards, fromThs } = await fetchBoardRowsRescued("industry", "in", 90).catch(() => ({ rows: null, fromThs: false }));
+    const { rows: boards, fromThs } = await pBoard;
     sectorFromThs = fromThs;
     const row = boards?.find((b) => b.name === meta?.industry);
     if (row && boards) sector = {
@@ -135,22 +150,19 @@ async function profileHandler(symbol: string) {
   if (!sector) missing.push("板块强度（行业未匹配到榜单）");
 
   // 7) 新闻：宏观快讯可得；个股新闻用 MCP（get_news_data）补齐
-  const news = await fetchNewsReal(8).catch(() => null);
+  const news = await pNews;
   if (!news) missing.push("宏观快讯");
-  const code6 = symbol.split(".")[0];
-  const stockNewsRes = await fetchMcpStockNews(code6, 6).catch(() => null);
+  const stockNewsRes = await pStockNews;
   if (!stockNewsRes) missing.push("个股新闻（MCP get_news_data 未返回或上游不可用）");
 
   // 7b) 公司概况：MCP get_stock_basic_info（静态表，稳定可用）
-  const basicRes = await fetchMcpStockBasic(code6).catch(() => null);
+  const basicRes = await pBasic;
   if (!basicRes) missing.push("公司概况（MCP get_stock_basic_info 未返回）");
 
   // 8) 市场风险（共用情绪计算，universe 走缓存，开销小）
   let risk: { level: string; triggers: string[] } | null = null;
-  try {
-    const s = await computeSentiment();
-    risk = { level: s.risk.level, triggers: s.risk.triggers };
-  } catch { /* 风险块缺失可容忍 */ }
+  const s = await pSentiment;
+  if (s) risk = { level: s.risk.level, triggers: s.risk.triggers };
 
   return NextResponse.json({
     ok: true,

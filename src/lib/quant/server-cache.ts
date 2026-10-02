@@ -12,8 +12,16 @@ import type { NextResponse } from "next/server";
 
 interface Entry { at: number; status: number; body: string; ct: string }
 
-const store = new Map<string, Entry>();
-const inflight = new Map<string, Promise<Response>>();
+// 挂到 globalThis：Next dev 模式下模块会因 HMR 被反复重编译，模块级 const 跟着被重置，
+// 导致「暖缓存」瞬间清空——表现为「刚才还快，改两行代码再点就又卡 6 秒」「dev 长跑后偶发 500」。
+// 放进 globalThis 后，缓存随进程存活、跨 HMR 保留，warm 调用稳定命中（实测 x-cache: HIT）。
+// prod 单例本就稳定，这层只是让 dev 体验对齐，组件卸载/重载不会导致缓存丢失。
+const g = globalThis as typeof globalThis & {
+  __deskCacheStore?: Map<string, Entry>;
+  __deskCacheInflight?: Map<string, Promise<Response>>;
+};
+const store = g.__deskCacheStore ?? (g.__deskCacheStore = new Map<string, Entry>());
+const inflight = g.__deskCacheInflight ?? (g.__deskCacheInflight = new Map<string, Promise<Response>>());
 
 /**
  * 过期后仍可「秒回旧值」的宽限窗口（SWR）。

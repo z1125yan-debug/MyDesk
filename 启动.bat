@@ -328,7 +328,7 @@ echo        - 生产模式下若提示 output standalone 相关警告，可忽略，功能正常
 
 echo        - 浏览器将自动打开 http://localhost:%PORT%
 
-echo        - 停止方法：直接关闭本窗口（自动扫描也会随之停止）
+echo        - 停止方法：直接关闭本窗口（自动扫描也会随之停止）；dev 模式崩溃会自动重启，无需手动重开
 
 echo.
 
@@ -338,16 +338,27 @@ echo  [5/5] 服务运行中（请勿关闭本窗口）
 
 echo.
 
-if "%MYDESK_MODE%"=="dev" (
+REM === dev 模式：进程异常退出（含 dev 长跑 HMR 腐化导致的偶发崩溃）自动重启 ===
+REM     正常停止请直接关闭本窗口（整棵进程树一起死，不会触发重启）；连崩 30 次判定为持续编译错误并停止，避免空转。
+if "%MYDESK_MODE%"=="dev" goto dev_start
+call npx next start -p %PORT%
+goto after_server
 
-  call npx next dev -p %PORT% --webpack
-
-) else (
-
-  call npx next start -p %PORT%
-
+:dev_start
+set "DESK_DEV_RETRIES=0"
+:dev_loop
+call npx next dev -p %PORT% --webpack
+set "DESK_DEV_RC=%errorlevel%"
+set /a DESK_DEV_RETRIES+=1
+if %DESK_DEV_RETRIES% GEQ 30 (
+  echo  [!] dev 已连续重启 %DESK_DEV_RETRIES% 次仍退出，疑似持续编译错误；请查看上方报错，修复后重新双击 启动.bat。
+  goto after_server
 )
+echo  [!] dev 进程于 %time% 退出（rc=%DESK_DEV_RC%），5 秒后自动重启（防 dev 长跑 HMR 腐化偶发崩溃）...
+ping -n 6 127.0.0.1 >nul
+goto dev_loop
 
+:after_server
 echo.
 
 echo  服务已停止。重新双击 启动.bat 即可再次使用。
