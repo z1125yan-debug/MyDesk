@@ -32,6 +32,8 @@ export interface SentimentResult {
   touched_limit: number; // 触板数（含已封板）
   limit_up_broken: number; // 炸板数 = 触板 - 封板
   break_rate: number | null; // 炸板率 %；触板为 0 时 null（列入 missing）
+  /** 全A涨跌幅分布（10档直方）：跌停+ / -10~-7 / -7~-5 / -5~-3 / -3~0 / 0~3 / 3~5 / 5~7 / 7~10 / 涨停+ */
+  pct_distribution: { label: string; from: number | null; to: number | null; count: number }[];
   amount_total_yi: number;
   /**
    * 全 A 快照里 **amount 真实有值**的家数（P7-⑦ 为 M-TURNOVER 补的口径登记，与 main_net_known 同理）。
@@ -131,6 +133,15 @@ export async function computeSentiment(): Promise<SentimentResult> {
   const breakRate = touched > 0 ? (broken / touched) * 100 : null;
   pcts.sort((a, b) => a - b);
   const median = pcts.length ? pcts[Math.floor(pcts.length / 2)] : 0;
+  // 涨跌幅分布直方（10档，与行情软件「涨跌分布」口径一致）
+  const distBounds = [-Infinity, -10, -7, -5, -3, 0, 3, 5, 7, 10, Infinity];
+  const distLabels = ["跌停+", "-10~-7", "-7~-5", "-5~-3", "-3~0", "0~3", "3~5", "5~7", "7~10", "涨停+"];
+  const pctDistribution = distLabels.map((label, i) => {
+    const lo = distBounds[i];
+    const hi = distBounds[i + 1];
+    const count = pcts.filter((p) => p > lo && p <= hi).length;
+    return { label, from: lo, to: hi, count };
+  });
   const advRatio = decliners > 0 ? advancers / decliners : advancers > 0 ? 99 : 1;
 
   const triggers: string[] = [];
@@ -180,6 +191,7 @@ export async function computeSentiment(): Promise<SentimentResult> {
     touched_limit: touched,
     limit_up_broken: broken,
     break_rate: breakRate,
+    pct_distribution: pctDistribution,
     amount_total_yi: amountSum / 1e8,
     amount_known: amountKnown,
     main_net_sum_yi: mainNetYi,
