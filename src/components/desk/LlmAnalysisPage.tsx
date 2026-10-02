@@ -255,11 +255,13 @@ function ThemeHotView() {
   }, [activeItem, boardOf, env, active, heatKind]);
   const tier = (activeItem?.h ?? 0) >= 50 ? "core" : (activeItem?.h ?? 0) >= 30 ? "watch" : "avoid";
   const decision = (activeItem?.f ?? 0) > 0 && (activeItem?.h ?? 0) >= 50 ? "buy" : (activeItem?.h ?? 0) < 30 ? "avoid" : "watch";
+  // P65 口径诚实：种子里的 f 是稳智同款「3 日资金」，实时/快照里的 f 是「当日主力净额」；UI 标签跟着 heatKind 走，不混着说。
+  const fundLabel = heatKind === "seed" ? "3日资金" : "当日主力净额";
   const basisText = activeItem
-    ? "主题得分=" + (activeItem.h) + "，3日资金=" + (activeItem.f != null ? activeItem.f.toFixed(2) + "亿" : "—") + "，市场阶段=" + (env?.market_phase ?? "—") + "，置信度=" + (env?.confidence ?? "—") + "。"
+    ? "主题得分=" + (activeItem.h) + "，" + fundLabel + "=" + (activeItem.f != null ? activeItem.f.toFixed(2) + "亿" : "—") + "，市场阶段=" + (env?.market_phase ?? "—") + "，置信度=" + (env?.confidence ?? "—") + "。"
     : "";
   const invalidations = [
-    (activeItem?.f ?? 0) < 0 ? "3日资金净流出(亿元)为负，短期资金流出压力" : null,
+    (activeItem?.f ?? 0) < 0 ? `${fundLabel}净流出(亿元)为负，短期资金流出压力` : null,
     (activeItem?.h ?? 100) < 30 ? "热度低于30，题材接力难度上升" : null,
   ].filter(Boolean) as string[];
 
@@ -288,7 +290,7 @@ function ThemeHotView() {
                   <span className="text-[14px] font-medium">{x.n}</span>
                   <span className="rounded border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[11.5px] text-amber-300">热度 {x.h}</span>
                 </div>
-                <div className="mt-0.5 text-[12px] text-muted-foreground">3日资金 {x.f != null ? `${x.f.toFixed(2)}亿` : "—"}{x.t ? ` · ${x.t}` : ""}</div>
+                <div className="mt-0.5 text-[12px] text-muted-foreground">{fundLabel} {x.f != null ? `${x.f.toFixed(2)}亿` : "—"}{x.t ? ` · ${x.t}` : ""}</div>
               </button>
             ))}
             {!heatList.length && (
@@ -327,7 +329,7 @@ function ThemeHotView() {
             {activeItem?.t != null && <span className="rounded border border-border/60 px-2 py-0.5 text-[11.5px] text-muted-foreground">{activeItem.t}</span>}
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-3">
-            <MiniCard label="3日资金" value={activeItem?.f != null ? `${activeItem.f.toFixed(2)} 亿` : "—"} />
+            <MiniCard label={fundLabel} value={activeItem?.f != null ? `${activeItem.f.toFixed(2)} 亿` : "—"} />
             <MiniCard label="当日涨跌" value={boardOf ? `${num(boardOf.changePct).toFixed(2)}%` : "—"} tone={boardOf ? (num(boardOf.changePct) >= 0 ? "up" : "down") : undefined} />
             <MiniCard label="领涨股" value={boardOf ? String(boardOf.leader ?? "—") : "—"} />
           </div>
