@@ -100,13 +100,11 @@ export async function GET(req: Request) {
 async function getHandler(req: Request) {
   const date = (new URL(req.url).searchParams.get("date") ?? "").trim();
   const today = shanghaiDateStr(new Date());
-  // 新闻窗口（近 3 个交易日）随每一路响应一起给，前端不用自己再算「哪三天」
-  const newsDates = newsWindowDates(date || today);
-  const newsWindow = { dates: newsDates, label: newsWindowLabel(newsDates) };
-
   // 市场环境推理：种子 + 每日沉淀自产行（market_daily_stats）合并。
   // 只读种子的话 09-28/29 会被套上 09-24 的「退潮下跌」——09-29 实际是涨日（用户实测抓到的错）。
+  // 同时把真实交易日序列留下来给新闻窗口用，避免复盘种子停在旧日期导致新闻证据窗口滞后。
   let inference: ReturnType<typeof inferMarketEnv> = null;
+  let dailyDates: string[] = [];
   try {
     const selfRowsAsc = await db.marketDailyStats.findMany({
       where: { tradeDate: { lte: date || today } },
@@ -114,6 +112,7 @@ async function getHandler(req: Request) {
       take: 30, // 取「最近」30 行——升序+take 会拿到最早的 4 月份行，最新日期反而进不来（实测踩过）
     });
     const selfRows = selfRowsAsc.reverse();
+    dailyDates = selfRows.map((m) => m.tradeDate).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d)));
     inference = inferMarketEnv(
       date || today,
       selfRows.map((m) => ({
@@ -127,6 +126,11 @@ async function getHandler(req: Request) {
     // DB 不可用退回纯种子口径（覆盖止于种子末日，至少不编数）
     inference = inferMarketEnv(date || today);
   }
+
+  // 新闻窗口（近 3 个交易日）随每一路响应一起给，前端不用自己再算「哪三天」。
+  // 优先用 market_daily_stats 里的真实交易日序列（能跟上最新快照日），DB 不可用时 fallback 到复盘种子。
+  const newsDates = dailyDates.length >= 3 ? dailyDates.slice(-3) : newsWindowDates(date || today);
+  const newsWindow = { dates: newsDates, label: newsWindowLabel(newsDates) };
   const marketEnv = inference
     ? { as_of_trade_date: inference.as_of_date, label: inference.market_bucket }
     : undefined;
