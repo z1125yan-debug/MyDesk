@@ -50,6 +50,24 @@ const VALID_FIELDS = new Set([
   "breakout_high_20", "breakout_high_60",
 ]);
 
+// P53 体检（说人话）：筛选后展示的「条件 chips」原本直接吐字段名（above_ma_20、main_net_yi…），
+// 小白看不懂。项目第 0 节硬约束是界面不许有黑话，但字段名写在 {} 表达式里、扫描器抓不到这一处。
+// 这里补一份人话映射：chips 显示中文、原始字段名留在 title 里供复核（不影响字段白名单校验）。
+const FIELD_ZH: Record<string, string> = {
+  pe_ttm: "市盈率(TTM)", pb: "市净率", market_cap_yi: "总市值(亿)", floatcap_yi: "流通市值(亿)",
+  change_pct: "涨跌幅%", turnover_rate: "换手率%", volume_ratio: "量比", amplitude: "振幅%",
+  amount_yi: "成交额(亿)", is_limit_up: "涨停", double_volume_signal: "倍量信号", volume_signal: "放量信号",
+  above_ma_5: "站上5日线", above_ma_10: "站上10日线", above_ma_20: "站上20日线", above_ma_60: "站上60日线",
+  above_ma_90: "站上90日线", above_ma_144: "站上144日线", ma_struct: "多头排列", ema14_gt_ema26: "短期均线上穿长期",
+  rps_50: "50日强度分", rps_120: "120日强度分", rps_composite: "综合强度分",
+  macd_cross: "MACD金叉", kdj_cross: "KDJ金叉", kdj_k: "KDJ-K", kdj_d: "KDJ-D", kdj_j: "KDJ-J",
+  rsi_7: "RSI(7)", rsi_14: "RSI(14)", rsi_24: "RSI(24)", upper_shadow_ratio: "上影线比例", lower_shadow_ratio: "下影线比例",
+  main_net_yi: "主力净流入(亿)", above_cost_20: "站上20日成本线", break_cost_20: "突破20日成本线",
+  vwap20_filter: "站上20日成本线(量价)", vwap_pos: "位于成本线上方", vwap20_up3: "成本线上方3%",
+  breakout_high_20: "创20日新高", breakout_high_60: "创60日新高",
+};
+const fieldZh = (f: string) => FIELD_ZH[f] ?? f;
+
 // P12-②：股票池多一种「板块成分」形态——行业/概念页点「去选股」递过来 {kind, boardCode}，
 // 与 screener run.ts 的 UniverseSpec 同形（客户端不另造一套形状，两端口径漂移过一次就够了）。
 type UniSpec = "all_a" | "hs_a" | { kind: "watchlist"; symbols: string[] } | { kind: "industry" | "concept"; boardCode: string };
@@ -273,8 +291,8 @@ export default function AiScanPage() {
         {conds.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {conds.map((c, i) => (
-              <span key={i} className="flex items-center gap-1 rounded-full border border-sky-500/50 bg-sky-500/10 px-2.5 py-0.5 text-[12px] text-sky-300">
-                {c.field} {c.op} {String(c.value)}
+              <span key={i} title={`${c.field} ${c.op} ${String(c.value)}`} className="flex items-center gap-1 rounded-full border border-sky-500/50 bg-sky-500/10 px-2.5 py-0.5 text-[12px] text-sky-300">
+                {fieldZh(c.field)} {c.op} {String(c.value)}
                 <button onClick={() => setConds((cs) => cs.filter((_, k) => k !== i))}>×</button>
               </span>
             ))}
@@ -378,7 +396,7 @@ export default function AiScanPage() {
                     <td className="px-3 py-1.5 text-right"><Win v={h(1)?.win_rate} n={h(1)?.sample_size} /></td>
                     <td className="px-3 py-1.5 text-right"><Win v={h(5)?.win_rate} n={h(5)?.sample_size} /></td>
                     <td className="px-3 py-1.5 text-right"><Win v={h(20)?.win_rate} n={h(20)?.sample_size} /></td>
-                    <td className="px-3 py-1.5 text-[11px] text-muted-foreground">{conds.map((c) => `${c.field}${c.op}${c.value}`).join(" + ") || "—"}{r.win_prob?.sample_ok === false ? " ·样本不足" : ""}</td>
+                    <td className="px-3 py-1.5 text-[11px] text-muted-foreground">{conds.map((c) => `${fieldZh(c.field)}${c.op}${c.value}`).join(" + ") || "—"}{r.win_prob?.sample_ok === false ? " ·样本不足" : ""}</td>
                   </tr>
                 );
               })}
