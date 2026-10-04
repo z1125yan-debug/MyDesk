@@ -150,6 +150,9 @@ export default function RiskPage() {
             <div className="text-[13px] opacity-80">今日情绪</div>
             <div className="mt-1 text-4xl font-bold tracking-wide">{data.risk.level}</div>
             <div className="mt-2 text-sm opacity-90">{conclusionLine(data)}</div>
+            {/* P67 体检 #17：三把尺各量各的，不互译用户会懵——首页「中性」是温度计（0-100 合成分），
+                本页「注意/偏高」是触发器（阈值命中几条），选股工作台预测卡的「强势/震荡/弱势」是档位闸（近几周走势） */}
+            <div className="mt-2 text-[11px] opacity-75">口径：这是触发器档（正常/注意/偏高/高风险）。首页「情绪温度」是 0-100 温度计，预测卡的「强势/震荡/弱势」是档位闸——三把尺各量各的。</div>
           </div>
           {/* 3 个核心数 */}
           <div className="grid grid-cols-3 gap-3">

@@ -560,7 +560,7 @@ function SectorPanoramaView() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-muted-foreground">
         <span>
-          板块全量看板（当日口径 · 共 {data?.all_count ?? "—"} 个板块 · 口径 {data?.filter ?? "—"} · Top {data?.top_n ?? "—"}）
+          板块全量看板（共 {data?.all_count ?? "—"} 个板块 · 口径 {data?.filter ?? "—"} · Top {data?.top_n ?? "—"}）
           {data?.trade_date ? ` · ${data.trade_date}` : ""}
           {data?.updated_at ? ` · 更新 ${fmtAge(data.age_sec)} (${data.updated_at})` : ""}
         </span>
@@ -1435,7 +1435,7 @@ export default function LlmAnalysisPage() {
         {tab === "主题热点" && <ThemeHotView />}
         {tab === "研究池" && (
           <div className="rounded-xl border border-border/60 bg-overlay p-4 text-[13.5px] text-muted-foreground">
-            研究池 = 量化候选池（冻结时点真实结果）× AI 优选记录。请先在「量化选股」工作台创建候选池/保存策略，这里随后接入池数据（P1-1 联动）。
+            研究池 = 量化候选池（冻结时点真实结果）× AI 优选记录。请先在「量化选股」工作台创建候选池/保存策略，这里随后接入池数据。
           </div>
         )}
         {tab === "板块全景看板" && <SectorPanoramaView />}

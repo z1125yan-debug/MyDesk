@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // P67 体检：仓库根在 D:\Zai\kairotrend-p1，但 node_modules 向上有 D:\Zai 的 package-lock.json，
+  // Next 自动探测会把 workspace 根定到上层目录并每次启动警告「ignored package-lock.json」——显式钉住。
+  outputFileTracingRoot: __dirname,
   /* config options here */
   typescript: {
     ignoreBuildErrors: true,

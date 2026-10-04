@@ -15,7 +15,8 @@ export async function GET(request: Request) {
   if (symbol) {
     const result = await fetchQuotesSdk([symbol]);
     if (result.size === 0) {
-      return NextResponse.json({ ok: false, error: "stock-sdk 未返回该股票快照" });
+      // P67 体检 #13：失败必须带 4xx/5xx——旧码 200 包 ok:false，按 res.ok 判定的调用方会把上游故障当成功
+      return NextResponse.json({ ok: false, error: "stock-sdk 未返回该股票快照" }, { status: 502 });
     }
     return NextResponse.json({
       ok: true,
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
   const marketArg = valid.includes(market as typeof valid[number]) ? market as typeof valid[number] : undefined;
   const result = await fetchQuotesSdkAll({ market: marketArg, concurrency: 7, batchSize: 500 });
   if (result.count === 0) {
-    return NextResponse.json({ ok: false, error: "stock-sdk batch.cn 未返回数据（上游故障）", source: result.source });
+    return NextResponse.json({ ok: false, error: "stock-sdk batch.cn 未返回数据（上游故障）", source: result.source }, { status: 502 });
   }
   return NextResponse.json({
     ok: true,

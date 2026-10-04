@@ -9,6 +9,7 @@ import CandleChart from "../CandleChart";
 import EChart from "../charts/EChart";
 import { LineageCard, LineageSection, StatCard } from "../ui/LineageCard";
 import { useDesk } from "@/lib/desk/store";
+import { useLatestGuard } from "@/hooks/use-latest-guard";
 import { searchSymbols, fetchQuoteCards, fetchCandlesFor, type SuggestItem, type MacdSeries } from "@/lib/desk/market";
 import type { Candle, QuoteCard } from "@/lib/desk/types";
 
@@ -79,8 +80,11 @@ export default function QuotesPage() {
   };
 
   // 取数：报价 + K线(含MACD) + 五档盘口（symbol / 周期 / 复权 变化都重取）
+  // P67 体检 #3：快速切股票/周期/复权时旧响应后到会盖掉新参数的图——只认最新一次请求
+  const guard = useLatestGuard();
   const load = useCallback(async () => {
     if (!symbol) return;
+    const t = guard.token();
     setBusy(true); setError("");
     try {
       const [qc, cc, dr] = await Promise.all([
@@ -88,16 +92,18 @@ export default function QuotesPage() {
         fetchCandlesFor(symbol, tf, autype),
         fetch(`/api/market/depth?symbol=${encodeURIComponent(symbol)}`).then((r) => r.json()).catch(() => ({ depth: null })),
       ]);
+      if (!guard.alive(t)) return;
       setQuote(qc.cards[0] ?? null);
       setCandles(cc.candles);
       setMacd(cc.macd ?? null);
       setDepth((dr?.depth as Depth | null) ?? null);
       if (!cc.candles?.length) setError("该周期未取到K线数据（数据源无返回）");
     } catch (e) {
+      if (!guard.alive(t)) return;
       setError(String((e as Error).message || e));
       setCandles(null);
-    } finally { setBusy(false); }
-  }, [symbol, tf, autype]);
+    } finally { if (guard.alive(t)) setBusy(false); }
+  }, [symbol, tf, autype, guard]);
 
   useEffect(() => { void load(); }, [load]);
 

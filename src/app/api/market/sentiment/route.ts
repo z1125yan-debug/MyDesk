@@ -44,8 +44,8 @@ export async function GET() {
 async function getHandler() {
   quantBootstrap();
   try {
-    const data = await computeSentiment();
-    const tdx = await marketMainNetTdx();
+    // P67 体检 #7：情绪快照与通达信主力净额两路互不依赖，并行取（旧码串行白等一段）
+    const [data, tdx] = await Promise.all([computeSentiment(), marketMainNetTdx()]);
     const extra: Record<string, unknown> = {};
     // 压力分这一整块是「加在情绪数据上的第三只眼」，取不到就只发情绪数据（页面按 undefined 显示「没读到」）
     try {

@@ -32,7 +32,8 @@ export interface SentimentResult {
   touched_limit: number; // 触板数（含已封板）
   limit_up_broken: number; // 炸板数 = 触板 - 封板
   break_rate: number | null; // 炸板率 %；触板为 0 时 null（列入 missing）
-  /** 全A涨跌幅分布（10档直方）：跌停+ / -10~-7 / -7~-5 / -5~-3 / -3~0 / 0~3 / 3~5 / 5~7 / 7~10 / 涨停+ */
+  /** 全A涨跌幅分布（10档直方）：≤-10% / -10~-7 / -7~-5 / -5~-3 / -3~0 / 0~3 / 3~5 / 5~7 / 7~10 / ≥10%。
+   * P67 体检 #2：首末桶按数值语义命名——20cm 股 ±10~20% 的普通涨跌也会落进这两桶，标「涨停/跌停」是说谎。 */
   pct_distribution: { label: string; from: number | null; to: number | null; count: number }[];
   amount_total_yi: number;
   /**
@@ -49,7 +50,7 @@ export interface SentimentResult {
    */
   main_net_known: number;
   median_pct: number;
-  indices: { symbol: string; name: string; price: number; changePct: number }[];
+  indices: { symbol: string; name: string; price: number; changePct: number | undefined }[];
   risk: {
     level: "正常" | "注意" | "偏高" | "高风险";
     triggers: string[];
@@ -63,16 +64,17 @@ export interface SentimentResult {
   source: { provider: string; universe_endpoint: string; indices_endpoint: string };
 }
 
-function limitUpPct(symbol: string): number {
-  if (symbol.endsWith(".BJ")) return 29.8;
-  if (/^(688|689)\./.test(symbol) || /^30\d{4}\./.test(symbol)) return 19.8;
-  return 9.8;
+/** P67 体检 #8：涨跌幅口径的涨/跌停阈值改吃 fields.limitRatio 同一份分板规则——
+ * 主板 ST 5% 有名有姓地计入，不再被 9.8 一刀切漏掉；注册制板块（含ST）20%、北交所 30%。
+ * 容差 0.2pp 吃涨停价四舍五入（与旧 9.8/19.8/29.8 同档）。 */
+function limitPctOf(m: { symbol: string; name: string }): number {
+  return limitRatio(m.symbol, m.name) * 100 - 0.2;
 }
 
 /** 涨停比例 / 快照口径涨停判定：纯逻辑已上移至 fields.ts（node:test 可直跑），此处转导保持既有引用不变 */
 export { limitRatio, evalLimitSnapshot } from "../factors/fields.ts";
 export type { LimitEval } from "../factors/fields.ts";
-import { evalLimitSnapshot } from "../factors/fields.ts";
+import { evalLimitSnapshot, limitRatio } from "../factors/fields.ts";
 
 export async function computeSentiment(): Promise<SentimentResult> {
   const provider = await getProvider("em");
@@ -111,19 +113,22 @@ export async function computeSentiment(): Promise<SentimentResult> {
     else if (pct < 0) decliners++;
     else flat++;
     const ev = evalLimitSnapshot(m);
-    if (ev) {
+    if (/^[NC]/.test(m.name)) {
+      // 新股（N=首日、C=上市2~5日）无涨跌幅限制：涨停/触板/跌停判定整体不参与。
+      // P67 体检 #8：旧码只在涨停侧豁免，跌停侧照数——新股跌 10% 会被计成「跌停」。
+    } else if (ev) {
       if (ev.touched) touched++;
       if (ev.sealed) limitUp++;
       if (ev.touched && !ev.sealed) broken++;
-    } else if (/^[NC]/.test(m.name)) {
-      // 新股（无涨跌幅限制期/首日）：完全不参与涨停判定
+      if (pct <= -limitPctOf(m)) limitDown++;
     } else {
       limitUnknown++;
-      // 快照缺 high/prevClose 时退回涨跌幅口径，只判封板不判触板
-      const lim = limitUpPct(m.symbol);
+      // 快照缺 high/prevClose 时退回涨跌幅口径，只判封板不判触板；
+      // 阈值与 fields.limitRatio 同一份分板规则（主板ST 4.8 / 9.8 / 19.8 / 29.8）
+      const lim = limitPctOf(m);
       if (pct >= lim) limitUp++;
+      if (pct <= -lim) limitDown++;
     }
-    if (pct <= -limitUpPct(m.symbol)) limitDown++;
     amountSum += m.amount ?? 0;
     mainNetSum += m.mainNet ?? 0;
     // 家数登记：上面那行 `?? 0` 让「字段缺失」和「净额正好 0」长得一样，下游需要一个能区分的口径
@@ -133,9 +138,9 @@ export async function computeSentiment(): Promise<SentimentResult> {
   const breakRate = touched > 0 ? (broken / touched) * 100 : null;
   pcts.sort((a, b) => a - b);
   const median = pcts.length ? pcts[Math.floor(pcts.length / 2)] : 0;
-  // 涨跌幅分布直方（10档，与行情软件「涨跌分布」口径一致）
+  // 涨跌幅分布直方（10档，与行情软件「涨跌分布」口径一致；首末桶是数值语义 ≥10%/≤-10%，不冒充涨跌停）
   const distBounds = [-Infinity, -10, -7, -5, -3, 0, 3, 5, 7, 10, Infinity];
-  const distLabels = ["跌停+", "-10~-7", "-7~-5", "-5~-3", "-3~0", "0~3", "3~5", "5~7", "7~10", "涨停+"];
+  const distLabels = ["≤-10%", "-10~-7", "-7~-5", "-5~-3", "-3~0", "0~3", "3~5", "5~7", "7~10", "≥10%"];
   const pctDistribution = distLabels.map((label, i) => {
     const lo = distBounds[i];
     const hi = distBounds[i + 1];

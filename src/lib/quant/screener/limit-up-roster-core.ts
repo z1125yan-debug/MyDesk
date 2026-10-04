@@ -21,6 +21,7 @@
 // 数据源与阈值是自己的。
 
 import { suffixOf } from "../../desk/intent-core.ts";
+import { limitRatio } from "../factors/fields.ts";
 
 /** 名单里的一行（一票一日）。null 一律表示「没读到」，不是 0。 */
 export interface RosterRow {
@@ -263,7 +264,10 @@ export function moneyEffect(prev: RosterRow[], todayPct: Map<string, number | nu
     const v = todayPct.get(r.symbol);
     if (typeof v !== "number" || !Number.isFinite(v)) continue;
     vals.push(v);
-    if (r.boards !== null && v >= 9.8 && v > 0) again++; // 粗略「又涨停」由调用方给准数时以调用方为准
+    // P67 体检 #8：「又涨停」按分板阈值判（fields.limitRatio 同一份规则），不再 9.8 一刀切——
+    // 20cm 股 +10%~+20% 未封板会被误计、主板 ST +5% 封板会被漏计。容差 0.2pp 吃四舍五入。
+    const ratio = limitRatio(r.symbol, r.name) * 100 - 0.2;
+    if (r.boards !== null && v >= ratio && v > 0) again++;
   }
   const coverage = vals.length / rows.length;
   const sorted = [...vals].sort((a, b) => a - b);

@@ -949,6 +949,7 @@ export interface KPanel {
 
 export interface MetaLike {
   symbol: string;
+  name?: string; // P67 #8:is_limit_up 分板要靠名字识别 ST（有就传,没有退回不分板）
   pe?: number; pb?: number; marketCap?: number; floatCap?: number;
   turnover?: number; amount?: number; changePct?: number; volumeRatio?: number;
   amplitude?: number; mainNet?: number; // mainNet: 元
@@ -966,8 +967,9 @@ export interface BarsLike {
   date: string; o: number; h: number; l: number; c: number; v: number; amount?: number;
 }
 
-const limitUpPctOf = (symbol: string): number =>
-  symbol.endsWith(".BJ") ? 29.85 : /^(688|689)\./.test(symbol) || /^30\d{4}\.(SZ)$/.test(symbol) ? 19.85 : 9.85;
+// P67 体检 #8：K线口径「今日涨停」阈值改用 limitRatio（带主板 ST 5% 分板）——
+// 旧的代码段一刀切（9.85/19.85/29.85）会把主板 ST 封板日判成 is_limit_up=0，
+// 凡用该字段的筛选/回测/条件概率都系统性漏掉 ST 涨停样本。
 
 // ---------- 快照口径涨停判定（纯逻辑，node:test 可直跑；screener/profile/sentiment 共用） ----------
 // §三（验收修复）：实时「是否涨停」优先用实时快照（snapshot_time），K线最后一根（bar_time）可能滞后，
@@ -1385,7 +1387,7 @@ export function buildFieldPanel(symbols: string[], barsList: BarsLike[][], metas
   fields.set("volume_signal", symbols.map((_, si) =>
     v[si].map((x, t) => (x !== null && vma5[si][t] !== null && vma5[si][t]! > 0 ? (x >= vma5[si][t]! * 1.5 ? 1 : 0) : null))));
   fields.set("is_limit_up", ret.map((s, si) =>
-    s.map((r, t) => (r === null ? null : (r >= limitUpPctOf(symbols[si]) ? 1 : 0)))));
+    s.map((r, t) => (r === null ? null : (r >= limitRatio(symbols[si], metas[si]?.name ?? "") * 100 - 0.15 ? 1 : 0)))));
 
   // VWAP / 成本
   const vwaps = symbols.map((_, si) => vwapCalc(cArr[si], v[si], amt[si], 20));

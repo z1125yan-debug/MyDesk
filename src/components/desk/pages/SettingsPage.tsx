@@ -103,6 +103,19 @@ export default function SettingsPage() {
     }
   };
 
+  // P67 体检 #22：env 字段当前表单没有输入框（恒空），但留着这分支就得防手滑——
+  // 旧码裸 JSON.parse，日后补上输入框时填错格式会在点击处直接抛未捕获异常。
+  const parseEnvSafe = (raw: string): Record<string, string> | undefined => {
+    const t = raw.trim();
+    if (!t) return undefined;
+    try {
+      const j = JSON.parse(t) as unknown;
+      return j && typeof j === "object" && !Array.isArray(j) ? (j as Record<string, string>) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
   const addServer = () => {
     if (!newSrv.name.trim() || !newSrv.command.trim()) return;
     const srv: McpServerConfig = {
@@ -110,7 +123,7 @@ export default function SettingsPage() {
       name: newSrv.name.trim(),
       command: newSrv.command.trim(),
       args: newSrv.args.split(/\s+/).filter(Boolean),
-      env: newSrv.env.trim() ? JSON.parse(newSrv.env) : undefined,
+      env: parseEnvSafe(newSrv.env),
       trusted: false,
     };
     sync([...mcpServers, srv]);

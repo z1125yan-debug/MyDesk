@@ -131,12 +131,13 @@ function breadthOption(
 }
 
 /** 涨跌幅分布（当日实数）：10档直方，替代原来只有「涨停/跌停」两根柱子的简陋对比。
- * 历史逐日正负柱+趋势线仍由 limitHistoryOption 负责。 */
+ * 历史逐日正负柱+趋势线仍由 limitHistoryOption 负责（有复盘历史时本图不渲染，标题也换成历史那张）。
+ * P67 体检 #2：桶标签是数值语义（≥10%/≤-10%），20cm 股 ±10~20% 的普通涨跌也落在这两桶，不冒充涨跌停。 */
 function limitTodayOption(sent: SentimentClient | null): EChartsCoreOption {
   const dist = sent?.pct_distribution ?? [];
   const data = dist.map((d) => {
     // 颜色：大跌绿、小跌浅绿、横盘灰、小涨浅红、大涨红
-    // d.to == null 表示 +∞（涨停+桶）
+    // d.to == null 表示 +∞（≥10% 桶）
     let color: string;
     if (d.to == null || d.to > 10) color = CHART.color.up;
     else if (d.to > 7) color = "#fb923c";
@@ -810,9 +811,11 @@ export default function MarketPage() {
 
       </div>
 
-      {/* 涨跌停板分布对比：稳智同款独立一整行 */}
+      {/* 涨跌停板分布对比：稳智同款独立一整行。
+          P67 体检 #9：标题随渲染路径走——有复盘历史画「历史逐日涨停/跌停对比」（原稳智标题），
+          缺历史才画 P66 的 10 档当日直方；旧码两种图共用「涨跌幅分布」标题，默认路径标题与内容不符。 */}
       <div className="apple-fade-in">
-        <ChartCard centerTitle title="涨跌幅分布" note={limitRows.length >= 2 ? `近10个交易日（同源切片）· ${limitRows.slice(-10)[0].date} ~ ${limitRows[limitRows.length - 1].date} · ${review?.source ?? ""}` : `当日真实快照 · 全A按涨跌幅分10档（涨停+ / -10~-7 / ... / 跌停+） · 涨停 ${sent?.limit_up ?? "—"} 家 / 跌停 ${sent?.limit_down ?? "—"} 家`} right={asOfDay ? <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px] text-muted-foreground">{asOfDay}</span> : undefined}>
+        <ChartCard centerTitle title={limitRows.length >= 2 ? "涨跌停板分布对比" : "涨跌幅分布"} note={limitRows.length >= 2 ? `近10个交易日（同源切片）· ${limitRows.slice(-10)[0].date} ~ ${limitRows[limitRows.length - 1].date} · ${review?.source ?? ""}` : `当日真实快照 · 全A按涨跌幅分10档（≥10% / 7~10 / ... / ≤-10%） · 涨停 ${sent?.limit_up ?? "—"} 家 / 跌停 ${sent?.limit_down ?? "—"} 家`} right={asOfDay ? <span className="rounded border border-border/60 px-1.5 py-0.5 text-[11.5px] text-muted-foreground">{asOfDay}</span> : undefined}>
           <EChart ariaLabel="涨跌幅分布" height={300} state={limitState}
             emptyText="市场快照未取到" option={limitRows.length >= 2 ? limitHistoryOption(limitRows) : limitTodayOption(sent)} />
         </ChartCard>

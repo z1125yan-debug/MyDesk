@@ -136,7 +136,7 @@ export async function collectResearchFacts(): Promise<ResearchFacts> {
         ];
         if (s.indices?.length) {
           lines.push(line("FACTS", "index_benchmark",
-            `指数：${s.indices.map((i) => `${i.name} ${n1(i.price)}（${signed(i.changePct)}%）`).join("；")}`,
+            `指数：${s.indices.map((i) => `${i.name} ${n1(i.price)}（${typeof i.changePct === "number" ? signed(i.changePct) : "—"}%）`).join("；")}`,
             "腾讯指数实时", stamp, "REAL"));
         }
         lines.push(line("SIGNALS", "risk",

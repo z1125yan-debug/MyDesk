@@ -32,26 +32,33 @@ export async function GET() {
 async function getHandler() {
   quantBootstrap();
   try {
-    const sent = await computeSentiment();
-    let history_ref: ReturnType<typeof similarReturnForward> | null = null;
+    // P67 体检 #7：四个互不依赖的慢源并行（旧码全串行，冷启动=各段之和，实测 15~30s）。
+    // 每路各自 catch，失败语义与原版一致：历史参考/接力榜挂了只写 error 字段，不拖垮整页。
+    const [sent, histRes, promoRes, mainNet] = await Promise.all([
+      computeSentiment(),
+      fetchBarsHybrid(["000001.SH"], shanghaiDate(), 520)
+        .then((barsMap) => ({ ok: true as const, barsMap }))
+        .catch((e) => ({ ok: false as const, err: e as Error })),
+      readPromotionBlock()
+        .then((promotion) => ({ ok: true as const, promotion }))
+        .catch((err) => ({ ok: false as const, err: err as Error })),
+      marketMainNetTdx(),
+    ]);
+        let history_ref: ReturnType<typeof similarReturnForward> | null = null;
     let hist_error = "";
-    try {
-      const barsMap = await fetchBarsHybrid(["000001.SH"], shanghaiDate(), 520);
-      const bars = barsMap.get("000001.SH") ?? [];
+    if (histRes.ok) {
+      const bars = histRes.barsMap.get("000001.SH") ?? [];
       history_ref = similarReturnForward(bars.map((b) => ({ date: b.date, c: b.c })), 0.8);
-    } catch (e) {
-      hist_error = (e as Error).message;
+    } else {
+      hist_error = histRes.err.message;
     }
 
     const suggestions = SUGGEST[sent.risk.level] ?? SUGGEST.注意;
     // 名单读侧失败不能拖垮整页：读不到就整块给 null + 一句原因，页面据此显示「算不出」而不是报错页
     let promotion: PromotionRead | null = null;
     let promotion_error = "";
-    try {
-      promotion = await readPromotionBlock();
-    } catch (e) {
-      promotion_error = (e as Error).message;
-    }
+    if (!promoRes.ok) promotion_error = promoRes.err.message;
+    else promotion = promoRes.promotion;
     return NextResponse.json({
       ok: true,
       ...sent,
@@ -60,7 +67,7 @@ async function getHandler() {
         ...(promotion ? promotion.missing : [`接力/梯队：读本地涨停名单失败：${promotion_error || "无数据"}`]),
       ],
       // R20：主力净额同款补一份通达信逐笔自算（全 A 快照不带 mainNet，那一路常年是 0）
-      ...(await marketMainNetTdx()),
+      ...mainNet,
       promotion,
       promotion_error: promotion ? "" : promotion_error,
       suggestions,

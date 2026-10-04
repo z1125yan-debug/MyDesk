@@ -4,7 +4,8 @@
 
 import fs from "fs";
 import path from "path";
-import { marketSessionHolidayAware, shanghaiDate } from "./session";
+import { marketSessionHolidayAware, shanghaiDate, todayIsTradingDaySync } from "./session";
+import { klineDiskUsable } from "./kline-disk-core";
 import { tdxQuotes, tdxKlines, tdxNameOf, type TdxQuote } from "./tdx";
 import { parseTcBoardRankList } from "@/lib/quant/data/tc-snapshot-core";
 import { parseSinaFundFlow, sinaFundFlowUrl } from "@/lib/quant/data/sina-flow-core";
@@ -53,8 +54,9 @@ const cache = new Map<string, { at: number; data: unknown }>();
 const TTL: Record<string, number> = { search: 300, quote: 15, kline: 180, board: 30, detail: 30, news: 90 };
 
 // 日K 限流系统性缓解（P38 复检 #5）之磁盘复用：腾讯 fqkline 对单 IP 容易限流，而日/周/月 K 历史 bar 当天不变。
-// 内存未命中时先查磁盘：日线按北京时间自然日留盘（当天有效），分钟线按 TTL（180s）兜底重启；
-// 命中即返、根本不碰源。任何 fs 异常都静默忽略，回退到网络。
+// 内存未命中时先查磁盘：分钟线按 TTL（180s）兜底重启；日/周/月的有效性规则在 kline-disk-core.ts——
+// 节假日整天可信，交易日只有收盘后写入的档才可信（P67 体检红线：旧「自然日整天有效」会把
+// 当天末根冻结在首抓值，开盘日全天说谎）。命中即返、根本不碰源。任何 fs 异常都静默忽略，回退到网络。
 const KL_CACHE_DIR = path.join(process.cwd(), "data", "kline-cache");
 function klCacheFile(key: string): string {
   const safe = String(key).replace(/[^A-Za-z0-9._-]/g, "_");
@@ -65,8 +67,15 @@ function klineDiskRead<T>(key: string): T | null {
     const raw = JSON.parse(fs.readFileSync(klCacheFile(key), "utf-8")) as { at?: number; day?: string; data?: T };
     if (key.includes(":mk:")) {
       if (typeof raw.at !== "number" || Date.now() - raw.at >= 180_000) return null;
-    } else if (raw.day !== shanghaiDate()) {
-      return null; // 日/周/月：跨自然日失效，重抓
+    } else if (
+      !klineDiskUsable(raw, {
+        today: shanghaiDate(),
+        nowMs: Date.now(),
+        tradingDay: todayIsTradingDaySync(),
+        closeMs: Date.parse(`${shanghaiDate()}T15:05:00+08:00`),
+      })
+    ) {
+      return null; // 日/周/月：跨日失效；交易日盘中/盘前写的末根不可信，重抓
     }
     return (raw.data ?? null) as T | null;
   } catch {
@@ -130,7 +139,8 @@ export interface RealQuote {
   symbol: string;
   name: string;
   price: number;
-  changePct: number;
+  /** 涨跌幅 %；上游没给且无法由昨收自算时为 undefined（缺数显「—」，不编 0——P67 体检 #6） */
+  changePct: number | undefined;
   high?: number;
   low?: number;
   prevClose?: number;
@@ -192,20 +202,27 @@ export async function fetchQuotesReal(symbols: string[]): Promise<(RealQuote | n
       const f = body.split("~");
       if (f.length < 35) continue;
       const price = parseFloat(f[3]);
-      const changePct = parseFloat(f[32]);
+      const prevClose = parseFloat(f[4]);
+      const changePctRaw = parseFloat(f[32]);
       if (!isFinite(price) || price <= 0) continue;
       const cur = out[p.i];
       if (cur && cur.name) continue; // TDX 已给出完整数据，腾讯仅作名称兜底
-      const amtM = /\/(\d+)$/.exec(f[35] ?? "");
+      // P67 体检 #6：涨跌幅不再编 0——f[32] 解析失败时用 现价/昨收 自算（指数行 f[32] 常缺位），
+      // 两者都没有就 undefined（缺数显「—」），绝不拿 0.00% 冒充平盘。
+      const pctFromPrev = isFinite(prevClose) && prevClose > 0 ? (price / prevClose - 1) * 100 : undefined;
+      const changePct = isFinite(changePctRaw) ? changePctRaw : pctFromPrev;
+      // P67 体检 #6：成交额改吃 f[37]（万元，与 tc-snapshot-core 同一协议字段、口径已验证）。
+      // 旧的 f[35] 复合段取末段在指数行会拿到字面量 1（真机样本 p8-tc-fallback），折出 ≈0 亿冒充实数。
+      const amtWan = parseFloat(f[37]);
       const base: RealQuote = cur ?? {
         symbol: p.s,
         name: "",
         price,
-        changePct: isFinite(changePct) ? changePct : 0,
+        changePct,
         high: parseFloat(f[33]) || undefined,
         low: parseFloat(f[34]) || undefined,
-        prevClose: parseFloat(f[4]) || undefined,
-        amountYi: amtM ? parseFloat(amtM[1]) / 1e8 : undefined,
+        prevClose: isFinite(prevClose) ? prevClose : undefined,
+        amountYi: isFinite(amtWan) && amtWan > 0 ? amtWan / 1e4 : undefined,
         time: /^\d{14}$/.test(f[30] ?? "")
           ? `${f[30].slice(4, 6)}-${f[30].slice(6, 8)} ${f[30].slice(8, 10)}:${f[30].slice(10, 12)}`
           : undefined,
