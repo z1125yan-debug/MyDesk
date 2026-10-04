@@ -1,5 +1,6 @@
 // Quant Research Lab — 数据探测：K线样本（严格 asOf 截断，绝不返回未来数据）
 import { NextResponse } from "next/server";
+import { shanghaiDate } from "@/lib/desk/session";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { getProvider } from "@/lib/quant/data/index";
 import type { Timeframe } from "@/lib/quant/types";
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const symbol = url.searchParams.get("symbol") ?? "000001.SH";
   const tf = (url.searchParams.get("tf") ?? "day") as Timeframe;
-  const asOf = url.searchParams.get("asOf") ?? new Date().toISOString().slice(0, 10);
+  const asOf = url.searchParams.get("asOf") ?? shanghaiDate();
   const lookback = Math.min(500, parseInt(url.searchParams.get("lookback") ?? "30", 10) || 30);
   const source = url.searchParams.get("source") ?? "em";
 

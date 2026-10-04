@@ -62,7 +62,7 @@ async function profileHandler(symbol: string) {
   const pSentiment = computeSentiment().catch(() => null);
 
   // 1) 实时报价：eltdx → 腾讯
-  let quote: { price: number; changePct: number; high: number; low: number; prevClose: number; amountYi: number } | null = null;
+  let quote: { price: number; changePct: number | undefined; high: number; low: number; prevClose: number; amountYi: number | undefined } | null = null;
   let quoteSource = "";
   const tq = await pTdxQuotes;
   if (tq?.get(symbol)) {
@@ -73,7 +73,7 @@ async function profileHandler(symbol: string) {
     const qs = await fetchQuotesReal([symbol]).catch(() => null);
     const q = qs?.[0];
     if (q) {
-      quote = { price: q.price, changePct: q.changePct, high: q.high ?? q.price, low: q.low ?? q.price, prevClose: q.prevClose ?? q.price, amountYi: q.amountYi ?? 0 };
+      quote = { price: q.price, changePct: q.changePct, high: q.high ?? q.price, low: q.low ?? q.price, prevClose: q.prevClose ?? q.price, amountYi: q.amountYi };
       quoteSource = "腾讯 · qt.gtimg.cn";
     }
   }

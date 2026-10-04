@@ -128,8 +128,8 @@ const list = (p: Params, key: string): string[] => (Array.isArray(p[key]) ? (p[k
 const INDEX_DEFAULT = ["000001.SH", "000300.SH", "399006.SZ"];
 const INDEX_NAMES: Record<string, string> = { "000001.SH": "上证指数", "000300.SH": "沪深300", "399006.SZ": "创业板指" };
 
-function quoteSummary(rows: { symbol: string; name?: string; price: number; changePct: number }[]): string {
-  return rows.map((r) => `${r.name || INDEX_NAMES[r.symbol] || r.symbol} ${n1(r.price)}（${signed(r.changePct)}%）`).join("；");
+function quoteSummary(rows: { symbol: string; name?: string; price: number; changePct?: number }[]): string {
+  return rows.map((r) => `${r.name || INDEX_NAMES[r.symbol] || r.symbol} ${n1(r.price)}（${typeof r.changePct === "number" ? signed(r.changePct) : "—"}%）`).join("；");
 }
 
 async function quotesViaGateway(symbols: string[], ms: number): Promise<ToolObservation> {

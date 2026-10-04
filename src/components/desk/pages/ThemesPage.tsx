@@ -37,9 +37,9 @@ const ROLE_BADGE: Record<string, string> = {
 
 /** 一句话环境判断：只看涨跌家数 + 炸板率 + 风险等级，不引入新口径。 */
 function envSentence(s: SentimentClient | null): { tone: string; text: string } {
-  if (!s) return { tone: "text-muted-foreground", text: "今天市场环境：本轮没取到情绪读数" };
+  if (!s) return { tone: "text-muted-foreground", text: "最近交易日市场环境：本轮没取到情绪读数" };
   const total = s.advancers + s.decliners;
-  if (total <= 0) return { tone: "text-muted-foreground", text: "今天市场环境：涨跌家数未取到，无法判断强弱" };
+  if (total <= 0) return { tone: "text-muted-foreground", text: "最近交易日市场环境：涨跌家数未取到，无法判断强弱" };
   const upRatio = s.advancers / total;
   const brk = s.break_rate;
   let label: string, tone: string;
@@ -49,7 +49,7 @@ function envSentence(s: SentimentClient | null): { tone: string; text: string } 
   const brkText = brk == null ? "炸板率未取到" : `炸板率 ${brk.toFixed(0)}%`;
   return {
     tone,
-    text: `今天市场${label}：${s.advancers} 涨 / ${s.decliners} 跌，${brkText}，风险等级「${s.risk.level}」`,
+    text: `最近交易日（${s.as_of.slice(0, 10)}）市场${label}：${s.advancers} 涨 / ${s.decliners} 跌，${brkText}，风险等级「${s.risk.level}」`,
   };
 }
 
@@ -117,7 +117,7 @@ export default function ThemesPage() {
         <div>
           <div className="flex items-center gap-2 text-lg font-bold">
             <Flame size="18" className="text-red-400" /> 主题热点
-            <span className="text-[12px] font-normal text-muted-foreground">今天市场在讲什么故事</span>
+            <span className="text-[12px] font-normal text-muted-foreground">最近交易日市场在讲什么故事</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -152,7 +152,7 @@ export default function ThemesPage() {
           {/* 今天最热闹的板块 */}
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <div className="text-sm font-semibold">今天最热闹的板块</div>
+              <div className="text-sm font-semibold">最近交易日最热闹的板块</div>
               <div className="text-[12px] text-muted-foreground">
                 {show.length ? `共列出 ${show.length} 个（主线优先）` : "本轮判定不出明确主线"}
               </div>

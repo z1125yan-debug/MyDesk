@@ -5,6 +5,7 @@
 // 不接 Jev/AI；结论卡渲染规则生成的 conclusion 字符串。术语走方案 §3 词典（少黑话）。
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { RefreshCw, ArrowUp, ArrowDown, Minus, Activity, Network, Globe } from "lucide-react";
+import { useLatestGuard } from "@/hooks/use-latest-guard";
 import type { ScannerResult, SectorRow, SectorTopRisk, Tone } from "@/lib/quant/screener/top-risk-types";
 import type { CrossInstrumentJudgement, CrossSectorSignal } from "@/lib/quant/screener/cross-market-core";
 import { recentRiskVerdict } from "@/lib/quant/screener/cross-market-core";
@@ -76,6 +77,9 @@ export default function SectorTopPage() {
     }
   }, []);
 
+  // P67 体检 #4：load 不再依赖 [selected]——旧码把「首行自动选中」写进依赖，用户每点一行板块，
+  // load 重建 → effect 重跑 → 全市场扫描 + 外盘各重取一次（行为级实测：点 1 行 +1 个全量请求）。
+  // 首行选中改用 setSelected(prev => prev ?? first)：已有选中（含用户手点）就不动。
   const load = useCallback(async () => {
     setBusy(true);
     setError("");
@@ -84,30 +88,32 @@ export default function SectorTopPage() {
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || "加载失败");
       setScanner(j.scanner);
-      if (!selected && j.scanner.rows.length) {
-        const first = j.scanner.rows[0].sector;
-        setSelected(first);
-      }
+      setSelected((prev) => prev ?? (j.scanner.rows.length ? j.scanner.rows[0].sector : prev));
     } catch (e) {
       setError(String((e as Error).message || e));
     } finally {
       setBusy(false);
     }
-  }, [selected]);
+  }, []);
 
+  // P67 体检 #3：快速连点板块时旧详情后到会顶掉新板块的诊断——只认最新一次请求
+  const detailGuard = useLatestGuard();
   const loadDetail = useCallback(async (sector: string) => {
+    const t = detailGuard.token();
     setDetailBusy(true);
     try {
       const r = await fetch(`/api/market/sectors/top-risk?sector=${encodeURIComponent(sector)}`, { cache: "no-store" });
       const j = await r.json();
+      if (!detailGuard.alive(t)) return;
       if (!j.ok) throw new Error(j.error || "加载失败");
       setDetail(j.detail);
     } catch (e) {
+      if (!detailGuard.alive(t)) return;
       setError(String((e as Error).message || e));
     } finally {
-      setDetailBusy(false);
+      if (detailGuard.alive(t)) setDetailBusy(false);
     }
-  }, []);
+  }, [detailGuard]);
 
   useEffect(() => {
     void load();

@@ -67,10 +67,16 @@ test("MarketPage：稳智同款图表页（ChartCard 多图 + 顶四卡），温
   assert.match(src, /import \{ computeTemperature, REGIMES, type MarketRegime \} from "@\/lib\/quant\/screener\/sentiment-temperature-core"/);
   assert.match(src, /useState<MarketRegime>\("range"\)/, "行情状态是纯前端态：切换只换权重、零重取数");
   assert.match(src, /title="行情状态只切换情绪温度的权重口径，不重新取数"/, "控件行写明切行情不重取数");
-  // 五张图标题（稳智同款）
-  for (const t of ["大盘成交额趋势", "大盘情绪（5日线占比）趋势", "涨跌停板分布对比", "连板梯队结构", "指数涨跌幅"]) {
+  // 五张图标题（稳智同款）。P67 体检 #9：涨跌停那张卡标题随渲染路径切换——
+  // 有复盘历史画历史对比（稳智原题「涨跌停板分布对比」），缺历史才画 P66 的 10 档「涨跌幅分布」直方。
+  for (const t of ["大盘成交额趋势", "大盘情绪（5日线占比）趋势", "连板梯队结构", "指数涨跌幅"]) {
     assert.match(src, new RegExp(`title="${t}"`), `图标题对齐稳智：${t}`);
   }
+  assert.match(
+    src,
+    /title=\{limitRows\.length >= 2 \? "涨跌停板分布对比" : "涨跌幅分布"\}/,
+    "涨跌停/涨跌幅卡标题随渲染路径切换（历史对比 vs 当日10档直方），不共用一个标题说谎",
+  );
   // 宽度（5日线占比）独立链路：固定 30 天窗口、与成交额 90 天解耦
   assert.match(src, /fetchBreadth\(30\)/, "宽度走独立沉淀链路（30 天窗口）");
   // 诚实缺失：宽度攒不够就空置，不画假线

@@ -471,7 +471,7 @@ export default function ResearchPage() {
             </div>
           ) : (
             <div className="text-[13px] text-muted-foreground">
-              {topErr.themes ? `板块数据读取失败：${topErr.themes}` : "今天没有可用板块。"}
+              {topErr.themes ? `板块数据读取失败：${topErr.themes}` : "最近交易日没有可用板块。"}
             </div>
           )}
         </LineageSection>

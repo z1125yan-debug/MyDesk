@@ -107,7 +107,7 @@ export interface SentimentClient {
   amount_known: number;
   /** 全 A 快照里主力净额真实有值的家数（P11 情绪温度必需：0 时合计是 ?? 0 累加的假 0，资金流分量必按缺读数处理） */
   main_net_known: number;
-  indices: { symbol: string; name: string; price: number; changePct: number }[];
+  indices: { symbol: string; name: string; price: number; changePct: number | undefined }[];
   risk: { level: string; triggers: string[]; severe_signals?: string[] };
   /**
    * P15-R20b 见顶压力分：六分量加权 0–100 + 分档 + 每条分量的读数与时间。
@@ -282,7 +282,7 @@ export interface ProfileResp {
   as_of: string;
   session: { open: boolean; phase: string; label: string };
   blocks: {
-    quote: ProfileBlock<{ price: number; changePct: number; high: number; low: number; prevClose: number; amountYi: number }> | null;
+    quote: ProfileBlock<{ price: number; changePct: number | undefined; high: number; low: number; prevClose: number; amountYi: number | undefined }> | null;
     depth: ProfileBlock<{
       bids: { price: number; volume: number }[]; asks: { price: number; volume: number }[];
       bidTotalHand: number; askTotalHand: number; insideHand: number; outerHand: number; activeHand: number;

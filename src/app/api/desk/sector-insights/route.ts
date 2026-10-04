@@ -129,6 +129,8 @@ export async function GET(req: Request) {
   const force = url.searchParams.get("refresh") === "1";
   const key = `desk/sector-insights?p=${encodeURIComponent(cachePath())}`;
   const ttl = force ? 0 : DEFAULT_TTL_MS;
+  // P67 体检 #5：force 必须同步重算（staleMs:0）。旧码只把 TTL 打 0，SWR 的 10 分钟宽限窗还在——
+  // 用户点「立即重算」，前台拿到的是 x-cache:STALE 的旧榜（实测 age 442s），要等后台重算完再点一次才更新。
   return ttlCache(key, ttl, async () => {
     const data = await readCache();
     const localDate = latestLocalSnapshotDate();
@@ -171,7 +173,7 @@ export async function GET(req: Request) {
       day_scope: "3d" as const,
       cards: data.cards,
     });
-  });
+  }, force ? { staleMs: 0 } : undefined);
 }
 
 /** 外部脚本写完缓存后调一下，30s 内其他客户端也能立刻看到 */

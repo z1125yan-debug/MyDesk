@@ -97,8 +97,8 @@ export async function GET(req: NextRequest) {
     let components: { name: string; score: number | null; available: boolean; reading: string }[] = [];
     let tierError = "";
     try {
-      const data = await computeSentiment();
-      const tdx = await marketMainNetTdx();
+      // P67 体检 #7：情绪快照与通达信主力净额两路互不依赖，并行取（旧码串行白等一段）
+      const [data, tdx] = await Promise.all([computeSentiment(), marketMainNetTdx()]);
       const p = await computeTopPressure(data, (tdx as { main_net_tdx?: MainNetTdxClient }).main_net_tdx ?? null);
       score = p.pressure.score;
       tier = p.pressure.tier ?? "";

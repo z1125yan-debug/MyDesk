@@ -1,5 +1,6 @@
 // Quant Research Lab — 选股 API（Phase 7）：实时选股与历史回放共用 Selection Engine
 import { NextResponse } from "next/server";
+import { shanghaiDate } from "@/lib/desk/session";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
 import { registerStrategyRunners } from "@/lib/quant/jobs/runners/strategy-jobs";
 import { getJob, startJob } from "@/lib/quant/jobs/registry";
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
   if (body.mode === "strategy" && !body.strategyKey) {
     return NextResponse.json({ error: "strategy 模式需要 strategyKey" }, { status: 400 });
   }
-  if (body.replay && (!body.asOf || body.asOf >= new Date().toISOString().slice(0, 10))) {
+  if (body.replay && (!body.asOf || body.asOf >= shanghaiDate())) {
     return NextResponse.json({ error: "历史回放需要指定早于今天的 asOf" }, { status: 400 });
   }
   const { job } = startJob({

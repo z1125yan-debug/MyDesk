@@ -13,7 +13,11 @@ let cache: { at: number; data: unknown } | null = null;
 let inflight: Promise<unknown> | null = null;
 
 export async function GET(req: Request) {
-  // 涨停榜冷算可达 6~7 秒：30s 内只算一次
+  // 涨停榜冷算可达 6~7 秒：30s 内只算一次。
+  // P67 体检 #11：?force=1 不得进缓存 key——旧码把 force 当独立 key，60s 内连点两次「强制刷新」
+  // 第二次直接 HIT 同一份快照（要 force 却被静默节流）。force 一律绕过外层 ttlCache 同步重算。
+  const force = new URL(req.url).searchParams.get("force") === "1";
+  if (force) return getHandler(req);
   return ttlCache(`market/limitup?${new URL(req.url).search}`, DEFAULT_TTL_MS, () => getHandler(req));
 }
 async function getHandler(req: Request) {

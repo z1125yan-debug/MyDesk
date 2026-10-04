@@ -111,12 +111,12 @@ export default function ExtensionPage() {
             <div className="flex items-center gap-2">
               <span className="w-14 shrink-0 text-muted-foreground">地址</span>
               <code className="flex-1 truncate rounded bg-accent/70 px-2 py-1.5 font-mono text-[12.5px]">{endpoint}</code>
-              <button onClick={() => copy(endpoint, "地址")} className="rounded p-1.5 text-muted-foreground hover:text-foreground"><Copy size={14} /></button>
+              <button onClick={() => copy(endpoint, "地址")} title="复制地址" className="rounded p-1.5 text-muted-foreground hover:text-foreground"><Copy size={14} /></button>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-14 shrink-0 text-muted-foreground">配对码</span>
               <code className="flex-1 truncate rounded bg-accent/70 px-2 py-1.5 font-mono text-[12.5px]">{extensionKey}</code>
-              <button onClick={() => copy(extensionKey, "配对码")} className="rounded p-1.5 text-muted-foreground hover:text-foreground"><Copy size={14} /></button>
+              <button onClick={() => copy(extensionKey, "配对码")} title="复制配对码" className="rounded p-1.5 text-muted-foreground hover:text-foreground"><Copy size={14} /></button>
               <button onClick={regen} title="重新生成" className="rounded p-1.5 text-muted-foreground hover:text-foreground"><RefreshCw size={14} /></button>
             </div>
             <p className="text-[12.5px] leading-4 text-muted-foreground">

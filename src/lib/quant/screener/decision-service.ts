@@ -76,7 +76,7 @@ export function sentimentWireOf(s: SentimentResult): SentimentWire {
     amount_total_yi: Number.isFinite(s.amount_total_yi) ? s.amount_total_yi : null,
     amount_known: typeof amtKnown === "number" ? amtKnown : null,
     median_pct: s.median_pct,
-    indices: s.indices.map((i) => ({ symbol: i.symbol, changePct: Number.isFinite(i.changePct) ? i.changePct : null })),
+    indices: s.indices.map((i) => ({ symbol: i.symbol, changePct: typeof i.changePct === "number" && Number.isFinite(i.changePct) ? i.changePct : null })),
     risk_level: s.risk.level,
   };
 }

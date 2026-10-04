@@ -16,6 +16,7 @@ import { fetchSentiment } from "@/lib/desk/quant-api";
 import type { Divergence } from "@/lib/quant/data/overseas-core";
 // P15-R16c：开盘自动重取 + 取数时刻的人话读法（全站共用，别再各页抄一份倒计时）
 import { useLivePoll } from "@/hooks/use-live-poll";
+import { useLatestGuard } from "@/hooks/use-latest-guard";
 import { clockZh } from "@/lib/desk/plain-core";
 import { plainCode, codeTitle } from "@/lib/desk/code-format";
 
@@ -111,20 +112,25 @@ export default function SectorsPage() {
 
   // 展开某个板块的成分股（只负责「开」，「关」由行点击走 closeBoard：这样跳转侧不必知道现在开着谁）
   // P12-①：成分股接口按 kind 认榜（行业/概念是两套 b:BKxxxx 成分），必须带上当前 Tab 的种类。
+  // P67 体检 #3：连点 A、B 两个板块时 A 的慢响应后到，会把 A 的成分股写进 B 的展开面板——只认最新一次。
+  const membersGuard = useLatestGuard();
   const openMembers = useCallback(async (code: string) => {
     setOpenBoard(code); setMembers(null); setMembersError(""); setMembersBusy(true);
+    const t = membersGuard.token();
     try {
       const res = await fetch(`/api/market/sectors/${encodeURIComponent(code)}?kind=${kind}`);
       const j = await res.json();
+      if (!membersGuard.alive(t)) return;
       if (!res.ok || !j.ok) throw new Error(j.error || "成分股获取失败");
       setMembers(j.list ?? []);
     } catch (e) {
+      if (!membersGuard.alive(t)) return;
       setMembersError(String((e as Error).message || e));
       setMembers(null);
     } finally {
-      setMembersBusy(false);
+      if (membersGuard.alive(t)) setMembersBusy(false);
     }
-  }, [kind]);
+  }, [kind, membersGuard]);
   const closeBoard = useCallback(() => { setOpenBoard(null); setMembers(null); }, []);
 
   /**

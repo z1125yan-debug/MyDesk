@@ -30,8 +30,9 @@ export async function GET(request: Request) {
     try {
       const news = await fetchNewsReal();
       return NextResponse.json({ news });
-    } catch {
-      return NextResponse.json({ news: null });
+    } catch (e) {
+      // P67 体检 #20：失败不能与「没新闻」同形——带上 error，前端分得清「没抓到」和「抓取失败」
+      return NextResponse.json({ news: null, error: `快讯抓取失败：${(e as Error).message || e}` });
     }
   }
 

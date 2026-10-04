@@ -11,6 +11,7 @@ import { fetchStockProfile, aiChatTools, type ProfileResp } from "@/lib/desk/qua
 import { aiReady } from "@/lib/desk/ai";
 // P15-R16c：开盘自动重取走全站共用钩子；画像时刻的读法走显示核（只换读法，不改判定）
 import { useLivePoll } from "@/hooks/use-live-poll";
+import { useLatestGuard } from "@/hooks/use-latest-guard";
 import { clockZh } from "@/lib/desk/plain-core";
 // P15-R3d：画像区块散开的本地卡（原 `function Section`）退役，换统一血缘卡组件——
 // 头部收成卡标题，各区块收成卡内小节；Cell/Empty 是瓦片不是卡，保留。取数与口径逻辑一字未动。
@@ -46,18 +47,24 @@ export default function ProfilePage() {
 
   // P15-R16c：keep=true 是轮询重取——只换数据，不清用户已经生成的 AI 解读、不闪加载态。
   // （原来这页只能手点「生成画像」，开盘后价格停在打开页面那一刻，正是用户说的「分不清是哪天的数」）
+  // P67 体检 #3：轮询 tick 与手动切票并发时，旧票的响应会顶掉新票的画像——只认最新一次请求。
+  const guard = useLatestGuard();
   const load = useCallback(async (sym: string, keep = false) => {
     if (!keep) { setBusy(true); setError(""); setAiText(""); setData(null); setFocusSymbol(sym); }
+    const t = guard.token();
     try {
       const fresh = await fetchStockProfile(sym);
+      if (!guard.alive(t)) return;
       setData(fresh);
       if (!keep) setError("");
     } catch (e) {
-      if (!keep) { setError(String((e as Error).message || e)); setData(null); }
+      if (!guard.alive(t) || keep) return;
+      setError(String((e as Error).message || e));
+      setData(null);
     } finally {
-      if (!keep) setBusy(false);
+      if (!keep && guard.alive(t)) setBusy(false);
     }
-  }, [setFocusSymbol]);
+  }, [setFocusSymbol, guard]);
 
   useEffect(() => { if (symbol) load(symbol); }, [symbol, load]);
   const poll = useLivePoll();
@@ -460,7 +467,7 @@ export default function ProfilePage() {
         </LineageCard>
       )}
 
-      {!data && !busy && !error && (
+      {!data && !error && (
         <div className="rounded-xl border border-dashed border-border px-4 py-14 text-center text-xs text-muted-foreground">
           输入代码生成画像：实时报价 → 五档盘口 → 逐笔资金 → 主力资金流 → 技术状态 → 板块强度 → 历史条件概率 → 市场风险
         </div>

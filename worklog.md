@@ -3959,3 +3959,68 @@ breadth 之前 11s 是**体检脚本参数没对上页面**（页面用 `?days=3
 - 实测：进选股工作台 2.5 秒内点「一键填起步条件→筛选」，上屏的是进页自动全量筛选的旧响应
   （5371 条）而不是按 5 条起步条件的新结果（114 条）——runScreener 无时序守卫，旧响应后到覆盖新状态。
 - 修：单调序号守卫，只有最新一次发起的响应/报错/finally 允许写状态。复现场景复验：最终上屏 114 ✓。
+
+---
+
+## P67 第五轮全站体检修复包（2026-10-04，体检报告=exports/audit/体验报告-P66.md）
+
+第五轮全站体检（28 页真机走查 + 三路只读代码扫描 + curl/行为级复现）的修复包。钉测 2101 项 2092 pass 0 fail 9 skip（上轮遗留的 p15-r3b 红转绿 + 新增 p67 三枚）；tsc 0。
+
+### 一、红线级：日/周/月K 磁盘缓存整天冻结（开盘日全天说谎，休市日被掩盖）
+- 旧规则：磁盘缓存按自然日整天有效 + 命中即返不回源——交易日当天末根 K 线冻结在第一次抓取值，
+  盘前写的档甚至整天缺今日柱，且无任何「数据截至」标注；K线图/regime/strategy-forecast 全吃这份数。
+- 修：新纯核 `kline-disk-core.ts`（klineDiskUsable）——节假日整天可信（防限流原意不变），
+  交易日只有**收盘后（15:05 起）写入**的档当天才可信，盘中/盘前写的一律回源；em.ts 接线。
+  钉测 p67-kline-disk-core：节假日✓/收盘后✓/盘中✗/盘前✗/缺at✗/跨日✗。
+
+### 二、P66 新直方图的两处诚实性
+- pct_distribution 首末桶标签「涨停+/跌停+」→「≥10%/≤-10%」：20cm 股 ±10~20% 的普通涨跌
+  也会落进首末桶，标「涨跌停」是说谎（sentiment.ts + MarketPage 注/文案同步）。
+- 卡片标题随渲染路径切换（MarketPage:815）：有复盘历史画「涨跌停板分布对比」（稳智原题），
+  缺历史才画 P66 的 10 档「涨跌幅分布」——旧码两种图共用一个标题，默认路径标题与内容不符；
+  p15-r3b 钉测同步改钉三元标题（上轮唯一红钉就此转绿）。
+
+### 三、缓存最后一公里
+- sector-insights `?refresh=1` 加 `staleMs: 0`：force 必须同步重算。旧码 TTL 打 0 但 SWR 10 分钟
+  宽限窗还在，curl 实测点「立即重算」回的是 x-cache:STALE age 442s 的旧榜。
+- limitup `?force=1` 不再进缓存 key（旧码 force 被当独立 key，60s 内二次强刷直接 HIT 静默节流）。
+
+### 四、响应竞态全站收口（P41 同病五处漏网）
+- 新 hook `src/hooks/use-latest-guard.ts`（单调序号），收口五处「快速切参数旧响应覆盖新状态」：
+  QuotesPage（切票/周期/复权）、ProfilePage（轮询 tick 与切票并发）、SectorsPage（连点板块成分股）、
+  SectorTopPage loadDetail（连点板块诊断）、EventsPage（连点日期解释错位）。
+- SectorTopPage load 依赖数组删掉 `[selected]`：旧码点一行板块触发全市场扫描+外盘各重取一次
+  （行为级实测 +1 请求/行），首行自动选中改 `setSelected(prev => prev ?? first)`。复验：点行只走详情，全量扫描不再重跑。
+
+### 五、数据口径三连修
+- 腾讯兜底报价（em.ts）：成交额改吃 f[37]（万元，与 tc-snapshot-core 同字段，旧 f[35] 复合段末段
+  在指数行是字面量 1，折出 ≈0 亿冒充实数）；涨跌幅 f[32] 解析失败改用 现价/昨收 自算，再不行 undefined
+  （旧码编 0——legacy 分析页指数条 +0.00% 现行案）。RealQuote/SentimentClient indices/ProfileResp.quote
+  类型同步放宽为可 undefined，UI 走 PctText「—」。
+- 涨跌停判定分板统一（sentiment.ts + limit-up-roster-core.ts + fields.ts）：全部改吃 fields.limitRatio
+  （主板ST 5%/注册制20%/北交所30%）——旧 9.8 一刀切漏计主板 ST 涨跌停、误计 20cm 未封板；
+  新股（N/C）跌停侧补豁免（旧码只豁免涨停侧）；「今日又涨停」与 K线口径 is_limit_up 同步修。
+- quotes-all 失败回 502（旧码 200 包 ok:false，按 res.ok 判定的调用方会把上游故障当成功）。
+
+### 六、慢源并行化
+- market/risk：情绪/K线历史参考/接力榜/通达信主力净额四路 Promise.all（旧码全串行，冷启动=各段之和，
+  实测 15~30s）；market/sentiment 与 quant/strategy-forecast 同款两路并行。响应形状逐字段复验不变。
+
+### 七、低危文案与小修
+- 假期措辞：主题热点页「今天市场…」「今天最热闹的板块」、研究页「今天没有可用板块」→「最近交易日…」
+  （数字是 09-30 的，与顶栏「今天不交易」横幅同屏打架）。
+- 风险页加一行「三把尺」互译：温度计（首页）/触发器（本页）/档位闸（预测卡）各量各的。
+- 回放/数据探测三个路由的 asOf 兜底 UTC→shanghaiDate（北京凌晨窗口回放昨天会被 400 误拒）。
+- news 默认分支失败带 error 字段（与「没新闻」区分）；ProfilePage 引导块闪帧（P39 同页漏网）；
+  SettingsPage env 死分支 JSON.parse 加守卫；扩展页复制按钮补 title；研究池空态删内部术语「（P1-1 联动）」；
+  板块全景标题「当日口径」去重；next.config 显式 outputFileTracingRoot（灭启动警告）。
+
+### 八、留待拍板（未修）
+- 「整列空列」×3（全A列表行业列/看板所属行业/矩阵流通市值）：补口径=新建行业映射管线，
+  砍列=砍信息，等用户选边。
+- 预测卡「外盘与A50 0分」是否把缺数当 0 分计入 33/100：需开市日复核。
+
+### 九、诚实披露
+- 本包纯修复，未新增台账/研报；体检报告与钉测全量日志（exports/tmp/p67-test-full.log）不入库。
+- data/*.json 四个运行态文件在本轮走查中有漂移（industry-reports/sector-snapshots/market-trend-cache/trade-date-last-good），未入库（历届同口径）。
+- 体检起的 dev:3000 与 eltdx:8756 仍在跑。

@@ -17,6 +17,7 @@ import { HistoryBar } from "../HistoryBar";
 import { InterpretationCard, interpretKey } from "../EventInterpretation";
 import { useDesk } from "@/lib/desk/store";
 import { aiReady } from "@/lib/desk/ai";
+import { useLatestGuard } from "@/hooks/use-latest-guard";
 import { RUN_STATUS_TEXT, runEventInterpretation, type InterpretProgress, type RunStatus } from "@/lib/desk/event-interpret";
 import {
   fetchEvents, scanEvents, scanResultNote, fetchEventsHistory, fetchInterpretations,
@@ -80,13 +81,16 @@ export default function EventsPage() {
   }, []);
 
   // P6-B：解释层单独读，读回的都是服务端算好的口径（counts/layering/missing/stale/orphan 都不在页面重算）
+  // P67 体检 #3：连点不同日期时旧日期的解释后到，会跟 interpDate 错位——只认最新一次请求。
+  const interpGuard = useLatestGuard();
   const loadInterps = useCallback(async (date?: string) => {
+    const t = interpGuard.token();
     setInterpBusy(true);
     setInterpDate(date ?? "");
-    try { setInterp(await fetchInterpretations(date ?? "")); }
-    catch (e) { setError(String((e as Error).message || e)); setInterp(null); }
-    finally { setInterpBusy(false); }
-  }, []);
+    try { const j = await fetchInterpretations(date ?? ""); if (interpGuard.alive(t)) setInterp(j); }
+    catch (e) { if (!interpGuard.alive(t)) return; setError(String((e as Error).message || e)); setInterp(null); }
+    finally { if (interpGuard.alive(t)) setInterpBusy(false); }
+  }, [interpGuard]);
 
   const openHistory = useCallback(async (date?: string) => {
     setHistLoading(true); setError("");
