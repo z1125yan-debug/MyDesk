@@ -28,11 +28,7 @@ const nextConfig: NextConfig = {
       };
       return config;
     }
-    const builtins = [
-      "fs", "path", "os", "http", "https", "net", "tls", "stream", "buffer",
-      "events", "url", "util", "crypto", "assert", "child_process", "dns",
-      "zlib", "querystring", "tty", "module", "vm", "worker_threads", "perf_hooks",
-    ];
+    const builtins = require("node:module").builtinModules.filter((m: string) => !m.startsWith("_")).concat(["sqlite", "test", "sea"]);
     const ext: Record<string, string> = {
       ...(config.externalsType === "commonjs" ? {} : {}),
     };
