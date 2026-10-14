@@ -17,6 +17,7 @@
 //
 // 数据源：候选的 T 日收盘来自 layer1 行自带的 symbols.close；缺了再查本地粮仓 stock_daily_bar 补。
 
+import "server-only";
 import { db } from "../../db.ts";
 import { shanghaiDate } from "../../desk/session.ts";
 import { parseSymbols, symJsonOf, type PickSym } from "./pick-fill-core.ts";
@@ -26,6 +27,7 @@ import {
 } from "./ai-pick-core.ts";
 import type { ArchiveResult, ScanMode } from "../screener/persist.ts";
 import { getServerLlm } from "../../llm/model-config.ts";
+import { ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
 
 const ADJUST = "qfq";
 
@@ -45,12 +47,16 @@ async function callServerChat(
   const url = apiBase(channel.baseUrl) + "/v1/chat/completions";
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
+  const proxyUrl = (process.env.AI_PROXY_URL || "").trim();
+  const isLan = /^https?:\/\/(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(channel.baseUrl);
+  const dispatcher: Dispatcher | undefined = proxyUrl && !isLan ? new ProxyAgent(proxyUrl) : undefined;
   try {
-    const res = await fetch(url, {
+    const res = await undiciFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${channel.apiKey}` },
       body: JSON.stringify({ model: channel.model, messages, temperature: 0.3, max_tokens: 1500 }),
       signal: ctrl.signal,
+      dispatcher,
     });
     const json = (await res.json().catch(() => ({}))) as { error?: { message?: string }; choices?: { message?: { content?: string } }[] };
     if (!res.ok) throw new Error(json?.error?.message || `上游 ${res.status}`);
