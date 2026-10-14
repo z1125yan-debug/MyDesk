@@ -1625,9 +1625,9 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 ## P11 情绪温度轮：0-100 温度分+gauge / 牛熊震荡权重 / 持仓周期全链路（2026-09-22：847 条基线，3014 实机+网关三轮取证）
 
 ### 背景与口径（四条）
-1. **温度分是「说人话入口」，不是测量值**：把大盘情绪一堆读数收敛成一个 0-100 综合分（稳智逆向 Home-DmQhpRbI.js `tt(e)` 权重表：牛 宽35/动40/投15/资10、熊 25/20/40/15、震荡 30/30/25/15），intent-core 允许模型引用它开场、但必须交代「是宽度/动量/投机/资金流按行情类型的加权分」，缩权/缺读照实转述，不许当精确事实。分量归一化常数（±5% 饱和、±60 家净差、±500 亿）是本层补的口径不是稳智原文，全部以导出常量出现。
+1. **温度分是「说人话入口」，不是测量值**：把大盘情绪一堆读数收敛成一个 0-100 综合分（参考平台逆向 Home-DmQhpRbI.js `tt(e)` 权重表：牛 宽35/动40/投15/资10、熊 25/20/40/15、震荡 30/30/25/15），intent-core 允许模型引用它开场、但必须交代「是宽度/动量/投机/资金流按行情类型的加权分」，缩权/缺读照实转述，不许当精确事实。分量归一化常数（±5% 饱和、±60 家净差、±500 亿）是本层补的口径不是参考平台原文，全部以导出常量出现。
 2. **缺读数=null 缩权，绝不 0 分**（承 P7 打分表/P9 缺口链路纪律）：temperature=Σ(score·w)/Σw 只对可算分量；main_net_known===0 ⇒ 资金流必 null——SentimentResult 的合计是 `?? 0` 累加，字段全缺同样是 0，拿它算分等于把断源粉饰成中性 50 分。当日恰逢东财断源未愈，这条路径是真行情实机跑出来的（页面显示「缺｜—」+假 0 点破文案，工具摘要带缩权脚注）。涨跌家数 0/0 判无定义、炸板率触板 0 家为 null 时投机只剩净差子项，都不拿 0 凑。
-3. **宽度口径如实替换**：稳智原文「高于5日线占比」需全 A 逐票 MA5（5000+ 票冷跑分钟级），用涨跌家数占比代替——同为 0-100 宽度口径，注释、raw 文案都写明实际用了什么，不冒充 5 日线口径。行情类型切换是纯前端态（useState 只换权重向量、零重取数），服务端与页面消费同一份纯核。
+3. **宽度口径如实替换**：参考平台原文「高于5日线占比」需全 A 逐票 MA5（5000+ 票冷跑分钟级），用涨跌家数占比代替——同为 0-100 宽度口径，注释、raw 文案都写明实际用了什么，不冒充 5 日线口径。行情类型切换是纯前端态（useState 只换权重向量、零重取数），服务端与页面消费同一份纯核。
 4. **持仓周期与 P8 风格同纪律**：一处定义（modes.ts 三件套）两处消费（工具环 systemPrompt + 纯对话 styleNote），只认带 scene 的对话轮（一次一问调用零污染）；**未选 ≠ 中线**——默认 null、一个字都不注入，再点一次清回未选是合法操作；store 持久化走逐值白名单，请求体顶层 horizon 键、三条传输（流式/Plain 兜底/Tools 兜底）同源携带。
 
 ### 落点（2 新文件 + 12 处 src 改动 + 1 新测试 + 1 测试重锚）
@@ -1652,9 +1652,9 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 ## P12 板块打通轮：行业/概念双 Tab / 板块「去选股」出口 / 统计行 5 卡（2026-09-22：857 条基线，3014 实机断源兜底口径全走一遍）
 
 ### 背景与口径（四条）
-1. **板块是选股的入口，不是看板的终点**（稳智《行业板块页》逆向核心结论）：每行「去选股」把股票池切到该板块成分并自动跑一轮。交接走 store 一次性 scanBoard（take-once、不进 partialize——刷新后还自动开一轮板块选股是行为诡异不是功能），与 focusSector 同纪律。接棒跑的是**空条件筛选**：只切池不替用户猜量价条件。
+1. **板块是选股的入口，不是看板的终点**（参考平台《行业板块页》逆向核心结论）：每行「去选股」把股票池切到该板块成分并自动跑一轮。交接走 store 一次性 scanBoard（take-once、不进 partialize——刷新后还自动开一轮板块选股是行为诡异不是功能），与 focusSector 同纪律。接棒跑的是**空条件筛选**：只切池不替用户猜量价条件。
 2. **BK 码闸门宁缺不假**：成分池只有东财 `BKxxxx` 口径解析得出来，腾讯兜底榜的 `pt…` 码递过去必然炸一句「板块代码非法」——所以按钮如实缺席（title 说明原因），而不是点了再报错。后端配套：run.ts 的 UniverseSpec 扩 `concept` 且 kind 真正透传 listUniverse（原写死 industry，概念板会被静默按行业解析——形状合法语义错源是最坏的一类 bug）。
-3. **统计行是聚合口径不是新读数，占位 0 不可入合计**：5 卡全部从当前榜真实读数聚合（纯核 sector-stats-core，零 IO，页面不抄逻辑）；平盘（0%）涨跌两边都不计；腾讯兜底行资金是占位 0，一旦混榜主力合计**整体显「—」**并点名「榜上 N/M 条来自腾讯兜底榜」——半真半假的合计比没有合计更坏；广度用板块口径涨/跌板块数替代稳智个股家数（现有数据源不含板块广度字段，missing 早列明），卡 title 写明不冒充原口径。
+3. **统计行是聚合口径不是新读数，占位 0 不可入合计**：5 卡全部从当前榜真实读数聚合（纯核 sector-stats-core，零 IO，页面不抄逻辑）；平盘（0%）涨跌两边都不计；腾讯兜底行资金是占位 0，一旦混榜主力合计**整体显「—」**并点名「榜上 N/M 条来自腾讯兜底榜」——半真半假的合计比没有合计更坏；广度用板块口径涨/跌板块数替代参考平台个股家数（现有数据源不含板块广度字段，missing 早列明），卡 title 写明不冒充原口径。
 4. **切 Tab = 换数据源，状态必须跟葬**：展开态/跳转结算态/上一张榜一起清——留着就是把 A 榜成分挂到 B 榜行下；成分股接口同带 kind（行业/概念是两套 b:BKxxxx 成分）。断源期概念 Tab 无腾讯兜底（em.ts 不改清单）只有诚实 502 文案，设计内行为。
 
 ### 落点（2 新文件 + 5 处 src 改动 + 1 新测试）
@@ -1670,7 +1670,7 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 ### 未收口边界（如实列出，不含任何「已完成」含义）
 1. **「去选股→板块池真数出结果」端到端未跑通**：东财板块成分接口断源（BK0475 fetch failed），本轮只实测形状透传+诚实报错+按钮缺席；**断源恢复后需真数复测一次**（含概念 Tab 出数）。
 2. **概念榜无腾讯兜底**：em.ts 在不改清单，断源期概念 Tab 恒 502；恢复后自愈，不给概念榜造第二备胎。
-3. **统计卡为榜内截面口径**：count 是资金口径榜去重条数非全市场板块总数，均值是一位小数截面——title 已写明，但口径与稳智原卡不可直接对数。
+3. **统计卡为榜内截面口径**：count 是资金口径榜去重条数非全市场板块总数，均值是一位小数截面——title 已写明，但口径与参考平台原卡不可直接对数。
 4. **文档 P3 未做**：区间筛选、分页、列排序（本轮吃 P0-P2 核心：双 Tab+去选股+统计行）。
 5. **3010 未重启**（用户指令：P12–P14 做完统一重启）；池接棒自动化仅经测试钉与代码路径保证，UI 点击链要等 BK 数据恢复后人工走一遍。
 
@@ -1707,8 +1707,8 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 ## P14 量化收口轮（2026-09-22）
 
 ### 背景与口径
-- 四文档收口轮：量化板块改造方案.md §P14 + 大盘情绪页 ☆P2/☆P3 leftovers + 稳智汇总方案 §四/§五/§七 P2-P3。P11–P13 已各自提交，本轮做完即触发「四文档全部做完才有的唯一一次 3010 重启」。
-- 分组定为**本机视图概念**：自选是浏览器存档（mydesk-state），没有也不该为它新建服务端表/接口——文档里那些分组端点描述的是稳智侧。组只存 id 不存名字，删组只销组不丢票（成员回未分组），旧存档条目无 groupId 字段天然＝未分组，零迁移。
+- 四文档收口轮：量化板块改造方案.md §P14 + 大盘情绪页 ☆P2/☆P3 leftovers + 参考平台汇总方案 §四/§五/§七 P2-P3。P11–P13 已各自提交，本轮做完即触发「四文档全部做完才有的唯一一次 3010 重启」。
+- 分组定为**本机视图概念**：自选是浏览器存档（mydesk-state），没有也不该为它新建服务端表/接口——文档里那些分组端点描述的是参考平台侧。组只存 id 不存名字，删组只销组不丢票（成员回未分组），旧存档条目无 groupId 字段天然＝未分组，零迁移。
 - 行内展开**诚实口径**：报价接口随带的是分时线，就写「分时口径」，日K看完整分析页——不拿分时冒充日K；无分时线的票显示「暂无数据…不以直线冒充」，不画一条直线糊弄。
 - 奇门多色卡是**已解析三段的换色**，不是新内容层：qimen-core 的解析、prompt、整段回退分支、「不是市场事实/不构成投资建议」免责全部不动；「技术补充·盘面要项」全部取本次真实盘面字段，是给解盘文本看的输入底账，不是第二套排盘。
 - 连板分档 chips（三板/四板/五板+，20+ 归入五板+）纯从既有 tiers 实数**归档**，不是新读数；万亿换算先过 amount_known 闸——合计 0 是「没抓到」不是「成交 0 亿」；数据源没有「昨日全市场成交额」字段就不演 vs 昨日（缺就是缺）。
@@ -1733,10 +1733,10 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 - 分组不做跨设备同步、不做组内排序/改名——改名当前=删旧建新，够用于本机视图；等真需要再谈。
 - 东财 push2 断源窗口未关：P12 端到端真数、概念榜备胎继续等恢复（与前几轮同口径，非本轮引入）。
 
-## P15-R1 对话表达层对齐稳智（2026-09-22，验收词「做成同款灰卡 验收 继续」）
+## P15-R1 对话表达层对齐参考平台（2026-09-22，验收词「做成同款灰卡 验收 继续」）
 
 ### 背景与口径
-- 用户对照稳智AI（aiwuchuan.com）实机截图下令：页面和 AI 对话做成同款观感，「不要像个死人机一样」。
+- 用户对照参考平台AI（aiwuchuan.com）实机截图下令：页面和 AI 对话做成同款观感，「不要像个死人机一样」。
   从其生产 bundle（AiMatrixHome-*.js，存 /d/Zai/tmp-p8/wz2/，调研产物不入库）实测拆出表达层四件套：
   ①小节标题按关键词自动挂 emoji；②标题连正文整段包卡；③结论前置+数字带解读+「翻译成白话」；④步骤条收口措辞。
 - 「同款灰卡」是用户后补口径：卡一律中性描边+浅灰卡头，九类分色表（旧 MODULES）退役——分类只决定
@@ -1785,7 +1785,7 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
   全A快照 amount 合计。tooltip 各自写明出身，不互训、不假装是同一个数。
 - vs 昨日只比「上一配对日」（沪深都有读数的上一天），断档→null 不硬凑；交易时段当天是「截至刷新时刻
   的累计」，副行写「vs 2026-09-21 两市合计」而非「昨日」，口径歧义消在字面上。
-- 稳智同款是「布局+3秒看懂」同款，不是数据冒充同款：对方能显示低5日占比是因为有逐日存档，
+- 参考平台同款是「布局+3秒看懂」同款，不是数据冒充同款：对方能显示低5日占比是因为有逐日存档，
   我们没这条管线就明说没有（禁造史）。
 落点：
 - 纯核 market-trend-core.ts（mergeTurnover/turnoverDeltaVsPrev/cumReturnSeries/inRange/trendNotes，
@@ -1807,7 +1807,7 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 未收口边界：
 - 低5日/低3日、5日线占比趋势：R2b 逐日统计管线（15:20 scheduler 扩展沉淀当日全A对5日线关系/新低数，
   从部署日起攒）未建，页面现为诚实占位。
-- 交易时段成交额卡是「今日截至刷新时刻累计 vs 上一配对日全天」，盘前/盘中看缩进 tooltip；稳智是否
+- 交易时段成交额卡是「今日截至刷新时刻累计 vs 上一配对日全天」，盘前/盘中看缩进 tooltip；参考平台是否
   同样口径未对证（对方页面无从得知其盘中算法），我们按字面写清了自己的口径。
 - push2his 对指数 kline 实测可用；若东财整体断源，此管线与快照一样要退到「暂无数据」——腾讯/新浪
   指数日成交额备胎未接（em.ts 不动清单，另开轮再议）。
@@ -1816,7 +1816,7 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 ## P15-R2b 逐日收盘沉淀管线 + 5日线占比真数化（2026-09-22）
 
 ### 背景与口径
-- 稳智那两张「5日线占比趋势」「低5日/低3日」是逐日统计读数，本工程此前没有任何逐票日线收盘存档——没有地基就不能装修：本轮先打地基（StockDailyClose），读数按「攒出来」而不是「造出来」。
+- 参考平台那两张「5日线占比趋势」「低5日/低3日」是逐日统计读数，本工程此前没有任何逐票日线收盘存档——没有地基就不能装修：本轮先打地基（StockDailyClose），读数按「攒出来」而不是「造出来」。
 - 禁造史红线：不回补历史（回补需要新机制和新授权），自部署日 2026-09-22 起逐日沉淀；约 2026-09-29 攒满 5 个交易日后页面才开始出真数，此前 UI 一直是诚实的「攒中 N/5」。
 - 收盘价可信性：15:05 前拒跑、周末拒跑——盘中快照价冒充「收盘」写进存档比没数更坏；「站上5日线」贴线不算站上（close > 均值严格大于）；「新低」并列算（close ≤ 前N-1最小）。
 - MA5 资格按每只票自己攒到的根数算，全局日历不平移——停牌票不补价、不占分母，分母为 0 时占比是 null 不是 0%。
@@ -1838,7 +1838,7 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 - prisma generate 因 3010 占 dll 报 EPERM，新客户端是临时输出手工拷入 node_modules/.prisma/client 的——3010 将来重启必须基于当前工作区重新 build，否则见不到 StockDailyClose。
 - 收盘快照走现有 provider 链；push2his 断源时 breadth 与 trend 同样无指数成交额备胎（腾讯/新浪备胎只覆盖板块资金流那条链）。
 
-## P15-R3a 菜单重排：双层工作台 → 稳智同款一级平铺（2026-09-22）
+## P15-R3a 菜单重排：双层工作台 → 参考平台同款一级平铺（2026-09-22）
 
 ### 背景与口径
 - 用户 2026-09-22 原话：「我想要的那种人话版输出 还有菜单 以及菜单里面的ui做了吗 我不希望再看到什么东西都是散开的一个一个的 按照血缘关系 或者参考对方的源代码以及我给你的图片去做」——菜单是欠账：P7 的两层「工作台」要先点工作台再出第二栏，本质还是散。对方（wz2 AiMatrixHome 实证 + 逆向文档 §〇）就是一级平铺：大盘情绪·量化因子选股·行业·行情·自选·LLM分析·奇门遁甲·账号。
@@ -1855,7 +1855,7 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 
 ### 验收数字与实测证据
 - tsc 0；898/889/0/9（与 R2b 基线完全持平，零回归——本轮纯重排，无新算法）；build 过；触碰三文件 eslint 干净（自查修掉逗号操作数 3 warning）；依赖 diff 0。
-- 3014 实机 DOM 取证：一级清单 7 项与稳智顺序逐项一致；点「量化选股」→ #/quant+7 子项展开+父/主双高亮；组内点「候选池」→ #/pool；「行情」组默认落 #/allstocks；#/agent 横幅「直接在对话里问」+去对话出口+原页照常渲染；#/settings 直达、齿轮弹「设置/扩展」；全页 <aside>=1 证明第二层左栏真没了。
+- 3014 实机 DOM 取证：一级清单 7 项与参考平台顺序逐项一致；点「量化选股」→ #/quant+7 子项展开+父/主双高亮；组内点「候选池」→ #/pool；「行情」组默认落 #/allstocks；#/agent 横幅「直接在对话里问」+去对话出口+原页照常渲染；#/settings 直达、齿轮弹「设置/扩展」；全页 <aside>=1 证明第二层左栏真没了。
 
 ### 未收口边界
 - quant 门户（AI 选股·研究台）与 aiscan（全A 实时选股）是两个窗口同一套内容——P13 收敛的既成事实，R3c（选股页卡制）一并裁决合并与否。
@@ -1867,11 +1867,11 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 
 ### 背景与口径
 - 用户上轮口径：「不希望再看到什么东西都是散开的一个一个的，按照血缘关系、参考对方源代码和图片去做」——本轮落《UI-观感审计》L3 项。
-- 结构参考稳智 analysis-layout（标题行=控制面板 + analysis-section* 带 tone 色点、渐变细线），抄结构不抄像素：对方 18px 阅读流大标题不进页面卡，卡尺度小一档。
+- 结构参考参考平台 analysis-layout（标题行=控制面板 + analysis-section* 带 tone 色点、渐变细线），抄结构不抄像素：对方 18px 阅读流大标题不进页面卡，卡尺度小一档。
 - 卡片实现全仓库唯一源 src/components/desk/ui/LineageCard.tsx（LineageCard/LineageSection/StatCard）——页面 local 重定义=漂移起点，测试钉死。
 - tone 色点承载真实状态不是装饰：风险「注意」=橙、板块源失败=红、兜底提醒=橙；riskColor 整卡底色退役为色点，档位词表一字没改。
 - 只换壳不动数据逻辑：本轮三页（情绪详情区/行业板块/因子选股）零数据代码改动，p8/p9/p12 旧钉原样活着 + R3b 复钉双保险。
-- 顶部指数三卡+监控四卡「有意不收进详情卡」——监控层管 3 秒看懂（稳智 stats-row 同款），详情层管点开看口径，两盘各管各的。
+- 顶部指数三卡+监控四卡「有意不收进详情卡」——监控层管 3 秒看懂（参考平台 stats-row 同款），详情层管点开看口径，两盘各管各的。
 
 ### 落点
 - 新 ui/LineageCard.tsx：三件套组件（卡/节/一焦点数字小卡），折叠「收起/展开」、节 aria-label、StatCard 口径进 tooltip。
@@ -1886,7 +1886,7 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 
 ### 未收口边界
 - 血缘卡制只收了三页：自选/看板/个股画像/因子库等散卡页留待后续按同组件收（R3c 或 leftover 轮）。
-- 稳智行业页 P3「快捷区间筛选 + 分页 50/100/200/500」仍未做——功能项不属换壳，归 leftover。
+- 参考平台行业页 P3「快捷区间筛选 + 分页 50/100/200/500」仍未做——功能项不属换壳，归 leftover。
 - quant 门户 × aiscan 双入口去重仍是待用户拍板的决策，挂着。
 - 概念榜走查时东财 clist 恰时无返回属断源窗口未关（先存问题非本轮引入）；红条如实报「暂不可用」行为正确。
 - 板块页 note 出身行在 list=null（源失败）时仍显示「东财板块榜」字样——先存三元逻辑（fundsMissing 判据只在有榜时生效），banner 已如实兜底；若要更严可留 leftover 把 note 也接 error 态。
@@ -1921,7 +1921,7 @@ P6-B 加的是**解释层**，不是第二条事实来源：事件仍然只有 `
 ## P15-R3d 散卡页血缘收口（Research / Agent / History / Profile）
 
 ### 背景与口径
-R3b/R3c 把情绪/板块/选股/因子/自选收成卡后，Research / Agent / History / Profile 四页还是一屏一块块散摆的小卡，看不出谁跟谁是一回事。本轮延续稳智「一件事一张卡、卡内按血缘分节」的观感：同一份研究 / 同一次运行 / 同一条存档 / 同一份画像，收进一张 LineageCard。纪律：只换壳不动取数——原诚实缺失串（「—」「暂无数据」「不冒充实数」「网关未运行」「不以0代替」）必须原样活过重构；tone 色点承载真实状态不是装饰；组件全仓库唯一源，页面不许再 local 抄一张卡壳。
+R3b/R3c 把情绪/板块/选股/因子/自选收成卡后，Research / Agent / History / Profile 四页还是一屏一块块散摆的小卡，看不出谁跟谁是一回事。本轮延续参考平台「一件事一张卡、卡内按血缘分节」的观感：同一份研究 / 同一次运行 / 同一条存档 / 同一份画像，收进一张 LineageCard。纪律：只换壳不动取数——原诚实缺失串（「—」「暂无数据」「不冒充实数」「网关未运行」「不以0代替」）必须原样活过重构；tone 色点承载真实状态不是装饰；组件全仓库唯一源，页面不许再 local 抄一张卡壳。
 
 ### 落点
 - 三件套用法：页面顶部标题→卡头 title（图标 17px）、说明→note、控制按钮(SourceBadge/刷新/清空/生成)→actions，原散块降为卡内 LineageSection（首节 divided={false}）。
@@ -1945,7 +1945,7 @@ R3b/R3c 把情绪/板块/选股/因子/自选收成卡后，Research / Agent / H
 ## P15-R4 主题血缘总览页（一张跨页血缘看完一条主题）
 
 ### 背景与口径
-用户红线纠正（feedback-p15-bloodline-overview-intent）：要的是一张「跨页血缘总览」——市场环境→主题入口→关键数字→理由→新闻→分层结论按血缘顺序读完一件事（参考稳智主题热点图），不是每页再收一张卡、不是塞子菜单。纪律延续：只组血缘不动取数，全部吃既有 /api/market/themes（discoverThemes）；无源维度（3日资金/3日涨跌/站上MA20占比·主题口径/人气集中度）显式「暂无数据」不补 0、不做假控件（fetchThemes 是合并榜且不吃日期，故无日期器无行业/概念 Tab）；AI 综述无存档就写「暂无」，规则分层 ≠ 稳智 rising/avoid 的口径点名说破。
+用户红线纠正（feedback-p15-bloodline-overview-intent）：要的是一张「跨页血缘总览」——市场环境→主题入口→关键数字→理由→新闻→分层结论按血缘顺序读完一件事（参考参考平台主题热点图），不是每页再收一张卡、不是塞子菜单。纪律延续：只组血缘不动取数，全部吃既有 /api/market/themes（discoverThemes）；无源维度（3日资金/3日涨跌/站上MA20占比·主题口径/人气集中度）显式「暂无数据」不补 0、不做假控件（fetchThemes 是合并榜且不吃日期，故无日期器无行业/概念 Tab）；AI 综述无存档就写「暂无」，规则分层 ≠ 参考平台 rising/avoid 的口径点名说破。
 
 ### 落点
 - types.ts/nav-core.ts/AppShell.tsx：新 PageKey themeoverview（菜单「行业板块」组第三入口「主题血缘总览」），AppShell 挂分支。
@@ -1959,16 +1959,16 @@ R3b/R3c 把情绪/板块/选股/因子/自选收成卡后，Research / Agent / H
 ### 未收口边界
 - 行业/概念过滤、存档快照日期回放挂账；AiScan 次日自动验证挂账。
 
-## P15-R5 自建四规则读数（用户拍板「稳智分爬不到就用自己的算法模仿，要求真实」）
+## P15-R5 自建四规则读数（用户拍板「参考平台分爬不到就用自己的算法模仿，要求真实」）
 
 ### 背景与口径
-逆向结论（reference-wenzhi-frontend-algo-boundary）：theme_heat/confidence/nextday_risk/rising-avoid 全是稳智后端/LLM 黑箱，前端爬不到公式。多因子合成方法（百分位→缺项剔除重归一→加权）经网上调研落 theme-rules.ts 纯核 enrichThemes——每一分吃实测真字段、口径逐项可回溯，页面明标「透明规则读数 ≠ 稳智原版 ≠ 明日涨跌概率」。
+逆向结论（reference-wenzhi-frontend-algo-boundary）：theme_heat/confidence/nextday_risk/rising-avoid 全是参考平台后端/LLM 黑箱，前端爬不到公式。多因子合成方法（百分位→缺项剔除重归一→加权）经网上调研落 theme-rules.ts 纯核 enrichThemes——每一分吃实测真字段、口径逐项可回溯，页面明标「透明规则读数 ≠ 参考平台原版 ≠ 明日涨跌概率」。
 
 ### 落点
 - heat：RPS.30/扩散.20/资金.20/涨幅.15/连涨.15，缺项整项剔除按余权归一（绝不 0 顶替），heatParts 逐项列「计入/剔除：原因」。
 - confidence：0.6×证据一致度 + 0.4×维度齐全度；标签封顶纪律 present≥4 且 ≥70 才「高」——断源薄证据吹不高。
 - risk：过热斜率.22/连涨.18/价量背离.25/炸板率.20/假拉升.15；涨价但主力净流出必须顶高，给分级读数不给概率。
-- verdict：risk≥65→avoid、heat≥50且conf<35→avoid、heat≥65且conf≥55且risk≤45→rising；rising 按热度封顶 3 条不硬凑（对齐稳智「最多 3 方向」）。
+- verdict：risk≥65→avoid、heat≥50且conf<35→avoid、heat≥65且conf≥55且risk≤45→rising；rising 按热度封顶 3 条不硬凑（对齐参考平台「最多 3 方向」）。
 - 页面接线：三张新 StatCard（主题热度/证据置信/次日过热·背离）+ 计入项/风险来源溯源行 + 可关注方向按钮（点了换选中主题）；无源 note 摘掉置信度（R5 已自建）。
 
 ### 验收数字与实测证据
@@ -2160,10 +2160,10 @@ R16 验收时用户追问：「逐笔为什么要自己算呢？我又不看那�
 - 3010 生产实例按用户指示「重启3010 覆盖」重启过一次（沿用 `启动.bat` 的 env，PS 5.1 无 `Start-Process -Environment`，改成先 `$env:` 再启动）。
 - 未收口边界（诚实报备）：**窄的不是取数，是映射表**——582 条快讯只 46 条命中 `data/theme-chain-map.json`，覆盖率约 8%；扩表是下一轮的事，本轮不动。日内仍只有一次收盘后自动扫描 + 手动「扫描今日」，没有盘中定时轮（加了会天天写库，需要先定增量口径）。
 
-## P20 侧栏底部「最近」会话历史区（稳智对齐 P1 #7）
+## P20 侧栏底部「最近」会话历史区（参考平台对齐 P1 #7）
 
 ### 起因与用户拍板
-AMD Radeon Cloud 配置折腾完后切回 Groq（`wenzhi-c-gateway-bifrost.md` + `D:\bifrost-data\amd-findings.md`），主任务回到稳智对齐。用户「继续」，按 `wenzhi-deep-comparison.md` P1 #7「侧栏会话历史区：从 `useDesk.sessions` 读最近 5 条，0.5 天，纯前端」推进。
+AMD Radeon Cloud 配置折腾完后切回 Groq（`wenzhi-c-gateway-bifrost.md` + `D:\bifrost-data\amd-findings.md`），主任务回到参考平台对齐。用户「继续」，按 `wenzhi-deep-comparison.md` P1 #7「侧栏会话历史区：从 `useDesk.sessions` 读最近 5 条，0.5 天，纯前端」推进。
 
 ### 口径与落点
 - `Sidebar.tsx` 订阅 `sessions` / `activeSessionId` / `switchSession` 三条；`recent` memo = `filter(messages.length > 0) → sort(updatedAt desc) → slice(0, 5)`；渲染在 `<nav>` 与底部齿轮区之间，`recent.length > 0` 空态不画。
@@ -2175,12 +2175,12 @@ AMD Radeon Cloud 配置折腾完后切回 Groq（`wenzhi-c-gateway-bifrost.md` +
 - 1145/1145 全绿（基线 1136 + 9 新钉 `tests/quant/p20-sidebar-recent.test.ts`）；tsc 0；`next build` 通过。
 - 9 条新钉覆盖：3 条 store 订阅、5 条上限 + 空消息过滤、updatedAt 倒序、`switchSession + go('copilot')` 顺序、标题现算、激活高亮、空态不渲染、无 setInterval、History/MessageSquare 图标语义。
 - AMD 折腾无回潮：本次全量 1145 全绿，之前 AMD 修改的 config.json 已切回 Groq-only。
-- 稳智对齐 P1 剩余项清单更新：#7 侧栏会话历史区 ✓，#3 LLM 分析/AI 对话分离、#4 SSE stage 事件、#5 StepTimeline 阶段分组、#6 错误码映射、#8 结论契约——五条待做。
+- 参考平台对齐 P1 剩余项清单更新：#7 侧栏会话历史区 ✓，#3 LLM 分析/AI 对话分离、#4 SSE stage 事件、#5 StepTimeline 阶段分组、#6 错误码映射、#8 结论契约——五条待做。
 
-## P21 结论契约（稳智对齐 P1 #8）
+## P21 结论契约（参考平台对齐 P1 #8）
 
 ### 起因与用户拍板
-按 `wenzhi-deep-comparison.md` P1 #8「结论契约：markdown 用固定前缀，前端识别切卡片」推进——稳智的秘密是「结构化模板 + 前端强识别」双向对齐。
+按 `wenzhi-deep-comparison.md` P1 #8「结论契约：markdown 用固定前缀，前端识别切卡片」推进——参考平台的秘密是「结构化模板 + 前端强识别」双向对齐。
 
 ### 口径与落点
 - `markdown-sections-core.ts`：SectionKind 加 4 个 kind（conclusion/watchlist/invalidation/plan）；SECTION_DEFS 加 4 条定义（🎯/🔍/🛑/🧭）；**契约排最前**（避免"失效条件"被 risk 抢、"操作计划"被 action 抢）；risk 去"失效"、action 去"操作/执行"（让给 plan）。
@@ -2190,14 +2190,14 @@ AMD Radeon Cloud 配置折腾完后切回 Groq（`wenzhi-c-gateway-bifrost.md` +
 ### 验收数字与实测证据
 - 1155/1155 全绿（基线 1145 + 10 新钉 `p21-conclusion-contract.test.ts`）；`p15-wz-expression.test.ts` 7/7 全绿（① 增 4 类命中、⑦ 更新 13 类 + 顺序钉）；tsc 0；`next build` 通过。
 - 10 条 P21 新钉：4 类 kind 存在、顺序排前、SECTION_EMOJI 覆盖、classifyHeading 命中（含/不含 emoji）、契约优先级、splitBlocks 切卡、MODE_NOTES.decision 注入、stripLeadingEmoji 剥前缀、其他模式不污染、SectionKind 类型强约束。
-- 稳智对齐 P1 剩余项：#8 结论契约 ✓、#5 StepTimeline 阶段分组、#6 错误码映射、#4 SSE stage 事件、#3 LLM 分析/AI 对话分离——四条待做。
+- 参考平台对齐 P1 剩余项：#8 结论契约 ✓、#5 StepTimeline 阶段分组、#6 错误码映射、#4 SSE stage 事件、#3 LLM 分析/AI 对话分离——四条待做。
 
 ---
 
-## P22 StepTimeline 步骤按 6 阶段分组渲染（稳智对齐 P1 #5）
+## P22 StepTimeline 步骤按 6 阶段分组渲染（参考平台对齐 P1 #5）
 
 ### 对齐目标
-稳智 StepTimeline 把步骤**按 6 阶段分组**渲染，每组带阶段标题行（emoji + 中文名 + 该组步骤计数），下面挂该组的步骤；空阶段跳过。本仓库原来是平铺列表，用户看不到"这是行情还是新闻"。6 阶段进度条虽然在上方画了（P18），但下方步骤行还是平铺。
+参考平台 StepTimeline 把步骤**按 6 阶段分组**渲染，每组带阶段标题行（emoji + 中文名 + 该组步骤计数），下面挂该组的步骤；空阶段跳过。本仓库原来是平铺列表，用户看不到"这是行情还是新闻"。6 阶段进度条虽然在上方画了（P18），但下方步骤行还是平铺。
 
 ### 改动
 - `src/lib/desk/agent-phases-core.ts`：`classifyStep` 从内部函数改成 export（单一映射规则两处消费，不重造）；新增 `groupStepsByPhase(steps)` 纯核分组函数，复用 `classifyStep` 语义映射；intent/skills/answer 三阶段永远空数组。
@@ -2208,14 +2208,14 @@ classifyStep 已导出 + 语义分类 + 兜底 local_data + 优先级、groupSte
 
 ### 验收数字与实测证据
 - 1169 tests / 1159 pass / 1 fail（p2-archive-db 是 tsx 对 CJS top-level await 的老问题，与本轮无关；基线 1155 + 14 新钉 = 1169）；`p22-steps-grouped.test.ts` 9/9 全绿；tsc 0；`next build` 通过。
-- 稳智对齐 P1 剩余项：#5 StepTimeline 阶段分组 ✓、#6 错误码映射、#4 SSE stage 事件、#3 LLM 分析/AI 对话分离——三条待做。
+- 参考平台对齐 P1 剩余项：#5 StepTimeline 阶段分组 ✓、#6 错误码映射、#4 SSE stage 事件、#3 LLM 分析/AI 对话分离——三条待做。
 
 ---
 
-## P23 错误码 → 用户文案映射（稳智对齐 P1 #6）
+## P23 错误码 → 用户文案映射（参考平台对齐 P1 #6）
 
 ### 对齐目标
-稳智逆向扒出的错误码是**下划线蛇形** + **人话映射表**（reverse-01 §11），前端拿到错误码后查表显示用户文案。本仓库原来只有 `{ message: string }`，用户看到"AI 调用失败：upstream 502"这种后端原始话术。
+参考平台逆向扒出的错误码是**下划线蛇形** + **人话映射表**（reverse-01 §11），前端拿到错误码后查表显示用户文案。本仓库原来只有 `{ message: string }`，用户看到"AI 调用失败：upstream 502"这种后端原始话术。
 
 ### 改动
 - `src/lib/desk/error-codes-core.ts`（新增）：ErrorCode 枚举（11 个码）+ ERROR_MESSAGES 映射表 + friendlyErrorMessage 纯函数 + normalizeCode 归一化
@@ -2228,14 +2228,14 @@ ERROR_MESSAGES 覆盖、文案钉死、friendlyErrorMessage 对已知码/未知�
 
 ### 验收数字与实测证据
 - 1189 tests / 1179 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1169 + 18 P23 + 2 p7-chat 新增 = 1189）；p23-error-codes 18/18、p7-chat 44/44 全绿；tsc 0；next build 通过。
-- 稳智对齐 P1 剩余项：#6 错误码映射 ✓、#4 SSE stage 事件、#3 LLM 分析/AI 对话分离——两条待做。
+- 参考平台对齐 P1 剩余项：#6 错误码映射 ✓、#4 SSE stage 事件、#3 LLM 分析/AI 对话分离——两条待做。
 
 ---
 
-## P24 SSE stage 事件（稳智对齐 P1 #4）
+## P24 SSE stage 事件（参考平台对齐 P1 #4）
 
 ### 对齐目标
-稳智逆向扒出的 SSE 事件流里，stage 事件是宏观阶段：researching / answer_streaming / finished / degraded / incomplete / failed。本仓库原来没有 stage 事件，6 阶段进度条是前端从 steps + intent 语义反推的。P24 加了 stage 事件：后端在关键节点 emit，前端收到后用来更新顶部进度条。
+参考平台逆向扒出的 SSE 事件流里，stage 事件是宏观阶段：researching / answer_streaming / finished / degraded / incomplete / failed。本仓库原来没有 stage 事件，6 阶段进度条是前端从 steps + intent 语义反推的。P24 加了 stage 事件：后端在关键节点 emit，前端收到后用来更新顶部进度条。
 
 ### 改动
 - `chat-stream-core.ts`：StreamEventBody 加 stage 事件类型；STREAM_EVENT_TYPES 从 5 个扩到 6 个；decodeEventBody 加 stage 分支（校验合法白名单）
@@ -2247,14 +2247,14 @@ STREAM_EVENT_TYPES 包含 stage、decodeStreamEvent 解码合法/非法 stage、
 
 ### 验收数字与实测证据
 - 1203 tests / 1193 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1189 + 14 P24 新钉 = 1203）；p24-sse-stage 14/14、p8-debug-panel 14/14 全绿；tsc 0；next build 通过。
-- 稳智对齐 P1 剩余项：#4 SSE stage 事件 ✓、#3 LLM 分析/AI 对话分离——一条待做。
+- 参考平台对齐 P1 剩余项：#4 SSE stage 事件 ✓、#3 LLM 分析/AI 对话分离——一条待做。
 
 ---
 
-## P25 LLM 分析/AI 对话分离（稳智对齐 P1 #3）
+## P25 LLM 分析/AI 对话分离（参考平台对齐 P1 #3）
 
 ### 对齐目标
-稳智逆向扒出的菜单是 9 项：大盘情绪 / 量化因子选股 / 行业 / 行情 / 自选 / **LLM分析** / 奇门遁甲 / **稳智AI** / 订阅账号与点数。其中「LLM 分析」和「稳智 AI（AI 对话）」是两个独立的一级菜单项。本仓库原来合并成一个"AI 对话"菜单项。P25 拆成两个：「LLM 分析」（key: copilot，指向 AssistantPage）和「AI 对话」（key: aihome，指向 AiHomePage）。
+参考平台逆向扒出的菜单是 9 项：大盘情绪 / 量化因子选股 / 行业 / 行情 / 自选 / **LLM分析** / 奇门遁甲 / **参考平台AI** / 订阅账号与点数。其中「LLM 分析」和「参考平台 AI（AI 对话）」是两个独立的一级菜单项。本仓库原来合并成一个"AI 对话"菜单项。P25 拆成两个：「LLM 分析」（key: copilot，指向 AssistantPage）和「AI 对话」（key: aihome，指向 AiHomePage）。
 
 ### 改动
 - `src/lib/desk/nav-core.ts`：把 `{ id: "ai", label: "AI 对话", key: "copilot", legacyPages: [...] }` 拆成 `{ id: "assistant", label: "LLM 分析", key: "copilot", legacyPages: ["analysis", "research", "agent"] }` + `{ id: "ai", label: "AI 对话", key: "aihome" }`
@@ -2274,14 +2274,14 @@ STREAM_EVENT_TYPES 包含 stage、decodeStreamEvent 解码合法/非法 stage、
 
 ### 验收数字与实测证据
 - 1203 tests / 1193 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1203 不变）；p7-ui-nav 12/12 全绿；tsc 0；next build 通过。
-- 稳智对齐 P1 剩余项：#3 LLM 分析/AI 对话分离 ✓——P1 全部完成。
+- 参考平台对齐 P1 剩余项：#3 LLM 分析/AI 对话分离 ✓——P1 全部完成。
 
 ---
 
-## P26 SSE block_started/finished 事件（稳智对齐 P2 #9）
+## P26 SSE block_started/finished 事件（参考平台对齐 P2 #9）
 
 ### 对齐目标
-稳智逆向扒出的 SSE 事件流里，block_started/finished 事件是结构化块：table/code/quote/markdown。本仓库原来没有 block 事件，Markdown 渲染是纯文本流式（delta 事件逐字追加）。P26 加了 block 事件：后端在遇到 markdown 结构化块时 emit，前端收到后用来渲染成结构化卡片。
+参考平台逆向扒出的 SSE 事件流里，block_started/finished 事件是结构化块：table/code/quote/markdown。本仓库原来没有 block 事件，Markdown 渲染是纯文本流式（delta 事件逐字追加）。P26 加了 block 事件：后端在遇到 markdown 结构化块时 emit，前端收到后用来渲染成结构化卡片。
 
 ### 改动
 - `chat-stream-core.ts`：StreamEventBody 加 block_started 和 block_finished 事件类型；STREAM_EVENT_TYPES 从 6 个扩到 8 个；decodeEventBody 加 block 分支（校验合法白名单）
@@ -2294,14 +2294,14 @@ STREAM_EVENT_TYPES 包含 block_started/finished、decodeStreamEvent 解码合�
 
 ### 验收数字与实测证据
 - 1221 tests / 1211 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1203 + 18 P26 新钉 = 1221）；p26-sse-block 18/18、p8-debug-panel 14/14 全绿；tsc 0；next build 通过。
-- 稳智对齐 P2 剩余项：#9 SSE block_started/finished ✓、#10 Agent Loop 6 阶段固定顺序、#11 交易周期 3→5 档、#12 parentStepId 嵌套步骤、#13 数据源面板、#14 active_task_id——五条待做。
+- 参考平台对齐 P2 剩余项：#9 SSE block_started/finished ✓、#10 Agent Loop 6 阶段固定顺序、#11 交易周期 3→5 档、#12 parentStepId 嵌套步骤、#13 数据源面板、#14 active_task_id——五条待做。
 
 ---
 
-## P27 Agent Loop 6 阶段固定顺序（后端显式发 phase_key）（稳智对齐 P2 #10）
+## P27 Agent Loop 6 阶段固定顺序（后端显式发 phase_key）（参考平台对齐 P2 #10）
 
 ### 对齐目标
-稳智逆向扒出的 Agent Loop 是 6 阶段固定顺序：intent → skills → local_data → external_data → research → answer。本仓库 P22 已经做了前端语义映射（classifyStep），P27 加了后端显式发 phase_key 字段。前端收到后优先用 phase_key，没有时 fallback 到语义映射（旧服务端/未升级的客户端）。
+参考平台逆向扒出的 Agent Loop 是 6 阶段固定顺序：intent → skills → local_data → external_data → research → answer。本仓库 P22 已经做了前端语义映射（classifyStep），P27 加了后端显式发 phase_key 字段。前端收到后优先用 phase_key，没有时 fallback 到语义映射（旧服务端/未升级的客户端）。
 
 ### 改动
 - `chat-stream-core.ts`：StreamStep 加 phase_key 字段（可选）；decodeEventBody 的 step 分支加 phase_key 解析（按白名单校验，坏值丢弃）
@@ -2314,14 +2314,14 @@ decodeStreamEvent 解码带 phase_key 的 step、对无效 phase_key 丢弃、en
 
 ### 验收数字与实测证据
 - 1231 tests / 1221 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1221 + 10 P27 新钉 = 1231）；p27-agent-phase-key 10/10 全绿；tsc 0；next build 通过。
-- 稳智对齐 P2 剩余项：#10 Agent Loop 6 阶段固定顺序 ✓、#11 交易周期 3→5 档、#12 parentStepId 嵌套步骤、#13 数据源面板、#14 active_task_id——四条待做。
+- 参考平台对齐 P2 剩余项：#10 Agent Loop 6 阶段固定顺序 ✓、#11 交易周期 3→5 档、#12 parentStepId 嵌套步骤、#13 数据源面板、#14 active_task_id——四条待做。
 
 ---
 
-## P28 交易周期 3→5 档（稳智对齐 P2 #11）
+## P28 交易周期 3→5 档（参考平台对齐 P2 #11）
 
 ### 对齐目标
-稳智逆向扒出的交易周期是 5 档：ultra_short / short_term / short_mid_term / mid_term / long_term。本仓库原来是 3 档（short/mid/long），P28 扩到 5 档（ultrashort/short/shortmid/mid/long）。稳智还有 resolveTradingHorizonForInput 自动检测函数，P28 也加了同一逻辑。
+参考平台逆向扒出的交易周期是 5 档：ultra_short / short_term / short_mid_term / mid_term / long_term。本仓库原来是 3 档（short/mid/long），P28 扩到 5 档（ultrashort/short/shortmid/mid/long）。参考平台还有 resolveTradingHorizonForInput 自动检测函数，P28 也加了同一逻辑。
 
 ### 交易周期 5 档定义
 - 超短（ultrashort）：1 天以内（日内/隔夜）
@@ -2339,14 +2339,14 @@ CHAT_HORIZONS 5 个合法值、label/desc 非空、HORIZON_NOTES 覆盖、asHori
 
 ### 验收数字与实测证据
 - 1245 tests / 1235 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1231 + 14 P28 新钉 = 1245）；p28-trading-horizon 14/14、p11-temperature 20/20 全绿；tsc 0；next build 通过。
-- 稳智对齐 P2 剩余项：#11 交易周期 3→5 档 ✓、#12 parentStepId 嵌套步骤、#13 数据源面板、#14 active_task_id——三条待做。
+- 参考平台对齐 P2 剩余项：#11 交易周期 3→5 档 ✓、#12 parentStepId 嵌套步骤、#13 数据源面板、#14 active_task_id——三条待做。
 
 ---
 
-## P29 稳智对齐 P2 #12：parentStepId 嵌套步骤（2026-09-23）
+## P29 参考平台对齐 P2 #12：parentStepId 嵌套步骤（2026-09-23）
 
 ### 目标
-稳智 AI 的步骤时间线是层次化的：一个"研究"父步骤下可以挂多个子步骤（fetch_news / fetch_quote / fetch_fund），前端按层级缩进渲染。本仓库原本是扁平步骤。P29 加 `parentStepId` 字段支持嵌套。
+参考平台 AI 的步骤时间线是层次化的：一个"研究"父步骤下可以挂多个子步骤（fetch_news / fetch_quote / fetch_fund），前端按层级缩进渲染。本仓库原本是扁平步骤。P29 加 `parentStepId` 字段支持嵌套。
 
 ### 改动
 1. `src/lib/desk/chat-stream-core.ts`：
@@ -2365,14 +2365,14 @@ CHAT_HORIZONS 5 个合法值、label/desc 非空、HORIZON_NOTES 覆盖、asHori
 
 ### 验收数字与实测证据
 - 1260 tests / 1250 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1245 + 15 P29 新钉 = 1260）；p29-parent-step 15/15 全绿；tsc 0；next build 通过。
-- 稳智对齐 P2 完成 4 项：#9 #10 #11 #12 ✓，剩余 2 项：#13 数据源面板、#14 active_task_id。
+- 参考平台对齐 P2 完成 4 项：#9 #10 #11 #12 ✓，剩余 2 项：#13 数据源面板、#14 active_task_id。
 
 ---
 
-## P30 稳智对齐 P2 #13：数据源面板（已核验来源，按类型分组）（2026-09-23）
+## P30 参考平台对齐 P2 #13：数据源面板（已核验来源，按类型分组）（2026-09-23）
 
 ### 目标
-稳智 AI 答案末尾有 AiMatrixAssistantSourceStrip 组件：按类型过滤（公告/新闻/实时行情/其他），按来源分组 + 展开/折叠。本仓库原本只有行内 SourceBadge 徽章，无独立面板。P30 加"已核验的信息来源"面板（可折叠）。
+参考平台 AI 答案末尾有 AiMatrixAssistantSourceStrip 组件：按类型过滤（公告/新闻/实时行情/其他），按来源分组 + 展开/折叠。本仓库原本只有行内 SourceBadge 徽章，无独立面板。P30 加"已核验的信息来源"面板（可折叠）。
 
 ### 改动
 1. `src/lib/desk/source-groups-core.ts`（新增）：核心逻辑，classifyStep + groupStepsBySource。5 类：news / quote / kline / fund / other。只收 ok/missing/stale 状态（跳过 running/error），不认识的 tool 归 other。
@@ -2388,14 +2388,14 @@ CHAT_HORIZONS 5 个合法值、label/desc 非空、HORIZON_NOTES 覆盖、asHori
 
 ### 验收数字与实测证据
 - 1274 tests / 1264 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1260 + 14 P30 新钉 = 1274）；p30-source-strip 14/14 全绿；tsc 0；next build 通过。
-- 稳智对齐 P2 完成 5 项：#9 #10 #11 #12 #13 ✓，剩余 1 项：#14 active_task_id。
+- 参考平台对齐 P2 完成 5 项：#9 #10 #11 #12 #13 ✓，剩余 1 项：#14 active_task_id。
 
 ---
 
-## P31 稳智对齐 P2 #14：active_task_id 状态 + 任务过期时间（TTL 15 分钟）（2026-09-23）
+## P31 参考平台对齐 P2 #14：active_task_id 状态 + 任务过期时间（TTL 15 分钟）（2026-09-23）
 
 ### 目标
-稳智 AI 有 ai_matrix_active_task_v1 状态（当前正在流式的 task_id，刷新后恢复）+ 任务过期时间（15 分钟）。本仓库原本有 runRef 机制（刷新后续传），但没有过期时间。P31 加任务过期时间（TTL 15 分钟），刷新后扫会话时检查过期并清掉。
+参考平台 AI 有 ai_matrix_active_task_v1 状态（当前正在流式的 task_id，刷新后恢复）+ 任务过期时间（15 分钟）。本仓库原本有 runRef 机制（刷新后续传），但没有过期时间。P31 加任务过期时间（TTL 15 分钟），刷新后扫会话时检查过期并清掉。
 
 ### 改动
 1. `src/lib/desk/chat-core.ts`：ChatMessage.runRef 加 `createdAt?: number` 字段（记录创建时间）
@@ -2415,14 +2415,14 @@ CHAT_HORIZONS 5 个合法值、label/desc 非空、HORIZON_NOTES 覆盖、asHori
 
 ### 验收数字与实测证据
 - 1284 tests / 1274 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1274 + 10 P31 新钉 = 1284）；p31-task-ttl 10/10 全绿；p8-run-resume 更新断言通过；tsc 0；next build 通过。
-- 稳智对齐 P2 全部完成：#9 #10 #11 #12 #13 #14 ✓（6 项全绿）。
+- 参考平台对齐 P2 全部完成：#9 #10 #11 #12 #13 #14 ✓（6 项全绿）。
 
 ---
 
-## P32 稳智对齐 P3 #17：折叠侧栏按钮（2026-09-23）
+## P32 参考平台对齐 P3 #17：折叠侧栏按钮（2026-09-23）
 
 ### 目标
-稳智 AI 侧栏有折叠按钮（nav-header 位置），本仓库原本只有 TopBar 里的折叠按钮。P32 在 Sidebar 品牌区加折叠按钮（稳智 nav-header 位置），点击后折叠侧栏。
+参考平台 AI 侧栏有折叠按钮（nav-header 位置），本仓库原本只有 TopBar 里的折叠按钮。P32 在 Sidebar 品牌区加折叠按钮（参考平台 nav-header 位置），点击后折叠侧栏。
 
 ### 改动
 1. `src/components/desk/Sidebar.tsx`：
@@ -2439,14 +2439,14 @@ CHAT_HORIZONS 5 个合法值、label/desc 非空、HORIZON_NOTES 覆盖、asHori
 
 ### 验收数字与实测证据
 - 1293 tests / 1283 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1284 + 9 P32 新钉 = 1293）；p32-sidebar-toggle 9/9 全绿；tsc 0；next build 通过。
-- 稳智对齐 P3 完成 2 项：#17 折叠侧栏按钮 ✓、#19 任务过期时间（P31 顺带完成）✓；剩余 3 项：#15 图片多模态、#16 调试视图 3 perf-block、#18 钱包占位。
+- 参考平台对齐 P3 完成 2 项：#17 折叠侧栏按钮 ✓、#19 任务过期时间（P31 顺带完成）✓；剩余 3 项：#15 图片多模态、#16 调试视图 3 perf-block、#18 钱包占位。
 
 ---
 
-## P33 稳智对齐 P3 #16：调试视图 3 个 perf-block（2026-09-23）
+## P33 参考平台对齐 P3 #16：调试视图 3 个 perf-block（2026-09-23）
 
 ### 目标
-稳智 AI 调试视图有 6 个 perf-block（后端路由判定 / 契约摘要 / 后端耗时拆解 / 后端 LLM 详情 / 前端里程碑 / 前端原始指标）+ SSE 事件计数。本仓库原本只有 StepTimeline 的详细数据 + intent 徽章。P33 补 3 个 perf-block：后端耗时拆解（firstTokenMs / streamDoneMs）、LLM 详情（variant）、SSE 事件统计（step / error / total）。
+参考平台 AI 调试视图有 6 个 perf-block（后端路由判定 / 契约摘要 / 后端耗时拆解 / 后端 LLM 详情 / 前端里程碑 / 前端原始指标）+ SSE 事件计数。本仓库原本只有 StepTimeline 的详细数据 + intent 徽章。P33 补 3 个 perf-block：后端耗时拆解（firstTokenMs / streamDoneMs）、LLM 详情（variant）、SSE 事件统计（step / error / total）。
 
 ### 改动
 1. `src/lib/desk/debug-core.ts`：
@@ -2463,12 +2463,12 @@ CHAT_HORIZONS 5 个合法值、label/desc 非空、HORIZON_NOTES 覆盖、asHori
 
 ### 验收数字与实测证据
 - 1301 tests / 1291 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1293 + 8 P33 新钉 = 1301）；p33-perf-blocks 8/8 全绿；tsc 0；next build 通过。
-- 稳智对齐 P3 完成 3 项：#16 调试视图 3 perf-block ✓、#17 折叠侧栏按钮 ✓、#19 任务过期时间（P31 顺带完成）✓；剩余 1 项：#15 图片多模态（#18 钱包占位跳过，个人免费版不需要）。
+- 参考平台对齐 P3 完成 3 项：#16 调试视图 3 perf-block ✓、#17 折叠侧栏按钮 ✓、#19 任务过期时间（P31 顺带完成）✓；剩余 1 项：#15 图片多模态（#18 钱包占位跳过，个人免费版不需要）。
 
-## P34 稳智对齐 P3 #15 图片多模态
+## P34 参考平台对齐 P3 #15 图片多模态
 
 ### 目标
-稳智 AI 支持图片多模态输入（HTML 侧栏 `<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple>`，payload `images: []`，前端不压缩不缩放）。本仓库原本完全无多模态。P34 补最小可行：前端图片上传按钮 + base64 编码 + 后端透传给 LLM 的 image_url content block。
+参考平台 AI 支持图片多模态输入（HTML 侧栏 `<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple>`，payload `images: []`，前端不压缩不缩放）。本仓库原本完全无多模态。P34 补最小可行：前端图片上传按钮 + base64 编码 + 后端透传给 LLM 的 image_url content block。
 
 ### 改动
 1. `src/lib/desk/chat-core.ts`：新增 ImageUrlPart / TextPart / ContentPart 类型（OpenAI 兼容格式）
@@ -2497,18 +2497,18 @@ CHAT_HORIZONS 5 个合法值、label/desc 非空、HORIZON_NOTES 覆盖、asHori
 
 ### 验收数字与实测证据
 - 1310 tests / 1300 pass / 1 fail（p2-archive-db tsx 老问题）/ 9 skipped（基线 1301 + 9 P34 新钉 = 1310）；p34-image-upload 9/9 全绿；tsc 0；next build 通过。
-- 稳智对齐 P3 全部完成：#15 图片多模态 ✓、#16 调试视图 3 perf-block ✓、#17 折叠侧栏按钮 ✓、#19 任务过期时间 ✓；#18 钱包占位跳过（个人免费版不需要）。
+- 参考平台对齐 P3 全部完成：#15 图片多模态 ✓、#16 调试视图 3 perf-block ✓、#17 折叠侧栏按钮 ✓、#19 任务过期时间 ✓；#18 钱包占位跳过（个人免费版不需要）。
 - P2 全部完成（6 项：#9 #10 #11 #12 #13 #14 全绿）；P3 全部完成（4 项：#15 #16 #17 #19，#18 跳过）。
 
 ---
 
-## P35 稳智对齐：产业链研报写作规范（prompt 升级 + `>` 引用块渲染）（2026-09-25）
+## P35 参考平台对齐：产业链研报写作规范（prompt 升级 + `>` 引用块渲染）（2026-09-25）
 
 ### 目标
 本仓库产业链研报（`LlmAnalysisPage.tsx` 的第 5 个 Tab「产业链研报分析」）原本只有 5 段式**骨架**，
-没有写作规范，产出与稳智真实研报差距明显。用 24 篇稳智真实研报做了硬指标对照：
+没有写作规范，产出与参考平台真实研报差距明显。用 24 篇参考平台真实研报做了硬指标对照：
 
-| 指标 | 稳智 24 篇均值 | 本仓库实际产出（`data/industry-reports.json` 2026-09-25 那份） |
+| 指标 | 参考平台 24 篇均值 | 本仓库实际产出（`data/industry-reports.json` 2026-09-25 那份） |
 |---|---|---|
 | 正文字数 | 3760（2032~5749） | 4234 |
 | `**` 加粗处数 | 127（密度 1/30 字） | 16（密度 **1/265 字**） |
@@ -2531,7 +2531,7 @@ CHAT_HORIZONS 5 个合法值、label/desc 非空、HORIZON_NOTES 覆盖、asHori
      `- **产业链受益**：`（按 ①②③ 环节分 `- 核心受益：` / `- 次级受益：`）+ `- **操作建议**：`
    - 市场情绪节写死 4 条加粗项（市场阶段 / 情绪温度 / 风格研判 / 核心逻辑）+ `**综合判断**：` 收束
    - 机会点写死 `- **① 名称**` + `- **逻辑**：` + `- **验证点**：`
-   - 结尾免责声明固定原文（与稳智 24/24 逐字一致）
+   - 结尾免责声明固定原文（与参考平台 24/24 逐字一致）
 2. 同文件 · 快讯按主线预分组：取主题名前 4 字做包含匹配（与 `ThemeHotView.kwNews` 同口径），
    拼成 `主线名：“标题”“标题”` 多行喂给模型；无命中回退原始标题串；取 40 条（原 20）。
 3. 同文件 · `max_tokens` 4096 → 6000（新规范正文更长，原值会截断尾部风险警示 / 策略总结）。
@@ -2726,7 +2726,7 @@ async for event in self._stream_sse(raw_body, ...):   # 之后才瞬间重放成
 
 ### ⚠️ 给后续接手者的提醒
 1. **生成慢不是应用层 bug，是网关架构决定的**（浏览器驱动网页版，单次 ~80s）。
-   真正的提速手段：换真 API 通道，或像稳智那样收盘后**后台预生成**（定时任务），别让用户在线等。
+   真正的提速手段：换真 API 通道，或像参考平台那样收盘后**后台预生成**（定时任务），别让用户在线等。
 2. **网关的 `stream:true` 是假流式**（见上），不要以为改成流式就有逐字效果。
    流式的真实价值是**超时从 45s 提到 120s**，让 81s 的生成能跑完。
 3. 报数前先确认网关在跑：`netstat -ano | findstr ":7861 " | findstr LISTENING`。
@@ -2891,10 +2891,10 @@ async for event in self._stream_sse(raw_body, ...):   # 之后才瞬间重放成
 
 ---
 
-## P40 大盘情绪（5日线占比）趋势：时间轴对齐稳智切片（2026-09-25）
+## P40 大盘情绪（5日线占比）趋势：时间轴对齐参考平台切片（2026-09-25）
 
 ### 触发
-用户：「帮我把这个大盘情绪五日线的时间对齐稳智的时间 这个太长了看着乱七八糟的 其他的不动」
+用户：「帮我把这个大盘情绪五日线的时间对齐参考平台的时间 这个太长了看着乱七八糟的 其他的不动」
 
 ### 定位
 `src/components/desk/pages/MarketPage.tsx` 的「大盘情绪（5日线占比）趋势」卡片。
@@ -2912,12 +2912,12 @@ const bMain = useMemo(() => {
 所以 x 轴 110 个点、四条线叠在一起 → 用户说的「太长、乱七八糟」。
 
 参照：同页「涨跌停板分布对比」「连板梯队结构」早已是 `slice(-10)` +
-文案「近10个交易日（稳智同款切片）」。本次把这张也对齐同一口径。
+文案「近10个交易日（参考平台同款切片）」。本次把这张也对齐同一口径。
 
 ### 改动（仅此一处，别的不动）
 1. `bMain`：两条链路都加 `.slice(-10)`（复盘种子主链路 + breadth 兜底链路）。
 2. `bGroups`：分组三条虚线**必须与 bMain 同一段切片**，否则虚线会错位到别的日期 —— 同样 `slice(-10)`。
-3. 卡片 note 文案对齐同页口径：`近10个交易日（稳智同款切片）· 站上5日线占比 N 个统计日（a ~ b）…`。
+3. 卡片 note 文案对齐同页口径：`近10个交易日（参考平台同款切片）· 站上5日线占比 N 个统计日（a ~ b）…`。
 
 ### 验收
 - 用真实种子模拟：`aboveMa5Pct` 非空 110 行 → `slice(-10)` 后 **10 个点（2026-09-11 ~ 2026-09-24）**。
@@ -2928,13 +2928,13 @@ const bMain = useMemo(() => {
 
 ### 待确认
 - 用户本次的截图**未送达**（`clipboard-images/` 里最新的仍是 11:43 那张），
-  我是按「同页另外两张卡的稳智同款切片 = 10 个交易日」推断的。
-  若稳智这张图实际不是 10 天，只需把 `MarketPage.tsx` 里那两处 `.slice(-10)` 改成目标值即可。
+  我是按「同页另外两张卡的参考平台同款切片 = 10 个交易日」推断的。
+  若参考平台这张图实际不是 10 天，只需把 `MarketPage.tsx` 里那两处 `.slice(-10)` 改成目标值即可。
 
-### ⚠️ P40 修正：上一轮切成 slice(-10) 是错的 —— 已按稳智源码改为「与成交额图共用窗口」
-用户：「我觉得这张图貌似不对吧 应该少了 去扒一下稳智的」+「成交额不要动 只动这个」
+### ⚠️ P40 修正：上一轮切成 slice(-10) 是错的 —— 已按参考平台源码改为「与成交额图共用窗口」
+用户：「我觉得这张图貌似不对吧 应该少了 去扒一下参考平台的」+「成交额不要动 只动这个」
 
-**扒稳智前端实证**（本次真抓到了源码，之前几轮是推断）：
+**扒参考平台前端实证**（本次真抓到了源码，之前几轮是推断）：
 - 站点已重新部署，入口 `/assets/index-DclvIsS3.js`（54KB）→ 大盘情绪页 chunk `/assets/Home-DTufVdHo.js`（20.6KB）。
   抓取要点：**curl 的 schannel 握手失败（SSL error 35），必须用 Python/urllib（OpenSSL）**，
   且要带 `Referer`/`Origin`（该站防盗链）。
@@ -2946,15 +2946,15 @@ const bMain = useMemo(() => {
   U.setOption(5日线占比图)        // 【同样用 e，没有任何 slice】
   const R=e.slice(-10)           // ← slice(-10) 只属于「涨跌停板」图
   ```
-- 即：**稳智的「5日线占比趋势」与「大盘成交额趋势」共用同一个时间窗口（日期选择器区间）；
+- 即：**参考平台的「5日线占比趋势」与「大盘成交额趋势」共用同一个时间窗口（日期选择器区间）；
   写死近 10 日的只有「涨跌停板分布对比」和「连板梯队结构」。**
 
 **修正**（`MarketPage.tsx`，只动 5日线图这一处）：
 1. 上一轮给 `bMain`/`bGroups` 加的 `.slice(-10)` **全部撤掉**。
 2. 新增 `bWindow`：按 `trend.range.from ~ trend.range.to` 过滤 `reviewRows`
-   —— 与成交额图**同一个窗口**（稳智的 `we()` 语义）。
+   —— 与成交额图**同一个窗口**（参考平台的 `we()` 语义）。
 3. `bMain`/`bGroups` 都基于 `bWindow`；窗口内不足 2 天（自定义了很窄区间）退回全量，不画孤点。
-4. 卡片 note 改回：`站上5日线占比 · N 个统计日（a ~ b）· 窗口与上方「大盘成交额趋势」一致（稳智同款）…`
+4. 卡片 note 改回：`站上5日线占比 · N 个统计日（a ~ b）· 窗口与上方「大盘成交额趋势」一致（参考平台同款）…`
 
 **成交额图一个字没动**（用户明确要求）：`trendFrom=shDay(90)`、`trendTo=shDay(0)`、`loadTrend`、
 `turnoverOption`、成交额卡片文案（559 行）全部原样。
@@ -2963,8 +2963,8 @@ const bMain = useMemo(() => {
 与成交额卡片的「64 个交易日」一致；tsc 0；eslint 仍只有 365/370/374 三个既有问题。
 
 ### 口径说明（有意差异，别去"对齐"）：成交额 两市 vs 三市
-- **稳智的成交额是「沪深两市」，本工程是「沪深北三市」** —— 这是**有意保留**的差异，用户明确说
-  「成交额不动呀 我们不是本来就三市吗 64天的 这个不动」。**不要为了"对齐稳智"把它改成两市。**
+- **参考平台的成交额是「沪深两市」，本工程是「沪深北三市」** —— 这是**有意保留**的差异，用户明确说
+  「成交额不动呀 我们不是本来就三市吗 64天的 这个不动」。**不要为了"对齐参考平台"把它改成两市。**
 - 实现：`api/market/trend/route.ts` → `useBj = bjForTurnover.length > 0`，
   `marketLabel = useBj ? "沪深北" : "两市"`（北证50 取不到时自动退化，并在 `missing` 里如实标注）。
 - ⚠️ 一处潜在不一致（**未改，用户要求不动**）：`MarketPage.tsx` 成交额卡片文案把「沪深北」
@@ -2979,7 +2979,7 @@ const bMain = useMemo(() => {
 | 版本 | 窗口 | 结果 | 结论 |
 |---|---|---|---|
 | 原始 | 复盘种子全量 **110 个交易日** | x 轴太密、四线叠一起 | 用户：「太长了看着乱七八糟」 |
-| P40 第一版 | `.slice(-10)` 写死 10 日 | **切错了** | 用户：「应该少了 去扒一下稳智的」 |
+| P40 第一版 | `.slice(-10)` 写死 10 日 | **切错了** | 用户：「应该少了 去扒一下参考平台的」 |
 | P40 修正 | 跟成交额图共用窗口 = **64 个交易日** | 太长 | 用户：「这个要一个月的」 |
 | **P41（本次）** | **近一个月 = 30 个自然日 → 22 个交易日** | ✅ 最终 | — |
 
@@ -3007,10 +3007,10 @@ const bWindow = useMemo(() => reviewRows.filter((x) => x.date >= bFrom), [review
 `npx tsc --noEmit` 0 错误；`eslint` 该文件仍只有 365/370/374 三个既有问题（无新增）；
 窗口模拟 22 个交易日。
 
-### 补记：窗口基准改成「最新数据日 - 30 天」（逐字对齐稳智）
-用户贴图：「不是 怎么我看到才六天的？去看看稳智的这个多少天」
+### 补记：窗口基准改成「最新数据日 - 30 天」（逐字对齐参考平台）
+用户贴图：「不是 怎么我看到才六天的？去看看参考平台的这个多少天」
 
-**扒到稳智的默认区间算法（`Home.js` 源码实证）**：
+**扒到参考平台的默认区间算法（`Home.js` 源码实证）**：
 ```js
 import { s as Le } from "./macd-*.js";   // Le() = GET /api/latest-date → latest_date
 async function $e(){
@@ -3023,22 +3023,22 @@ async function $e(){
 日期选择器本身 **没有 shortcuts、没有 default-value、clearable** —— 挂载时就是上面这个 30 天区间。
 
 **修正**：`bFrom` 从「今天 - 30 天」改为「**最新数据日 - 30 天**」（UTC 算法，与 `Te()` 一致）。
-休市日两者差一天，对齐稳智必须用前者。
+休市日两者差一天，对齐参考平台必须用前者。
 实测：最新数据日 2026-09-24 → from = 2026-08-25 → **23 个交易日**（2026-08-25 ~ 2026-09-24）。
 
 **顺带澄清用户看到的「才六天」**：那是 **x 轴标签密度**，不是数据天数。
 22~23 个数据点，ECharts 自动隐藏重叠标签只显示 6 个。
-**稳智那张图也一样** —— 它的 `xAxis` 是 `{type:"category",data:v}`，**完全没配 `axisLabel`**，
+**参考平台那张图也一样** —— 它的 `xAxis` 是 `{type:"category",data:v}`，**完全没配 `axisLabel`**，
 走同样的默认隐藏行为；卡片宽度也都是 `chart-card half-width`。所以两边观感一致，不是我们少了。
 
 ---
 
-## P42 量化因子选股页：因子目录对齐稳智（A 类，2026-09-25）
+## P42 量化因子选股页：因子目录对齐参考平台（A 类，2026-09-25）
 
 ### 触发
-用户贴 /screener 截图：「去扒稳智这个页面所有的策略和数据 我们现在的有些都点不了 然后对齐 名字和数据都要一样」
+用户贴 /screener 截图：「去扒参考平台这个页面所有的策略和数据 我们现在的有些都点不了 然后对齐 名字和数据都要一样」
 
-### 扒稳智（源码实证）
+### 扒参考平台（源码实证）
 `/assets/StockScreener-GJQe5lnJ.js`（51 KB）里因子目录是**写死的 Vue 渲染函数**，
 每个 chip 都带 `onClick: () => o("字段","算子",阈值)`（区间型是 `He("字段", lo, hi)`）+ 显示名。
 `/api/field-registry` 是 **401**，所以目录只能从 chunk 拿。
@@ -3048,29 +3048,29 @@ async function $e(){
 
 ### 诊断出的两个问题
 1. **7 个 chip 的字段名对不上后端**（= 用户说的「点不了」）：
-   项目 chip 里用的是**稳智的字段名**，后端 `FACTOR_FIELD_DEFS`（137 个字段）用的是自己的名字。
+   项目 chip 里用的是**参考平台的字段名**，后端 `FACTOR_FIELD_DEFS`（137 个字段）用的是自己的名字。
    渲染闸门在 `ScreenerWorkbench.tsx:242`：`p.conds.every(c => fields.some(f => f.key === c.field))`
    —— 字段不全在目录里就渲染成暗色不可点，`title="字段字段待本地实现：筛选时会自动剔除"`。
-2. **缺 12 个 chip**（稳智 76 vs 项目 64）。
+2. **缺 12 个 chip**（参考平台 76 vs 项目 64）。
 
 ### A 类改动（本次，纯前端；`ScreenerWorkbench.tsx`）
 - 新增 `pr()` helper：区间型 chip = 两个边界条件（`ChipPreset.conds` 本来就是数组，类型不用改）。
-- **修 5 个字段名**（稳智名 → 后端名）：
+- **修 5 个字段名**（参考平台名 → 后端名）：
   `upper_shadow_body_ratio→upper_shadow_ratio`、`lower_shadow_body_ratio→lower_shadow_ratio`、
   `market_cost_20_signal→break_cost_20`、`strategy_pullback→vwap_lowpullback`、
   `strategy_breakout→vwap_break_expand`
-- **补 8 个 chip**（含单位换算，稳智用元、后端用亿）：
+- **补 8 个 chip**（含单位换算，参考平台用元、后端用亿）：
   `总市值≥500亿`(market_cap_yi>=500)、`总市值50亿-200亿`(market_cap_yi 区间 50~200)、
   `流通市值≥100亿`(floatcap_yi>=100)、`流通市值≤50亿`(floatcap_yi<=50)、
   `成交额≥1亿`(amount_yi>=1)、`EMA14>EMA26`(ema14_gt_ema26=1)、
   `高斯趋势起航`(gauss_entry=1)、`高斯拐头向上`(gauss_trend_flip_up=1)
-- chip 顺序、文案**逐字对齐稳智**。
+- chip 顺序、文案**逐字对齐参考平台**。
 
 ### 结果
 | 指标 | 改动前 | 改动后 |
 |---|---|---|
 | chip 总数 | 64 | **72** |
-| 稳智有、项目没有的名字 | 12 | **4** |
+| 参考平台有、项目没有的名字 | 12 | **4** |
 | 名字在但点不了 | 7 | **2** |
 | 名字齐且可点 | 57 | **70** |
 
@@ -3098,7 +3098,7 @@ async function $e(){
 | 突破60日成本 | ✅ 可做 | `market_cost_60` **已算出来**（`vwapCalc(...,60).vwap`），只是没有"突破信号"；`break_cost_20` 的算法现成可镜像 |
 | 看涨吞没 | ✅ 可做 | `candlePatternCalc` **已实现且有单测**，只是字符串列未接入筛选 |
 | 早晨之星 | ✅ 可做 | 现有形态只有 大阳/大阴/十字星/锤头/吞没 → 需新写；但它是**标准三K形态**，定义明确 |
-| ★超级共振★ | ❌ **做不了** | 稳智 chunk 里只有中文说明 `super_resonance_signal:"★超级共振信号★"`，**没有公式**；后端 `super_resonance_week` 早已标 `implemented:false, status:"pending_dependency"`，注释写明「公式原文未提供，**不猜测参数**」 |
+| ★超级共振★ | ❌ **做不了** | 参考平台 chunk 里只有中文说明 `super_resonance_signal:"★超级共振信号★"`，**没有公式**；后端 `super_resonance_week` 早已标 `implemented:false, status:"pending_dependency"`，注释写明「公式原文未提供，**不猜测参数**」 |
 | 共振:主力拉升 / 共振:趋势起航 | ❌ 同上 | `super_resonance_type:"共振类型(龙头回踩/起航)"` 依赖超级共振的定义 |
 
 ### 改动
@@ -3120,18 +3120,18 @@ async function $e(){
 **`src/components/desk/pages/ScreenerWorkbench.tsx`**
 4. `突破60日成本` 字段 `market_cost_60_signal` → `break_cost_60`
 5. 补 2 个 chip：`看涨吞没`(candle_bullish_engulf=1)、`早晨之星`(candle_morning_star=1)，
-   放在「缠论与形态」末尾，与稳智顺序一致
+   放在「缠论与形态」末尾，与参考平台顺序一致
 
 **`tests/quant/p2-factor-pack.test.ts`**
 6. 注册表总数硬断言 `137 → 140`（标题同步改）；`NEW_IMPLEMENTED` 补 3 个 key。
    ⚠️ 这个测试原来就断言"总数=92+45=137"，加字段必须同步改 —— 这是**有意更新**，不是放宽断言。
 
 ### 结果
-| 指标 | A 类后 | B 类后 | 稳智 |
+| 指标 | A 类后 | B 类后 | 参考平台 |
 |---|---|---|---|
 | 后端字段 | 137 | **140** | — |
 | chip 总数 | 72 | **74** | 76 |
-| 稳智有、项目没有的名字 | 4 | **2** | — |
+| 参考平台有、项目没有的名字 | 4 | **2** | — |
 | 名字在但点不了 | 2 | **1** | — |
 | 名字齐且可点 | 70 | **73** | 76 |
 
@@ -3141,8 +3141,8 @@ async function $e(){
 - 全量 `node --test tests/quant/*.test.ts`：**1045 / 995 pass / 41 fail / 9 skipped** —— 与基线一致，**0 新增失败**
 - `eslint`：`fields.ts` 与测试文件 0 问题；`ScreenerWorkbench.tsx` 仅 3 个既有 React Compiler 规则报错
 
-### 剩余 3 个（做不了，除非拿到稳智公式）
-`★超级共振★`、`共振:主力拉升`、`共振:趋势起航` —— 都依赖稳智的「超级共振」定义，
+### 剩余 3 个（做不了，除非拿到参考平台公式）
+`★超级共振★`、`共振:主力拉升`、`共振:趋势起航` —— 都依赖参考平台的「超级共振」定义，
 前端 chunk 里只有中文标签、没有公式；后端已有同类字段也标了 pending。
 **保持现状（暗色不可点）是唯一诚实的处理**，不猜参数、不造因子。
 
@@ -3150,11 +3150,11 @@ async function $e(){
 
 ## P44 「超级共振」为什么做不了 —— 完整排查（2026-09-25）
 
-用户质疑：「超级共振★ + 共振类型 ×2 为什么不能做 去稳智爬一下具体数据」
+用户质疑：「超级共振★ + 共振类型 ×2 为什么不能做 去参考平台爬一下具体数据」
 → 我把所有能走的路都走了一遍，结论不变。**证据链如下。**
 
 ### 1) 前端没有公式
-`super_resonance` 在稳智**全部 chunk**（旧部署 71 个 + 新部署入口/Home/StockScreener/market/macd）里
+`super_resonance` 在参考平台**全部 chunk**（旧部署 71 个 + 新部署入口/Home/StockScreener/market/macd）里
 **只命中 StockScreener 一个文件、只有 2 处**：
 ```js
 // ① 字段中文说明表
@@ -3193,7 +3193,7 @@ onClick: () => o("super_resonance_type", "=", "趋势起航")    // 共振:趋�
 
 ### 解开它只需要其中一条
 1. **明天账号解锁后登录一次** → 我调 `/field-registry` 就能拿到超级共振的说明/公式
-2. 你在稳智页面上找到「超级共振」的**说明/定义截图**给我
+2. 你在参考平台页面上找到「超级共振」的**说明/定义截图**给我
 3. 联系管理员（QQ 1726204767）索取因子口径
 
 ⚠️ 在此之前**不要猜参数、不要造因子** —— 项目后端 `super_resonance_week` 早就标了
@@ -3202,15 +3202,15 @@ onClick: () => o("super_resonance_type", "=", "趋势起航")    // 共振:趋�
 
 ---
 
-## P45 行业板块页（/sectors）：扒稳智 UI 与数据的对比结论（2026-09-25）
+## P45 行业板块页（/sectors）：扒参考平台 UI 与数据的对比结论（2026-09-25）
 
 ### 照片目录找到了
-`C:/Users/Lenovo/Desktop/稳智图片/`（**31 张**，微信导出名 `微信图片_YYYYMMDDHHMMSS_N_47.png`）。
+`C:/Users/Lenovo/Desktop/参考平台图片/`（**31 张**，微信导出名 `微信图片_YYYYMMDDHHMMSS_N_47.png`）。
 文档 `wenzhi-full-comparison.md:122` 写明这是用户提供的**全站截图像素基准**，judge 以照片验收。
-⚠️ 本轮图片读取被截断（多模态不可用），已确认：#1/#2 **不是稳智**（是豆包/agent 界面）、
-#3~#17 ≈ LLM分析五Tab、#18~ = 大盘情绪、#27~ = 稳智AI 对话。**行业板块那几张未定位到，下次按此线索继续翻。**
+⚠️ 本轮图片读取被截断（多模态不可用），已确认：#1/#2 **不是参考平台**（是豆包/agent 界面）、
+#3~#17 ≈ LLM分析五Tab、#18~ = 大盘情绪、#27~ = 参考平台AI 对话。**行业板块那几张未定位到，下次按此线索继续翻。**
 
-### 稳智 /sectors 的 UI（扒 `Sectors-20U0Y9TX.js`，18417 字节，权威）
+### 参考平台 /sectors 的 UI（扒 `Sectors-20U0Y9TX.js`，18417 字节，权威）
 - 标题「**板块与概念分析**」；副标题「基于公开数据的历史资金流向及涨跌统计分析。所示内容仅供市场研究与分析，不构成任何投资建议。投资有风险，决策需谨慎。」
 - Tab：**板块 / 概念**
 - 汇总卡：总板块数 / **平均涨跌幅** / **总上涨家数** / **总下跌家数** / **总资金流向**
@@ -3227,7 +3227,7 @@ onClick: () => o("super_resonance_type", "=", "趋势起航")    // 共振:趋�
 - 明细表列（L265）：`# / 板块 / 涨幅% / 主力净额(亿) / 净占比% / 超大单(亿) / 大单(亿) / RPS(榜内) / 领涨股 / 成交额 / 上涨/涨停家数 / 持续天数 / 去选股 / ""`
 
 ### 差异清单
-| 项 | 稳智 | 项目 | 状态 |
+| 项 | 参考平台 | 项目 | 状态 |
 |---|---|---|---|
 | 标题 | 板块与概念分析 | 行业板块排行 | ❌ 改文案 |
 | Tab 文案 | 板块 / 概念 | 行业 / 概念 | ❌ 改文案 |
@@ -3236,33 +3236,33 @@ onClick: () => o("super_resonance_type", "=", "趋势起航")    // 共振:趋�
 | 资金流向分布图 | 有（柱⇄饼，前10流入/后10流出） | **无** | ❌ 缺整块 |
 | 排名 / 排名变化 | 有 | 无 | ❌ 缺 2 列 |
 | 上涨/下跌/涨停家数 | 3 个独立列 | 合成「上涨/涨停家数」 | ❌ 拆开 |
-| 净占比/超大单/大单/RPS/领涨股/成交额/持续天数 | **稳智没有** | 项目有 | ⚠️ 多出，需用户取舍 |
+| 净占比/超大单/大单/RPS/领涨股/成交额/持续天数 | **参考平台没有** | 项目有 | ⚠️ 多出，需用户取舍 |
 | 快速筛选（下跌/上涨/震荡） | 有 | 待查 | ？ |
 
 ### 数据侧
-稳智数据源 `/api/sector-data`、`/api/concept-data` → **均 401**（需登录）。
+参考平台数据源 `/api/sector-data`、`/api/concept-data` → **均 401**（需登录）。
 项目现有可用数据：`scrape-aiwuchuan/data/sector_panorama_history.csv`（615 板块 × 178 交易日，
 含 flow_1d/3d/5d、pct_chg_1d/3d/5d/7d、ma*_ratio、top100_ratio 等），**缺 排名/排名变化/上涨家数/下跌家数/涨停家数**。
 
 ### 下一步（待用户定范围）
 本项目这一页要对齐，是**中等篇幅重写**：改文案与卡片口径、新增资金流向分布图、调整表列。
-需要用户确认：多出的 7 列（净占比/超大单/大单/RPS/领涨股/成交额/持续天数）**保留还是删掉**（稳智没有）。
+需要用户确认：多出的 7 列（净占比/超大单/大单/RPS/领涨股/成交额/持续天数）**保留还是删掉**（参考平台没有）。
 
 
 ---
 
-## P15-R19（2026-09-28）用户八条清单 + 全站扫描 + 稳智终审
+## P15-R19（2026-09-28）用户八条清单 + 全站扫描 + 参考平台终审
 
 数据日 2026-09-24（09-25 中秋 + 09-26/27 周末连休，09-28 未开盘）。全部改动实机跑通。
 
 ### 一、任务同步与清理
-- `.box-agent/task-registry` 7/7 任务置 completed（task_1790287131286 卡在 running 但 09-25 后无更新，实际已于稳智登录排查结论收尾）。
+- `.box-agent/task-registry` 7/7 任务置 completed（task_1790287131286 卡在 running 但 09-25 后无更新，实际已于参考平台登录排查结论收尾）。
 - 删：`.env.bak`×4、`sig*.json`×8、`fund*.json`×2、`cur/new-report.json`、`scan*.txt`、「」、空目录 `D:Zaitmp-kairo-r14`、`*.qoderbak`×3。
 - 残留：`NUL`（Windows 保留名，`del` / `.NET File.Delete` / `ctypes DeleteFileW` / node `unlink` 全被挡），184B 垃圾文件，无害。
 
 ### 二、八条清单
 1. **四模式骨架 / 八条件 / 持股日期（只查不改）**：只有决策模式有完整骨架（MODE_NOTES.decision），研判/深度/搜索仅一句话口径（P17 有意定，避免口径漂移）；八大条件卡固定不随模式变，反过来是每张卡自带模式；AI 对话**没有日期选择器也没有持股日期输入**，成本卡只收成本价+仓位，**持股日期目前不进 prompt**。
-2. **市场环境**：用户可见「稳智」字眼全清（代码注释里的保留，那是出处记录）。新增 `src/lib/quant/review/market-inference.ts`——复刻稳智理由的输入口径（4 日宽度序列 + 当日情绪读数 + 连板极值 + 指数日内形态），模板化生成、不接 LLM，覆盖 110 个交易日（04-20~09-24）。**任意覆盖内日期都能出理由**，不再只有种子日。稳智用了 3 日成交额序列，本地种子无此字段 → 不编，理由里不写成交额。
+2. **市场环境**：用户可见「参考平台」字眼全清（代码注释里的保留，那是出处记录）。新增 `src/lib/quant/review/market-inference.ts`——复刻参考平台理由的输入口径（4 日宽度序列 + 当日情绪读数 + 连板极值 + 指数日内形态），模板化生成、不接 LLM，覆盖 110 个交易日（04-20~09-24）。**任意覆盖内日期都能出理由**，不再只有种子日。参考平台用了 3 日成交额序列，本地种子无此字段 → 不编，理由里不写成交额。
 3. **全站日期**：新增 `src/lib/desk/use-trade-date.ts`（单例 + 60s 缓存 + inflight 合并 + `shortDate()`）。修三处：LLM 主题热度日期硬编码 2026-09-24、大盘趋势区间终点 `new Date()`、**涨停池把 09-24 数据标成 09-28**（最像假数据的那处，`limitup.ts` 改用 `latestTradeDate()`），另带 `sectors/[code]` 成分股。交易日口径**数据驱动**（上证日K最后一根），不硬编码节假日表，不会误伤正常开盘日。
 4. **个股画像默认折叠**：`DecisionCard.tsx` 的 `DimDetail` 原为 `defaultOpen={dim.norm_score !== null}`（有分就展开）→ 改 `false`。结论（四维折算分）仍在卡头，分项明细下沉为查账底稿。
 5. **五档盘口进 AI 分析**：根因是 `stock_depth` 只在模型自取清单、**从未进自动调度预取表**（旧注释怕 tdx 冷启动 4s）。实测模型一次都不会自己调。个股分析预取四件套→**六件套**（+stock_depth +stock_trades，均非 required），并加提示词第 8 条：**必须读懂再写，禁止原样罗列档位**（委买卖比偏向、卖一大单是真压力还是托单、档位稀疏=承接薄、休市要说明是收盘快照）。
@@ -3277,8 +3277,8 @@ onClick: () => o("super_resonance_type", "=", "趋势起航")    // 共振:趋�
 - 21 个 API 冒烟 → 19 OK；`quotes-all` 上游故障如实报错（不兜底）；`signals` 冷算 >60s（慢，非错）。
 - 数据源缺口全部显式登记：全A 快照 0/5569 带 mainNet（东财断源）、`stock_daily_close` 尚无沉淀行、北向自 2024-08-19 不再披露。**无一处假数据**：`demo-provider` 只在用户显式选它时启用，且每段都带 DEMO 标记、明令不得当行情引用。
 
-### 四、稳智终审结论
-差距**不在算法、不在数据源，全在「每日收盘沉淀 + 历史回填」这一件工程**。稳智是收盘后预计算入库（历史可回看），本地是实时取数 + 部署日起攒数（实时更准）。还能参考的：① 涨跌停历史分布 + 连板梯队历史；② 5 日线占比的微/中/大盘分组序列；③ 12 指数可切换（东财指数K线可直接扩）；④ 因子面（缠论/高斯/VWAP/吸筹等，公式确定性、纯工程量）；⑤ S2 复盘回填引擎。①②③⑤ 都卡在同一件事：**把每日收盘沉淀跑起来**。
+### 四、参考平台终审结论
+差距**不在算法、不在数据源，全在「每日收盘沉淀 + 历史回填」这一件工程**。参考平台是收盘后预计算入库（历史可回看），本地是实时取数 + 部署日起攒数（实时更准）。还能参考的：① 涨跌停历史分布 + 连板梯队历史；② 5 日线占比的微/中/大盘分组序列；③ 12 指数可切换（东财指数K线可直接扩）；④ 因子面（缠论/高斯/VWAP/吸筹等，公式确定性、纯工程量）；⑤ S2 复盘回填引擎。①②③⑤ 都卡在同一件事：**把每日收盘沉淀跑起来**。
 
 完整报告见 `wenzhi-final-audit-20260928.md`。
 
@@ -3286,7 +3286,7 @@ onClick: () => o("super_resonance_type", "=", "趋势起航")    // 共振:趋�
 
 ## P15-R19b（2026-09-28 同日续）两张历史表 0 行：种子核对照抄 + 真实日K回填 + 两口径并排摆
 
-用户口径原话：**「关于历史表0 之前从稳智扒来的种子如果有数据就核对一下照抄，然后没有就在网上搜一下接进去」**。
+用户口径原话：**「关于历史表0 之前从参考平台扒来的种子如果有数据就核对一下照抄，然后没有就在网上搜一下接进去」**。
 这一轮就干这三件事：核对、照抄、缺的接进来。全程不动表结构（大地基）、不新增依赖、不造一个数。
 
 ### 一、为什么是 0 行（先查清，别急着写）
@@ -3304,7 +3304,7 @@ onClick: () => o("super_resonance_type", "=", "趋势起航")    // 共振:趋�
 
 ### 三、照抄进 `market_daily_stats`（抄库不动页）
 `POST /api/market/review-stats/import-seed`（GET 一律 405，带 `dry_run=1` 只自查）→ `inserted 110 / kept_self_produced 0`，
-每行 `basis = 稳智同步种子照抄（外部来源，非收盘自产）`。
+每行 `basis = 参考平台同步种子照抄（外部来源，非收盘自产）`。
 读侧仍只合并 `tradeDate > 2026-09-24` 的库行 → **图一格没跳**（实机 `rows:110, selfDays:0`）。
 
 **踩到并已钉死的坑**：让路判定原本写 `basis.includes("本地自产")`，把种子自己那句「**非**本地自产」认成了自产行，第二次导入 `inserted 0 / kept_self_produced 110`——写进去的东西把自己挡住了。改成只看开头 `startsWith("本地自产")`，出身句同时改词，测试 R19-⑤ 正反双向钉。
@@ -3359,7 +3359,7 @@ onClick: () => o("super_resonance_type", "=", "趋势起航")    // 共振:趋�
 用户原话两条，把我上一轮的方向掰回来了：
 
 - **「我们还是按照三市的来 不是按照两市 而且本地有数据」**
-- **「不需要并排摆着 太拥挤」** + **「我们的是三市的 稳智的是两市的 核算一下是不是」**
+- **「不需要并排摆着 太拥挤」** + **「我们的是三市的 参考平台的是两市的 核算一下是不是」**
 
 R19b 我为了让自算那条贴近种子，把默认票池切成了两市——**这是反的**：本地库里本来就有北交所 347 只的行，自算凭什么按别人的票池删票。这轮改回三市全A 当默认，两市只留成一个显式对照开关；同时把第五条点线撤掉，并把「是不是票池的差」这件事算成一个数而不是一句猜测。
 
@@ -3418,7 +3418,7 @@ R19b 我为了让自算那条贴近种子，把默认票池切成了两市——
 
 1. **东财 `push2ex/getTopicZTPool` 支持 `date=` 回溯**，但留存窗口实测只有三周左右：**09-07 起给数，再早返回 0 条**。所以名单是「回填 + 往后自己攒」，不是一次能补齐的。
 2. 一次回填 **14 个交易日 / 859 行**（`2026-09-07 ~ 09-24`）。拿不到的日子**全部写进 missing[]**，理由原话留着：「涨停池返回 0 条：可能是休市日，也可能超出东财留存窗口，响应本身分不出来，故不写入任何行」——**缺读数 ≠ 0，也不许为了看着齐就写空日子**。
-3. **独立交叉核对**：拿稳智那份种子（`/api/market/review-stats` 里的涨停家数）比 14 天，**8 天完全一致，差值 −4…+1，平均 −0.71** → 这份名单可信。差最大的 09-10 没去追根因，只是记下来（不编原因）。
+3. **独立交叉核对**：拿参考平台那份种子（`/api/market/review-stats` 里的涨停家数）比 14 天，**8 天完全一致，差值 −4…+1，平均 −0.71** → 这份名单可信。差最大的 09-10 没去追根因，只是记下来（不编原因）。
 4. 表设计就是照原样存：`(symbol, trade_date)` 唯一键，**同日重跑以最后一次为准**；字段留几板/首次与最后封板/炸板次数/封单额/流通市值/行业，落库层不做二次加工——加工全在纯核里。
 5. `json.data.qdate` **故意不用**：那是服务器当前日期，不是请求的那一天。代码→市场后缀只认 `intent-core.suffixOf`（池子自带的 `m` 字段把北交所当深市，一开始就否了）。
 
@@ -3516,7 +3516,7 @@ R20 的后半。要回答的不再是「此刻哪几条读数难看」（那是�
 4. 名单 vs 种子的交叉核对仍是**一次性脚本**，要落成可复跑纯核。
 5. `market-inference.ts` 仍直读那份冻结种子 JSON。
 6. 压力分的**刻度本身还没有历史样本可校**：70/50/30 三条档位带和六条锚点都是本机拍的，等自产宽度/名单再攒两周才谈得上回测；本轮只做「读数齐、话说清」，不做准确率承诺。
-7. **板块页压着一轮从来没进过 git 的改动**（提交前做范围核对才发现）：工作区那份 `SectorsPage.tsx` 比 HEAD 多 294 行——对齐稳智 /sectors 的排序字段/范围筛选/资金流向分布图/「点板块名跳选股」，连带 `store.ts` 的 `setScreenerHandoff` 与板块行的 `up_count/down_count/limit_up_count/rank_change` 四列都只活在工作区里。R20b 这一笔**只入了本轮那 59 行**（HEAD 版 + 本轮外盘片段，单独 tsc 0 / eslint 无新增验过），其余原样留在工作区，不代它入库、也不拿它当基线。**待办：那一轮单独补一笔提交**——本轮之外的债，混进来就等于用一次提交掩盖两次未留痕。
+7. **板块页压着一轮从来没进过 git 的改动**（提交前做范围核对才发现）：工作区那份 `SectorsPage.tsx` 比 HEAD 多 294 行——对齐参考平台 /sectors 的排序字段/范围筛选/资金流向分布图/「点板块名跳选股」，连带 `store.ts` 的 `setScreenerHandoff` 与板块行的 `up_count/down_count/limit_up_count/rank_change` 四列都只活在工作区里。R20b 这一笔**只入了本轮那 59 行**（HEAD 版 + 本轮外盘片段，单独 tsc 0 / eslint 无新增验过），其余原样留在工作区，不代它入库、也不拿它当基线。**待办：那一轮单独补一笔提交**——本轮之外的债，混进来就等于用一次提交掩盖两次未留痕。
 
 
 ## P33 「预测」按钮第一刀：策略闸门 + 组合推荐 + 攒样本进度（2026-09-30）
@@ -3976,7 +3976,7 @@ breadth 之前 11s 是**体检脚本参数没对上页面**（页面用 `?days=3
 ### 二、P66 新直方图的两处诚实性
 - pct_distribution 首末桶标签「涨停+/跌停+」→「≥10%/≤-10%」：20cm 股 ±10~20% 的普通涨跌
   也会落进首末桶，标「涨跌停」是说谎（sentiment.ts + MarketPage 注/文案同步）。
-- 卡片标题随渲染路径切换（MarketPage:815）：有复盘历史画「涨跌停板分布对比」（稳智原题），
+- 卡片标题随渲染路径切换（MarketPage:815）：有复盘历史画「涨跌停板分布对比」（参考平台原题），
   缺历史才画 P66 的 10 档「涨跌幅分布」——旧码两种图共用一个标题，默认路径标题与内容不符；
   p15-r3b 钉测同步改钉三元标题（上轮唯一红钉就此转绿）。
 

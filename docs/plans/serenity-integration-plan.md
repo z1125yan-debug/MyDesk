@@ -235,7 +235,7 @@ node --test "tests/quant/**/*.test.ts"
 | # | 位置 | 断言原文 | 现状 | 性质 |
 |---|---|---|---|---|
 | 1 | `tests/quant/p15-r13-session-ttl.test.ts:65` | 正则钉 `store.ts` 源码形状 `pruneStaleChats: () => set((s) => { const sessions = pruneStaleCore(s.sessions);` | `newSession` 里已改为建会话时裁剪到 3，源码形状变了 | **旧钉过期**（建议改为行为断言，不再钉字符串形状） |
-| 2 | `tests/quant/p20-sidebar-recent.test.ts:26` | `.slice(0, 5)`「必须限到 5 条，稳智就是最近 5 条」 | `Sidebar.tsx:54` 已是 `.slice(0, 3)` | **口径被你改了**（要 3 条），测试须跟着改 |
+| 2 | `tests/quant/p20-sidebar-recent.test.ts:26` | `.slice(0, 5)`「必须限到 5 条，参考平台就是最近 5 条」 | `Sidebar.tsx:54` 已是 `.slice(0, 3)` | **口径被你改了**（要 3 条），测试须跟着改 |
 | 3 | `tests/quant/p50-ui-scale.test.ts:40` | `rounded-lg px-3 py-2 text-left text-[14px]` | 已是 `rounded-lg py-2 pl-3 pr-8 text-left text-[14px]`（为 ❌ 删除按钮留右侧位） | **旧钉过期** |
 
 > 说明：`node --test tests/quant/` 这种传目录的写法在 Node 22.22.2 会报 `MODULE_NOT_FOUND`，必须用 glob：`node --test "tests/quant/**/*.test.ts"`。
