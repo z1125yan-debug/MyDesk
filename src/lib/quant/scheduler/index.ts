@@ -33,7 +33,7 @@ import { fillPicks } from "@/lib/quant/strategy/pick-fill-collect";
 import { syncPickSymbols } from "@/lib/quant/strategy/pick-symbol-collect";
 // P39 / #75：收盘后若已配置服务端模型通道，自动从当日 layer1 候选里收窄出 AI优选战绩层，
 // 解决「用户不手动用 AI优选就不会触发」——没配通道 / 没候选时如实记空，不造假。
-import { generateAiPickForDate } from "@/lib/quant/strategy/ai-pick-generate";
+// aipick 生成逻辑仅服务端执行，动态 import 避免把 undici 拉进浏览器包（见 ai-pick-generate.ts 顶部 server-only）
 import { ingestDailyBars } from "@/lib/quant/data/daily-bar-collect";
 import { shanghaiDate } from "@/lib/desk/session";
 import {
@@ -282,7 +282,9 @@ export async function runTaskTracked(
       : kind === "dailybars" ? await archiveDailyBarsIngest()
       : kind === "picksym" ? await syncPickSymbols()
       : kind === "pickfill" ? await fillPicks()
-      : kind === "aipick" ? await generateAiPickForDate(tradeDate)
+      // 注意：必须 await 到函数结果本身。只 await import() 会拿到 Promise，
+      // 下一行 out.delta 就会炸 "Cannot read properties of undefined (reading 'inserted')"
+      : kind === "aipick" ? await (await import("@/lib/quant/strategy/ai-pick-generate")).generateAiPickForDate(tradeDate)
       : await archiveLimitUpRoster();
     const writeLine = `写入：新增 ${out.delta.inserted}、更新 ${out.delta.updated}、未变 ${out.delta.unchanged}`
       + (out.delta.skippedByCursor ? `、游标跳过 ${out.delta.skippedByCursor}` : "")

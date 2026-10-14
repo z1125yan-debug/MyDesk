@@ -28,9 +28,9 @@ export async function POST(req: Request) {
     : body.kind === "breadth" ? "breadth" : body.kind === "review" ? "review"
     : body.kind === "roster" ? "roster" : body.kind === "dailysnap" ? "dailysnap"
     : body.kind === "picksym" ? "picksym" : body.kind === "pickfill" ? "pickfill"
-    : body.kind === "dailybars" ? "dailybars" : null;
+    : body.kind === "dailybars" ? "dailybars" : body.kind === "aipick" ? "aipick" : null;
   if (!kind) {
-    return NextResponse.json({ ok: false, error: "kind 只能是 radar、events、breadth、review、roster、dailysnap、picksym、pickfill 或 dailybars" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "kind 只能是 radar、events、breadth、review、roster、dailysnap、picksym、pickfill、dailybars 或 aipick" }, { status: 400 });
   }
   if (body.mode !== undefined && body.mode !== "full" && body.mode !== "incremental") {
     return NextResponse.json({ ok: false, error: 'mode 只能是 "full" 或 "incremental"（不传=自动判定；breadth/review/roster 不吃这个口径）' }, { status: 400 });
