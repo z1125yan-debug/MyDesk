@@ -4,7 +4,8 @@
 
 import fs from "fs";
 import path from "path";
-import { marketSessionHolidayAware, shanghaiDate, todayIsTradingDaySync } from "./session";
+import { shanghaiDate } from "./session";
+import { marketSessionHolidayAware, todayIsTradingDaySync } from "./session-server";
 import { klineDiskUsable } from "./kline-disk-core";
 import { tdxQuotes, tdxKlines, tdxNameOf, type TdxQuote } from "./tdx";
 import { parseTcBoardRankList } from "@/lib/quant/data/tc-snapshot-core";

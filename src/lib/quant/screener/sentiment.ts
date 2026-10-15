@@ -13,7 +13,7 @@
 import { getProvider } from "@/lib/quant/data/index";
 import { universeSource } from "@/lib/quant/data/tc-universe";
 import { fetchQuotesReal, type RealQuote } from "@/lib/desk/em";
-import { marketSessionHolidayAware } from "@/lib/desk/session";
+import { marketSessionHolidayAware } from "@/lib/desk/session-server";
 import { latestTradeDate } from "@/lib/desk/trade-date";
 // R20：「高风险」档位的同拍升档判据（纯核，阈值只有一份、写在文件里）
 import { escalateToHighRisk } from "./top-risk-core.ts";

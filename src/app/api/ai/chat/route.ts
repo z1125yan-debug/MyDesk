@@ -14,7 +14,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { quantBootstrap } from "@/lib/quant/bootstrap";
-import { marketSessionHolidayAware, shanghaiDate } from "@/lib/desk/session";
+import { shanghaiDate } from "@/lib/desk/session";
+import { marketSessionHolidayAware } from "@/lib/desk/session-server";
 // P64 数据时效：行情最新交易日（盘前已按 trade-date.ts 的新口径退到上一交易日）
 import { resolveTradeDate } from "@/lib/desk/trade-date";
 // P64 交易日历：真实年历（含法定节假日），回答「未来哪天开盘/休市」——通达信日历给不出未来

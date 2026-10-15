@@ -11,7 +11,8 @@ import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, symbolToSecid } from "
 // R20 主力净额第三档备胎（通达信当日逐笔自算）
 import { mainNetSelfNote, tdxMainNetOf } from "@/lib/desk/fund-flow";
 import { fetchBoardRowsRescued } from "@/lib/desk/board-rescue";
-import { marketSessionHolidayAware, shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
+import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
+import { marketSessionHolidayAware } from "@/lib/desk/session-server";
 import { computeSentiment, evalLimitSnapshot } from "@/lib/quant/screener/sentiment";
 import { buildFieldPanel, lastValues, type BarsLike } from "@/lib/quant/factors/fields";
 import { historicalWinProbability, type WinProbStats } from "@/lib/quant/factors/probability";
