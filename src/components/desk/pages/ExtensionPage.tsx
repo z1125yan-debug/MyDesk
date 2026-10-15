@@ -29,8 +29,11 @@ function normalizeSymbol(raw: string): string {
   return s;
 }
 
-// 免安装书签脚本：在 TradingView 图表页把当前品种 POST 回收件箱
-const BOOKMARKLET = `javascript:(function(){var m=location.href.match(/symbol=([A-Za-z0-9_:.]+)/)||location.href.match(/\/symbols\/[A-Za-z0-9\-]*?([A-Z]{2,10}[A-Z0-9:.]+)\/?/);var s=m?m[1].replace(/[:.]$/,''):'';if(!s){s=prompt('未识别到品种，请输入（如 SSE:688256）');}if(!s)return;window.open('http://localhost:3000/#/analysis?symbol='+encodeURIComponent(s));})()`;
+// 免安装书签脚本：在 TradingView 图表页把当前品种发回工作台。
+// 注意：脚本在第三方页面（TradingView）上执行，内部 window.location.origin 是 TradingView 域名，
+// 不能用来拼回跳地址。必须在生成时把「本站 origin」嵌进去（appOrigin 来自挂载时的 window.location.origin）。
+const buildBookmarklet = (appOrigin: string) =>
+  `javascript:(function(){var m=location.href.match(/symbol=([A-Za-z0-9_:.]+)/)||location.href.match(/\/symbols\/[A-Za-z0-9\-]*?([A-Z]{2,10}[A-Z0-9:.]+)\/?/);var s=m?m[1].replace(/[:.]$/,''):'';if(!s){s=prompt('未识别到品种，请输入（如 SSE:688256）');}if(!s)return;window.open('${appOrigin}/#/analysis?symbol='+encodeURIComponent(s));})()`;
 
 export default function ExtensionPage() {
   const extensionKey = useDesk((s) => s.extensionKey);
@@ -41,7 +44,7 @@ export default function ExtensionPage() {
   const bmRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
-    if (bmRef.current) bmRef.current.setAttribute("href", BOOKMARKLET);
+    if (bmRef.current) bmRef.current.setAttribute("href", buildBookmarklet(window.location.origin));
   }, []);
 
   useEffect(() => {
