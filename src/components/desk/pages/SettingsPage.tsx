@@ -232,6 +232,9 @@ export default function SettingsPage() {
                 placeholder={ai.provider === "ollama" ? "Ollama 无需填写" : "sk-…"}
                 className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[13px] outline-none focus:border-sky-500/60" />
             </label>
+            <div className="md:col-span-2 text-[12.5px] text-muted-foreground">
+              没有 Key？可向「使用人」申请：使用人在其本机 2pai（本地部署实例）里即可获取，或重新生成一份发你。
+            </div>
             <label className="block md:col-span-2">
               <span className="text-[13px] text-muted-foreground">
                 网络代理（境外接口被地域拦截时使用；留空=自动检测系统代理，direct=强制直连，或填 http://127.0.0.1:端口）
