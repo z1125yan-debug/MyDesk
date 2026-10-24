@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260">
+  <rect width="1200" height="260" rx="16" fill="#0d1117"/>
+  <g font-family="sans-serif" text-anchor="middle">
+    <rect x="20" y="60" width="200" height="140" rx="12" fill="#161b22"/>
+    <text x="120" y="110" font-size="16" font-weight="700" fill="#e6edf3">公开行情源</text>
+    <text x="120" y="140" font-size="14" fill="#8b949e">东财 / 腾讯 / 通达信</text>
+    <text x="120" y="164" font-size="14" fill="#8b949e">财联社 · 巨潮 · Longbridge</text>
+    <text x="245" y="135" font-size="28" fill="#8b949e">→</text>
+    <rect x="270" y="60" width="200" height="140" rx="12" fill="#161b22"/>
+    <text x="370" y="110" font-size="16" font-weight="700" fill="#e6edf3">MyDesk 本机</text>
+    <text x="370" y="140" font-size="14" fill="#8b949e">行情 · 板块 · K 线</text>
+    <text x="370" y="164" font-size="14" fill="#8b949e">新闻 · 公告 · 日报</text>
+    <text x="495" y="135" font-size="28" fill="#8b949e">→</text>
+    <rect x="520" y="60" width="200" height="140" rx="12" fill="#161b22"/>
+    <text x="620" y="110" font-size="16" font-weight="700" fill="#e6edf3">量化选股</text>
+    <text x="620" y="140" font-size="14" fill="#8b949e">多条件模型</text>
+    <text x="620" y="164" font-size="14" fill="#8b949e">因子 · 位置 · 温度</text>
+    <text x="745" y="135" font-size="28" fill="#8b949e">→</text>
+    <rect x="770" y="60" width="200" height="140" rx="12" fill="#161b22"/>
+    <text x="870" y="110" font-size="16" font-weight="700" fill="#e6edf3">AI 优选</text>
+    <text x="870" y="140" font-size="14" fill="#8b949e">逐只评估 · 讲清理由</text>
+    <text x="870" y="164" font-size="14" fill="#f0b429">排雷章：合格 / 注意</text>
+    <text x="995" y="135" font-size="28" fill="#8b949e">→</text>
+    <rect x="1020" y="60" width="160" height="140" rx="12" fill="#1a2e1a"/>
+    <text x="1100" y="110" font-size="16" font-weight="700" fill="#3fb950">你做决定</text>
+    <text x="1100" y="140" font-size="14" fill="#8b949e">看日报 · 看分析</text>
+    <text x="1100" y="164" font-size="14" fill="#8b949e">自己判断，不跟单</text>
+  </g>
+  <text x="600" y="235" font-family="sans-serif" font-size="14" text-anchor="middle" fill="#8b949e">数据只存在你本机，AI 走你自己配的模型接口，仓库里不含任何 Key 与数据库。</text>
+</svg>

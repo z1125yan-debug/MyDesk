@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <rect width="1200" height="620" rx="16" fill="#0d1117"/>
+  <rect x="0" y="0" width="1200" height="56" rx="16" fill="#161b22"/>
+  <rect x="0" y="40" width="1200" height="16" fill="#161b22"/>
+  <circle cx="32" cy="28" r="7" fill="#f85149"/><circle cx="54" cy="28" r="7" fill="#d29922"/><circle cx="76" cy="28" r="7" fill="#3fb950"/>
+  <text x="104" y="34" font-family="sans-serif" font-size="18" font-weight="700" fill="#e6edf3">MyDesk 个人行情工作台</text>
+  <text x="1040" y="34" font-family="sans-serif" font-size="14" fill="#8b949e">A股 · 港美</text>
+  <!-- left nav -->
+  <rect x="20" y="76" width="170" height="524" rx="12" fill="#161b22"/>
+  <text x="40" y="108" font-family="sans-serif" font-size="15" fill="#e6edf3">● 总览</text>
+  <text x="40" y="142" font-family="sans-serif" font-size="15" fill="#8b949e">数据看板</text>
+  <text x="40" y="176" font-family="sans-serif" font-size="15" fill="#8b949e">AI 分析</text>
+  <text x="40" y="210" font-family="sans-serif" font-size="15" fill="#8b949e">量化选股</text>
+  <text x="40" y="244" font-family="sans-serif" font-size="15" fill="#8b949e">新闻筛选</text>
+  <text x="40" y="278" font-family="sans-serif" font-size="15" fill="#8b949e">追踪 / 历史</text>
+  <text x="40" y="312" font-family="sans-serif" font-size="15" fill="#8b949e">设置</text>
+  <rect x="40" y="340" width="130" height="1" fill="#30363d"/>
+  <text x="40" y="368" font-family="sans-serif" font-size="13" fill="#8b949e">上证指数</text>
+  <text x="40" y="392" font-family="sans-serif" font-size="20" font-weight="700" fill="#3fb950">3,690.48</text>
+  <text x="40" y="414" font-family="sans-serif" font-size="13" fill="#3fb950">▲ 当日示意</text>
+  <!-- top cards -->
+  <g font-family="sans-serif">
+    <rect x="210" y="76" width="220" height="110" rx="12" fill="#161b22"/>
+    <text x="230" y="104" font-size="14" fill="#8b949e">自选 · 半导体设备</text>
+    <text x="230" y="132" font-size="22" font-weight="700" fill="#e6edf3">板块资金</text>
+    <text x="230" y="160" font-size="14" fill="#3fb950">净流入 · 看明细 →</text>
+    <rect x="450" y="76" width="220" height="110" rx="12" fill="#161b22"/>
+    <text x="470" y="104" font-size="14" fill="#8b949e">量化选股</text>
+    <text x="470" y="132" font-size="22" font-weight="700" fill="#e6edf3">多条件模型</text>
+    <text x="470" y="160" font-size="14" fill="#8b949e">点「选它」自动填条件</text>
+    <rect x="690" y="76" width="220" height="110" rx="12" fill="#161b22"/>
+    <text x="710" y="104" font-size="14" fill="#8b949e">AI 优选</text>
+    <text x="710" y="132" font-size="22" font-weight="700" fill="#e6edf3">逐只评估</text>
+    <text x="710" y="160" font-size="14" fill="#f0b429">排雷章：合格 / 注意</text>
+    <rect x="930" y="76" width="250" height="110" rx="12" fill="#161b22"/>
+    <text x="950" y="104" font-size="14" fill="#8b949e">日报</text>
+    <text x="950" y="132" font-size="22" font-weight="700" fill="#e6edf3">早 / 午 / 晚报</text>
+    <text x="950" y="160" font-size="14" fill="#8b949e">按板块分组，点开即看</text>
+  </g>
+  <!-- K line chart -->
+  <rect x="210" y="206" width="700" height="260" rx="12" fill="#161b22"/>
+  <text x="230" y="232" font-family="sans-serif" font-size="15" font-weight="700" fill="#e6edf3">K 线 · 支撑 / 阻力 / 趋势通道</text>
+  <text x="750" y="232" font-family="sans-serif" font-size="13" fill="#8b949e">8 档周期</text>
+  <polyline points="230,420 290,400 350,410 410,370 470,385 530,340 590,355 650,315 710,330 770,290 830,305 890,270" fill="none" stroke="#3fb950" stroke-width="3"/>
+  <g stroke="#f85149" stroke-width="2"><line x1="300" y1="380" x2="300" y2="420"/><line x1="420" y1="350" x2="420" y2="390"/><line x1="560" y1="320" x2="560" y2="360"/><line x1="700" y1="300" x2="700" y2="340"/><line x1="820" y1="250" x2="820" y2="290"/></g>
+  <g fill="#3fb950"><rect x="292" y="395" width="16" height="18"/><rect x="412" y="365" width="16" height="18"/><rect x="552" y="335" width="16" height="18"/><rect x="692" y="315" width="16" height="18"/><rect x="812" y="265" width="16" height="18"/></g>
+  <text x="230" y="452" font-family="sans-serif" font-size="13" fill="#8b949e">示意图：线条与色块仅示意布局，非真实行情截图</text>
+  <!-- right panel -->
+  <rect x="930" y="206" width="250" height="260" rx="12" fill="#161b22"/>
+  <text x="950" y="232" font-family="sans-serif" font-size="15" font-weight="700" fill="#e6edf3">板块资金流向榜</text>
+  <text x="950" y="262" font-family="sans-serif" font-size="14" fill="#e6edf3">半导体设备 <tspan fill="#3fb950">净流入</tspan></text>
+  <text x="950" y="292" font-family="sans-serif" font-size="14" fill="#e6edf3">人形机器人 <tspan fill="#3fb950">净流入</tspan></text>
+  <text x="950" y="322" font-family="sans-serif" font-size="14" fill="#e6edf3">网络安全 <tspan fill="#3fb950">净流入</tspan></text>
+  <text x="950" y="352" font-family="sans-serif" font-size="14" fill="#e6edf3">银行 <tspan fill="#f85149">净流出</tspan></text>
+  <text x="950" y="392" font-family="sans-serif" font-size="13" fill="#8b949e">点一行，看该板块明细</text>
+  <text x="950" y="414" font-family="sans-serif" font-size="13" fill="#8b949e">与分支资金流向</text>
+  <!-- bottom strip -->
+  <rect x="210" y="486" width="970" height="114" rx="12" fill="#161b22"/>
+  <text x="230" y="514" font-family="sans-serif" font-size="15" font-weight="700" fill="#e6edf3">怎么用？三步：</text>
+  <text x="230" y="544" font-family="sans-serif" font-size="15" fill="#8b949e">1. 双击「启动.bat」　2. 等浏览器自动打开 localhost:3000　3. 先看总览，再进选股 / AI 优选</text>
+  <text x="230" y="574" font-family="sans-serif" font-size="13" fill="#8b949e">仅供个人学习与技术研究，不构成任何投资建议。</text>
+</svg>

@@ -1,7 +1,19 @@
 # MyDesk 个人行情工作台
 
+![Node](https://img.shields.io/badge/Node-%3E%3D20-339933)
+![Next.js](https://img.shields.io/badge/Next.js-App_Router-000000)
+![平台](https://img.shields.io/badge/平台-Windows_10%2F11-0078D6)
+![市场](https://img.shields.io/badge/市场-A股_%C2%B7_港美-3fb950)
+![数据](https://img.shields.io/badge/数据-本机存储-blue)
+
 帮你看行情、筛股票、做 AI 优选、看日报的个人工作台。
 A 股为主，港美也能看。仅供个人学习与技术研究，**不构成任何投资建议**。
+
+<p align="center">
+  <img src="docs/assets/hero-dashboard.svg" alt="MyDesk 界面示意图：总览、板块资金、K线、AI优选" width="100%">
+</p>
+
+> 上图是界面布局示意图，不是真实行情截图，帮你一眼看清这个工作台长什么样、每个区是干嘛的。
 
 ---
 
@@ -12,6 +24,10 @@ A 股为主，港美也能看。仅供个人学习与技术研究，**不构成�
 - **AI 优选**：从筛选结果里帮你挑几只，讲清买卖点和风险，逐只盖「排雷」章：合格 / 注意 / 不合格
 - **看日报**：早 / 午 / 晚报按板块分组，点开就是那个板块的报告
 - **新闻筛选**：财联社电报按 9 个口子分流，只看你想看的那类消息
+
+<p align="center">
+  <img src="docs/assets/workflow.svg" alt="数据流向：公开行情源 → MyDesk本机 → 量化选股 → AI优选 → 你做决定" width="100%">
+</p>
 
 ---
 
