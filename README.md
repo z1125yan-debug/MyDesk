@@ -105,6 +105,35 @@ npx next dev -p 3000 --webpack
 | `.env.example` | 环境变量示例：只写名字不写真实 Key，照着填你自己的 |
 | `README.md` | 就是你现在看的这篇：先讲能干什么、怎么启动 |
 
+## 数据库怎么重建（大数据库不进仓库）
+
+先回答一个问题：是，本地那个 1.2GB 的数据库就是好几年的日 K 粮仓，`stock_daily_bar`（前复权）从 2024-01-01 起往后补，2024–2025 那段就是 `scripts/backfill-tdx-2024-2025.py` 一次性拉的（700 根 / 只，能追到约 2023-11 做均线热身），再加上 2025–2026 的日常增量。它不进仓库不是漏了，是 GitHub 单文件上限 100MB，1.2GB 根本传不上去。
+
+**重建不用拷数据库，用通达信网关自己拉就行，网关本身也不在仓库里，只有调用代码在仓库里：**
+
+- 网关：开源 `eltdx`（`https://github.com/electkismet/eltdx`），装好 `eltdx-http`，本机拉起：
+  ```bash
+  eltdx-http --host 127.0.0.1 --port 8756
+  ```
+  代码里默认就是这个地址，环境变量 `TDX_GATEWAY` 没填时也是 `http://127.0.0.1:8756`（见 `src/lib/desk/tdx.ts`、`src/lib/quant/data/daily-bar-collect.ts`）。
+- 建库：
+  ```bash
+  npm install
+  npx prisma generate
+  npx prisma db push --accept-data-loss
+  # 数据库文件位置：prisma/prisma/db/custom.db，跑起来后自己生成
+  ```
+- 拉日 K：
+  ```bash
+  # 日常增量：服务跑起来后 POST /api/tasks/run {"kind":"dailybars","force":true}
+  # 历史补：python3 scripts/backfill-tdx-2024-2025.py   # 2024-01-01 ~ 2025-09-09
+  #         python3 scripts/backfill-tdx.py            # 其他时段，检查点在 data/backfill-checkpoint*.json
+  node --experimental-strip-types scripts/data-health.ts  # 查缺哪天、缺多少
+  ```
+- 网关没拉起来时 `dailybars` 会失败并连带 `picksym` / `pickfill` 空转，先拉网关再跑。已知数据洞：`stock_daily_bar` 在 2025-09-09 ~ 2025-12-15 有 66 个交易日缺口，跨该区间回测要先补库再下结论。
+
+已经有数据库的人不用重建，直接把 `custom.db` 放到 `prisma/prisma/db/custom.db` 就行，仓库里不带它只是因为传不上去，不是没有它就跑不起来。
+
 ## 战绩四档台账
 
 正式版 AI 优选除了战绩页的 T+1，还有一个四档台账脚本，记每批每只的 T+1 / T+3 / T+5 / T+20：
