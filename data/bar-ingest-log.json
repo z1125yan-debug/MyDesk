@@ -38,6 +38,19 @@
       "droppedRows": 0,
       "seconds": 1320.3,
       "note": "全A前复权日K；指数 amount/volume 为成分股汇总口径，与个股不可比"
+    },
+    {
+      "batch": "20261016-0049-qfq800",
+      "at": "2026-10-16T03:19:12.456Z",
+      "gateway": "http://127.0.0.1:8756",
+      "adjust": "qfq",
+      "barsRequested": 800,
+      "symbolsQueued": 5583,
+      "symbolsOk": 5579,
+      "rowsWritten": 4280865,
+      "droppedRows": 0,
+      "seconds": 8980.6,
+      "note": "全A前复权日K；指数 amount/volume 为成分股汇总口径，与个股不可比"
     }
   ]
 }

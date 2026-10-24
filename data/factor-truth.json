@@ -1,531 +1,591 @@
 {
-  "generatedAt": "2026-09-30T20:22:26.100Z",
+  "generatedAt": "2026-10-23T11:53:57.682Z",
   "source": "factor_test 表（同 key 取最新一条）；方向由 rankIc 符号定",
   "counts": {
-    "rows": 219,
-    "keys": 108,
-    "passed": 33,
-    "negative": 90,
-    "positive": 2,
-    "unknown": 16,
-    "duplicatedKeys": 108
+    "rows": 117,
+    "keys": 117,
+    "passed": 2,
+    "negative": 77,
+    "positive": 0,
+    "unknown": 40,
+    "duplicatedKeys": 0
   },
   "factors": {
-    "rps_50": {
-      "key": "rps_50",
-      "direction": "negative",
-      "rankIc": -0.03536780969119363,
-      "icIr": -0.1598199096477418,
-      "passed": false,
-      "samples": {
-        "stocks": 287,
-        "dates": 515
-      },
-      "dataRange": "2024-08-07~2026-09-18"
-    },
-    "macd": {
-      "key": "macd",
-      "direction": "negative",
-      "rankIc": -0.00800158203148675,
-      "icIr": -0.04463728239412263,
-      "passed": false,
-      "samples": {
-        "stocks": 287,
-        "dates": 515
-      },
-      "dataRange": "2024-08-07~2026-09-18"
-    },
-    "above_ma_144": {
-      "key": "above_ma_144",
-      "direction": "negative",
-      "rankIc": -0.03820528387123668,
-      "icIr": -0.2813839072328514,
-      "passed": false,
-      "samples": {
-        "stocks": 287,
-        "dates": 515
-      },
-      "dataRange": "2024-08-07~2026-09-18"
-    },
     "is_limit_up": {
       "key": "is_limit_up",
       "direction": "negative",
-      "rankIc": -0.02574359492744632,
-      "icIr": -0.2066353974502611,
+      "rankIc": -0.01284223403805384,
+      "icIr": -0.1202239152034898,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "double_volume_signal": {
       "key": "double_volume_signal",
       "direction": "negative",
-      "rankIc": -0.03612325743367575,
-      "icIr": -0.283655475714644,
-      "passed": true,
+      "rankIc": -0.01971981858319494,
+      "icIr": -0.181535402719536,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "volume_signal": {
       "key": "volume_signal",
       "direction": "negative",
-      "rankIc": -0.03239794736372436,
-      "icIr": -0.2544563381769406,
-      "passed": true,
+      "rankIc": -0.02012043416846731,
+      "icIr": -0.1877600268819467,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "above_ma_5": {
       "key": "above_ma_5",
       "direction": "negative",
-      "rankIc": -0.02828624457733062,
-      "icIr": -0.2290315802815559,
+      "rankIc": -0.01309202658922583,
+      "icIr": -0.1001605887095876,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "above_ma_10": {
       "key": "above_ma_10",
       "direction": "negative",
-      "rankIc": -0.02539234546391165,
-      "icIr": -0.1992226909972358,
+      "rankIc": -0.01032492714694188,
+      "icIr": -0.07657071982929922,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "above_ma_20": {
       "key": "above_ma_20",
       "direction": "negative",
-      "rankIc": -0.03024180940593992,
-      "icIr": -0.2364731016219181,
+      "rankIc": -0.01810786266028226,
+      "icIr": -0.1295231149782384,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "above_ma_60": {
       "key": "above_ma_60",
       "direction": "negative",
-      "rankIc": -0.03025166969788584,
-      "icIr": -0.2145228326497266,
+      "rankIc": -0.0271300266259763,
+      "icIr": -0.174287617155613,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "above_ma_90": {
       "key": "above_ma_90",
       "direction": "negative",
-      "rankIc": -0.0391860141691702,
-      "icIr": -0.285153982837157,
+      "rankIc": -0.02467489495342572,
+      "icIr": -0.1595466775697284,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "above_ma_144": {
+      "key": "above_ma_144",
+      "direction": "negative",
+      "rankIc": -0.02269373975055297,
+      "icIr": -0.1503280858856681,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "ma_struct": {
       "key": "ma_struct",
       "direction": "negative",
-      "rankIc": -0.02627807273494256,
-      "icIr": -0.2156060332224181,
+      "rankIc": -0.01382808419493571,
+      "icIr": -0.113598233426418,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "ema14_gt_ema26": {
       "key": "ema14_gt_ema26",
       "direction": "negative",
-      "rankIc": -0.02716307070958759,
-      "icIr": -0.2030757789270971,
+      "rankIc": -0.01522731179890029,
+      "icIr": -0.1004497201379266,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "close": {
+      "key": "close",
+      "direction": "negative",
+      "rankIc": -0.02072349132419677,
+      "icIr": -0.09158934720055036,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "rps_50": {
+      "key": "rps_50",
+      "direction": "negative",
+      "rankIc": -0.01722875086544875,
+      "icIr": -0.07204127613874772,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "rps_120": {
       "key": "rps_120",
-      "direction": "negative",
-      "rankIc": -0.02411528282849183,
-      "icIr": -0.1005754836161394,
+      "direction": "unknown",
+      "rankIc": -0.002571860722255857,
+      "icIr": -0.009862724739674162,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "rps_composite": {
       "key": "rps_composite",
-      "direction": "negative",
-      "rankIc": -0.03129586851449696,
-      "icIr": -0.1334472112055499,
+      "direction": "unknown",
+      "rankIc": -0.004574094498921559,
+      "icIr": -0.01901194259034532,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "macd_dif": {
       "key": "macd_dif",
       "direction": "negative",
-      "rankIc": -0.02931437263844755,
-      "icIr": -0.1361281254528049,
+      "rankIc": -0.01080631203278196,
+      "icIr": -0.04609348745969093,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "macd_dea": {
       "key": "macd_dea",
       "direction": "negative",
-      "rankIc": -0.02926302520419556,
-      "icIr": -0.1345808550385039,
+      "rankIc": -0.01069464761335381,
+      "icIr": -0.04501844715218974,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "macd": {
+      "key": "macd",
+      "direction": "negative",
+      "rankIc": -0.006812355020023896,
+      "icIr": -0.03333764209526942,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "macd_cross": {
       "key": "macd_cross",
       "direction": "negative",
-      "rankIc": -0.03067200598870076,
-      "icIr": -0.2423982389704377,
-      "passed": true,
+      "rankIc": -0.01669296032271081,
+      "icIr": -0.1588831522162307,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "kdj_k": {
       "key": "kdj_k",
       "direction": "negative",
-      "rankIc": -0.01140246239875758,
-      "icIr": -0.06818027644225608,
+      "rankIc": -0.0068327224732523,
+      "icIr": -0.03701487640781706,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "kdj_d": {
       "key": "kdj_d",
       "direction": "negative",
-      "rankIc": -0.0116203528389515,
-      "icIr": -0.0687921945445429,
+      "rankIc": -0.009234748600029744,
+      "icIr": -0.0483111520888246,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "kdj_j": {
       "key": "kdj_j",
-      "direction": "negative",
-      "rankIc": -0.007022554025972567,
-      "icIr": -0.04366884502134361,
-      "passed": true,
+      "direction": "unknown",
+      "rankIc": -0.003680550197982461,
+      "icIr": -0.02074614465978723,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "kdj_cross": {
       "key": "kdj_cross",
       "direction": "negative",
-      "rankIc": -0.02339611390101011,
-      "icIr": -0.1886552485159236,
+      "rankIc": -0.01352959222821546,
+      "icIr": -0.125126652603556,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "rsi_7": {
       "key": "rsi_7",
-      "direction": "negative",
-      "rankIc": -0.01051916735660144,
-      "icIr": -0.06437509924549106,
-      "passed": true,
+      "direction": "unknown",
+      "rankIc": -0.001081309621507011,
+      "icIr": -0.00604590694757592,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "rsi_14": {
       "key": "rsi_14",
       "direction": "negative",
-      "rankIc": -0.0163358439089807,
-      "icIr": -0.09308242705756145,
+      "rankIc": -0.01170109481203433,
+      "icIr": -0.06093971471776592,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "rsi_24": {
       "key": "rsi_24",
-      "direction": "negative",
-      "rankIc": -0.01850337857179747,
-      "icIr": -0.09603094076935915,
+      "direction": "unknown",
+      "rankIc": -0.003391074989109311,
+      "icIr": -0.01598342293456341,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "atr_ratio_14": {
       "key": "atr_ratio_14",
       "direction": "unknown",
-      "rankIc": -0.004584397650825479,
-      "icIr": -0.01692175371100498,
+      "rankIc": -0.002505540685294292,
+      "icIr": -0.007907356499562186,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "upper_shadow_ratio": {
       "key": "upper_shadow_ratio",
       "direction": "unknown",
-      "rankIc": -0.00445003467619636,
-      "icIr": -0.04108233836161879,
+      "rankIc": -0.00294064374889476,
+      "icIr": -0.02454196015446073,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "lower_shadow_ratio": {
       "key": "lower_shadow_ratio",
       "direction": "unknown",
-      "rankIc": -0.002995582701151183,
-      "icIr": -0.02788691530334689,
+      "rankIc": -0.004551958950724175,
+      "icIr": -0.03768149263651698,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "candle_bullish_engulf": {
+      "key": "candle_bullish_engulf",
+      "direction": "negative",
+      "rankIc": -0.02059573134700813,
+      "icIr": -0.1880369516338803,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "candle_morning_star": {
+      "key": "candle_morning_star",
+      "direction": "negative",
+      "rankIc": -0.0253933353140835,
+      "icIr": -0.2910050588760827,
+      "passed": true,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "above_cost_20": {
       "key": "above_cost_20",
-      "direction": "negative",
-      "rankIc": -0.03013127454771661,
-      "icIr": -0.2400395456300229,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "above_cost_60": {
+      "key": "above_cost_60",
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "break_cost_20": {
       "key": "break_cost_20",
-      "direction": "negative",
-      "rankIc": -0.02781952291049073,
-      "icIr": -0.2254386253072033,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "break_cost_60": {
+      "key": "break_cost_60",
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap20_filter": {
       "key": "vwap20_filter",
-      "direction": "negative",
-      "rankIc": -0.03013127454771661,
-      "icIr": -0.2400395456300229,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap_pos": {
       "key": "vwap_pos",
-      "direction": "negative",
-      "rankIc": -0.02753021108291358,
-      "icIr": -0.1672667895537449,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap20_up3": {
       "key": "vwap20_up3",
-      "direction": "negative",
-      "rankIc": -0.02747918937132466,
-      "icIr": -0.2213264710252581,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "breakout_high_20": {
       "key": "breakout_high_20",
       "direction": "negative",
-      "rankIc": -0.0303278658771701,
-      "icIr": -0.23294078094407,
-      "passed": true,
+      "rankIc": -0.01880115611085045,
+      "icIr": -0.1736248627562435,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "breakout_high_60": {
       "key": "breakout_high_60",
       "direction": "negative",
-      "rankIc": -0.03790827283895808,
-      "icIr": -0.2856949489053932,
-      "passed": true,
+      "rankIc": -0.019561584381399,
+      "icIr": -0.1802557412695729,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "support_near_60": {
       "key": "support_near_60",
       "direction": "negative",
-      "rankIc": -0.038815163285955,
-      "icIr": -0.2653703336064091,
-      "passed": true,
+      "rankIc": -0.02158734581091196,
+      "icIr": -0.1707443373070386,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "support_near_144": {
       "key": "support_near_144",
       "direction": "negative",
-      "rankIc": -0.04946123900479454,
-      "icIr": -0.3312175353210414,
-      "passed": true,
+      "rankIc": -0.02432743507150411,
+      "icIr": -0.1971360882915687,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "support_bounce_60": {
       "key": "support_bounce_60",
       "direction": "negative",
-      "rankIc": -0.03700217584857511,
-      "icIr": -0.2501312074720294,
-      "passed": true,
+      "rankIc": -0.02045916804523631,
+      "icIr": -0.176087760279445,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "support_bounce_144": {
       "key": "support_bounce_144",
       "direction": "negative",
-      "rankIc": -0.05118829839113346,
-      "icIr": -0.2956105863849492,
-      "passed": true,
+      "rankIc": -0.03464130988553573,
+      "icIr": -0.2764579074751879,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "resistance_breakout_60": {
       "key": "resistance_breakout_60",
       "direction": "negative",
-      "rankIc": -0.03676731097017454,
-      "icIr": -0.2930801974711997,
-      "passed": true,
+      "rankIc": -0.01896557093991365,
+      "icIr": -0.1852226074366157,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "resistance_breakout_144": {
       "key": "resistance_breakout_144",
       "direction": "negative",
-      "rankIc": -0.04720613534248097,
-      "icIr": -0.3555776020263762,
-      "passed": true,
+      "rankIc": -0.02506881874296902,
+      "icIr": -0.2386662174445915,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "chan_top_fractal": {
       "key": "chan_top_fractal",
       "direction": "negative",
-      "rankIc": -0.02303267584509338,
-      "icIr": -0.1864491614963179,
-      "passed": true,
+      "rankIc": -0.01920413376840666,
+      "icIr": -0.1579824294535943,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "chan_bottom_fractal": {
       "key": "chan_bottom_fractal",
       "direction": "negative",
-      "rankIc": -0.01957577864234836,
-      "icIr": -0.1661596728505049,
+      "rankIc": -0.009462671946385389,
+      "icIr": -0.08078115892268052,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "chan_third_buy": {
       "key": "chan_third_buy",
@@ -534,10 +594,10 @@
       "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "chan_third_sell": {
       "key": "chan_third_sell",
@@ -546,10 +606,10 @@
       "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "cz_break_up": {
       "key": "cz_break_up",
@@ -558,10 +618,10 @@
       "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "cz_break_down": {
       "key": "cz_break_down",
@@ -570,502 +630,466 @@
       "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "td_buy_seq": {
       "key": "td_buy_seq",
-      "direction": "negative",
-      "rankIc": -0.006882738608563248,
-      "icIr": -0.04884316083449783,
+      "direction": "unknown",
+      "rankIc": -0.003755358732830157,
+      "icIr": -0.02421261648734904,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "td_sell_seq": {
       "key": "td_sell_seq",
       "direction": "negative",
-      "rankIc": -0.01199656842684415,
-      "icIr": -0.08967478052622986,
+      "rankIc": -0.005098347787115864,
+      "icIr": -0.03470855859600209,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "td_signal": {
       "key": "td_signal",
       "direction": "negative",
-      "rankIc": -0.03066210844527419,
-      "icIr": -0.2397733980399586,
+      "rankIc": -0.01855131052363842,
+      "icIr": -0.1738736650729089,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "td13_buy_qualified": {
       "key": "td13_buy_qualified",
       "direction": "negative",
-      "rankIc": -0.09505054482886822,
-      "icIr": -0.569259377473724,
+      "rankIc": -0.08007018726888025,
+      "icIr": -0.744329182660478,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "td13_sell_qualified": {
       "key": "td13_sell_qualified",
       "direction": "negative",
-      "rankIc": -0.07105650415393404,
-      "icIr": -0.9076040530489078,
+      "rankIc": -0.01941794323312384,
+      "icIr": -0.1533264709513768,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gann_support_sig_1_1": {
       "key": "gann_support_sig_1_1",
       "direction": "negative",
-      "rankIc": -0.04027867469856821,
-      "icIr": -0.2896749109606443,
-      "passed": true,
+      "rankIc": -0.02252919677631297,
+      "icIr": -0.2042071024282109,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gann_support_sig_1_2": {
       "key": "gann_support_sig_1_2",
       "direction": "negative",
-      "rankIc": -0.03920772327535577,
-      "icIr": -0.2820464660070916,
-      "passed": true,
+      "rankIc": -0.02143812496099341,
+      "icIr": -0.1935764951373802,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gann_support_sig_2_1": {
       "key": "gann_support_sig_2_1",
       "direction": "negative",
-      "rankIc": -0.04149874425628806,
-      "icIr": -0.2856360330394612,
-      "passed": true,
+      "rankIc": -0.02088430088593251,
+      "icIr": -0.1922392816312868,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gauss_mid": {
       "key": "gauss_mid",
       "direction": "negative",
-      "rankIc": -0.007128258590627056,
-      "icIr": -0.03537921148268838,
+      "rankIc": -0.01776576546630245,
+      "icIr": -0.08065149859611365,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gauss_upper": {
       "key": "gauss_upper",
       "direction": "negative",
-      "rankIc": -0.007525776948127725,
-      "icIr": -0.03610034689983022,
+      "rankIc": -0.01733184726662776,
+      "icIr": -0.07574002101178534,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gauss_lower": {
       "key": "gauss_lower",
       "direction": "negative",
-      "rankIc": -0.006277754183517896,
-      "icIr": -0.03313901050834891,
+      "rankIc": -0.01854827374995607,
+      "icIr": -0.090068144671601,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gauss_trend_up": {
       "key": "gauss_trend_up",
       "direction": "negative",
-      "rankIc": -0.02756504337930099,
-      "icIr": -0.2059005639656731,
+      "rankIc": -0.02407523299182193,
+      "icIr": -0.158175687040436,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gauss_trend_flip_up": {
       "key": "gauss_trend_flip_up",
       "direction": "negative",
-      "rankIc": -0.03025505446580696,
-      "icIr": -0.2292495387359977,
-      "passed": true,
+      "rankIc": -0.01693066461712638,
+      "icIr": -0.1579035114949122,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gauss_trend_flip_down": {
       "key": "gauss_trend_flip_down",
       "direction": "negative",
-      "rankIc": -0.04051247284901475,
-      "icIr": -0.3065285297499222,
-      "passed": true,
+      "rankIc": -0.02326046244482995,
+      "icIr": -0.2161702742480548,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gauss_overheat": {
       "key": "gauss_overheat",
       "direction": "negative",
-      "rankIc": -0.02690883115025904,
-      "icIr": -0.2217335679792415,
+      "rankIc": -0.01364938565996004,
+      "icIr": -0.1184229129876071,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap20": {
       "key": "vwap20",
-      "direction": "negative",
-      "rankIc": -0.005753891501394368,
-      "icIr": -0.02750116198216343,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap20_slope3": {
       "key": "vwap20_slope3",
-      "direction": "negative",
-      "rankIc": -0.02239801430880756,
-      "icIr": -0.1155895625352024,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap_score": {
       "key": "vwap_score",
-      "direction": "negative",
-      "rankIc": -0.02346320444129394,
-      "icIr": -0.1873729182415165,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "allow_long": {
       "key": "allow_long",
-      "direction": "negative",
-      "rankIc": -0.02995949752861875,
-      "icIr": -0.2402491153917946,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "entry_signal": {
       "key": "entry_signal",
-      "direction": "negative",
-      "rankIc": -0.03160973047952507,
-      "icIr": -0.2544205308702218,
-      "passed": true,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "zsb_dealer": {
       "key": "zsb_dealer",
-      "direction": "negative",
-      "rankIc": -0.0126640812339745,
-      "icIr": -0.06805670177655451,
+      "direction": "unknown",
+      "rankIc": -0.001531337632842221,
+      "icIr": -0.007240802143314338,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "zsb_retail": {
       "key": "zsb_retail",
-      "direction": "positive",
-      "rankIc": 0.008105654912106226,
-      "icIr": 0.04596487722646604,
+      "direction": "unknown",
+      "rankIc": -0.002545279042743964,
+      "icIr": -0.01275737565279697,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "zsb_rsi_v": {
       "key": "zsb_rsi_v",
       "direction": "negative",
-      "rankIc": -0.02164063373015984,
-      "icIr": -0.1776891540032873,
-      "passed": true,
+      "rankIc": -0.01615251441002976,
+      "icIr": -0.1279186182020304,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "acc_dif": {
       "key": "acc_dif",
       "direction": "negative",
-      "rankIc": -0.02931437263844755,
-      "icIr": -0.1361281254528049,
+      "rankIc": -0.01080631203278196,
+      "icIr": -0.04609348745969093,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "acc_dea": {
       "key": "acc_dea",
       "direction": "negative",
-      "rankIc": -0.02926302520419556,
-      "icIr": -0.1345808550385039,
+      "rankIc": -0.01069464761335381,
+      "icIr": -0.04501844715218974,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "acc_macd": {
       "key": "acc_macd",
       "direction": "negative",
-      "rankIc": -0.00800158203148675,
-      "icIr": -0.04463728239412263,
+      "rankIc": -0.006812355020023896,
+      "icIr": -0.03333764209526942,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
-    },
-    "zsb_rsi_reduce": {
-      "key": "zsb_rsi_reduce",
-      "direction": "positive",
-      "rankIc": 0.01242398144864726,
-      "icIr": 0.1913248868285057,
-      "passed": false,
-      "samples": {
-        "stocks": 287,
-        "dates": 515
-      },
-      "dataRange": "2024-08-07~2026-09-18"
-    },
-    "zsb_accum": {
-      "key": "zsb_accum",
-      "direction": "negative",
-      "rankIc": -0.03258725291516309,
-      "icIr": -0.2589755757053731,
-      "passed": true,
-      "samples": {
-        "stocks": 287,
-        "dates": 515
-      },
-      "dataRange": "2024-08-07~2026-09-18"
-    },
-    "zsb_attack": {
-      "key": "zsb_attack",
-      "direction": "negative",
-      "rankIc": -0.02902681869136857,
-      "icIr": -0.2458312206306635,
-      "passed": false,
-      "samples": {
-        "stocks": 287,
-        "dates": 515
-      },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "zsb_trigger": {
       "key": "zsb_trigger",
       "direction": "negative",
-      "rankIc": -0.04829680721019942,
-      "icIr": -0.3605025549901543,
-      "passed": true,
+      "rankIc": -0.01939759298115069,
+      "icIr": -0.1821346927278029,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "zsb_bdw": {
       "key": "zsb_bdw",
       "direction": "negative",
-      "rankIc": -0.02120982737333471,
-      "icIr": -0.1326473385073599,
+      "rankIc": -0.01230018541725726,
+      "icIr": -0.06275708186977445,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap30": {
       "key": "vwap30",
-      "direction": "negative",
-      "rankIc": -0.007218179806359223,
-      "icIr": -0.03523857561476602,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap_full": {
       "key": "vwap_full",
       "direction": "unknown",
-      "rankIc": -0.003364047090157065,
-      "icIr": -0.01735621647010084,
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap_slope3": {
       "key": "vwap_slope3",
-      "direction": "negative",
-      "rankIc": -0.03636819416203439,
-      "icIr": -0.1587811571583883,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap_slope6": {
       "key": "vwap_slope6",
-      "direction": "negative",
-      "rankIc": -0.03693945760102164,
-      "icIr": -0.1590983175280579,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap_accel": {
       "key": "vwap_accel",
-      "direction": "negative",
-      "rankIc": -0.01115497532626038,
-      "icIr": -0.1054739679571728,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap_lowpullback": {
       "key": "vwap_lowpullback",
-      "direction": "negative",
-      "rankIc": -0.05178582779055761,
-      "icIr": -0.3746029483311097,
-      "passed": true,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vwap_break_expand": {
       "key": "vwap_break_expand",
-      "direction": "negative",
-      "rankIc": -0.0338033227470597,
-      "icIr": -0.2623836914397874,
+      "direction": "unknown",
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gauss_entry": {
       "key": "gauss_entry",
       "direction": "negative",
-      "rankIc": -0.03514672176037689,
-      "icIr": -0.2742142304483545,
-      "passed": true,
+      "rankIc": -0.02217558133555563,
+      "icIr": -0.2143017418895702,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gauss_exit": {
       "key": "gauss_exit",
       "direction": "negative",
-      "rankIc": -0.03199452006324843,
-      "icIr": -0.2527006827243528,
-      "passed": true,
+      "rankIc": -0.02073481788290697,
+      "icIr": -0.196674054628998,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "gauss_overheat_warn": {
       "key": "gauss_overheat_warn",
       "direction": "negative",
-      "rankIc": -0.03507999562034895,
-      "icIr": -0.2705528528967395,
-      "passed": true,
+      "rankIc": -0.02312315151596996,
+      "icIr": -0.2122777841535333,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "cz_active": {
       "key": "cz_active",
@@ -1074,10 +1098,10 @@
       "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "cz_start": {
       "key": "cz_start",
@@ -1086,10 +1110,10 @@
       "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "cz_end": {
       "key": "cz_end",
@@ -1098,214 +1122,298 @@
       "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "cz_inside": {
       "key": "cz_inside",
-      "direction": "negative",
-      "rankIc": -0.01288612965306588,
-      "icIr": -0.1147275951934723,
+      "direction": "unknown",
+      "rankIc": -0.00479900450598602,
+      "icIr": -0.04315182347331319,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "support_line_250": {
       "key": "support_line_250",
-      "direction": "unknown",
-      "rankIc": 0.004858345921244738,
-      "icIr": 0.03087608702863963,
+      "direction": "negative",
+      "rankIc": -0.01814015529703965,
+      "icIr": -0.1195082324270293,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "resistance_line_250": {
       "key": "resistance_line_250",
-      "direction": "unknown",
-      "rankIc": 0.00005552689814863058,
-      "icIr": 0.0002707599461105493,
+      "direction": "negative",
+      "rankIc": -0.01550652135469379,
+      "icIr": -0.06479948010356336,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "support_bounce_250": {
       "key": "support_bounce_250",
       "direction": "negative",
-      "rankIc": -0.05451941200008906,
-      "icIr": -0.3094202649745873,
-      "passed": true,
+      "rankIc": -0.02653518621647712,
+      "icIr": -0.2107990083382341,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "resistance_rebound_250": {
       "key": "resistance_rebound_250",
       "direction": "negative",
-      "rankIc": -0.05186026704799093,
-      "icIr": -0.3495855419142011,
-      "passed": true,
+      "rankIc": -0.0160989758453479,
+      "icIr": -0.1414656158759272,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "support_break_250": {
       "key": "support_break_250",
       "direction": "negative",
-      "rankIc": -0.046531060067537,
-      "icIr": -0.2929288158367747,
+      "rankIc": -0.01587354557927542,
+      "icIr": -0.1341885346676084,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "resistance_breakout_250": {
       "key": "resistance_breakout_250",
       "direction": "negative",
-      "rankIc": -0.05224633985081435,
-      "icIr": -0.3374524538973467,
-      "passed": true,
+      "rankIc": -0.02611067662539437,
+      "icIr": -0.2287743973198773,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "support_near_250": {
       "key": "support_near_250",
       "direction": "negative",
-      "rankIc": -0.04772191006103773,
-      "icIr": -0.2856143996597873,
-      "passed": true,
+      "rankIc": -0.01883465263874521,
+      "icIr": -0.1499425029716736,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "resistance_near_250": {
       "key": "resistance_near_250",
       "direction": "negative",
-      "rankIc": -0.03765967907283085,
-      "icIr": -0.2582620088509777,
-      "passed": true,
+      "rankIc": -0.009651118873053498,
+      "icIr": -0.08341844906696591,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "support_breakdown_250": {
       "key": "support_breakdown_250",
       "direction": "negative",
-      "rankIc": -0.04982813998321128,
-      "icIr": -0.2898333128806397,
+      "rankIc": -0.01880074508522029,
+      "icIr": -0.1583029615795512,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "resistance_breakout_250_conf": {
       "key": "resistance_breakout_250_conf",
       "direction": "negative",
-      "rankIc": -0.05260515751731464,
-      "icIr": -0.3595196831647946,
-      "passed": true,
+      "rankIc": -0.01858545450882164,
+      "icIr": -0.1657276038994244,
+      "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "support_144_val": {
       "key": "support_144_val",
-      "direction": "unknown",
-      "rankIc": 0.0005759437268778335,
-      "icIr": 0.003469187702768634,
+      "direction": "negative",
+      "rankIc": -0.00889556034655714,
+      "icIr": -0.04875374996586935,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "resistance_144_val": {
       "key": "resistance_144_val",
-      "direction": "unknown",
-      "rankIc": -0.0004551220182560471,
-      "icIr": -0.002213344182449486,
+      "direction": "negative",
+      "rankIc": -0.01042727765059969,
+      "icIr": -0.04341257209468404,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "market_cost_60": {
       "key": "market_cost_60",
       "direction": "unknown",
-      "rankIc": 0.001528699113938497,
-      "icIr": 0.007721849730436433,
+      "rankIc": 0,
+      "icIr": 0,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "vol_spike_ratio": {
       "key": "vol_spike_ratio",
       "direction": "negative",
-      "rankIc": -0.01875761668770052,
-      "icIr": -0.1539477501884808,
+      "rankIc": -0.01848867374499428,
+      "icIr": -0.1493225225001649,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "close_dev_ma120": {
       "key": "close_dev_ma120",
       "direction": "negative",
-      "rankIc": -0.03934479836834833,
-      "icIr": -0.1682478766736071,
+      "rankIc": -0.01642213127491063,
+      "icIr": -0.06683095574474188,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
     },
     "amplitude_20d": {
       "key": "amplitude_20d",
-      "direction": "negative",
-      "rankIc": -0.005519804536919825,
-      "icIr": -0.02297838776502294,
+      "direction": "unknown",
+      "rankIc": -0.0009181360723982089,
+      "icIr": -0.003220237400571565,
       "passed": false,
       "samples": {
-        "stocks": 287,
-        "dates": 515
+        "stocks": 293,
+        "dates": 519
       },
-      "dataRange": "2024-08-07~2026-09-18"
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "super_resonance_signal": {
+      "key": "super_resonance_signal",
+      "direction": "negative",
+      "rankIc": -0.02254187469068887,
+      "icIr": -0.2167639643629197,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "super_resonance_trend": {
+      "key": "super_resonance_trend",
+      "direction": "negative",
+      "rankIc": -0.0220979955581335,
+      "icIr": -0.2127604949991179,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "super_resonance_main": {
+      "key": "super_resonance_main",
+      "direction": "negative",
+      "rankIc": -0.02574451473746585,
+      "icIr": -0.2471503138572151,
+      "passed": true,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "super_resonance_force": {
+      "key": "super_resonance_force",
+      "direction": "negative",
+      "rankIc": -0.0128908073502442,
+      "icIr": -0.1183856402970291,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "zsb_accum": {
+      "key": "zsb_accum",
+      "direction": "negative",
+      "rankIc": -0.0199839707100212,
+      "icIr": -0.194516799043287,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "zsb_attack": {
+      "key": "zsb_attack",
+      "direction": "negative",
+      "rankIc": -0.01409048461420692,
+      "icIr": -0.1251518086777496,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
+    },
+    "zsb_rsi_reduce": {
+      "key": "zsb_rsi_reduce",
+      "direction": "negative",
+      "rankIc": -0.01377180133119638,
+      "icIr": -0.1561251539803708,
+      "passed": false,
+      "samples": {
+        "stocks": 293,
+        "dates": 519
+      },
+      "dataRange": "2024-08-28~2026-10-23"
     }
   }
 }
