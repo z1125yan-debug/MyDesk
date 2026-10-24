@@ -26,6 +26,7 @@ export async function GET(request: Request) {
     const bars = await provider.getBars({ symbols: [symbol], tf, asOf, lookback });
     const rows = bars.get(symbol) ?? [];
     return NextResponse.json({
+      market: "A", market_label: "A股",
       symbol, tf, asOf, source,
       count: rows.length,
       first: rows[0]?.date ?? null,

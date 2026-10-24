@@ -137,6 +137,7 @@ async function getHandler(req: Request) {
 
   if (date === seed.as_of_news_date) {
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true, date, source: `离线快照种子（${seed.as_of_news_date} 抓取）`,
       industries: seed.industries, concepts: seed.concepts,
       market_env: seed.market_env, inference: seed.inference,
@@ -152,6 +153,7 @@ async function getHandler(req: Request) {
     const snap = snapshotHeat(date);
     if (snap) {
       return NextResponse.json({
+        market: "A", market_label: "A股",
         ok: true, date, source: "本地板块快照（涨幅50+资金30；RPS 项历史缺省不计）",
         industries: snap.industries, concepts: snap.concepts,
         ...(inference ? { inference, market_env: marketEnv } : {}),
@@ -166,6 +168,7 @@ async function getHandler(req: Request) {
       const allZero = ind.every((x) => x.h === 0);
       if (allZero) {
         return NextResponse.json({
+          market: "A", market_label: "A股",
           ok: true, date: today, empty: true,
           note: "当日尚未产生盘面数据（开盘后自动生成；可先查看最近已完成交易日）",
           // 休市/盘前热度榜为空，但市场环境读数照给（最近交易日口径）
@@ -174,6 +177,7 @@ async function getHandler(req: Request) {
         });
       }
       return NextResponse.json({
+        market: "A", market_label: "A股",
         ok: true, date: today, source: "本地实时规则计算（板块涨幅50+资金30+RPS20）",
         industries: ind, concepts: con,
         ...(inference ? { inference, market_env: marketEnv } : {}),
@@ -185,6 +189,7 @@ async function getHandler(req: Request) {
   }
 
   return NextResponse.json({
+    market: "A", market_label: "A股",
     ok: true, date, empty: true,
     note: "该日期无主题热度数据（历史板块快照由 S2 攒数接入后自动补齐）",
     ...(inference ? { inference, market_env: marketEnv } : {}),

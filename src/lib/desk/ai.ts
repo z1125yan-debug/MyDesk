@@ -13,6 +13,8 @@ import { FOLLOWUP_NOTE } from "./followups-core.ts";
 import { PLAIN_AND_BALANCED_NOTE } from "./plain-talk.ts";
 import { renderAnalysisFrames } from "../llm/analysis-frames.ts";
 import type { ServerLlmPublic } from "../llm/model-config-core.ts";
+// LLM 分流：当前市场（A/HK/US），由调用方随请求带上，服务端按它注入分流块
+import { marketScopePrompt, type MarketScope } from "./market-scope-core.ts";
 
 export interface ProviderPreset {
   label: string;
@@ -133,7 +135,7 @@ export function resolveChatEndpoint(ai: AiSettings, want: "auto" | "plain" | "to
 export async function aiChat(
   ai: AiSettings,
   messages: { role: "user" | "assistant" | "system"; content: string }[],
-  opts?: { timeoutMs?: number; maxTokens?: number; watchlist?: { symbol: string; name?: string | null }[] }
+  opts?: { timeoutMs?: number; maxTokens?: number; watchlist?: { symbol: string; name?: string | null }[]; market?: MarketScope | null }
 ): Promise<string> {
   return (await aiChatPlain(ai, messages, opts)).text;
 }
@@ -169,6 +171,11 @@ export async function aiChatPlain(
     horizon?: ChatHorizon | null;
     /** 持仓条件（标的/成本价/仓位/建仓日期）。与 mode/horizon 同一批随请求带出；没填不传 */
     hold?: import("./hold-core").HoldCtx | null;
+    /**
+     * LLM 分流：当前市场（A/HK/US，调用方取 store.marketTab）。
+     * 随请求体顶层 market 带给 /api/ai/proxy，服务端按它注入分流块；不传 = 未声明市场，服务端不注入。
+     */
+    market?: MarketScope | null;
   }
 ): Promise<PlainChatResult> {
   ensureServerLlm();
@@ -189,6 +196,7 @@ export async function aiChatPlain(
       ...(opts?.mode ? { mode: opts.mode } : {}),
       ...(opts?.horizon ? { horizon: opts.horizon } : {}),
       ...(opts?.hold && Object.keys(opts.hold).length ? { hold: opts.hold } : {}),
+      ...(opts?.market ? { market: opts.market } : {}),
     }),
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 60000),
   });
@@ -222,11 +230,14 @@ export function parseLooseJson<T>(text: string): T | null {
 // P6-A 修掉的口径问题：这里原来写死「（来自本机直连的真实行情接口，视为当前事实）」，
 // 可同一个 context 里可能混着非 A 股品种的演示数据、按现价合成的假分时、以及本次没取到的缺失行——
 // 一句话就把它们全升级成了「事实」。现在改成：来源分层由上下文逐条自带，提示词只负责要求模型遵守分层。
-export function assistantSystemPrompt(context: string): string {
+export function assistantSystemPrompt(context: string, market?: MarketScope | null): string {
   const today = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
   return [
     "你是 MyDesk 个人工作台的智能助理：既懂行情分析，也能像正常 AI 一样回答生活、学习、写作等任何问题。",
     `今天是 ${today}。`,
+    // LLM 分流：当前市场声明（客户端直连提示词也要带，服务端那份在 /api/ai/chat 与 /api/ai/proxy 里另行注入）。
+    // 不传 market = 未声明市场，不注入（旧行为逐字不变）；传了就按该市场回答，见 market-scope-core。
+    market ? marketScopePrompt(market) : "",
     "",
     "【行情上下文】（下面每条数据自带来源分层：REAL=本机直连真实取到，DERIVED=引擎对真实数据的派生计算，DEMO=演示数据不是行情，MISSING=本次缺失。）",
     "只有 REAL 与 DERIVED 可以作为行情依据；DEMO/MISSING 不得引用为价格或资金事实；没有标注来源的内容按「来源未知」处理，不要替它宣称真实。",

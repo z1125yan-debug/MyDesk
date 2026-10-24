@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 /**
  * 参数切换类异步 setState 的统一时序守卫（P67 体检 #3）。
@@ -24,5 +24,10 @@ export function useLatestGuard() {
   const seq = useRef(0);
   const token = useCallback((): number => ++seq.current, []);
   const alive = useCallback((t: number): boolean => t === seq.current, []);
-  return { token, alive };
+  // 返回对象必须跨渲染保持同一引用：五个消费页都把 guard 写进 load 的 useCallback 依赖、
+  // 又把 load 写进 useEffect 依赖——若每次渲染都新建对象，load 每次渲染都变新，
+  // effect 每次渲染后都重跑，load 里的 setData(null)/setBusy 又触发渲染，形成自激循环
+  // （画像页表现：一打开就闪屏、内容区永远落不了地）。token/alive 本身已是稳定回调，
+  // 这里只需把外层对象 memo 住。
+  return useMemo(() => ({ token, alive }), [token, alive]);
 }

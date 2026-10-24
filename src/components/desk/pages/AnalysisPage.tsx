@@ -6,6 +6,7 @@ import { autoLevels, TIMEFRAMES, CATALOG, HOT_SYMBOLS } from "@/lib/desk/data";
 import { fetchCandlesFor, fetchQuoteCards, searchSymbols, fetchTechSnapshot, fetchNewsBlock, normalizeTradingViewSymbol, trendLabel, isDemoSymbol, type SuggestItem, type TechSnapshot } from "@/lib/desk/market";
 import { aiChat, aiReady, assistantSystemPrompt, parseLooseJson } from "@/lib/desk/ai";
 import { marketSession, shanghaiStamp } from "@/lib/desk/session";
+import { inferMarketScopeFromSymbol, marketScopePrompt, MARKET_SCOPE_LABEL } from "@/lib/desk/market-scope-core";
 import {
   provenanceOfQuote, provenanceOfTechSnapshot, renderMarketContext, type CtxRow,
 } from "@/lib/desk/ai-context-core";
@@ -62,7 +63,7 @@ export default function AnalysisPage() {
 
   const symbol = focusSymbol || "000001.SH";
   const [candles, setCandles] = useState<Candle[]>([]);
-  const [kSource, setKSource] = useState<"real" | "demo">("demo");
+  const [kSource, setKSource] = useState<"real" | "demo" | "missing">("missing");
   const [kLoading, setKLoading] = useState(false);
   const [quote, setQuote] = useState<QuoteCard | null>(null);
   const [results, setResults] = useState<SuggestItem[]>([]);
@@ -156,8 +157,12 @@ export default function AnalysisPage() {
   const runAnalysis = async () => {
     if (!configured) { go("settings"); return; }
     setRunning(true); setResult(null); setRawText("");
+    // LLM 分流：分析对象是当前图表品种——市场按品种代码推断（NVDA→美股、00700.HK→港股），
+    // 推断不出时退回行情页的 marketTab；分流块与 market 一起交给服务端（/api/ai/proxy 按它注入）。
+    const market = inferMarketScopeFromSymbol(symbol) ?? useDesk.getState().marketTab;
     const sys = [
       "你是 MyDesk 行情工作台的图表分析引擎，面向个人投资者做技术面解读。",
+      marketScopePrompt(market),
       "只基于【用户提供的行情上下文】分析：价格、支撑、阻力、RSI、趋势等数值只能取自数据本身，禁止编造数据里没有的数值，禁止引用外部消息。",
       "上下文里每条都标了来源：标 DEMO（演示数据）/ MISSING（缺失）的部分不得当成真实行情；只有标 REAL 的可以直接引用，标 DERIVED 的要说明是本机算法算出来的。",
       "只输出一个 JSON 对象，不要 markdown 代码块，字段：",
@@ -168,8 +173,8 @@ export default function AnalysisPage() {
     try {
       const text = await aiChat(ai, [
         { role: "system", content: sys },
-        { role: "user", content: `请基于以下行情上下文（已逐条标注来源分层）做技术面分析：\n${chartContext()}` },
-      ]);
+        { role: "user", content: `请基于以下行情上下文（已逐条标注来源分层）做${MARKET_SCOPE_LABEL[market]}技术面分析：\n${chartContext()}` },
+      ], { market });
       const parsed = parseLooseJson<AnalysisResult>(text);
       if (parsed && (parsed.structure || parsed.bias)) setResult(parsed);
       else setRawText(text);
@@ -265,7 +270,7 @@ export default function AnalysisPage() {
                   </span>
                 </div>
                 <div className="mt-0.5 text-[13px] text-muted-foreground">
-                  {name} · {symbol} · {kSource === "real" ? "真实行情" : "演示数据"}{kLoading ? " · K线加载中" : ""}
+                  {name} · {symbol} · {kSource === "real" ? "真实行情" : kSource === "demo" ? "演示数据" : "未取到数据"}{kLoading ? " · K线加载中" : ""}
                 </div>
               </div>
             <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -305,7 +310,7 @@ export default function AnalysisPage() {
           <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
             <span className="text-[14px] font-semibold">技术快照 · 多周期</span>
             <span className="text-[12px] text-muted-foreground">
-              {snap ? (snap.source === "real" ? "真实行情" : "演示数据") : "计算中…"}
+              {snap ? (snap.source === "real" ? "真实行情" : snap.source === "demo" ? "演示数据" : "未取到数据") : "计算中…"}
             </span>
           </div>
           {snap && (

@@ -97,6 +97,7 @@ export async function GET(request: Request) {
     : blocks;
 
   return NextResponse.json({
+    market: "A", market_label: "A股",
     ok: true,
     symbol,
     code: code6,

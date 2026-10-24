@@ -29,6 +29,10 @@ import { tdxQuotes, tdxDepth, tdxTradesMoney } from "./tdx";
 import { callTool as mcpCallTool, listServers, startServer } from "./mcp-manager";
 import { suffixOf } from "./intent-core";
 import { fetchQuotesReal, fetchDetailReal, fetchNewsReal, symbolToSecid } from "./em";
+// 市场分流：chat-tools 的 stock_*/tdx_* 工具入参若是港股/美股形态，必须走长桥 MCP，
+// 绝不走东财搜索→A 股代码或 TDX/东财 A 股源（NVDA 经东财搜索会错配，TDX 市场号对字母代码无意义）。
+import { classifySymbol } from "./market-kind";
+import { fetchLongbridgeQuote, fetchLongbridgeHist, fetchLongbridgeFundamentals, fetchLongbridgeNews } from "./longbridge-mcp";
 // R20 主力净额第三档备胎（通达信逐笔自算）：东财/新浪都没通时顶上
 import { mainNetSelfNote, tdxMainNetOf } from "./fund-flow";
 // R10 扩容：个股新闻/公告 + 公司名解析（em.ts 在不动清单里，本模块内部复用它的 searchReal，不改它一行）
@@ -99,6 +103,29 @@ async function resolveSymbolArg(raw: string): Promise<{ symbol: string; resolved
   if (direct) return { symbol: direct, resolvedName: null, resolvedFrom: s, matchKind: "exact" };
   const hit = await resolveStockName(s);
   return hit ? { symbol: hit.symbol, resolvedName: hit.name, resolvedFrom: s, matchKind: hit.matchKind } : null;
+}
+
+/**
+ * 市场分流（港股/美股）：stock_* / tdx_* 工具的入参若是港股/美股形态，
+ * 绝不走东财搜索→A 股代码的路（NVDA 经东财搜索会错配或丢弃），也不拿 TDX/东财 A 股源取数。
+ * 返回 "HK"|"US" 表示该入参是港股/美股；返回 null 表示 A 股形态或认不出（走原 A 股链路）。
+ */
+function hkUsMarketOf(raw: string): "HK" | "US" | null {
+  const m = classifySymbol((raw ?? "").trim());
+  return m === "HK" || m === "US" ? m : null;
+}
+
+/** 港股/美股没有等价数据时的统一 missing：点名哪个市场、缺什么、绝不拿 A 股顶替。 */
+function hkUsMissing(toolZh: string, market: "HK" | "US"): { missing: string } {
+  const label = market === "HK" ? "港股" : "美股";
+  return { missing: `${label}暂无${toolZh}数据（TDX/东财仅覆盖 A 股），不拿 A 股数据顶替` };
+}
+
+/** 长桥符号展示形：裸代码补后缀，已带后缀保持（NVDA→NVDA.US，00700→00700.HK）。 */
+function lbDisplaySymbol(raw: string, market: "HK" | "US"): string {
+  const s = raw.trim().toUpperCase();
+  if (market === "HK") return s.endsWith(".HK") ? s : `${s}.HK`;
+  return s.endsWith(".US") ? s : `${s}.US`;
 }
 
 /** 名称解析自报行：只有真按名字解析过才出现，代码直查的返回不多余挂一行；前缀/砍尾缀命中要自报是怎么命中的（R10c） */
@@ -435,6 +462,8 @@ async function toolSectorBreadth(args: { name?: string }): Promise<unknown> {
  * 两条都取不到回 missing —— 骨架红线：不许拿行业/概念标签冒充主营。
  */
 async function toolStockBusinessComposition(args: { symbol?: string }): Promise<unknown> {
+  const hkUs = hkUsMarketOf(args.symbol ?? "");
+  if (hkUs) return hkUsMissing("主营/产品构成", hkUs);
   const r = await resolveSymbolArg(args.symbol ?? "");
   if (!r) return { missing: `认不出这只股票：${args.symbol ?? ""}（代码形态或东财搜索可命中的公司简称）` };
   const code6 = r.symbol.split(".")[0];
@@ -462,6 +491,31 @@ async function toolStockBusinessComposition(args: { symbol?: string }): Promise<
 }
 
 async function toolStockSnapshot(args: { symbol: string }): Promise<unknown> {
+  // 分流：港股/美股走长桥 MCP（quote + valuation），绝不走 TDX/东财 A 股源。
+  const hkUs = hkUsMarketOf(args.symbol ?? "");
+  if (hkUs) {
+    const [q, f] = await Promise.all([
+      fetchLongbridgeQuote(args.symbol, hkUs).catch(() => null),
+      fetchLongbridgeFundamentals(args.symbol, hkUs).catch(() => null),
+    ]);
+    if (!q && !f) return { missing: `${hkUs === "HK" ? "港股" : "美股"}快照暂无数据（长桥 MCP 未接通或无返回）` };
+    return {
+      symbol: lbDisplaySymbol(args.symbol, hkUs),
+      市场: hkUs === "HK" ? "港股" : "美股",
+      名称: q?.name ?? f?.name ?? null,
+      现价: q?.price ?? null,
+      涨跌幅: q?.changePct ?? null,
+      成交额亿: q?.turnover != null ? q.turnover / 1e8 : null,
+      换手率: null,
+      换手率说明: "长桥 MCP 不给换手率，不拿 A 股换手率顶替",
+      市盈率TTM: f?.pe ?? null,
+      市净率: f?.pb ?? null,
+      总市值亿: f?.marketCap != null ? f.marketCap / 1e8 : null,
+      主力净额亿: null,
+      主力净额说明: "长桥 MCP 不给主力净额（A 股口径），不拿 A 股主力净额顶替",
+      数据源: "长桥 MCP · quote + valuation",
+    };
+  }
   const r = await resolveSymbolArg(args.symbol ?? "");
   if (!r) return { missing: `认不出这只股票：${args.symbol}（应为 688256 / 688256.SH 形态，或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
@@ -496,6 +550,8 @@ async function toolStockSnapshot(args: { symbol: string }): Promise<unknown> {
 }
 
 async function toolStockDepth(args: { symbol: string }): Promise<unknown> {
+  const hkUs = hkUsMarketOf(args.symbol ?? "");
+  if (hkUs) return hkUsMissing("五档盘口", hkUs);
   const r = await resolveSymbolArg(args.symbol ?? "");
   if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
@@ -512,6 +568,8 @@ async function toolStockDepth(args: { symbol: string }): Promise<unknown> {
 }
 
 async function toolStockTrades(args: { symbol: string }): Promise<unknown> {
+  const hkUs = hkUsMarketOf(args.symbol ?? "");
+  if (hkUs) return hkUsMissing("主动买卖金额", hkUs);
   const r = await resolveSymbolArg(args.symbol ?? "");
   if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
@@ -527,6 +585,24 @@ async function toolStockTrades(args: { symbol: string }): Promise<unknown> {
 }
 
 async function toolStockKline(args: { symbol: string }): Promise<unknown> {
+  // 分流：港股/美股走长桥 MCP 日 K；A 股技术指标（MA/MACD/KDJ/RSI/VWAP/RPS/条件概率）
+  // 没有港股/美股等价计算，本轮只给 K 线与最近 5 日，不拿 A 股指标顶替。
+  const hkUs = hkUsMarketOf(args.symbol ?? "");
+  if (hkUs) {
+    const end = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - 200 * 864e5).toISOString().slice(0, 10);
+    const bars = await fetchLongbridgeHist(args.symbol, start, end, hkUs).catch(() => null);
+    if (!bars?.length) return { missing: `${hkUs === "HK" ? "港股" : "美股"}日 K 暂无数据（长桥 MCP 未接通或无返回）` };
+    return {
+      symbol: lbDisplaySymbol(args.symbol, hkUs),
+      市场: hkUs === "HK" ? "港股" : "美股",
+      数据源: "长桥 MCP · candlesticks（日 K）",
+      区间: `${bars[0].date} ~ ${bars[bars.length - 1].date}（${bars.length} 根）`,
+      最近5日: bars.slice(-5).map((b) => ({ 日期: b.date, 开: b.o, 高: b.h, 低: b.l, 收: b.c })),
+      技术状态: null,
+      技术状态说明: "港股/美股技术指标暂未计算，不拿 A 股指标顶替",
+    };
+  }
   const r = await resolveSymbolArg(args.symbol ?? "");
   if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
@@ -566,6 +642,8 @@ async function toolStockKline(args: { symbol: string }): Promise<unknown> {
 }
 
 async function toolStockFundFlow(args: { symbol: string }): Promise<unknown> {
+  const hkUs = hkUsMarketOf(args.symbol ?? "");
+  if (hkUs) return hkUsMissing("主力资金净额", hkUs);
   const r = await resolveSymbolArg(args.symbol ?? "");
   if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
@@ -613,6 +691,19 @@ async function toolMarketNews(args: { limit?: number }): Promise<unknown> {
  * 模型不许把「断源」转述成「这只票没新闻」，也不许反过来。
  */
 async function toolStockNews(args: { symbol?: string; limit?: number }): Promise<unknown> {
+  // 分流：港股/美股新闻走长桥 MCP news，绝不走东财搜索/披露（仅覆盖 A 股）。
+  const hkUs = hkUsMarketOf(String(args.symbol ?? ""));
+  if (hkUs) {
+    const n = Math.min(10, Math.max(3, args.limit ?? 6));
+    const items = await fetchLongbridgeNews(String(args.symbol ?? ""), n, hkUs).catch(() => null);
+    if (!items?.length) return { missing: `${hkUs === "HK" ? "港股" : "美股"}新闻暂无数据（长桥 MCP 未接通或无返回）` };
+    return {
+      symbol: lbDisplaySymbol(String(args.symbol ?? ""), hkUs),
+      市场: hkUs === "HK" ? "港股" : "美股",
+      数据源: "长桥 MCP · news",
+      新闻: items.map((x) => ({ 标题: x.title, 时间: x.time, 媒体: x.source, 链接: x.url })),
+    };
+  }
   const r = await resolveSymbolArg(String(args.symbol ?? ""));
   if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态，或东财搜索可命中的公司简称；不命中不猜代码）` };
   const code6 = r.symbol.slice(0, 6);
@@ -729,10 +820,16 @@ async function toolTdxMarketOverview(): Promise<unknown> {
 
 async function toolTdxQuotes(args: { symbols?: string[] }): Promise<unknown> {
   const raw = (args.symbols ?? []).slice(0, 20);
-  const resolved = await Promise.all(raw.map((x) => resolveSymbolArg(String(x))));
+  // 分流：港股/美股形态的入参不进 TDX（TDX 仅覆盖 A 股），本轮不取数并如实点名。
+  const hkUsDropped = raw.filter((x) => hkUsMarketOf(String(x)));
+  const aRaw = raw.filter((x) => !hkUsMarketOf(String(x)));
+  const resolved = await Promise.all(aRaw.map((x) => resolveSymbolArg(String(x))));
   const symbols = resolved.map((x) => x?.symbol).filter((x): x is string => !!x);
-  const dropped = raw.filter((_, i) => !resolved[i]);
-  if (!symbols.length) return { missing: `没有可用的股票（收到 ${JSON.stringify(raw)}）：应为代码形态，或东财搜索可命中的公司简称` };
+  const dropped = aRaw.filter((_, i) => !resolved[i]);
+  if (!symbols.length) {
+    if (hkUsDropped.length) return { missing: `本轮只收到港股/美股代码（${hkUsDropped.join("、")}），TDX 仅覆盖 A 股，未取数；港股/美股请用长桥 MCP 取数` };
+    return { missing: `没有可用的股票（收到 ${JSON.stringify(raw)}）：应为代码形态，或东财搜索可命中的公司简称` };
+  }
   const err = await ensureTdxMcp();
   if (err) return { missing: err };
   try {
@@ -747,6 +844,7 @@ async function toolTdxQuotes(args: { symbols?: string[] }): Promise<unknown> {
     return {
       数据源: "通达信行情服务器（tdx-mcp，快照口径，含盘口；与东财快照并报时各报各的出身，不混算）",
       ...(dropped.length ? { 未识别提示: `${dropped.length} 只既不是代码也没被东财搜索命中，本轮未取数：${dropped.join("、")}` } : {}),
+      ...(hkUsDropped.length ? { 分流提示: `港股/美股 ${hkUsDropped.join("、")} 本轮未取数（TDX 仅覆盖 A 股，港股/美股请用长桥 MCP）` } : {}),
       行情: rows.map((r) => {
         const close = Number(r.close ?? 0);
         const pre = Number(r.pre_close ?? 0);
@@ -775,6 +873,8 @@ async function toolTdxQuotes(args: { symbols?: string[] }): Promise<unknown> {
 }
 
 async function toolTdxKline(args: { symbol?: string; days?: number }): Promise<unknown> {
+  const hkUs = hkUsMarketOf(String(args.symbol ?? ""));
+  if (hkUs) return hkUsMissing("通达信日K", hkUs);
   const r = await resolveSymbolArg(String(args.symbol ?? ""));
   if (!r) return { missing: `认不出这只股票：${args.symbol}（代码形态或东财搜索可命中的公司简称）` };
   const symbol = r.symbol;
@@ -1210,23 +1310,23 @@ export const TOOLS: ChatTool[] = [
   // code 要 BK 开头的板块代码；只给板块名（如「印制电路板」）时先用 sector_rank 拿到 code 再调它。
   { name: "sector_constituents", desc: "板块成分股（真实名单）：两选一——args.code 为 BK 开头的东财板块代码（如 BK0448，先用 sector_rank 从榜单拿）；东财取不到或只有行业名时，用 args.name 传行业名（如 元件/半导体/银行，走本地行业归属快照，口径不同、只覆盖约 77%、无实时行情）。凡要「这个题材里有哪些股票」必须用它取真实成分，禁止凭印象点名。东财行给代码/名称/行业/现价/涨跌幅/成交额/换手/主力净额；本地快照行给代码/名称/总市值/档位（龙头/核心/二线）", fn: toolSectorConstituents, params: { type: "object", properties: { code: { type: "string", description: "BK 开头的东财板块代码，如 BK0448" }, name: { type: "string", description: "行业名（如 元件 / 半导体 / 银行）：东财代码取不到时走本地行业归属快照，仅行业板、非东财板块成分" }, kind: { type: "string", enum: ["industry", "concept"] }, size: { type: "number", description: "最多返回几只，默认 40" } } }, phase: "local_data" },
   { name: "sector_breadth", desc: "板块均线广度（本地计算）：给定行业名（args.name，如 半导体），返回该行业成分股里站上 MA5/MA10/MA20 的占比（真实数字+分母+剔除家数）。凡问「均线广度占比 / 多少成成分股站上均线 / 板块内部结构强弱 / 分化程度」**必须用它取真实占比**——推荐问题卡里的「均线广度占比」指的就是这个指标，不许再写「暂无均线广度统计」（2026-09-30 事故）", fn: toolSectorBreadth, params: { type: "object", properties: { name: { type: "string", description: "行业名（如 半导体 / 元件 / 银行），走本地行业归属快照口径" } }, required: ["name"] }, phase: "local_data" },
-  { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业；symbol 可传代码或公司简称（简称经东财搜索解析，解析结果如实标注）", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
-  { name: "stock_depth", desc: "个股五档盘口（通达信网关）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
-  { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标）", fn: toolStockTrades, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
-  { name: "stock_kline_summary", desc: "个股技术状态：均线/MACD/KDJ/RSI/VWAP/RPS + 历史条件概率", fn: toolStockKline, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
-  { name: "stock_fund_flow", desc: "个股近14日主力资金净额（东财）", fn: toolStockFundFlow, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "stock_snapshot", desc: "个股实时快照：价格/涨跌幅/换手/量比/估值/主力净额/行业；symbol 可传代码或公司简称（简称经东财搜索解析，解析结果如实标注）。分流：港股/美股代码（00700/NVDA）走长桥 MCP，不给换手率/主力净额（长桥无此数据，不拿 A 股顶替）", fn: toolStockSnapshot, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "stock_depth", desc: "个股五档盘口（通达信网关，仅 A 股；港股/美股直接回 missing）", fn: toolStockDepth, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "stock_trades", desc: "个股主动买卖金额（内外盘全日口径，代理指标，仅 A 股；港股/美股直接回 missing）", fn: toolStockTrades, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "stock_kline_summary", desc: "个股技术状态：均线/MACD/KDJ/RSI/VWAP/RPS + 历史条件概率（仅 A 股）。港股/美股代码走长桥 MCP 日 K，只给 K 线，不给技术指标（不拿 A 股指标顶替）", fn: toolStockKline, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "stock_fund_flow", desc: "个股近14日主力资金净额（东财，仅 A 股；港股/美股直接回 missing，不拿 A 股主力净额顶替）", fn: toolStockFundFlow, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "local_data" },
   // Serenity 落点②（2026-09-29）：问「它到底卖什么 / 主营是什么 / 产业链哪个环节」必须用它。
   // 上游不含按产品的收入占比 —— 工具自己会回一句口径说明，模型不许自行拆分比例。
-  { name: "stock_business_composition", desc: "个股主营与产品构成（披露原文）：主营业务 / 产品类型 / 产品名称 / 经营范围。凡涉及「这家公司到底卖什么、主营构成、产业链哪个环节」必须用它取真实披露，禁止用行业或概念标签冒充主营；上游不含按产品收入占比，缺收入结构就写「暂无数据」。symbol 可传代码或公司简称", fn: toolStockBusinessComposition, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "external_data" },
+  { name: "stock_business_composition", desc: "个股主营与产品构成（披露原文，仅 A 股；港股/美股直接回 missing）：主营业务 / 产品类型 / 产品名称 / 经营范围。凡涉及「这家公司到底卖什么、主营构成、产业链哪个环节」必须用它取真实披露，禁止用行业或概念标签冒充主营；上游不含按产品收入占比，缺收入结构就写「暂无数据」。symbol 可传代码或公司简称", fn: toolStockBusinessComposition, params: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, phase: "external_data" },
   { name: "market_news", desc: "最新宏观/市场快讯", fn: toolMarketNews, params: { type: "object", properties: { limit: { type: "number" } } }, phase: "external_data" },
   // R10 扩容：个股自己的消息面。谈个股结论必须引它，宏观快讯（market_news）替代不了——
   // 3014 实测「问中国海油答美国地产商」就是拿宏观快讯冒充个股消息面的事故现场。
-  { name: "stock_news", desc: "个股新闻+公告（这只票自己的消息面）：symbol 可传代码或公司简称（简称自动经东财搜索解析并如实标注）；新闻按时间倒序、公告含栏目标签", fn: toolStockNews, params: { type: "object", properties: { symbol: { type: "string" }, limit: { type: "number" } }, required: ["symbol"] }, phase: "external_data" },
+  { name: "stock_news", desc: "个股新闻+公告（这只票自己的消息面）：symbol 可传代码或公司简称（简称自动经东财搜索解析并如实标注）；新闻按时间倒序、公告含栏目标签。分流：港股/美股代码走长桥 MCP 新闻（无公告列表）", fn: toolStockNews, params: { type: "object", properties: { symbol: { type: "string" }, limit: { type: "number" } }, required: ["symbol"] }, phase: "external_data" },
   // R10 通达信三件：只进模型自取清单，不进自动调度预取表（同 P13 candidate_pool 先例）——
   // tdx-mcp 冷启动要拉起 Python 进程（首调 ~4s），预取环里每轮都等它不值；模型要核对盘口/量能再调。
   { name: "tdx_market_overview", desc: "通达信指数概况：上证/深证/创业板/科创50/北证50 最新点位+成交额+涨跌家数（交易所直连快照，与东财口径互为交叉核对；无资金流读数）", fn: toolTdxMarketOverview, params: { type: "object", properties: {} }, phase: "local_data" },
-  { name: "tdx_quotes", desc: "通达信个股实时快照（最多20只）：现价/涨跌幅/成交额/内外盘/买一卖一盘口/服务器时间；看盘口挂单与量能用它，资金流向仍用 stock_fund_flow", fn: toolTdxQuotes, params: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } }, required: ["symbols"] }, phase: "local_data" },
-  { name: "tdx_kline", desc: "通达信日K（不复权，5~60根）：开高低收+量额+区间涨跌幅，用于核对东财K线或看近期走势", fn: toolTdxKline, params: { type: "object", properties: { symbol: { type: "string" }, days: { type: "number" } }, required: ["symbol"] }, phase: "local_data" },
+  { name: "tdx_quotes", desc: "通达信个股实时快照（最多20只，仅 A 股；港股/美股入参本轮不取数）：现价/涨跌幅/成交额/内外盘/买一卖一盘口/服务器时间；看盘口挂单与量能用它，资金流向仍用 stock_fund_flow", fn: toolTdxQuotes, params: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } }, required: ["symbols"] }, phase: "local_data" },
+  { name: "tdx_kline", desc: "通达信日K（仅 A 股；港股/美股入参直接回 missing，不拿 TDX 取数）：不复权，5~60根：开高低收+量额+区间涨跌幅，用于核对东财K线或看近期走势", fn: toolTdxKline, params: { type: "object", properties: { symbol: { type: "string" }, days: { type: "number" } }, required: ["symbol"] }, phase: "local_data" },
   { name: "factor_screener", desc: "全A条件选股：conditions=[{field,op,value}]，field 必须来自因子目录；不给 conditions 时按系统默认活跃池跑（返回里会如实标注是默认口径）", fn: toolFactorScreener, params: { type: "object", properties: { conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string", enum: ["=", ">=", ">", "<=", "<", "!="] }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } }, limit: { type: "number" } } }, phase: "research" },
   { name: "candidate_pool", desc: "读取已冻结候选池（择优素材，池序不是推荐）：pool_id 形如 2026-09-22-全A-001（AI 选股页冻结后给的池号）；不带 pool_id 会列出最近的池", fn: toolCandidatePool, params: { type: "object", properties: { pool_id: { type: "string" } } }, phase: "research" },
   { name: "historical_probability", desc: "个股历史条件概率：conditions 中的 field 必须来自因子目录", fn: toolHistoricalProbability, params: { type: "object", properties: { symbol: { type: "string" }, conditions: { type: "array", items: { type: "object", properties: { field: { type: "string" }, op: { type: "string" }, value: { type: ["number", "string"] } }, required: ["field", "op", "value"] } } }, required: ["symbol", "conditions"] }, phase: "research" },

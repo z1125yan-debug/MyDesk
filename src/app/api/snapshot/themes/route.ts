@@ -25,6 +25,7 @@ export async function POST() {
     }
     const row = await insertThemeSnapshot(db, computedAt, extracted.columns, payload);
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       kind: "themes",
       id: String(row.id),

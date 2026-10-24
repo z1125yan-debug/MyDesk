@@ -32,5 +32,5 @@ async function getHandler() {
     };
   });
 
-  return NextResponse.json({ ok: true, list });
+  return NextResponse.json({ market: "A", market_label: "A股", ok: true, list });
 }

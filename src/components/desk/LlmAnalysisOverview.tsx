@@ -263,7 +263,9 @@ ${newsLines || "（暂无命中事件）"}
 4. 输出纯文本，不要 markdown 代码块，不要 JSON。`;
       const ai = useDesk.getState().ai;
       if (!aiReady(ai)) throw new Error("AI 未配置：请到「设置 → AI 接口」填写自有凭据");
-      const text = await aiChat(ai, [{ role: "user", content: prompt }], { timeoutMs: 90_000 });
+      // 本页主题榜 / 情绪 / 事件全部是 A 股数据：显式声明 market=A，服务端按 A 股注入分流块，
+      // 不让这句 A 股主题理由在美股/港股市场下被误读成美股/港股的结论。
+      const text = await aiChat(ai, [{ role: "user", content: prompt }], { timeoutMs: 90_000, market: "A" });
       setAiText((s) => ({ ...s, [code]: { reason: text } }));
     } catch (e) {
       setAiErr((s) => ({ ...s, [code]: String((e as Error).message || e) }));

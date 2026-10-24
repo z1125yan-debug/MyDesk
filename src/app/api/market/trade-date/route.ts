@@ -23,6 +23,7 @@ async function getHandler() {
   const info = await resolveTradeDate().catch(() => null);
   const tradeDate = info?.date ?? today;
   return NextResponse.json({
+    market: "A", market_label: "A股",
     ok: true,
     today,
     tradeDate,

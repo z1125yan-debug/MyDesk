@@ -23,6 +23,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   try { conditions = JSON.parse(pool.conditions); } catch { /* ignore */ }
 
   return NextResponse.json({
+    market: "A", market_label: "A股",
     ok: true,
     pool_id: pool.poolId,
     created_at: pool.createdAt.toISOString(),

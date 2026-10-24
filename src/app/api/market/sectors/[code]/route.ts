@@ -35,6 +35,7 @@ async function getHandler(req: Request, { params }: { params: Promise<{ code: st
       return NextResponse.json({ ok: false, error: "板块成分股为空（数据源无返回）" }, { status: 502 });
     }
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       list: metas.map((m) => ({
         symbol: m.symbol, name: m.name, industry: m.industry ?? null,

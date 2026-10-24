@@ -107,7 +107,7 @@ async function getJson<T = Record<string, unknown>>(url: string): Promise<T> {
 async function streamReport(
   prompt: string,
   onDelta: (full: string) => void,
-  opts: { maxTokens?: number; timeoutMs?: number } = {},
+  opts: { maxTokens?: number; timeoutMs?: number; market?: "A" | "HK" | "US" } = {},
 ): Promise<{ text: string; streamed: boolean }> {
   // 实测（2026-09-25，DeepSeek-V4-Flash）：~6000 字研报要 **230s+**，远超 `/api/ai/proxy`
   // 流式路径原本写死的 120s 上游超时。这里显式抬高上游超时（路由侧钳在 [10s, 600s]），
@@ -121,6 +121,10 @@ async function streamReport(
       stream: true,
       max_tokens: opts.maxTokens ?? 6000,
       timeout_ms: upstreamMs,
+      // LLM 分流：本页 Tab5 研报的数据块（复盘统计/板块/快讯/成交额）全部是 A 股口径，
+      // 固定声明 market=A——正文标题本就写明 A 股，服务端分流块与之同口径；
+      // 切到美股/港股时也不把这份 A 股研报说成美股/港股研报（美股/港股研报需另接该市场数据源，不拿 A 股数据顶替）。
+      ...(opts.market ? { market: opts.market } : {}),
     }),
     signal: AbortSignal.timeout(upstreamMs + 60_000),
   });
@@ -949,10 +953,15 @@ function IndustryReportView() {
       const turnoverZh = turnoverKnown
         ? `⑦ 全A当日成交额锚点（真实，来自 /api/market/sentiment 全A快照合计，数据截至 ${sent.as_of ?? "未知"}）：约 ${turnoverYi.toFixed(0)} 亿元（≈ ${(turnoverYi / 10000).toFixed(2)} 万亿元）。`
         : `⑦ 全A成交额本次没读到（amount_known=0：全A快照里一家都没带成交额字段，合计 0 不是「今天只成交 0 亿」）。`;
+      // 指数 K 线必须先截断到报告日 genDay 再算趋势：kline 接口返回的是截至「今天」的全序列，
+      // 隔日补生成昨日研报时不截断，就会把今天的收盘喂进昨天的研报
+      // （2026-10-23 实测：10-22 的研报写出了 10-23 的上证收盘 3685.65）。
+      const candlesAsOf = (cs?: { date: string; c: number }[]) =>
+        (cs ?? []).filter((x) => String(x?.date ?? "").slice(0, 10) <= genDay);
       const indexZh = [
-        indexTrendZh("上证指数(000001.SH)", indexTrendFromCandles(shK.candles)),
-        indexTrendZh("深证成指(399001.SZ)", indexTrendFromCandles(szK.candles)),
-        indexTrendZh("创业板指(399006.SZ)", indexTrendFromCandles(cybK.candles)),
+        indexTrendZh("上证指数(000001.SH)", indexTrendFromCandles(candlesAsOf(shK.candles))),
+        indexTrendZh("深证成指(399001.SZ)", indexTrendFromCandles(candlesAsOf(szK.candles))),
+        indexTrendZh("创业板指(399006.SZ)", indexTrendFromCandles(candlesAsOf(cybK.candles))),
       ];
       // 关联新闻（P65 改口径）：喂「研报区间 = 最近三个交易日」的快讯池，而不是抓取那一刻的 12 条。
       // 为什么放宽到三天：拿稳智那篇的关联新闻去东财归档逐条对过，它引的事件比研报日早 3~9 天
@@ -1086,7 +1095,7 @@ function IndustryReportView() {
         // 流式期间也过一遍加粗修补：模型边写边出现 `**A****B**` / 奇数个标记的行，
         // 直接画会满屏裸星号（mendBoldSeams 只动星号不动字，且对已修补的文本是幂等的）。
         setDraft(mendBoldSeams(full));
-      }, { maxTokens: 6000 });
+      }, { maxTokens: 6000, market: "A" });
       if (!content.trim()) throw new Error("研报生成失败：上游未返回内容");
       // 跑偏拦门（P63 实测）：模型偶尔在加粗处塌缩成「连续几千个星号」的复读墙。
       // 这种必须**在入库之前**拦下 —— 留档一天一份、同名即覆盖，

@@ -147,6 +147,7 @@ async function getHandler(req: Request) {
 
   const sourceLabel = origin === "em" ? "em" : origin === "ths" ? "ths" : origin === "mcp" ? "china-stock-mcp" : "none";
   return NextResponse.json({
+    market: "A", market_label: "A股",
     ok: true,
     kind,
     list,

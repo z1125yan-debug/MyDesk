@@ -22,6 +22,8 @@ import ScreenerPage from "./pages/ScreenerPage";
 import ScreenerWorkbench from "./pages/ScreenerWorkbench";
 // P36-C 战绩：跟着推荐到底赚没赚（票级明细 + 跟单 vs 全A中位两条线）
 import TrackRecordPage from "./pages/TrackRecordPage";
+// 新闻筛选：催化分流器规则版 v1（电报按 9 口子分流展示，仅展示）
+import NewsFilterPage from "./pages/NewsFilterPage";
 import SectorsPage from "./pages/SectorsPage";
 import FactorLabPage from "./pages/FactorLabPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -35,6 +37,7 @@ import ThemeOverviewPage from "./pages/ThemeOverviewPage";
 import RadarPage from "./pages/RadarPage";
 import SectorTopPage from "./pages/SectorTopPage";
 import EventsPage from "./pages/EventsPage";
+import DailyReportPage from "./pages/DailyReportPage";
 import ResearchPage from "./pages/ResearchPage";
 import AgentPage from "./pages/AgentPage";
 import { useDesk } from "@/lib/desk/store";
@@ -160,6 +163,7 @@ export default function AppShell() {
             {page === "screener" && <ScreenerPage />}
             {page === "aiscreener" && <ScreenerWorkbench />}
             {page === "trackrecord" && <TrackRecordPage />}
+            {page === "newsfilter" && <NewsFilterPage />}
             {page === "profile" && <ProfilePage />}
             {page === "market" && <MarketPage />}
             {page === "sectors" && <SectorsPage />}
@@ -183,6 +187,7 @@ export default function AppShell() {
             {page === "themeoverview" && <ThemeOverviewPage />}
             {page === "radar" && <RadarPage />}
             {page === "events" && <EventsPage />}
+            {page === "dailyreport" && <DailyReportPage />}
             {page === "research" && <ResearchPage />}
             {page === "agent" && <AgentPage />}
             {page === "extension" && <ExtensionPage />}

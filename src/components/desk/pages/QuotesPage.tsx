@@ -9,6 +9,7 @@ import CandleChart from "../CandleChart";
 import EChart from "../charts/EChart";
 import { LineageCard, LineageSection, StatCard } from "../ui/LineageCard";
 import { useDesk } from "@/lib/desk/store";
+import MarketTabs from "../MarketTabs";
 import { useLatestGuard } from "@/hooks/use-latest-guard";
 import { searchSymbols, fetchQuoteCards, fetchCandlesFor, type SuggestItem, type MacdSeries } from "@/lib/desk/market";
 import type { Candle, QuoteCard } from "@/lib/desk/types";
@@ -44,6 +45,16 @@ type Depth = {
 
 export default function QuotesPage() {
   const addWatch = useDesk((s) => s.addWatch);
+  const marketTab = useDesk((s) => s.marketTab);
+  const [hkUsNote, setHkUsNote] = useState("");
+
+  // 切市场时换默认票（A股 000001.SZ / 港股 00700 / 美股 NVDA），清掉旧市场的图
+  useEffect(() => {
+    if (marketTab === "HK") { setSymbol("00700"); setName("腾讯控股"); setKw("00700"); }
+    else if (marketTab === "US") { setSymbol("NVDA"); setName("英伟达"); setKw("NVDA"); }
+    else { setSymbol("000001.SZ"); setName("平安银行"); setKw("000001"); }
+    setCandles(null); setQuote(null); setDepth(null); setMacd(null); setAdded(false);
+  }, [marketTab]);
 
   const [kw, setKw] = useState("000001");
   const [sug, setSug] = useState<SuggestItem[]>([]);
@@ -64,8 +75,9 @@ export default function QuotesPage() {
 
   const tf = TFS[tfIdx].tf;
 
-  // 搜索建议（防抖 220ms）
+  // 搜索建议（防抖 220ms；港股/美股搜索暂仅支持 A 股口径，切到港股/美股时不联想）
   useEffect(() => {
+    if (marketTab !== "A") { setSug([]); return; }
     const k = kw.trim();
     if (sugTimer.current) clearTimeout(sugTimer.current);
     if (!k) { setSug([]); return; }
@@ -73,7 +85,7 @@ export default function QuotesPage() {
       void searchSymbols(k).then(setSug).catch(() => setSug([]));
     }, 220);
     return () => { if (sugTimer.current) clearTimeout(sugTimer.current); };
-  }, [kw]);
+  }, [kw, marketTab]);
 
   const pick = (it: SuggestItem) => {
     setSymbol(it.symbol); setName(it.name); setSug([]); setKw(it.symbol); setAdded(false);
@@ -85,8 +97,36 @@ export default function QuotesPage() {
   const load = useCallback(async () => {
     if (!symbol) return;
     const t = guard.token();
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setHkUsNote("");
     try {
+      // 港股/美股：报价走 /api/market/hk-us，K线走 /api/market/hk-us/kline；无五档盘口与 MACD
+      if (marketTab !== "A") {
+        const [qr, kr] = await Promise.all([
+          fetch(`/api/market/hk-us?market=${marketTab}`).then((r) => r.json()).catch(() => null),
+          fetch(`/api/market/hk-us/kline?market=${marketTab}&symbol=${encodeURIComponent(symbol)}`).then((r) => r.json()).catch(() => null),
+        ]);
+        if (!guard.alive(t)) return;
+        const row = (qr?.list ?? []).find((x: { symbol: string }) => x.symbol === symbol);
+        if (qr && !qr.available) setHkUsNote(String(qr.reason || "暂无数据"));
+        if (kr && !kr.available) setHkUsNote((prev) => prev || String(kr.reason || "暂无K线数据"));
+        if (row && row.price != null) {
+          const cp = (row.change_pct as number | null) ?? 0;
+          setQuote({
+            symbol, name: String(row.name ?? name), price: row.price, changePct: cp,
+            series: [], prevClose: cp !== 0 ? row.price / (1 + cp / 100) : row.price,
+            data_status: "REAL",
+          });
+        } else {
+          setQuote(null);
+          if (!qr?.available && !kr?.available) setError("暂无数据（长桥 MCP 未接通，美股 Yahoo 也无返回）");
+        }
+        const candles = (kr?.candles ?? []).map((c: { date: string; o: number; h: number; l: number; c: number }, i: number) => ({ t: i, o: c.o, h: c.h, l: c.l, c: c.c, date: c.date }));
+        setCandles(candles);
+        setMacd(null);
+        setDepth(null);
+        if (!candles.length) setError((prev) => prev || "该周期未取到K线数据（数据源无返回）");
+        return;
+      }
       const [qc, cc, dr] = await Promise.all([
         fetchQuoteCards([symbol]),
         fetchCandlesFor(symbol, tf, autype),
@@ -103,7 +143,7 @@ export default function QuotesPage() {
       setError(String((e as Error).message || e));
       setCandles(null);
     } finally { if (guard.alive(t)) setBusy(false); }
-  }, [symbol, tf, autype, guard]);
+  }, [symbol, tf, autype, guard, marketTab, name]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -157,12 +197,18 @@ export default function QuotesPage() {
 
   return (
     <div className="w-full space-y-4 px-6 py-4">
+      <MarketTabs />
+      {marketTab !== "A" && hkUsNote && (
+        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-1.5 text-[12px] text-amber-300/90">{hkUsNote}</div>
+      )}
       <LineageCard
         title={<span className="flex items-center gap-2"><CandlestickChart size={17} className="text-sky-400" />行情</span>}
         note="分时与日K技术指标"
       >
         <p className="mt-1 text-[12.5px] leading-5 text-muted-foreground">
-          输入股票代码或名称查行情；数据来自本地真实源（通达信优先、腾讯兜底；五档盘口来自本机通达信网关）。所示内容仅供市场研究与分析，不构成任何投资建议。
+          {marketTab === "A"
+            ? "输入股票代码或名称查行情；数据来自本地真实源（通达信优先、腾讯兜底；五档盘口来自本机通达信网关）。所示内容仅供市场研究与分析，不构成任何投资建议。"
+            : `当前为${marketTab === "HK" ? "港股" : "美股"}：报价与日 K 来自长桥 MCP${marketTab === "US" ? "（未接通时回退 Yahoo）" : "（未接通时暂无数据）"}；五档盘口与 MACD 暂仅支持 A 股。所示内容仅供市场研究与分析，不构成任何投资建议。`}
         </p>
 
         {/* 搜索 + 周期 + 复权 + 加自选 */}
@@ -173,7 +219,14 @@ export default function QuotesPage() {
               <input
                 value={kw}
                 onChange={(e) => setKw(e.target.value)}
-                placeholder="股票代码 / 名称，如 000001 或 平安银行"
+                onKeyDown={(e) => {
+                  // 港股/美股：回车直查裸代码（00700 / NVDA），不走 A 股联想
+                  if (e.key === "Enter" && marketTab !== "A") {
+                    const code = kw.trim().toUpperCase();
+                    if (code) { setSymbol(code); setName(code); setSug([]); setAdded(false); }
+                  }
+                }}
+                placeholder={marketTab === "A" ? "股票代码 / 名称，如 000001 或 平安银行" : marketTab === "HK" ? "港股代码，如 00700，回车直查" : "美股代码，如 NVDA，回车直查"}
                 className="w-60 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
               />
             </div>
@@ -259,10 +312,12 @@ export default function QuotesPage() {
                   <div className="py-16 text-center text-sm text-muted-foreground">{busy ? "加载中…" : "暂无K线数据"}</div>
                 )}
               </div>
-              {/* 买卖盘五档（通达信网关） */}
+              {/* 买卖盘五档（通达信网关；港股/美股暂不支持） */}
               <div className="w-full shrink-0 rounded-xl border border-border bg-card p-2.5 lg:w-52">
                 <div className="mb-1.5 text-[12px] font-medium text-muted-foreground">五档盘口</div>
-                {depth ? (
+                {marketTab !== "A" ? (
+                  <div className="py-6 text-center text-[12px] text-muted-foreground">五档盘口暂仅支持 A 股</div>
+                ) : depth ? (
                   <div className="space-y-0.5 font-mono text-[12px]">
                     {[...depth.asks].slice(0, 5).reverse().map((l, i) => (
                       <div key={`a${i}`} className="flex items-center justify-between px-1">
@@ -296,8 +351,8 @@ export default function QuotesPage() {
           )}
         </LineageSection>
 
-        {/* MACD 副图 */}
-        {symbol && vis.macd && (
+        {/* MACD 副图（A股；港股/美股暂不提供） */}
+        {marketTab === "A" && symbol && vis.macd && (
           <LineageSection title="MACD" hint="DIF / DEA / 柱（服务端 macdCalc 口径，与选股条件一致）" divided>
             <EChart ariaLabel="MACD 副图" height={150} state="ok" option={macdOption} />
           </LineageSection>

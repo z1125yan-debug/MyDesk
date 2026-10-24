@@ -117,6 +117,7 @@ export async function POST(request: Request) {
     if (isHistorical) warnings.push(`历史交易日回放 ${asOf}：仅K线口径条件参与匹配，快照口径条件无历史时点数据`);
 
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       as_of_trade_date: asOf,
       trade_date_is_historical: isHistorical,

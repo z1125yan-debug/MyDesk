@@ -24,6 +24,7 @@ export async function GET(request: Request) {
     const metas = await provider.listUniverse({ kind, boardCode, symbols }, asOf);
     const { kept, excluded } = applyUniverseFilters(metas, asOf, { excludeST });
     return NextResponse.json({
+      market: "A", market_label: "A股",
       asOf,
       source,
       total: metas.length,

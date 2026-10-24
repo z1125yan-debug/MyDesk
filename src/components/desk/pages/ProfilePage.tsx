@@ -5,6 +5,7 @@ import { Loader2, Search } from "lucide-react";
 import Markdown from "../Markdown";
 import DecisionCard from "../DecisionCard";
 import { SourceBadge, PctText, NumText } from "../SourceBadge";
+import MarketTabs from "../MarketTabs";
 import { useDesk } from "@/lib/desk/store";
 import { searchSymbols, normalizeTradingViewSymbol } from "@/lib/desk/market";
 import { fetchStockProfile, aiChatTools, type ProfileResp } from "@/lib/desk/quant-api";
@@ -35,6 +36,7 @@ export default function ProfilePage() {
   const focusSymbol = useDesk((s) => s.focusSymbol);
   const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
   const addWatch = useDesk((s) => s.addWatch);
+  const marketTab = useDesk((s) => s.marketTab);
   const ai = useDesk((s) => s.ai);
   const [input, setInput] = useState(focusSymbol);
   const [symbol, setSymbol] = useState(focusSymbol);
@@ -44,6 +46,28 @@ export default function ProfilePage() {
   const [suggest, setSuggest] = useState<{ symbol: string; name: string }[]>([]);
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
+  // 港股/美股：画像暂仅支持 A 股；非 A 股只拉报价摘要（/api/market/hk-us），不走 A 股画像接口
+  const [hkUsQuote, setHkUsQuote] = useState<{ price: number | null; changePct: number | null; name: string | null; available: boolean; reason: string } | null>(null);
+  const [hkUsBusy, setHkUsBusy] = useState(false);
+  useEffect(() => {
+    if (marketTab === "A") { setHkUsQuote(null); return; }
+    const code = symbol.replace(/\.(HK|US)$/i, "").replace(/\.(SH|SZ|BJ)$/i, "");
+    setHkUsBusy(true);
+    fetch(`/api/market/hk-us?market=${marketTab}`)
+      .then((r) => r.json())
+      .then((r) => {
+        const row = (r.list ?? []).find((x: { symbol: string }) => x.symbol === code);
+        setHkUsQuote({
+          price: row?.price ?? null,
+          changePct: row?.change_pct ?? null,
+          name: row?.name ?? null,
+          available: !!r.available,
+          reason: r.reason ?? "",
+        });
+      })
+      .catch(() => setHkUsQuote({ price: null, changePct: null, name: null, available: false, reason: "暂无数据" }))
+      .finally(() => setHkUsBusy(false));
+  }, [marketTab, symbol]);
 
   // P15-R16c：keep=true 是轮询重取——只换数据，不清用户已经生成的 AI 解读、不闪加载态。
   // （原来这页只能手点「生成画像」，开盘后价格停在打开页面那一刻，正是用户说的「分不清是哪天的数」）
@@ -118,6 +142,33 @@ export default function ProfilePage() {
 
   return (
     <div className="w-full space-y-4 px-6 py-4">
+      <MarketTabs />
+      {marketTab !== "A" && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) setSymbol(input.trim().toUpperCase()); }}
+              placeholder={marketTab === "HK" ? "港股代码，如 00700，回车直查" : "美股代码，如 NVDA，回车直查"}
+              className="w-72 rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-sky-500/50"
+            />
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="text-lg font-bold">{hkUsQuote?.name ?? symbol}</div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              {hkUsBusy ? "加载中…" : hkUsQuote?.available && hkUsQuote?.price != null
+                ? <>现价 {hkUsQuote.price.toFixed(2)} · 涨跌幅 {hkUsQuote.changePct != null ? `${hkUsQuote.changePct > 0 ? "+" : ""}${hkUsQuote.changePct.toFixed(2)}%` : "—"}</>
+                : (hkUsQuote?.reason || "暂无数据")}
+            </div>
+            <p className="mt-3 text-[12.5px] leading-5 text-muted-foreground">
+              个股画像（资金/技术/板块/概率）暂仅支持 A 股。{marketTab === "HK" ? "港股报价来自长桥 MCP，未接通时暂无数据。" : "美股报价来自长桥 MCP，未接通时回退 Yahoo。"}切回 A股 可看完整画像。
+            </p>
+          </div>
+        </div>
+      )}
+      {marketTab === "A" && (
+      <>
       {/* 搜索条 */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
@@ -471,6 +522,8 @@ export default function ProfilePage() {
         <div className="rounded-xl border border-dashed border-border px-4 py-14 text-center text-xs text-muted-foreground">
           输入代码生成画像：实时报价 → 五档盘口 → 逐笔资金 → 主力资金流 → 技术状态 → 板块强度 → 历史条件概率 → 市场风险
         </div>
+      )}
+      </>
       )}
     </div>
   );

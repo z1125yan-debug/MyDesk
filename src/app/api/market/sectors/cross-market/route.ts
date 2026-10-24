@@ -32,6 +32,7 @@ async function getHandler() {
       sectors[sector] = note ? { ...sig, line: `${sig.line}${sig.line ? " " : ""}${note}` } : sig;
     }
     return NextResponse.json({
+      market: "cross", market_label: "跨市场", market_note: "美股ETF/国际期货（外盘）→ A股板块预警；instruments 为外盘，sectors 为 A股板块判定",
       ok: true,
       today: beijingTodayStr(),
       instruments,

@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     kind: "quant_selection",
     payload: body as Record<string, unknown>,
   });
-  return NextResponse.json({ jobId: job.id });
+  return NextResponse.json({ market: "A", market_label: "A股", jobId: job.id });
 }
 
 export async function GET(request: Request) {
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
   if (jobId) {
     const job = getJob(jobId);
     if (!job) return NextResponse.json({ error: `任务不存在：${jobId}` }, { status: 404 });
-    return NextResponse.json({ job });
+    return NextResponse.json({ market: "A", market_label: "A股", job });
   }
   return NextResponse.json({ error: "需要 jobId" }, { status: 400 });
 }

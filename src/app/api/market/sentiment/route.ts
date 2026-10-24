@@ -56,7 +56,7 @@ async function getHandler() {
     } catch (e) {
       extra.pressure_error = `见顶压力分没算出来：${(e as Error).message}`;
     }
-    return NextResponse.json({ ok: true, ...data, ...tdx, ...extra });
+    return NextResponse.json({ ok: true, ...data, ...tdx, ...extra, market: "A", market_label: "A股", market_note: "主体为 A股情绪；divergence/overseas 子块为外盘对照（美股/恒生/A50），已分块标注" });
   } catch (e) {
     return NextResponse.json({ ok: false, error: `市场情绪计算失败：${(e as Error).message}` }, { status: 502 });
   }

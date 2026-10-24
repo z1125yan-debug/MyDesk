@@ -16,7 +16,9 @@ import { AutoTaskLine } from "../AutoTaskLine";
 import { HistoryBar } from "../HistoryBar";
 import { InterpretationCard, interpretKey } from "../EventInterpretation";
 import { useDesk } from "@/lib/desk/store";
-import { aiReady } from "@/lib/desk/ai";
+import MarketTabs from "../MarketTabs";
+import { aiReady, aiChat } from "@/lib/desk/ai";
+import { marketScopePrompt, MARKET_SCOPE_LABEL } from "@/lib/desk/market-scope-core";
 import { useLatestGuard } from "@/hooks/use-latest-guard";
 import { RUN_STATUS_TEXT, runEventInterpretation, type InterpretProgress, type RunStatus } from "@/lib/desk/event-interpret";
 import {
@@ -41,6 +43,15 @@ const bjTime = (iso: string | null | undefined): string => {
 };
 
 export default function EventsPage() {
+  const marketTab = useDesk((s) => s.marketTab);
+  // 港股 / 美股事件：长桥 MCP 新闻（/api/market/hk-us/screener 的事件块），不用 A 股事件库
+  const [hkUsEvents, setHkUsEvents] = useState<{ symbol: string; name: string; title: string; time: string | null; source: string | null; url: string | null }[]>([]);
+  const [hkUsNote, setHkUsNote] = useState("");
+  const [hkUsBusy, setHkUsBusy] = useState(false);
+  // 港股 / 美股事件 AI 理解：只解读上面列出的长桥新闻标题，不写 A 股事件库、不落库。
+  const [hkUsInterp, setHkUsInterp] = useState<string | null>(null);
+  const [hkUsInterpBusy, setHkUsInterpBusy] = useState(false);
+  const [hkUsInterpError, setHkUsInterpError] = useState("");
   const [items, setItems] = useState<EventItemClient[]>([]);
   const [missing, setMissing] = useState<string[]>([]);
   const [unmatched, setUnmatched] = useState<number | null>(null);
@@ -140,7 +151,8 @@ export default function EventsPage() {
     setAiRunning(true);
     try {
       // 分批调模型（默认每批 6 条）：AMD 免费档约 8~10s/条，分批后能边跑边显示进度
-      const r = await runEventInterpretation(ai, { limit: 20, onProgress: (p) => setProgress(p) });
+      // LLM 分流：当前市场随请求带上（取行情页 marketTab），服务端按它在提示词里声明市场口径
+      const r = await runEventInterpretation(ai, { limit: 20, onProgress: (p) => setProgress(p), market: useDesk.getState().marketTab });
       setRunStatus(r.status);
       setRunNote(r.message);
       setRunMissing(r.missing);
@@ -155,6 +167,23 @@ export default function EventsPage() {
 
   useEffect(() => { void load(); void loadHistoryMeta(); void loadInterps(); }, [load, loadHistoryMeta, loadInterps, metaTick]);
 
+  // 港股 / 美股：切市场时拉一次长桥新闻事件（与选股页同一接口的事件块）
+  useEffect(() => {
+    if (marketTab === "A") return;
+    let dead = false;
+    setHkUsBusy(true);
+    fetch(`/api/market/hk-us/screener?market=${marketTab}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (dead) return;
+        if (!j.available) setHkUsNote(j.reason || "暂无数据");
+        else { setHkUsEvents(j.events ?? []); setHkUsNote(`来源 ${j.source || "—"} · ${j.trade_date || ""}`); }
+      })
+      .catch(() => { if (!dead) setHkUsNote("暂无数据"); })
+      .finally(() => { if (!dead) setHkUsBusy(false); });
+    return () => { dead = true; };
+  }, [marketTab]);
+
   // 事件行 ↔ 解释：优先按服务端给的当前行 id 对应，行被重扫换掉 id 时退回「标题+时间」原文匹配
   const interpOf = useMemo(() => {
     const byRow = new Map<string, InterpretLoadClient["items"][number]>();
@@ -163,8 +192,63 @@ export default function EventsPage() {
       byRow.get(ev.id) ?? byRow.get(`${ev.title}|${ev.time ?? ""}`);
   }, [interp]);
 
+  // 港股 / 美股事件 AI 理解：只解读已列出的长桥新闻标题（不编新事件、不写库）。
+  // 分流：market 随请求带上，服务端按当前市场注入分流块；新闻标题本身就是该市场的数据。
+  const runHkUsInterp = async () => {
+    if (!aiReady(ai)) { setHkUsInterpError("AI 未配置：到「设置 → AI 接口」填好后重试"); return; }
+    if (!hkUsEvents.length) { setHkUsInterpError("暂无新闻可解读"); return; }
+    setHkUsInterpBusy(true); setHkUsInterpError(""); setHkUsInterp(null);
+    try {
+      const label = MARKET_SCOPE_LABEL[marketTab as "HK" | "US"];
+      const lines = hkUsEvents.slice(0, 12).map((e, i) => `${i + 1}. [${e.symbol} ${e.name}] ${e.title}${e.time ? `（${e.time}）` : ""}`).join("\n");
+      const text = await aiChat(ai, [
+        { role: "system", content: [marketScopePrompt(marketTab as "HK" | "US"), `你是${label}事件理解层。只解读下面列出的长桥新闻标题，不编新事件、不改写标题、不给买卖价、不给概率数字。`, "每条新闻给：方向（利好/利空/双向/中性/未知）+ 影响范围（个股/板块/市场整体/未知）+ 一句话依据（必须引用标题原话）+ 重点盯的票（只能是新闻里出现的票）+ 反证（什么情况说明判断错了）。拿不准的写「暂无数据」，不要用「通常」「一般」填补。只输出中文要点列表，不要 markdown 代码块。"].join("\n") },
+        { role: "user", content: `请解读以下${label}新闻标题：\n${lines}` },
+      ], { market: marketTab as "HK" | "US" });
+      setHkUsInterp(text || "模型未返回内容");
+    } catch (e) {
+      setHkUsInterpError(`AI 理解失败：${(e as Error).message}`);
+    } finally {
+      setHkUsInterpBusy(false);
+    }
+  };
+
+  // 港股 / 美股分支放在所有 hooks 之后：只展示长桥新闻事件，A 股的事件库/解释层不套用。
+  if (marketTab !== "A") {
+    return (
+      <div className="w-full space-y-4 px-6 py-4">
+        <MarketTabs />
+        <div className="flex items-center gap-2 text-lg font-bold"><Globe2 size={18} className="text-sky-400" /> {marketTab === "HK" ? "港股" : "美股"}事件 · 长桥新闻</div>
+        <div className="text-[12px] text-muted-foreground">20 只主流票的长桥 MCP 新闻汇总（{hkUsNote || "加载中…"}）· 不是 A 股事件库；新闻只陈述事实，不判因果。</div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => void runHkUsInterp()} disabled={hkUsInterpBusy || hkUsBusy || !hkUsEvents.length}
+            className="flex items-center gap-1 rounded-md border border-fuchsia-500/40 bg-fuchsia-500/10 px-2.5 py-1.5 text-xs text-fuchsia-300 hover:bg-fuchsia-500/20 disabled:cursor-not-allowed disabled:opacity-40">
+            {hkUsInterpBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} AI 理解{marketTab === "HK" ? "港股" : "美股"}事件
+          </button>
+          <span className="text-[11.5px] text-muted-foreground">只解读上面列出的长桥新闻标题 · 不写库 · AI 解释层，不构成投资建议</span>
+        </div>
+        {hkUsInterpError && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{hkUsInterpError}</div>}
+        {hkUsInterp && (
+          <div className="rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/5 px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">{hkUsInterp}</div>
+        )}
+        {hkUsBusy && <div className="text-xs text-muted-foreground">正在加载…</div>}
+        {!hkUsBusy && hkUsEvents.length === 0 && <div className="text-xs text-muted-foreground">{hkUsNote || "暂无新闻"}</div>}
+        <div className="space-y-2">
+          {hkUsEvents.map((e, i) => (
+            <div key={i} className="rounded-xl border bg-card px-4 py-3 text-sm">
+              <span className="mr-2 font-mono text-[12px] text-muted-foreground">{e.symbol}</span>
+              {e.url ? <a href={e.url} target="_blank" rel="noreferrer" className="hover:text-sky-300">{e.title}</a> : <span>{e.title}</span>}
+              <span className="ml-2 text-[11.5px] text-muted-foreground">{e.time ?? ""}{e.source ? ` · ${e.source}` : ""}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full space-y-4 px-6 py-4">
+      <MarketTabs />
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Globe2 size={18} className="text-sky-400" /> 全球事件雷达</div>

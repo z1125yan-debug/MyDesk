@@ -17,10 +17,11 @@
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { navSeriesOf, parseSymbols } from "@/lib/quant/strategy/pick-fill-core.ts";
+import { navSeriesOf, parseSymbols, type NavPoint } from "@/lib/quant/strategy/pick-fill-core.ts";
 import { roundTripDragOf } from "@/lib/quant/backtest/event-core.ts";
 import { getServerLlm } from "@/lib/llm/model-config";
 import { AI_PICK_SOURCE } from "@/lib/quant/strategy/ai-pick-core.ts";
+import { SHADOW_SOURCE, SHADOW_HOLD_DAYS, shadowNavSeriesOf, type HorizonStat } from "@/lib/quant/strategy/shadow-core.ts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -44,6 +45,49 @@ interface PickRow {
   nextDayBasis: string | null;
   nextDaySymDetail: string | null;
   symBackfilledAt: Date | null;
+  h1Stat: string | null;
+  h5Stat: string | null;
+  h20Stat: string | null;
+  shadowDetail: string | null;
+}
+
+function statOf(json: string | null): HorizonStat | null {
+  if (!json) return null;
+  try {
+    const o = JSON.parse(json) as HorizonStat;
+    return typeof o?.mean === "number" && Number.isFinite(o.mean) ? o : null;
+  } catch { return null; }
+}
+
+function shadowDetailOf(json: string | null): { symbol: string; net1: number | null; net5: number | null; net20: number | null }[] {
+  if (!json) return [];
+  try {
+    const raw = JSON.parse(json) as unknown;
+    if (!Array.isArray(raw)) return [];
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    return raw.map((x) => {
+      const o = (x ?? {}) as Record<string, unknown>;
+      return { symbol: String(o.symbol ?? ""), net1: num(o.net1), net5: num(o.net5), net20: num(o.net20) };
+    }).filter((s) => s.symbol);
+  } catch { return []; }
+}
+
+function shadowSymbolsOf(json: string | null): { symbol: string; name: string; close: number | null; ret20: number | null; devMa20: number | null }[] {
+  if (!json) return [];
+  try {
+    const raw = JSON.parse(json) as unknown;
+    if (!Array.isArray(raw)) return [];
+    return raw.map((x) => {
+      const o = (x ?? {}) as Record<string, unknown>;
+      return {
+        symbol: String(o.symbol ?? ""),
+        name: typeof o.name === "string" ? o.name : "",
+        close: typeof o.close === "number" ? o.close : null,
+        ret20: typeof o.ret20 === "number" ? o.ret20 : null,
+        devMa20: typeof o.devMa20 === "number" ? o.devMa20 : null,
+      };
+    }).filter((s) => s.symbol);
+  } catch { return []; }
 }
 
 function detailOf(json: string | null): { symbol: string; net: number | null; reason: string | null }[] {
@@ -149,6 +193,81 @@ function aggregateLayer(rows: PickRow[]) {
   };
 }
 
+/** 影子层聚合：与正式版同表不同口径——收盘买、持有 1/5/20 日三档回填，主考核 h20。
+ *  净值 = 1/20 滚动口径（每份占组合 1/20，到期结算），只由已到期份构成，不预支未到期收益。 */
+async function aggregateShadow(rows: PickRow[]) {
+  const sorted = rows.slice().sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
+  // 剩余天数：信号日之后已沉淀的交易日数（数日历，不猜日期）
+  let settledAfter = new Map<string, number>();
+  if (sorted.length) {
+    const dates = await db.$queryRawUnsafe<{ tradeDate: string }[]>(
+      `SELECT tradeDate FROM stock_daily_bar WHERE adjust = 'qfq' AND tradeDate >= ?
+       GROUP BY tradeDate HAVING COUNT(*) >= 1000 ORDER BY tradeDate ASC`,
+      sorted[0].tradeDate,
+    );
+    const list = dates.map((d) => d.tradeDate);
+    settledAfter = new Map(sorted.map((r) => [r.tradeDate, list.filter((d) => d > r.tradeDate).length]));
+  }
+  const outRows = sorted.slice().reverse().map((r) => {
+    const after = settledAfter.get(r.tradeDate) ?? 0;
+    return {
+      tradeDate: r.tradeDate,
+      regime: r.regime,
+      strategyName: r.strategyName,
+      symbols: shadowSymbolsOf(r.symbols),
+      symbolsNote: r.symbolsNote,
+      h1: statOf(r.h1Stat),
+      h5: statOf(r.h5Stat),
+      h20: statOf(r.h20Stat),
+      detail: shadowDetailOf(r.shadowDetail),
+      remainingDays: Math.max(0, SHADOW_HOLD_DAYS - after),
+    };
+  });
+  const filled = (key: "h1Stat" | "h5Stat" | "h20Stat") =>
+    sorted.map((r) => statOf(r[key])).filter((s): s is HorizonStat => s != null);
+  const avgMean = (ss: HorizonStat[]) => (ss.length ? ss.reduce((a, s) => a + s.mean, 0) / ss.length : null);
+  const h20s = filled("h20Stat");
+  const matured = sorted
+    .map((r) => ({ stat: statOf(r.h20Stat) }))
+    .filter((x) => x.stat != null)
+    .map((x) => ({ sellDate: (x.stat as HorizonStat).sellDate, netPct: (x.stat as HorizonStat).mean }));
+  const navPts = shadowNavSeriesOf(matured);
+  const benchPts = shadowNavSeriesOf(
+    sorted.map((r) => statOf(r.h20Stat)).filter((s): s is HorizonStat => s != null && s.benchMean != null)
+      .map((s) => ({ sellDate: s.sellDate, netPct: s.benchMean as number })),
+  );
+  const benchByDate = new Map(benchPts.map((p) => [p.tradeDate, p.nav]));
+  const nav: NavPoint[] = navPts.map((p) => ({
+    tradeDate: p.tradeDate, nav: p.nav, benchNav: benchByDate.get(p.tradeDate) ?? 1, hasSample: true,
+  }));
+  const byRegime = (["强势", "震荡", "弱势"] as const).map((regime) => {
+    const rs = sorted.filter((r) => r.regime === regime);
+    const pick = (key: "h1Stat" | "h5Stat" | "h20Stat") =>
+      avgMean(rs.map((r) => statOf(r[key])).filter((s): s is HorizonStat => s != null));
+    return {
+      regime, batches: rs.length, empty: rs.filter((r) => shadowSymbolsOf(r.symbols).length === 0).length,
+      h1Mean: pick("h1Stat"), h5Mean: pick("h5Stat"), h20Mean: pick("h20Stat"),
+    };
+  });
+  return {
+    summary: {
+      days: sorted.length,
+      emptyDays: sorted.filter((r) => shadowSymbolsOf(r.symbols).length === 0).length,
+      matured: h20s.length,
+      h1AvgMean: avgMean(filled("h1Stat")),
+      h5AvgMean: avgMean(filled("h5Stat")),
+      h20AvgMean: avgMean(h20s),
+      h20BatchWinPct: h20s.length ? (h20s.filter((s) => s.mean > 0).length / h20s.length) * 100 : null,
+      navNow: nav.length ? nav[nav.length - 1].nav : null,
+      benchNavNow: nav.length ? nav[nav.length - 1].benchNav : null,
+      basis: "信号日收盘买、持有到期日收盘卖，每档按「若当天卖出」扣满 0.41%；组合按每天一份、每份占 1/20 滚动，未到期的份不进净值。",
+    },
+    nav,
+    byRegime,
+    rows: outRows,
+  };
+}
+
 export async function GET() {
   try {
     const rows = (await db.strategyPick.findMany({
@@ -158,12 +277,15 @@ export async function GET() {
         symbols: true, symbolsNote: true, nextDaySymWin: true, nextDaySymUp: true,
         nextDaySymCount: true, nextDaySymSkip: true, nextDayBenchNet: true,
         nextDayBasis: true, nextDaySymDetail: true, symBackfilledAt: true,
+        h1Stat: true, h5Stat: true, h20Stat: true, shadowDetail: true,
       },
     })) as PickRow[];
 
-    // 分层
-    const layer1Rows = rows.filter((r) => r.source !== AI_PICK_SOURCE);
+    // 分层（影子行只进影子层，不许混进策略层稀释正式口径）
+    const layer1Rows = rows.filter((r) => r.source === "gate" || r.source === "regime");
     const layer2Rows = rows.filter((r) => r.source === AI_PICK_SOURCE);
+    const shadowRows = rows.filter((r) => r.source === SHADOW_SOURCE);
+    const shadow = await aggregateShadow(shadowRows);
     const strategy = aggregateLayer(layer1Rows);
     const aiPick = aggregateLayer(layer2Rows);
 
@@ -184,6 +306,7 @@ export async function GET() {
       layers: {
         strategy: { ...strategy, status: "ok" as const },
         aiPick: { ...aiPick, status: aiPickStatus },
+        shadow: { ...shadow, status: shadowRows.length ? ("ok" as const) : ("empty" as const) },
       },
       aiPickStatus,
     });

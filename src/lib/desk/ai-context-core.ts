@@ -51,7 +51,7 @@ export function provenanceOfQuote<C extends { missing?: boolean; data_status?: s
 }
 
 /** 引擎快照（趋势/RSI/关键位）的来源判定 */
-export function provenanceOfTechSnapshot(source: "real" | "demo" | null | undefined): Provenance {
+export function provenanceOfTechSnapshot(source: "real" | "demo" | "missing" | null | undefined): Provenance {
   if (source === "demo") return "DERIVED_ON_DEMO";
   if (source === "real") return "DERIVED";
   return "MISSING";

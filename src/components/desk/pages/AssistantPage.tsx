@@ -15,6 +15,7 @@ import {
 import { useDesk } from "@/lib/desk/store";
 import { aiConfigured, assistantSystemPrompt } from "@/lib/desk/ai";
 import { fetchQuoteCards, fetchTechSnapshot, fetchNewsBlock, isDemoSymbol, searchSymbols } from "@/lib/desk/market";
+import { inferMarketScopeFromSymbol } from "@/lib/desk/market-scope-core";
 import { shanghaiStamp } from "@/lib/desk/session";
 import {
   guardPriceOf, provenanceOfQuote, provenanceOfTechSnapshot, renderMarketContext, type CtxRow,
@@ -188,7 +189,10 @@ export default function AssistantPage() {
   const { sectors, openLink } = useDeskLinks();
 
   // 本轮快照：识别问题里的品种（关注品种兜底），带来源分层；追问则沿用会话已关联的标的
+  // LLM 分流：快照只注入当前市场的品种——市场切到美股/港股时，默认关注品种（上证指数）
+  // 是 A 股的，注入它就等于把 A 股行情塞进美股回答；跨市场品种由服务端工具按代码取数。
   const snapshot = useCallback(async (session: ChatSession, question: string): Promise<SnapshotResult | null> => {
+    const market = useDesk.getState().marketTab;
     const carried = isFollowUp(question) ? session.stock : undefined;
     let targets = [carried ?? focusSymbol];
     let hit: string | undefined = carried;
@@ -204,12 +208,16 @@ export default function AssistantPage() {
         }
       } catch { /* 识别失败则仅注入关注品种 */ }
     }
+    // 只保留与当前市场同市场的品种；一个都不剩 = 本轮快照为空（服务端提示词会写 MISSING，不编数）
+    targets = targets.filter((s) => (inferMarketScopeFromSymbol(s) ?? market) === market);
+    if (!targets.length) return { snapshot: "", guardPrice: null, anchorSymbol: null, stock: hit };
     const blocks = await Promise.all(targets.map((s) => marketBlockFor(s)));
     const allRows = blocks.flatMap((b) => b.rows);
     const marketBlock = allRows.length
       ? `[行情快照·逐条标注来源分层]\n${renderMarketContext(allRows, { takenAt: shanghaiStamp() })}`
       : "";
-    const newsBlock = await fetchNewsBlock().catch(() => "");
+    // 快讯是 A 股 7x24 口径：非 A 股轮次不注入（美股/港股消息面由服务端 market_overseas / market_news 按市场取）
+    const newsBlock = market === "A" ? await fetchNewsBlock().catch(() => "") : "";
     const gi = blocks.findIndex((b) => b.price != null);
     return {
       // 快照为空时返回空串：提示词会写「状态 MISSING」，比塞一段假装有数据的文本诚实
@@ -227,18 +235,21 @@ export default function AssistantPage() {
     // 端点按服务商能力选：OpenAI 兼容接口走工具调用环（模型能自己补取数），其余退回纯对话端点。
     // 两条路的场景识别与自动取数是同一份接线，所以换端点不会换「这一轮按哪个场景答」的口径。
     endpoint: "auto",
-    systemPrompt: assistantSystemPrompt,
+    // LLM 分流：客户端直连提示词里也声明当前市场（服务端两条端点另行注入同一份分流块）。
+    systemPrompt: (ctx) => assistantSystemPrompt(ctx, useDesk.getState().marketTab),
     snapshot,
     // 当前关注品种交给服务端：说「这只股」时它才知道指谁，并且会如实标注「分析页当前品种」
     // 模式在发送那一刻从 store 现读：首页刚改完风格就提交，这一轮用的就是新值，不依赖渲染节奏
     // P11：周期同 rule——没选就是 null，请求体连 horizon 键都不带（未选≠默认某周期）
     // hold：composer 上填的持仓（标的/成本/仓位/建仓日期）与 mode/horizon 同批随请求带出。
     // 现读 getState() 而不是订阅——发送那一刻的用户选择才是这一轮的条件。
+    // LLM 分流：market 同样发送那一刻现读 store.marketTab（行情页的 A/HK/US 选项卡）。
     extra: () => ({
       focusSymbol,
       mode: useDesk.getState().assistantMode,
       horizon: useDesk.getState().assistantHorizon,
       hold: useDesk.getState().holdCtx,
+      market: useDesk.getState().marketTab,
     }),
     onNotConfigured: () => go("settings"),
   });

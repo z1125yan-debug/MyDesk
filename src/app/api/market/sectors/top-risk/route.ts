@@ -26,9 +26,9 @@ async function getHandler(req: Request) {
     if (sector) {
       const r = analyzeSector(sector);
       if (!r) return NextResponse.json({ ok: false, error: `未找到板块：${sector}` }, { status: 404 });
-      return NextResponse.json({ ok: true, detail: r });
+      return NextResponse.json({ market: "A", market_label: "A股", ok: true, detail: r });
     }
-    return NextResponse.json({ ok: true, scanner: scanAll() });
+    return NextResponse.json({ market: "A", market_label: "A股", ok: true, scanner: scanAll() });
   } catch (e) {
     return NextResponse.json({ ok: false, error: `计算失败：${(e as Error).message}` }, { status: 500 });
   }

@@ -16,7 +16,7 @@ async function getHandler(req: Request) {
   const force = new URL(req.url).searchParams.get("force") === "1";
   try {
     const data = await discoverThemes({ force });
-    return NextResponse.json({ ok: true, ...data });
+    return NextResponse.json({ ok: true, ...data, market: "A", market_label: "A股", });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 502 });
   }

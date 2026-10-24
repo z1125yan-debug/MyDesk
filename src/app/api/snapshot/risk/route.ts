@@ -26,6 +26,7 @@ export async function POST() {
     }
     const row = await insertRiskSnapshot(db, computedAt, extracted.columns, payload);
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       kind: "risk",
       id: String(row.id),

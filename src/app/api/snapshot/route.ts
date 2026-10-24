@@ -47,6 +47,7 @@ export async function GET(req: Request) {
       missing.push("有留档行的 payload 不是合法 JSON（列内容损坏）：摘要只能按可读部分给出，损坏部分不做修补、不重算代替");
     }
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       kind,
       table: SNAPSHOT_TABLE[kind],

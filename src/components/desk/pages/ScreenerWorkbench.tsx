@@ -776,15 +776,15 @@ export default function ScreenerWorkbench() {
         </div>
       </div>
 
-      {/* 小白上手引导（想赚钱的用户第一眼就能看懂怎么用这台机器）：三步走，说人话，不堆术语。 */}
+      {/* 小白上手引导（想赚钱的用户第一眼就能看懂怎么用这台机器）：四步走，说人话，不堆术语。第 4 步「排雷」为 2026-10-23 定版流程新增：优选之后逐只盖章，口径见台账评审清单。 */}
       {showGuide && (
         <div className="apple-slide-up rounded-xl border border-sky-400/30 bg-sky-500/5 p-4">
           <div className="mb-2 flex items-center gap-2">
-            <span className="rounded-md bg-sky-500/20 px-2 py-0.5 text-[12.5px] font-medium text-sky-200">新手三步</span>
-            <span className="text-[14px] font-semibold">想用这台机器找机会，照这三步走就行</span>
+            <span className="rounded-md bg-sky-500/20 px-2 py-0.5 text-[12.5px] font-medium text-sky-200">新手四步</span>
+            <span className="text-[14px] font-semibold">想用这台机器找机会，照这四步走就行</span>
             <button onClick={() => setShowGuide(false)} className="ml-auto rounded-md px-2 py-0.5 text-[12.5px] text-muted-foreground hover:text-foreground" title="收起引导">收起</button>
           </div>
-          <ol className="grid gap-2 lg:grid-cols-3">
+          <ol className="grid gap-2 lg:grid-cols-4">
             <li className="flex gap-2 rounded-lg bg-card/50 p-3 text-[13px] leading-relaxed">
               <span className="shrink-0 font-semibold text-sky-300">1</span>
               <span>先看顶部那条<span className="text-foreground">「行情档位」（强势 / 震荡 / 弱势）</span>——它用最近几周的真实走势告诉你大盘现在是涨势、横盘还是偏弱。偏弱时就别急着下重手。</span>
@@ -796,6 +796,10 @@ export default function ScreenerWorkbench() {
             <li className="flex gap-2 rounded-lg bg-card/50 p-3 text-[13px] leading-relaxed">
               <span className="shrink-0 font-semibold text-sky-300">3</span>
               <span>条件填好后点<span className="text-foreground">「筛选」</span>，看现在有多少只股票符合；再用<span className="text-foreground">「交给稳智AI优选」</span>让它从这堆里帮你挑几只、讲清买卖点和风险。</span>
+            </li>
+            <li className="flex gap-2 rounded-lg bg-card/50 p-3 text-[13px] leading-relaxed">
+              <span className="shrink-0 font-semibold text-sky-300">4</span>
+              <span>优选挑完先别急——逐只翻<span className="text-foreground">「排雷」</span>分页过一遍质检：查<span className="text-foreground">温度</span>（最近涨得烫不烫）、<span className="text-foreground">位置</span>（落在历史上占便宜还是吃亏的格子）、<span className="text-foreground">风险标签</span>（放量冲高回落、大户派发、催化临近、流动性太薄），最后盖一个章：合格 / 注意 / 不合格。章只提醒、不拦人——盖了「不合格」不是不许买，是让你下手前多看一眼：历史上栽在这上面的票，长什么样它都写在单子上了。</span>
             </li>
           </ol>
         </div>

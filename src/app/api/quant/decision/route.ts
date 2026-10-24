@@ -40,7 +40,7 @@ export async function GET(request: Request) {
   if (rsiRaw !== null) opts.rsi_period = rsiRaw;
   try {
     const view = await buildDecisionForSymbol(symbol, opts);
-    return NextResponse.json(view);
+    return NextResponse.json({ ...view, market: "A", market_label: "A股", });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message, trade_date: shanghaiDate() }, { status: 502 });
   }

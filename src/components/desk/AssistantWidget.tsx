@@ -45,9 +45,11 @@ export default function AssistantWidget({
 
   // 小窗的快照来自分析页当前图表（含品种与实时字段）；快讯每次现取，失败就只带图表那一段。
   // guardPrice 留空：图表上下文的组成由分析页决定，小窗不去猜锚点，宁可不校验也不拿可疑数字当现价的量级标准。
+  // LLM 分流：快讯是 A 股 7x24 口径，非 A 股轮次不注入（图表上下文本身按品种走，不受影响）。
   const snapshot = useCallback(async (): Promise<{ snapshot: string; guardPrice: null }> => {
     const chart = chartContext();
-    const news = await fetchNewsBlock().catch(() => "");
+    const market = useDesk.getState().marketTab;
+    const news = market === "A" ? await fetchNewsBlock().catch(() => "") : "";
     return {
       snapshot: [chart ? `[当前图表实时数据]\n${chart}` : "", news].filter(Boolean).join("\n\n"),
       guardPrice: null,
@@ -57,11 +59,12 @@ export default function AssistantWidget({
   const { send, busy, stop, sessions, activeSessionId } = useChatSend({
     // 与助手页同一个口径：能力够就走工具调用环，否则退回纯对话端点，两条路共用同一份场景接线
     endpoint: "auto",
-    systemPrompt: assistantSystemPrompt,
+    systemPrompt: (ctx) => assistantSystemPrompt(ctx, useDesk.getState().marketTab),
     snapshot,
     // 小窗挂在分析页上，「这只股」指的就是图表里那只：交给服务端，并如实标注来源
     // 回答风格与持仓周期都取 store 里那份共享设置（小窗不另画选择器，但也不能默默用别的口径）
-    extra: () => ({ focusSymbol, mode: useDesk.getState().assistantMode, horizon: useDesk.getState().assistantHorizon }),
+    // LLM 分流：market 与助手页同一口径，发送那一刻现读 store.marketTab
+    extra: () => ({ focusSymbol, mode: useDesk.getState().assistantMode, horizon: useDesk.getState().assistantHorizon, market: useDesk.getState().marketTab }),
     onNotConfigured: () => go("settings"),
   });
 

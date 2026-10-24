@@ -166,6 +166,7 @@ async function profileHandler(symbol: string) {
   if (s) risk = { level: s.risk.level, triggers: s.risk.triggers };
 
   return NextResponse.json({
+    market: "A", market_label: "A股",
     ok: true,
     symbol,
     name: meta?.name ?? null,

@@ -23,6 +23,7 @@ async function getHandler() {
     // 如实回报被标记消失的行数（不展示内容，只让页面知道「今日曾成立、本次没算出来」不是被删了）
     const supersededToday = await db.radarFinding.count({ where: { asOf, state: "superseded" } });
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       as_of: asOf,
       scanned: rows.length > 0,
@@ -51,6 +52,7 @@ export async function POST() {
     }
     invalidateServerCache("radar"); // 扫描写库成功 → 让 GET 的 30s 短缓存失效
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       as_of: result.as_of,
       trade_date: result.trade_date,

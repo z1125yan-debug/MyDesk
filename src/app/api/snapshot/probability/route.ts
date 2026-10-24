@@ -35,6 +35,7 @@ export async function POST(req: Request) {
     }
     const row = await insertProbabilitySnapshot(db, computedAt, extracted.columns, payload);
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       kind: "probability",
       id: String(row.id),

@@ -35,6 +35,7 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({
+    market: "A", market_label: "A股",
     ok: true,
     // 技术指标是收盘口径：数据日=最近交易日（行情源真值，节假日自动识别）；
     // 原来用 new Date().toISOString().slice(0,10) 是 UTC 日期，北京晚上会差一天，休市日更是直接拿电脑当天冒充

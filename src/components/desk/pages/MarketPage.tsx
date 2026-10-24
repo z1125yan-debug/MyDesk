@@ -17,6 +17,8 @@ import { useLivePoll } from "@/hooks/use-live-poll";
 // 当日沉淀缓存：下面的历史图每天只回源一次，当天内秒开（收盘后自动换掉盘中那份）
 import { readSettled, writeSettled, decideSettled, beijingDayTime, CLOSE_HM } from "@/lib/desk/settled-cache-core";
 import { useTradeDate } from "@/lib/desk/use-trade-date";
+import MarketTabs from "../MarketTabs";
+import { useDesk } from "@/lib/desk/store";
 import LiveStamp from "@/components/desk/LiveStamp";
 import EChart, { type EChartState } from "@/components/desk/charts/EChart";
 import ChartCard from "@/components/desk/charts/ChartCard";
@@ -326,7 +328,72 @@ function bandColor(v: number | null): string | undefined {
   return "#f87171";
 }
 
+// 港股/美股数据看板：只统计 20 只主流票的涨跌家数（不代表全市场）；
+// 宽度/涨跌停/情绪温度/连板等 A 股逻辑不套到港股/美股上（美股无涨跌停）。
+function HkUsDashboard({ market }: { market: "HK" | "US" }) {
+  const [data, setData] = useState<{ available: boolean; reason: string; source: string; list: { symbol: string; name: string | null; price: number | null; change_pct: number | null }[] } | null>(null);
+  const [busy, setBusy] = useState(true);
+  useEffect(() => {
+    let dead = false;
+    setBusy(true);
+    fetch(`/api/market/hk-us?market=${market}`)
+      .then((r) => r.json())
+      .then((r) => { if (!dead) setData(r); })
+      .catch(() => { if (!dead) setData({ available: false, reason: "暂无数据", source: "", list: [] }); })
+      .finally(() => { if (!dead) setBusy(false); });
+    return () => { dead = true; };
+  }, [market]);
+  const rows = data?.list ?? [];
+  const up = rows.filter((r) => (r.change_pct ?? 0) > 0).length;
+  const down = rows.filter((r) => (r.change_pct ?? 0) < 0).length;
+  const flat = rows.filter((r) => r.change_pct === 0).length;
+  return (
+    <div className="space-y-4">
+      <div className="text-center">
+        <h1 className="text-[25px] font-semibold tracking-tight">{market === "HK" ? "港股主流票" : "美股主流票"}</h1>
+        <p className="mt-1 text-[13.5px] text-muted-foreground">
+          20 只主流票涨跌统计（非全市场） · 来源 {data?.source || "—"} · {market === "US" ? "美股无涨跌停" : "涨跌停仅为 A 股口径，此处不统计"} · 选股/宽度/分歧/事件/AI 优选在「量化条件选股」页（同市场） · 仅供研究参考，不构成投资建议。
+        </p>
+      </div>
+      {!data?.available && !busy && (
+        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-[14px] text-amber-300/90">{data?.reason || "暂无数据"}</div>
+      )}
+      {data?.available && (
+        <>
+          <div className="rounded-2xl border border-border/60 bg-overlay px-2 py-5">
+            <div className="grid grid-cols-3 divide-x divide-border/40">
+              <div className="px-4 py-2 text-center"><div className="text-[14.5px] font-medium">上涨</div><div className="mt-2 text-[35px] font-semibold leading-none text-red-400">{up}</div></div>
+              <div className="px-4 py-2 text-center"><div className="text-[14.5px] font-medium">平盘</div><div className="mt-2 text-[35px] font-semibold leading-none">{flat}</div></div>
+              <div className="px-4 py-2 text-center"><div className="text-[14.5px] font-medium">下跌</div><div className="mt-2 text-[35px] font-semibold leading-none text-emerald-400">{down}</div></div>
+            </div>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-border text-left text-muted-foreground">
+                {["代码", "名称", "最新价", "涨跌幅"].map((h) => <th key={h} className="px-2.5 py-2">{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.symbol} className="border-b border-border/40">
+                    <td className="px-2.5 py-1.5 font-mono">{r.symbol}</td>
+                    <td className="px-2.5 py-1.5">{r.name ?? "—"}</td>
+                    <td className="px-2.5 py-1.5 text-right">{r.price != null ? r.price.toFixed(2) : "—"}</td>
+                    <td className={`px-2.5 py-1.5 text-right ${(r.change_pct ?? 0) >= 0 ? "text-red-400" : "text-emerald-400"}`}>
+                      {r.change_pct != null ? `${r.change_pct > 0 ? "+" : ""}${r.change_pct.toFixed(2)}%` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function MarketPage() {
+  const marketTab = useDesk((s) => s.marketTab);
   const [sent, setSent] = useState<SentimentClient | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
@@ -637,6 +704,10 @@ export default function MarketPage() {
 
   return (
     <div className="w-full space-y-5 px-8 py-6">
+      <MarketTabs />
+      {marketTab !== "A" && <HkUsDashboard market={marketTab} />}
+      {marketTab === "A" && (
+      <>
       {/* 页头：稳智同款居中标题+免责口径；实时戳/刷新挂右侧 */}
       <div className="relative apple-slide-up">
         <div className="text-center">
@@ -832,6 +903,8 @@ export default function MarketPage() {
             emptyText="指数日K本次未取到" option={indexDailyOption(idxSeries)} />
         </ChartCard>
       </div>
+      </>
+      )}
     </div>
   );
 }

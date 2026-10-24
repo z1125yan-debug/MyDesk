@@ -37,6 +37,7 @@ async function getHandler() {
       return NextResponse.json({ ok: false, count: 0, names: [], error: "全 A 名册为空（数据源未返回公司名）" }, { status: 502 });
     }
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       count: names.length,
       trade_date: tradeDate,

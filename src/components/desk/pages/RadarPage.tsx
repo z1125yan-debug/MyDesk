@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Radar, Loader2, RefreshCw } from "lucide-react";
 import { SourceBadge } from "../SourceBadge";
+import MarketScopeBadge from "../MarketScopeBadge";
 import { AutoTaskLine } from "../AutoTaskLine";
 import { HistoryBar } from "../HistoryBar";
 import {
@@ -99,6 +100,7 @@ export default function RadarPage() {
         <div>
           <div className="flex items-center gap-2 text-lg font-bold"><Radar size={18} className="text-sky-400" /> AI 主动发现</div>
           <div className="text-[12px] text-muted-foreground">自动扫描市场，发现资金、主线和异动信号。</div>
+          <div className="mt-2"><MarketScopeBadge note="本页雷达仅扫描 A 股；港股/美股事件在「事件雷达」页的港股/美股分支看" /></div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={scan} disabled={busy || view === "history"}

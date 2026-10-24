@@ -254,6 +254,7 @@ async function getHandler(req: Request) {
     ];
 
     const payload = {
+      market: "A", market_label: "A股",
       ok: true,
       range: { from: defFrom, to: defTo },
       days,

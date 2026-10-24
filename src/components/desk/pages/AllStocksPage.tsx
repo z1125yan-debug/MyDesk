@@ -5,6 +5,7 @@ import { Loader2, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
 import { fetchAllStocks, type AllStockRow } from "@/lib/desk/quant-api";
 import { useDesk } from "@/lib/desk/store";
+import MarketTabs from "../MarketTabs";
 // P15-R16c：开盘自动重取 + 取数时刻上屏（这页原来只写「交易日」，没说这份快照是几点取的）
 import { useLivePoll } from "@/hooks/use-live-poll";
 import { clockZh } from "@/lib/desk/plain-core";
@@ -29,6 +30,7 @@ export default function AllStocksPage() {
   const go = useDesk((s) => s.go);
   const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
   const addWatch = useDesk((s) => s.addWatch);
+  const marketTab = useDesk((s) => s.marketTab);
   const [q, setQ] = useState("");
   const [orderBy, setOrderBy] = useState("amount_yi");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
@@ -61,9 +63,52 @@ export default function AllStocksPage() {
     return () => { dead = true; };
   }, [poll.tick]);
 
+  // 港股/美股：20 只主流票（/api/market/hk-us），未接通时 available=false，如实报暂无数据
+  const [hkUs, setHkUs] = useState<{ available: boolean; reason: string; source: string }>({ available: true, reason: "", source: "" });
+  // 切市场时回第一页（港股/美股只有 20 行，A股页码带过去会空页）
+  useEffect(() => { setPage(1); }, [marketTab]);
+
   const load = useCallback(async () => {
     setBusy(true); setError("");
     try {
+      if (marketTab !== "A") {
+        const r = await fetch(`/api/market/hk-us?market=${marketTab}`).then((x) => x.json());
+        if (!r.ok) throw new Error(String(r.error || "港股/美股接口失败"));
+        setHkUs({ available: !!r.available, reason: r.reason ?? "", source: r.source ?? "" });
+        setTradeDate(r.trade_date ?? "");
+        setAsOf(new Date().toISOString());
+        autoRetried.current = false;
+        const ql = q.trim().toLowerCase();
+        let list = (r.list ?? []).map((x: Record<string, unknown>) => ({
+          symbol: String(x.symbol ?? ""),
+          name: String(x.name ?? ""),
+          industry: null,
+          price: (x.price as number | null) ?? null,
+          change_pct: (x.change_pct as number | null) ?? null,
+          amount_yi: (x.amount_yi as number | null) ?? null,
+          turnover_rate: null,
+          volume_ratio: null,
+          amplitude: null,
+          market_cap_yi: (x.market_cap_yi as number | null) ?? null,
+          pe_ttm: (x.pe_ttm as number | null) ?? null,
+          pb: (x.pb as number | null) ?? null,
+          main_net_yi: (x.main_net_yi as number | null) ?? null,
+          st: false,
+          suspended: false,
+        } as AllStockRow));
+        if (ql) list = list.filter((m: AllStockRow) => m.symbol.toLowerCase().includes(ql) || m.name.toLowerCase().includes(ql));
+        const key = orderBy as keyof AllStockRow;
+        list.sort((a: AllStockRow, b: AllStockRow) => {
+          const va = a[key] as number | null, vb = b[key] as number | null;
+          if (va === null && vb === null) return 0;
+          if (va === null) return 1;
+          if (vb === null) return -1;
+          return (va - vb) * (dir === "desc" ? -1 : 1);
+        });
+        setRows(list);
+        setTotal(list.length);
+        return;
+      }
       const r = await fetchAllStocks({ q, order_by: orderBy, dir, page, page_size: pageSize });
       setRows(r.list);
       setTotal(r.total);
@@ -80,7 +125,7 @@ export default function AllStocksPage() {
     } finally {
       setBusy(false);
     }
-  }, [q, orderBy, dir, page]);
+  }, [q, orderBy, dir, page, marketTab]);
 
   useEffect(() => { load(); }, [load, poll.tick]);
 
@@ -89,13 +134,18 @@ export default function AllStocksPage() {
 
   return (
     <div className="w-full space-y-3 px-6 py-4">
+      <MarketTabs />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-lg font-bold">全A市场列表</div>
+          <div className="text-lg font-bold">{marketTab === "A" ? "全A市场列表" : marketTab === "HK" ? "港股主流票" : "美股主流票"}</div>
           <div className="text-[12px] text-muted-foreground">
-            东财榜单接口（全A快照） · 交易日 {tradeDate || "未知"} · {asOf ? `数据截至 ${clockZh(asOf)}` : "本次未取到数据"}
-            {poll.open ? ` · 开盘自动刷新，剩余 ${poll.left}s` : ` · A股${poll.sessionLabel}，自动刷新已暂停`}
-            {flowByCode.size > 0 && ` · 主力净额这一列东财无读数处叠了通达信自算 ${flowByCode.size} 只（${MAIN_FLOW_BASIS}），没覆盖到的显「—」不是 0`}
+            {marketTab === "A" ? (
+              <>东财榜单接口（全A快照） · 交易日 {tradeDate || "未知"} · {asOf ? `数据截至 ${clockZh(asOf)}` : "本次未取到数据"}
+                {poll.open ? ` · 开盘自动刷新，剩余 ${poll.left}s` : ` · A股${poll.sessionLabel}，自动刷新已暂停`}
+                {flowByCode.size > 0 && ` · 主力净额这一列东财无读数处叠了通达信自算 ${flowByCode.size} 只（${MAIN_FLOW_BASIS}），没覆盖到的显「—」不是 0`}</>
+            ) : (
+              <>20 只主流票（非全市场） · 交易日 {tradeDate || "未知"} · 来源 {hkUs.source || "—"} · 美股无涨跌停；涨跌家数只统计这 20 只</>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -121,6 +171,11 @@ export default function AllStocksPage() {
         <div className="flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
           <span className="flex-1">{error}</span>
           <button onClick={() => void load()} className="rounded-md border border-red-400/40 px-2.5 py-1 text-red-200 transition-colors hover:bg-red-400/10">刷新一下</button>
+        </div>
+      )}
+      {marketTab !== "A" && !hkUs.available && !busy && (
+        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/90">
+          {hkUs.reason || "暂无数据"}
         </div>
       )}
 

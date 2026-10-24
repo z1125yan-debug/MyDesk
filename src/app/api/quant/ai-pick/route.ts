@@ -29,6 +29,7 @@ export async function GET(req: Request) {
       select: { tradeDate: true, symbols: true, symbolsNote: true, symBackfilledAt: true, nextDaySymWin: true, nextDaySymUp: true, nextDaySymCount: true },
     });
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       as_of: new Date().toISOString(),
       serverLlmAvailable: getServerLlm().available,
@@ -74,6 +75,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       tradeDate: date,
       serverLlmAvailable: getServerLlm().available,

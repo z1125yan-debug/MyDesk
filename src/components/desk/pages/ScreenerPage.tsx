@@ -8,6 +8,8 @@ import { Search, Plus, X, Loader2, Sparkles, ArrowRight } from "lucide-react";
 import { PctText, NumText } from "../SourceBadge";
 import { LineageCard, LineageSection } from "../ui/LineageCard";
 import { useDesk } from "@/lib/desk/store";
+import MarketTabs from "../MarketTabs";
+import HkUsScreener from "./HkUsScreener";
 import {
   fetchFactorCatalog, fetchTradeDates, runScreenerApi, aiChatTools,
   type FactorFieldDef, type ScreenerCond, type ScreenerRespClient,
@@ -44,6 +46,7 @@ const PRESET_DEFAULT: Record<string, { op: string; value: number | string }> = {
 interface ChipCond extends ScreenerCond { zh: string }
 
 export default function ScreenerPage() {
+  const marketTab = useDesk((s) => s.marketTab);
   const go = useDesk((s) => s.go);
   const setFocusSymbol = useDesk((s) => s.setFocusSymbol);
   const ai = useDesk((s) => s.ai);
@@ -141,8 +144,20 @@ export default function ScreenerPage() {
   const openProfile = (symbol: string) => { setFocusSymbol(symbol); go("profile"); };
   const condLabel = (c: ChipCond) => `${c.zh} ${c.op} ${c.value}${c.window ? `·近${c.window}日` : ""}`;
 
+  // 港股 / 美股：同款五件套（筛选/宽度/分歧/事件/AI优选），数据用港美自己的（HkUsScreener）。
+  // 分支放在所有 hooks 之后，避免 hooks 顺序随市场切换变化。
+  if (marketTab !== "A") {
+    return (
+      <div className="w-full space-y-5 px-6 py-6">
+        <MarketTabs />
+        <HkUsScreener market={marketTab} />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full space-y-5 px-6 py-6">
+      <MarketTabs />
       {/* 标题区 */}
       <div className="apple-slide-up">
         <h1 className="text-[23px] font-semibold tracking-tight">AI 选股</h1>
