@@ -22,6 +22,8 @@ import { loadFactorCache, factorCacheMeta, type CachedFactorRow } from "./factor
 import { warmPhaseLabel } from "./warm-phase-core.ts";
 import { detectKlinePatterns, formatKlinePatterns, trendPressure, type KlineBar } from "./kline-pattern-core.ts";
 import { industryOf } from "../data/industry-map.ts";
+import { enrichMetasWithPe } from "@/lib/desk/tdx-mcp-fund";
+import { enrichMetasWithMcpPe } from "@/lib/desk/china-stock-mcp";
 import { rpsSeedOf, rpsSeedMeta, sectorConceptMatches } from "../data/rps-seed.ts";
 import type { AssetMeta } from "../types.ts";
 
@@ -324,6 +326,11 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     (f) => (FACTOR_FIELD_MAP.has(f) && FACTOR_FIELD_MAP.get(f)!.implemented !== false)
       || f === "close" || f === "change_pct" || DISPLAY_ONLY_FIELDS.has(f)
   );
+  // 快照已有价/涨跌幅（m.price / m.changePct），不需 K 线：close 在因子目录里标为 kline
+  // （历史 K 线序列的收盘价），但选股器首屏的 close/change_pct 直接取快照即可。
+  // 若不排除，请求 fields=[close, change_pct] 会误触发 K 线路径（600 只逐只拉 K 线，
+  // 实测 71 秒），而快照分支 0.1 秒就能回。历史日期仍由 isHistorical 强制走 K 线。
+  const SNAPSHOT_HAS = new Set(["close", "change_pct"]);
   const needKline =
     klineConds.length > 0 ||
     hasRolling ||
@@ -331,7 +338,7 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     // kline_pattern / trend_pressure_60 由日K算出（industry 除外，它走本地映射表），
     // 因此它们也要触发缓存/K线路径，否则快照分支不会带出这两列。
     outFields.some((f) => f === "kline_pattern" || f === "trend_pressure_60") ||
-    outFields.some((f) => FACTOR_FIELD_MAP.get(f)?.source === "kline");
+    outFields.some((f) => !SNAPSHOT_HAS.has(f) && FACTOR_FIELD_MAP.get(f)?.source === "kline");
   const klineSubsetCap = Math.max(20, Math.min(6000, body.maxKlineSymbols ?? 600));
   let subset = snapshotPass;
   if (needKline && subset.length > klineSubsetCap) {
@@ -369,7 +376,9 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
   if (cacheWarm && cacheRows) {
     const needKlineFields = [...new Set([
       ...klineConds.map((c) => c.field),
-      ...outFields.filter((f) => FACTOR_FIELD_MAP.get(f)?.source === "kline"),
+      // close/change_pct 不进缓存完整性校验：缓存分支里它们直接取快照（m.price / m.changePct），
+      // 从不在 cache.values 里。若计入，缓存会被误判“缺字段”而弃用，退回 71 秒的 K 线路径。
+      ...outFields.filter((f) => !SNAPSHOT_HAS.has(f) && FACTOR_FIELD_MAP.get(f)?.source === "kline"),
     ])];
     const sample = cacheRows.values().next().value as CachedFactorRow | undefined;
     const missing = sample ? needKlineFields.filter((f) => !(f in sample.values)) : [];
@@ -419,8 +428,13 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     );
   } else if (needKline && subset.length) {
     // 4) 拉K线 + 建面板 + 逐日条件
+    // 2026-10-23 与本地修复对齐：250 族字段（llv/highv 250）需要 250 根K线，原先 max(180,…)
+    // 永远喂不饱——这 10 个字段自落地起在选股页恒空。只有真用到 250 族时才抬到 270，
+    // 其余仍走原口径，不白拉 K 线。
+    const need250 = [...klineConds.map((c) => c.field), ...outFields].some((f) => f.includes("_250"));
     const lookback = Math.max(
       180,
+      ...(need250 ? [270] : []),
       ...klineConds.map((c) => {
         const w = (c.type ?? "single") === "single" ? 0 : Math.max(1, c.window ?? 1);
         const maN = c.field.startsWith("above_ma_") ? Number(c.field.slice(9)) : 0;
@@ -433,7 +447,7 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     // P6-A：取数失败与「这只真的没K线」分开报数——否则一次限流会在漏斗里伪装成「不符合条件」
     const klineWarn = outcomeWarning(barsMap.outcomes);
     if (klineWarn) warnings.push(klineWarn);
-    if (barsMap.tdx_down) warnings.push("通达信行情网关本批已熔断（连续 8 只失败）：其余股票全部改走腾讯日K，结果按「降级」口径处理");
+    if (barsMap.tdx_down) warnings.push("通达信行情网关本批已熔断（连续 24 只失败且半开探测未恢复）：部分股票改走腾讯日K，结果按「降级」口径处理");
     const symbols: string[] = [];
     const barsList: BarsLike[][] = [];
     const metasOf: (AssetMeta | undefined)[] = [];
@@ -608,6 +622,39 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
 
   const pageRows = rows.slice(offset, offset + limit);
 
+  // PE 富化（china-stock-mcp 优先 → TDX MCP F10 兜底）：仅当输出字段要 pe_ttm 时，对本页候选池补 PE。
+  // 顺序原因（实测）：MCP 日级真实缓存命中时毫秒级；无缓存首次才阻塞拉 MCP（约 6.5 秒/只，
+  // 服务端返回全量历史表），F10 逐只拉 ~11s/只。全量 5567 只不可行，故只补本页，上限 20 只；
+  // PE 条件（快照粗筛）在宇宙层仍无全量读数，走既有“缺口忽略 + 告警”纪律，不冒充。
+  if (outFields.includes("pe_ttm") && pageRows.length) {
+    const metaBySymbol = new Map<string, AssetMeta>();
+    for (const m of snapshotPass) metaBySymbol.set(m.symbol, m);
+    const pageMetas = pageRows
+      .map((r) => metaBySymbol.get(r.symbol))
+      .filter((m): m is AssetMeta => m !== undefined);
+    let peN = 0;
+    try {
+      peN = await enrichMetasWithMcpPe(pageMetas, 20);
+    } catch {
+      peN = 0;
+    }
+    if (peN === 0) {
+      peN = await enrichMetasWithPe(pageMetas, 20);
+    }
+    if (peN > 0) {
+      for (const row of pageRows) {
+        const m = metaBySymbol.get(row.symbol);
+        if (m?.pe != null) row.values.pe_ttm = m.pe;
+        // MCP 兜底同时填了 PB/市值/流通市值：同步到本页输出（仅当输出字段要且当前缺失）
+        if (m?.pb != null && outFields.includes("pb") && row.values.pb == null) row.values.pb = m.pb;
+        if (m?.marketCap != null && outFields.includes("market_cap_yi") && row.values.market_cap_yi == null) row.values.market_cap_yi = m.marketCap / 1e8;
+        if (m?.floatCap != null && outFields.includes("floatcap_yi") && row.values.floatcap_yi == null) row.values.floatcap_yi = m.floatCap / 1e8;
+      }
+    } else {
+      warnings.push("PE(TTM) 未能从 china-stock-mcp / TDX MCP F10 取到（未配置/网关超时/无数据）：本页 pe_ttm 保持缺失，不编 0");
+    }
+  }
+
   // 7) 非胜率排序时，胜率统计只对本页做（省数据源请求）
   if (body.include_stats && pageRows.length && !winRateSort) {
     await attachStats(pageRows, statsMax);
@@ -642,10 +689,12 @@ export async function runScreener(body: ScreenerRequestBody): Promise<ScreenerRe
     trade_date_is_historical: isHistorical,
     funnel: { universe: universeCount, snapshot_pass: snapshotPass.length, kline_subset: subset.length, kline_pass: klinePass },
     source: {
-      // P9-经验轮：与 sentiment/limitup 同纪律——兜底期不冒充东财出身（universeSource 三元）
-      provider: universeSource() === "tc"
-        ? "腾讯批量快照兜底（东财榜单接口断源；K线走通达信网关/腾讯日K）"
-        : "em（腾讯/东财公开接口，本机直连）",
+      // P9-经验轮：与 sentiment/limitup 同纪律——兜底期不冒充东财出身（universeSource 三元→四元，tdx 为通达信+本地库第一优先）
+      provider: universeSource() === "tdx"
+        ? "通达信网关 + 本地库（TDX实时快照 + DB收盘价；市值/流通市值/PB/换手/量比由 TDX MCP 财务补齐，PE 由 F10 估值在候选池补齐，主力净额仍标缺）"
+        : universeSource() === "tc"
+          ? "腾讯批量快照兜底（东财榜单接口断源；K线走通达信网关/腾讯日K）"
+          : "em（腾讯/东财公开接口，本机直连）",
       note: "数据失败时明确报错，不回退演示数据",
       // §四：价格口径显式标注（真实价 vs 前复权，禁止为对齐数字修改数据）
       price_basis: "close/涨跌幅/快照字段=真实未复权实时价；K线因子字段=日线序列（通达信网关实测为原始价、腾讯兜底为前复权qfq，同一序列内口径一致）；胜率/收益均在同一K线序列内计算，除权除息日附近真实价与复权价不相等属正常，不是数据错误",

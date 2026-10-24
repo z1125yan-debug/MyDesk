@@ -212,11 +212,14 @@ export async function computeSentiment(): Promise<SentimentResult> {
     ],
     source: {
       provider:
-        universeSource() === "tc"
-          ? "腾讯批量快照兜底（东财榜单接口 断源；主力净额/行业/上市日不可得）+ 腾讯指数"
-          : "em（东财榜单接口 全A快照 + 腾讯指数）",
+        universeSource() === "tdx"
+          ? "通达信网关 + 本地库（TDX实时快照 + DB收盘价；市盈率/市值/主力净额标缺）+ 腾讯指数"
+          : universeSource() === "tc"
+            ? "腾讯批量快照兜底（东财榜单接口 断源；主力净额/行业/上市日不可得）+ 腾讯指数"
+            : "em（东财榜单接口 全A快照 + 腾讯指数）",
       universe_endpoint:
-        universeSource() === "tc" ? "腾讯批量行情×本机代码表" : "东财榜单接口",
+        universeSource() === "tdx" ? "通达信网关 quotes.get_snapshots × 本地库 stock_daily_close"
+          : universeSource() === "tc" ? "腾讯批量行情×本机代码表" : "东财榜单接口",
       indices_endpoint: "腾讯行情",
     },
   };

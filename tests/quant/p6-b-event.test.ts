@@ -13,7 +13,7 @@ import {
   AI_FIELDS, AI_JOBS, DERIVED_FIELDS, FACT_FIELDS, IMPACT_DIRECTIONS, IMPACT_SCOPES, IMPORTANCE_LEVELS,
   INTERPRET_PROMPT_VERSION, REQUIRED_INTERPRET_FIELDS, STATUS_TEXT,
   buildEventInterpretPrompt, clampEnum, evidenceGrounded, extractJsonArray, fieldCompleteness,
-  findProbabilityClaims, interpretLayeringNote, interpretationStatusOf, layerSplitOf, mappingAgreement,
+  findProbabilityClaims, focusGrounded, fundEvidenceGrounded, interpretLayeringNote, interpretationStatusOf, layerSplitOf, mappingAgreement,
   mergeRawArrays,
   normalizeConfidence, parseEventInterpretations, renderInterpretationTrace, statusDataLayer,
   stripProbabilityClaims, summarizeInterpretations, symbolGrounded,
@@ -32,6 +32,10 @@ const fact = (over: Partial<EventFact> = {}): EventFact => ({
   fund_note: "航运 涨幅前列且主力净流入",
   stage: "扩散阶段",
   trade_date: "2026-09-19",
+  fund_boards: [{ name: "军工", change_pct: 1.2, main_yi: 5.5, leader: "军工龙头" }],
+  fund_leaders: [{ name: "军工龙头", code: "600000", main_net_yi: 1.2 }],
+  market: { trade_date: "2026-09-19", limit_up: 40, limit_down: 10, decliners: 1200, above_ma5_pct: 55.0 },
+  sector_history: [{ as_of: "2026-09-19", sector: "军工", day_change: 1.2, change_5d: 3.1, change_20d: -2.0, change_60d: 8.5 }],
   ...over,
 });
 
@@ -50,12 +54,17 @@ const goodEntry = (over: Record<string, unknown> = {}) => ({
   evidence: ["组建新的霍尔木兹海峡联合攻击无人机部队"],
   unknowns: ["是否影响实际航运运价需查运价数据"],
   follow_up_queries: ["今天航运板块主力资金变化"],
+  // P7-1 推理字段：引用上面 fact() 给的真实资金/市场数
+  reasoning: "军工板块资金净流入 +5.5亿，龙头军工龙头主力净流入 +1.2亿，资金与事件方向一致；全市场涨停 40 / 跌停 10，宽度不差，故判利好。",
+  fund_evidence: ["军工板块资金净流入 +5.5亿，板块涨 +1.2%"],
+  counter_evidence: ["若军工板块资金由流入转为大幅流出，则利好判断不成立"],
+  focus_symbols: [{ name: "军工龙头", code: "600000", reason: "军工板块资金净流入 +5.5亿，龙头主力净流入 +1.2亿" }],
   ...over,
 });
 
 // ---------- §九 输出结构 ----------
 
-test("P6-B §九 要求的 17 个字段一条不少：解析结果必须逐字段存在", () => {
+test("P6-B §九 要求的 21 个字段一条不少：解析结果必须逐字段存在", () => {
   const r = parseEventInterpretations(JSON.stringify([goodEntry()]), [fact()], { model: "test-model", generated_at: "2026-09-19 21:10:00" });
   assert.equal(r.ok, true);
   assert.equal(r.items.length, 1);
@@ -279,12 +288,17 @@ test("P6-B 没有证据时回溯文本把它写成假设，而不是省略这一
 // ---------- 状态与分层 ----------
 
 test("P6-B interpretation_status 三态判据：无摘要 REJECTED，有瑕疵 PARTIAL，齐全才 INTERPRETED", () => {
-  const full = { summary: "s", evidence: ["e"], impact_direction: "利好" as const, affected_symbols: ["x"] };
+  const full = { summary: "s", evidence: ["e"], impact_direction: "利好" as const, affected_symbols: ["x"], reasoning: "资金流入 +5.5亿", counter_evidence: ["若资金转流出则错"], fund_evidence: ["资金 +5.5亿"] };
   assert.equal(interpretationStatusOf(full, []), "INTERPRETED");
   assert.equal(interpretationStatusOf({ ...full, evidence: [] }, []), "PARTIAL");
   assert.equal(interpretationStatusOf({ ...full, impact_direction: "未知" }, []), "PARTIAL");
   assert.equal(interpretationStatusOf(full, ["一条违规"]), "PARTIAL");
   assert.equal(interpretationStatusOf({ ...full, summary: "" }, []), "REJECTED");
+  // P7-1：缺推理 / 缺反证 / 有资金数据却缺资金证据 → PARTIAL
+  assert.equal(interpretationStatusOf({ ...full, reasoning: "" }, []), "PARTIAL");
+  assert.equal(interpretationStatusOf({ ...full, counter_evidence: [] }, []), "PARTIAL");
+  assert.equal(interpretationStatusOf({ ...full, fund_evidence: [], hasFundData: true }, []), "PARTIAL");
+  assert.equal(interpretationStatusOf({ ...full, fund_evidence: [], hasFundData: false }, []), "INTERPRETED", "无资金数据时不强制要求资金证据");
   assert.equal(STATUS_TEXT.REJECTED.includes("不产出结论"), true);
 });
 
@@ -375,7 +389,7 @@ test("P6-B 提示词只喂真实入库事件，并把两条禁令原文写进去
 
 test("P6-B 提示词把 8 项工作与输出字段列全（模型只能按结构回答）", () => {
   const prompt = buildEventInterpretPrompt([fact()]);
-  for (const f of ["summary", "entities[]", "industries[]", "themes[]", "affected_symbols[]", "hypothesized_symbols[]", "impact_direction", "impact_scope", "importance", "confidence", "evidence[]", "unknowns[]", "follow_up_queries[]"]) {
+  for (const f of ["summary", "entities[]", "industries[]", "themes[]", "affected_symbols[]", "hypothesized_symbols[]", "impact_direction", "impact_scope", "importance", "confidence", "evidence[]", "unknowns[]", "follow_up_queries[]", "focus_symbols[]", "fund_evidence[]", "counter_evidence[]", "reasoning"]) {
     assert.ok(prompt.includes(f), `提示词缺少输出字段 ${f}`);
   }
   assert.match(prompt, /只输出 JSON 数组/);
@@ -452,4 +466,124 @@ test("P6-B 空批次不报错也不产出（库里当天 0 行是真实状态，
   assert.equal(r.missing.length, 0);
   assert.equal(r.parse_failed, false);
   assert.equal(r.ok, false);
+});
+
+// ---------- P7-1 用真实数据推理，不只复述标题 ----------
+
+test("P7-1 提示词把资金/板块/市场上下文给模型，并写明推理、重点票、资金证据、反证规则", () => {
+  const prompt = buildEventInterpretPrompt([fact()]);
+  // 上下文：板块资金、龙头资金、市场宽度、板块走势
+  assert.ok(prompt.includes('"fundBoards"'), "提示词缺少板块资金上下文");
+  assert.ok(prompt.includes('"fundLeaders"'), "提示词缺少龙头资金上下文");
+  assert.ok(prompt.includes('"market"'), "提示词缺少市场宽度上下文");
+  assert.ok(prompt.includes('"sectorHistory"'), "提示词缺少板块走势上下文");
+  assert.ok(prompt.includes("军工"), "上下文里要带真实板块名");
+  assert.ok(prompt.includes("5.5"), "上下文里要带真实资金数");
+  // 规则：推理必须引用数字；重点票只能从资金数据里选；资金证据必须带数；反证至少一条
+  assert.match(prompt, /只复述标题、没有数据推理的，视为未理解/);
+  assert.match(prompt, /重点票.*只能从本条给的 fund_leaders/);
+  assert.match(prompt, /资金证据.*必须引用本次给的/);
+  assert.match(prompt, /反证.*至少 1 条/);
+  assert.match(prompt, /不许给买卖价/);
+  assert.match(prompt, /不许编历史规律|不许编“上次这类事件/);
+});
+
+test("P7-1 提示词：无资金数据时明说不要编资金数（不拿别的事件的资金顶替）", () => {
+  const noFund = fact({ fund_boards: [], fund_leaders: [], market: null, sector_history: [] });
+  const prompt = buildEventInterpretPrompt([noFund]);
+  assert.ok(prompt.includes("本条事件无资金验证数据"), "无资金数据时提示词要明说");
+  assert.ok(!prompt.includes('"fundBoards"'), "无资金数据时不写空的 fundBoards");
+});
+
+test("P7-1 重点票出处：只认资金数据里的龙头，猜的票剔除", () => {
+  assert.equal(focusGrounded("军工龙头", "600000", fact()), true, "fund_leaders 里的龙头有出处");
+  assert.equal(focusGrounded("军工龙头", undefined, fact()), true, "只给名字也认");
+  assert.equal(focusGrounded("茅台", "600519", fact()), false, "资金数据里没有的票 = 猜的");
+  const r = parseEventInterpretations(
+    JSON.stringify([goodEntry({ focus_symbols: [
+      { name: "军工龙头", code: "600000", reason: "军工板块资金净流入 +5.5亿，龙头主力净流入 +1.2亿" },
+      { name: "茅台", code: "600519", reason: "白酒龙头" },
+      { name: "军工龙头", code: "600000", reason: "" },
+    ] })]),
+    [fact()],
+  );
+  assert.deepEqual(r.items[0].focus_symbols.map((f) => f.name), ["军工龙头"], "猜的票与无理由的票都要剔除，只留有出处且有理由的");
+  assert.ok(r.items[0].violations.some((v) => /重点票/.test(v)));
+  assert.equal(r.items[0].interpretation_status, "PARTIAL");
+});
+
+test("P7-1 资金证据出处：有资金数据时必须引用数字，无资金数据时不许编数字", () => {
+  assert.equal(fundEvidenceGrounded("军工板块资金净流入 +5.5亿", fact()), true);
+  assert.equal(fundEvidenceGrounded("资金面偏积极", fact()), false, "无数字的空话不算资金证据");
+  // 口径说明：只要求“至少引用一个给出的数 + 提到给出的名”。全数校验会误杀模型合法推算的比值
+  // （如龙头 1.2亿 / 板块 5.5亿 = 21.8%，21.8 不在上下文里但不是编的），所以不要求每个数字都在上下文里。
+  const noFund = fact({ fund_boards: [], fund_leaders: [] });
+  assert.equal(fundEvidenceGrounded("本条事件无资金验证数据", noFund), true);
+  assert.equal(fundEvidenceGrounded("板块资金净流入 +5.5亿", noFund), false, "无资金数据时带数字 = 编的");
+  const r = parseEventInterpretations(
+    JSON.stringify([goodEntry({ fund_evidence: ["资金面偏积极", "军工板块资金净流入 +5.5亿"] })]),
+    [fact()],
+  );
+  assert.deepEqual(r.items[0].fund_evidence, ["军工板块资金净流入 +5.5亿"]);
+  assert.ok(r.items[0].violations.some((v) => /资金证据/.test(v)));
+});
+
+test("P7-1 缺推理/缺反证/缺资金证据 → PARTIAL，不再按“有摘要就算理解”放行", () => {
+  const noReason = parseEventInterpretations(JSON.stringify([goodEntry({ reasoning: "" })]), [fact()]).items[0];
+  assert.equal(noReason.interpretation_status, "PARTIAL");
+  assert.ok(noReason.violations.some((v) => /推理/.test(v)));
+  const noCounter = parseEventInterpretations(JSON.stringify([goodEntry({ counter_evidence: [] })]), [fact()]).items[0];
+  assert.equal(noCounter.interpretation_status, "PARTIAL");
+  assert.ok(noCounter.violations.some((v) => /反证/.test(v)));
+  const noFundEv = parseEventInterpretations(JSON.stringify([goodEntry({ fund_evidence: [] })]), [fact()]).items[0];
+  assert.equal(noFundEv.interpretation_status, "PARTIAL");
+  assert.ok(noFundEv.violations.some((v) => /资金证据/.test(v)));
+  // 齐全的仍是 INTERPRETED
+  const full = parseEventInterpretations(JSON.stringify([goodEntry()]), [fact()]).items[0];
+  assert.equal(full.interpretation_status, "INTERPRETED");
+  assert.deepEqual(full.focus_symbols.map((f) => f.name), ["军工龙头"]);
+});
+
+test("P7-1 回溯文本要能看到推理、资金证据、重点票、反证（不是只看摘要）", () => {
+  const itp = parseEventInterpretations(JSON.stringify([goodEntry()]), [fact()]).items[0];
+  const trace = renderInterpretationTrace(itp);
+  assert.match(trace, /【推理（资金\/板块\/市场数据支撑）】/);
+  assert.match(trace, /【资金证据/);
+  assert.match(trace, /【重点票/);
+  assert.match(trace, /【反证/);
+  assert.match(trace, /军工龙头/);
+  const split = layerSplitOf(itp);
+  assert.ok(split.ai.some((l) => l.startsWith("推理 ")));
+  assert.ok(split.ai.some((l) => l.startsWith("重点票 ")));
+  assert.ok(split.ai.some((l) => l.startsWith("反证 ")));
+});
+
+test("P7-1 affected_symbols 出处包含 fund 数据龙头（与重点票同一份“该行既有名称”集合）", () => {
+  assert.equal(symbolGrounded("军工龙头", fact()), true, "fund_leaders 里的龙头是该行已入库的名称");
+  assert.equal(symbolGrounded("600000", fact()), true, "fund_leaders 里的代码同样有出处");
+  assert.equal(symbolGrounded("中船防务", fact()), false, "fund 数据里也没有 = 猜的");
+  const r = parseEventInterpretations(
+    JSON.stringify([goodEntry({ affected_symbols: ["军工龙头", "中船防务"] })]),
+    [fact()],
+  );
+  assert.deepEqual(r.items[0].affected_symbols, ["军工龙头"]);
+  assert.ok(r.items[0].dropped.symbols.includes("中船防务"));
+});
+
+test("P7-1 有资金数据时重点票必须给（留空 → PARTIAL）；无资金数据时留空不扣分", () => {
+  const emptyFocus = parseEventInterpretations(JSON.stringify([goodEntry({ focus_symbols: [] })]), [fact()]).items[0];
+  assert.equal(emptyFocus.interpretation_status, "PARTIAL");
+  assert.ok(emptyFocus.violations.some((v) => /重点票/.test(v)));
+  const noFund = fact({ fund_boards: [], fund_leaders: [] });
+  const noFundOk = parseEventInterpretations(
+    JSON.stringify([goodEntry({ focus_symbols: [], fund_evidence: ["本条事件无资金验证数据"] })]),
+    [noFund],
+  ).items[0];
+  assert.equal(noFundOk.interpretation_status, "INTERPRETED");
+});
+
+test("P7-1 资金证据认板块简称与走势板块名（模型常写“煤炭历史 …”而非全称）", () => {
+  const f = fact({ sector_history: [{ as_of: "2026-09-29", sector: "煤炭", day_change: -1.39, change_5d: -3.83, change_20d: -12.22, change_60d: 2.94 }] });
+  assert.equal(fundEvidenceGrounded("煤炭历史 change5dPct -3.83、change20dPct -12.22", f), true);
+  assert.equal(fundEvidenceGrounded("军工板块资金净流出 -5.52亿", f), true, "简称“军工”对应军工板块");
 });

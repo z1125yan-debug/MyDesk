@@ -31,8 +31,8 @@ test("P6-B 内核不产概率：没有任何生成概率/预测的出口", () =>
   assert.match(src, /不是股票上涨概率|不是上涨概率/, "confidence 的语义必须写进代码原文");
 });
 
-test("P6-B §九 字段清单：17 项，且事实/AI/派生三分区不重不漏", () => {
-  assert.equal(REQUIRED_INTERPRET_FIELDS.length, 17, "§九 要求至少 17 字段");
+test("P6-B §九 字段清单：21 项，且事实/AI/派生三分区不重不漏", () => {
+  assert.equal(REQUIRED_INTERPRET_FIELDS.length, 21, "§九 要求至少 21 字段（P7-1 新增 focus_symbols / fund_evidence / counter_evidence / reasoning）");
   const all = [...FACT_FIELDS, ...AI_FIELDS];
   assert.equal(new Set(all).size, all.length, "同一个字段不能既算事实又算 AI 解释");
   const derived = DERIVED_FIELDS as readonly string[];
