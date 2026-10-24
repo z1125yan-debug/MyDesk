@@ -51,6 +51,7 @@ export const MENU: MenuEntry[] = [
     children: [
       { key: "aiscreener", label: "选股工作台" },
       { key: "trackrecord", label: "战绩" },
+      { key: "newsfilter", label: "新闻筛选" },
     ],
     legacyPages: ["quant", "screener", "factorlab", "pool", "radar", "problab"],
   },
@@ -76,6 +77,8 @@ export const MENU: MenuEntry[] = [
   { id: "watch", label: "自选", key: "tracker" },
   // P15-R18 全球事件雷达：本地特色（稳智无对位），保留在自选和 LLM 分析之间——每天要读的一级页。
   { id: "events", label: "事件雷达", key: "events" },
+  // 日报按板块整理分类（2026-10-16 用户要求：日报按板块放一块，点进去有详情，不要混在一起）
+  { id: "dailyreport", label: "日报", key: "dailyreport" },
   // P26 稳智对齐：稳智顺序是「自选 → LLM分析 → 奇门遁甲 → 稳智AI」。
   // LLM 分析不是纯 AI 对话，是带顶部 5 Tab 的门户工作台（LlmAnalysisPage）。
   // legacyPages 保留——旧的 #/analysis / #/research / #/agent 三个 hash 依然可达（AppShell 分支不删）。

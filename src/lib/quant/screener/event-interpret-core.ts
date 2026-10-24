@@ -11,14 +11,21 @@
 // 2) 可追溯：§十 要求「原始事件 → AI 提取 → AI 解释」。所以
 //    - event_id 必须来自本批真实库行（否则整条解释被拒）；
 //    - evidence 必须是原始标题里的子串（引不出标题之外的"原文证据"）；
-//    - affected_symbols 必须在标题或该行已入库的 relatedStocks 里出现过，否则降级成 unknowns；
+//    - affected_symbols 必须在标题或该行已入库的 relatedStocks / fund 数据龙头名里出现过，否则降级成 unknowns；
 //    - 哪些字段是事实、哪些是 AI 解释，用字段归属表显式分开，UI 与提示词都只能引用这份表。
+//
+// P7-1（事件理解不再只复述标题）：提示词同时给每条事件的真实资金/板块/市场上下文
+// （fundCheck 结构化板块资金 + 龙头主力净额、market_daily_stats 宽度、板块 5/20/60 日走势），
+// AI 必须用这些真实数据推理方向，并给出重点票（只能从给的资金数据里选）、资金证据与反证。
+// 资金/板块/市场数字由服务端从库里现取，模型只能引用给出的数，不能编历史规律、不能编概率、不能给买卖价。
 //
 // 分层口径与 datastatus-core 一致：这里产出的东西永远标 AI_INTERPRETATION，不会升成 REAL。
 import type { DataStatus } from "./datastatus-core.ts";
+import { marketScopePrompt, type MarketScope } from "@/lib/desk/market-scope-core";
 
 /** 提示词版本：改了提示词或校验口径必须自增，历史行要能看出是哪一版产出的 */
-export const INTERPRET_PROMPT_VERSION = "p6b-1";
+// p7-2：提示词新增 LLM 分流块（当前市场声明：A/HK/US），旧版 p7-1 没有市场口径。
+export const INTERPRET_PROMPT_VERSION = "p7-2";
 
 /**
  * POST /api/events/interpret 接受的模型原文长度上限（字符）。
@@ -27,12 +34,15 @@ export const INTERPRET_PROMPT_VERSION = "p6b-1";
  */
 export const MAX_RAW_CHARS = 200_000;
 
-/** §九 要求的字段（顺序即输出顺序，报告/测试按这份清单核对完整性） */
+/** §九 要求的字段（顺序即输出顺序，报告/测试按这份清单核对完整性）。
+ *  P7-1 新增 4 个推理字段：focus_symbols / fund_evidence / counter_evidence / reasoning。
+ *  旧版（p6b-1）行没有这 4 个字段，fieldCompleteness 会如实报缺，不回填默认值。 */
 export const REQUIRED_INTERPRET_FIELDS = [
   "event_id", "source", "published_at", "title", "summary",
   "entities", "industries", "themes", "affected_symbols",
   "impact_direction", "impact_scope", "importance", "confidence",
   "evidence", "unknowns", "follow_up_queries", "interpretation_status",
+  "focus_symbols", "fund_evidence", "counter_evidence", "reasoning",
 ] as const;
 export type RequiredInterpretField = (typeof REQUIRED_INTERPRET_FIELDS)[number];
 
@@ -44,6 +54,7 @@ export const FACT_FIELDS: readonly RequiredInterpretField[] = ["event_id", "sour
 export const AI_FIELDS: readonly RequiredInterpretField[] = [
   "summary", "entities", "industries", "themes", "affected_symbols",
   "impact_direction", "impact_scope", "importance", "confidence", "evidence", "unknowns", "follow_up_queries",
+  "focus_symbols", "fund_evidence", "counter_evidence", "reasoning",
 ];
 /** AI 提供、但不在 §九 最小集里的字段：同样属于解释层，绝不允许被并进事实栏 */
 export const AI_EXTRA_FIELDS = ["hypothesized_symbols", "importance_note"] as const;
@@ -53,16 +64,19 @@ export const DERIVED_FIELDS = [
   "interpretation_status", "mapping_agreement", "dropped", "violations", "model", "prompt_version", "generated_at",
 ] as const;
 
-/** §八 的 8 项 AI 工作 → 结构字段，用于「AI 只做了被允许的这几件事」的可核对表述 */
+/** §八 的 8 项 AI 工作 → 结构字段，用于「AI 只做了被允许的这几件事」的可核对表述。
+ *  P7-1 的 4 个推理字段挂在既有 8 项下，不新增第 9 项工作：
+ *  focus_symbols 属于实体提取；reasoning / fund_evidence 属于潜在影响方向；
+ *  counter_evidence 属于需要进一步验证的数据（反证）。 */
 export const AI_JOBS: { job: string; fields: string[] }[] = [
   { job: "分类", fields: ["impact_scope", "importance"] },
   { job: "摘要", fields: ["summary"] },
-  { job: "实体提取", fields: ["entities", "affected_symbols", "hypothesized_symbols"] },
+  { job: "实体提取", fields: ["entities", "affected_symbols", "hypothesized_symbols", "focus_symbols"] },
   { job: "行业/主题映射", fields: ["industries", "themes"] },
-  { job: "潜在影响方向", fields: ["impact_direction"] },
+  { job: "潜在影响方向", fields: ["impact_direction", "reasoning", "fund_evidence"] },
   { job: "影响范围", fields: ["impact_scope"] },
   { job: "重要性解释", fields: ["importance", "importance_note"] },
-  { job: "需要进一步验证的数据", fields: ["unknowns", "follow_up_queries"] },
+  { job: "需要进一步验证的数据", fields: ["unknowns", "follow_up_queries", "counter_evidence"] },
 ];
 
 /** interpretation_status 的取值：本层能产出的只有这三种，其余状态由服务层/页面按「有没有跑 AI」补 */
@@ -84,6 +98,56 @@ export type ImpactScope = (typeof IMPACT_SCOPES)[number];
 
 export const IMPORTANCE_LEVELS = ["高", "中", "低", "无法判断"] as const;
 export type ImportanceLevel = (typeof IMPORTANCE_LEVELS)[number];
+
+/** P7-1 上下文：服务端从库里现取的真实数据，随提示词一起给模型（不是模型编的）。
+ *  fund_boards / fund_leaders 来自 global_event.fundCheck（扫描时已验证的资金数据，日期即事件日）；
+ *  market 来自 market_daily_stats（事件日的全市场宽度）；sector_history 来自
+ *  data/sector-daily-snapshots.json（板块近期走势，含幸存者偏差 caveat，只引用给出的数）。 */
+export interface FundBoardCtx {
+  /** 板块名（如“半导体”） */
+  name: string;
+  /** 板块当日涨跌幅 %（fundCheck 里的 changePct） */
+  change_pct: number | null;
+  /** 板块资金净额（亿，fundCheck 里的 mainYi；正=净流入） */
+  main_yi: number | null;
+  /** 板块龙头名（fundCheck 里的 leader） */
+  leader: string;
+}
+export interface FundLeaderCtx {
+  /** 龙头名 */
+  name: string;
+  /** 龙头代码（6 位） */
+  code: string;
+  /** 龙头主力净额（亿；正=净流入） */
+  main_net_yi: number | null;
+}
+export interface MarketCtx {
+  trade_date: string;
+  limit_up: number | null;
+  limit_down: number | null;
+  decliners: number | null;
+  above_ma5_pct: number | null;
+}
+export interface SectorHistoryCtx {
+  /** 快照日期（= 事件日，或该日前最近一个有快照的交易日；提示词里必须标出这个真实日期） */
+  as_of: string;
+  sector: string;
+  /** 板块当日中位涨跌幅 %（快照里的 medianChange） */
+  day_change: number | null;
+  /** 板块近 5/20/60 日涨跌幅 %（快照里的 prevChange5/20/60） */
+  change_5d: number | null;
+  change_20d: number | null;
+  change_60d: number | null;
+}
+/** P7-1 重点票：只能从本条给的 fund_leaders / 板块 leader 里选，有资金出处，不是猜的。 */
+export interface FocusSymbol {
+  /** 票名（与 fund 数据里的 name 一致） */
+  name: string;
+  /** 代码（fund_leaders 里有就填，没有就空串，不猜） */
+  code?: string;
+  /** 为什么关注它：必须引用资金数（如“板块资金净流入 +8.61亿，龙头主力净流入 +0.44亿”） */
+  reason: string;
+}
 
 /** 事件的真实来源（= global_event 行）。字段名与 /api/events 的返回对齐，服务层可直接传库行。 */
 export interface EventFact {
@@ -107,6 +171,11 @@ export interface EventFact {
   stage: string;
   /** 归档日（asOf）；服务端用于回看，本层不参与判定 */
   trade_date?: string;
+  /** P7-1 上下文（服务端现取，见上方类型注释；没有就空数组/null，模型不得编） */
+  fund_boards?: FundBoardCtx[];
+  fund_leaders?: FundLeaderCtx[];
+  market?: MarketCtx | null;
+  sector_history?: SectorHistoryCtx[];
 }
 
 /** §九 的完整结构。除 FACT_FIELDS 与 DERIVED_FIELDS 外都是 AI 解释。 */
@@ -131,6 +200,15 @@ export interface EventInterpretation {
   unknowns: string[];
   follow_up_queries: string[];
   interpretation_status: InterpretStatus;
+  /** P7-1 推理字段（见上方 FocusSymbol 注释） */
+  /** 重点票：只能从本条 fund_leaders / 板块 leader 里选（按主力净流入取，最多 3 只），不许猜 */
+  focus_symbols: FocusSymbol[];
+  /** 资金证据：每条必须引用本次给的资金/板块/市场数字；本条无资金数据时写“本条事件无资金验证数据” */
+  fund_evidence: string[];
+  /** 反证：至少 1 条，写清“什么情况说明这套判断错了” */
+  counter_evidence: string[];
+  /** 推理：用资金/板块/市场数据推方向的过程（引用具体数字），不能只复述标题 */
+  reasoning: string;
 
   // —— 以下为服务端派生字段（不是 §九 的最小集，报告里说明为「核对结果」）——
   /** 重要性解释的补充说明（§八 第 7 项要求"解释"，只有等级不够） */
@@ -153,7 +231,7 @@ const RULES: string[] = [
   "事件是系统从真实快讯入库的既有事实：你不得新增事件、不得改写标题、不得补充标题里没有发生的事。",
   "你只做八件事：分类、摘要、实体提取、行业/主题映射、潜在影响方向、影响范围、重要性解释、指出需要进一步验证的数据。",
   "evidence 里的每条都必须是从该条 title 原样摘出的连续文字（用于回溯），不要写你自己知道的外部信息。",
-  "affected_symbols 只列 title 里确实出现的公司/标的名称，或 mappedSectors/relatedNames 里已有的名称；不要提出任何其它标的（不许凭行业常识猜股票名），hypothesized_symbols 一律给空数组。",
+  "affected_symbols 只列 title 里确实出现的公司/标的名称，或 mappedSectors/relatedNames 里已有的名称，或本条 fund 数据里的龙头名/板块 leader（fund 数据也是该行已入库的名称）；不要提出任何其它标的（不许凭行业常识猜股票名），hypothesized_symbols 一律给空数组。focus_symbols 与 affected_symbols 的出处集合相同（标题/映射/fund 数据），区别是 focus_symbols 只能从 fund 数据里按主力净流入取、且必须给理由。",
   "禁止输出任何概率数字：不许写「上涨概率 80%」「明天涨停概率」这类表述。confidence 是你对自己这段解释的把握度（0 到 1 的小数），不是股票涨跌概率。",
   "历史统计与回测结论只能来自系统给你的数据，你自己不产概率、不产收益预测。",
   "impact_direction 只能取 利好/利空/双向/中性/未知；impact_scope 只能取 个股/板块/行业/主题/产业链/市场整体/海外/未知；importance 只能取 高/中/低/无法判断。",
@@ -162,17 +240,27 @@ const RULES: string[] = [
   // 被服务端按「AI 发明事件」整批拒收）。所以下面的事件行改用 JSON 承载，并在规则里点名必须逐字照抄。
   "event_id 必须与给你的值**逐字符一致**（整串照抄，包含其中的 | 与标题文字）：截断、改写或用标题代替都会被服务端拒收。",
   "只输出 JSON 数组，不要解释文字、不要 markdown 代码块之外的内容。每个对象必须包含 event_id 与上述字段。",
+  // ---- P7-1：用真实数据推理，不只复述标题 ----
+  "【推理规则】summary 仍是标题摘要，但 reasoning 必须用下面给的资金/板块/市场数据推方向：引用具体数字（如板块资金净流入 +8.61亿、龙头主力净流入 +0.44亿、板块跌 -3.67%、全市场涨停 37 / 跌停 60）。只复述标题、没有数据推理的，视为未理解。方向必须与数据自洽：资金流入 + 板块上涨才能判利好；资金流出 + 板块下跌判利空；资金与价格打架（资金流入但价格跌，或资金流出但价格涨）判双向并写明打架点；数据不足判未知，不要硬判。",
+  "【重点票】focus_symbols 只能从本条给的 fund_leaders / 板块 leader 里选：有资金数据时必须给（按主力净流入从大到小取最多 3 只；即使净流入为负，也取最值得盯的，并如实写金额与方向——重点是“盯”，不是“推荐买”）；只有本条完全没有资金数据时才给空数组。格式必须是对象数组，每只带 reason，例如：[{\"name\":\"航天南湖\",\"code\":\"688552\",\"reason\":\"军工电子板块龙头，主力净流入 +0.44亿\"}]——不要只给名字字符串（无 reason 的会被剔除）。选票时不得用标题之外的常识补票。",
+  "【资金证据】fund_evidence 每条必须引用本次给的资金/板块/市场数字，不能写无数字的空话（如“资金面偏积极”不带数会被拒）。本条没有资金数据时写一条“本条事件无资金验证数据”，不要编数字。",
+  "【反证】counter_evidence 至少 1 条：写清什么情况说明这套判断错了（如“若该板块资金由流入转为大幅流出，则利好判断不成立”）。不能只写“需进一步验证”。",
+  "【历史】板块近期走势（5日/20日/60日）只引用给出的数；没有给出的不编历史规律。本系统没有“同类事件历史胜率”，不许编“上次这类事件涨了多少”之类的话。",
+  "【禁令】不许给买卖价、不许给仓位建议、不许写“建议买入/卖出”；不许输出概率数字；不许把资金数据说成是明天的预测。",
 ];
 
 /**
  * 组装给模型的文本：只列本批真实事件的 id/时间/标题/既有映射。
- * 刻意不把标题之外的任何推断塞进提示词——否则模型会把它当原文引用回来。
+ * P7-1 同时列每条事件的真实资金/板块/市场上下文（服务端现取，见 EventFact 的 fund_boards /
+ * fund_leaders / market / sector_history）：模型只能引用给出的数推理，不许编。
+ * LLM 分流（p7-2）：market 声明当前市场——事件库是全球事件，解释时必须按该市场归属解读，
+ * A 股事件不得说成美股/港股事件；本批没有该市场相关事件时如实说明，不拿其它市场事件顶替。
  */
-export function buildEventInterpretPrompt(facts: EventFact[]): string {
+export function buildEventInterpretPrompt(facts: EventFact[], market?: MarketScope | null): string {
   // 事件行改用 JSON（而不是 `event_id=… | time=…` 的竖线分隔）：event_id 自带 | 与标题，
   // 竖线格式会让模型在第二个 | 处截断 id，导致整批被「AI 不得发明事件」拒收。JSON 的引号让边界无歧义。
   const lines = facts.map((f, i) => {
-    const row: Record<string, string | string[]> = {
+    const row: Record<string, string | string[] | Record<string, unknown>[]> = {
       event_id: f.event_id,
       time: f.published_at || "未记录",
       level: f.level || "未记录",
@@ -182,10 +270,51 @@ export function buildEventInterpretPrompt(facts: EventFact[]): string {
     if (f.mapped_sectors.length) row.mappedSectors = f.mapped_sectors;
     if (f.related_names.length) row.relatedNames = f.related_names;
     if (f.fund_note) row.fundCheck = `${f.stage || "未记阶段"}：${f.fund_note}`;
+    // P7-1 上下文：结构化资金/市场/板块走势（服务端现取的真实数据，模型只能引用给出的数）。
+    const boards = (f.fund_boards ?? []).filter((b) => b.name);
+    if (boards.length) {
+      row.fundBoards = boards.map((b) => ({
+        sector: b.name,
+        sectorChangePct: b.change_pct,
+        sectorFundNetYi: b.main_yi,
+        sectorLeader: b.leader,
+      }));
+    }
+    const leaders = (f.fund_leaders ?? []).filter((l) => l.name);
+    if (leaders.length) {
+      row.fundLeaders = leaders.map((l) => ({
+        name: l.name,
+        code: l.code,
+        mainNetYi: l.main_net_yi,
+      }));
+    }
+    if (f.market) {
+      row.market = [{
+        tradeDate: f.market.trade_date,
+        limitUp: f.market.limit_up,
+        limitDown: f.market.limit_down,
+        decliners: f.market.decliners,
+        aboveMa5Pct: f.market.above_ma5_pct,
+      }];
+    }
+    const hist = (f.sector_history ?? []).filter((h) => h.sector);
+    if (hist.length) {
+      row.sectorHistory = hist.map((h) => ({
+        asOf: h.as_of,
+        sector: h.sector,
+        dayChangePct: h.day_change,
+        change5dPct: h.change_5d,
+        change20dPct: h.change_20d,
+        change60dPct: h.change_60d,
+      }));
+    }
+    if (!boards.length && !leaders.length) row.fundData = "本条事件无资金验证数据（不要编资金数）";
     return `${i + 1}. ${JSON.stringify(row)}`;
   });
   return [
     `你是行情事件理解层。下面 ${facts.length} 条事件已经由系统从真实快讯入库（来源见每条自带字段），现在对它们逐条做结构化理解。`,
+    // LLM 分流块：当前市场声明（不传 market = 未声明，不注入，维持 p7-1 行为）。
+    market ? marketScopePrompt(market) : "",
     "",
     "【硬规则】",
     ...RULES.map((r, i) => `${i + 1}. ${r}`),
@@ -193,7 +322,7 @@ export function buildEventInterpretPrompt(facts: EventFact[]): string {
     "【输出 JSON 数组，每个对象字段】",
     OUTPUT_FIELDS.join(", "),
     "",
-    "【本批真实事件】（每行一条 JSON；event_id 原样整串照抄，不要截断或改写）",
+    "【本批真实事件】（每行一条 JSON；event_id 原样整串照抄，不要截断或改写；fundBoards / fundLeaders / market / sectorHistory 是服务端现取的真实上下文，只能引用给出的数）",
     ...lines,
     "",
     "【数据纪律】",
@@ -202,14 +331,20 @@ export function buildEventInterpretPrompt(facts: EventFact[]): string {
 }
 
 /** 系统提示词（与 /api/ai/proxy 的单轮调用配合） */
+// LLM 分流：调用方传 market 时追加分流块；不传 = p7-1 原文逐字不变。
+export function interpretSystemPrompt(market?: MarketScope | null): string {
+  return market ? `${INTERPRET_SYSTEM_PROMPT}\n${marketScopePrompt(market)}` : INTERPRET_SYSTEM_PROMPT;
+}
+
+export const INTERPRET_SYSTEM_PROMPT =
+  "你只做已入库真实事件的结构化理解，不发明事件、不补行情、不输出概率数字；不确定就写进 unknowns。只输出 JSON。";
+
 // 输出字段清单（提示词与解析共用一份，避免提示词写了、解析没认）
 const OUTPUT_FIELDS = [
   "event_id", "summary", "entities[]", "industries[]", "themes[]", "affected_symbols[]", "hypothesized_symbols[]",
   "impact_direction", "impact_scope", "importance", "importance_note", "confidence", "evidence[]", "unknowns[]", "follow_up_queries[]",
+  "focus_symbols[]", "fund_evidence[]", "counter_evidence[]", "reasoning",
 ];
-
-export const INTERPRET_SYSTEM_PROMPT =
-  "你只做已入库真实事件的结构化理解，不发明事件、不补行情、不输出概率数字；不确定就写进 unknowns。只输出 JSON。";
 
 // ---------- 校验与解析 ----------
 
@@ -330,12 +465,54 @@ export function evidenceGrounded(ev: string, fact: EventFact): boolean {
   return e.length >= 2 && t.includes(e);
 }
 
-/** 标的必须有出处：出现在标题里，或在该行入库时已关联的名称（板块/领涨名）里 */
+/** 标的必须有出处：出现在标题里，或在该行入库时已关联的名称（板块/领涨名）里，
+ *  或在本条 fundCheck 资金数据里的龙头名/板块 leader 里（P7-1：fund 数据也是该行已入库的名称，
+ *  重点票的出处与 affected_symbols 共享同一份“该行既有名称”集合；资金数据里没有的仍算猜的）。 */
 export function symbolGrounded(sym: string, fact: EventFact): boolean {
   const s = String(sym ?? "").trim();
   if (!s) return false;
   if ((fact.related_names ?? []).some((r) => r === s || r.includes(s) || s.includes(r))) return true;
-  return (fact.title ?? "").includes(s);
+  if ((fact.title ?? "").includes(s)) return true;
+  if ((fact.fund_leaders ?? []).some((l) => l.name === s || (l.code && l.code === s))) return true;
+  if ((fact.fund_boards ?? []).some((b) => b.leader && (b.leader === s || b.leader.includes(s) || s.includes(b.leader)))) return true;
+  return false;
+}
+
+/** P7-1 重点票出处：名字或代码必须出现在本条给的 fund_leaders / 板块 leader 里（资金数据里有，才不是猜的） */
+export function focusGrounded(name: string, code: string | undefined, fact: EventFact): boolean {
+  const n = String(name ?? "").trim();
+  const c = String(code ?? "").trim();
+  if (!n && !c) return false;
+  const leaders = fact.fund_leaders ?? [];
+  if (leaders.some((l) => (n && l.name === n) || (c && l.code && l.code === c))) return true;
+  const boards = fact.fund_boards ?? [];
+  if (n && boards.some((b) => b.leader === n || (b.leader && (b.leader.includes(n) || n.includes(b.leader))))) return true;
+  return false;
+}
+
+/** P7-1 资金证据出处：必须引用本次给的资金/板块/市场数字。
+ *  有资金数据时：每条必须含数字，且提到一个给出的板块名/龙头名/市场指标词；
+ *  无资金数据时：只接受“无资金验证数据”类表述，带数字的按无出处剔除（数字没有来源）。 */
+export function fundEvidenceGrounded(ev: string, fact: EventFact): boolean {
+  const s = String(ev ?? "").trim();
+  if (!s) return false;
+  const hasFund = (fact.fund_boards ?? []).length > 0 || (fact.fund_leaders ?? []).length > 0;
+  const hasDigit = /\d/.test(s);
+  if (!hasFund) {
+    return !hasDigit && /无资金|没有资金|未验证|无数据/.test(s);
+  }
+  if (!hasDigit) return false;
+  const names = [
+    ...(fact.fund_boards ?? []).map((b) => b.name),
+    // 板块简称（如“煤炭开采加工”→“煤炭”）：模型常写简称，只认全称会误杀有出处的证据
+    ...(fact.fund_boards ?? []).map((b) => b.name.slice(0, 2)),
+    ...(fact.fund_boards ?? []).map((b) => b.leader),
+    ...(fact.fund_leaders ?? []).map((l) => l.name),
+    // 板块走势里的板块名（如 mappedSectors 的“煤炭”）：模型引用走势时用这个名
+    ...(fact.sector_history ?? []).map((h) => h.sector),
+    "涨停", "跌停", "下跌", "站上5日线", "资金", "主力", "板块",
+  ].filter(Boolean);
+  return names.some((n) => n && s.includes(n));
 }
 
 /** AI 主题映射 vs 手工映射表：只报事实性的重合情况，不判谁对谁错 */
@@ -476,6 +653,60 @@ export function parseEventInterpretations(
     const confidence = normalizeConfidence(o.confidence);
     if (confidence === null) violations.push("confidence 缺失或不在 0..1 区间（不猜、不按 0 处理）");
 
+    // ---- P7-1 推理字段 ----
+    // focus_symbols：对象数组 {name, code?, reason}；字符串容忍成 {name}（reason 空则该条无效）。
+    // 出处 = 本条 fund_leaders / 板块 leader；不在资金数据里的票一律剔除（不许猜）。
+    const focusOut: FocusSymbol[] = [];
+    const focusRaw = Array.isArray(o.focus_symbols) ? o.focus_symbols : [];
+    const focusDropped: string[] = [];
+    for (const entry of focusRaw) {
+      const fo = (entry ?? {}) as Record<string, unknown>;
+      const fname = typeof entry === "string" ? entry.trim() : String(fo.name ?? "").trim();
+      const fcode = typeof entry === "string" ? "" : String(fo.code ?? "").trim();
+      const freason = typeof entry === "string" ? "" : oneLine(fo.reason, 200);
+      if (!fname) continue;
+      if (!focusGrounded(fname, fcode || undefined, fact)) {
+        focusDropped.push(fname);
+        continue;
+      }
+      if (!freason) {
+        focusDropped.push(`${fname}（无理由）`);
+        continue;
+      }
+      if (focusOut.some((x) => x.name === fname)) continue;
+      focusOut.push({ name: fname, code: fcode || undefined, reason: freason });
+      if (focusOut.length >= 3) break;
+    }
+    if (focusDropped.length) {
+      dropped.symbols.push(...focusDropped);
+      violations.push(`${focusDropped.length} 个重点票不在本条资金数据里（fund_leaders / 板块 leader），已剔除（重点票不许猜）：${focusDropped.join("、")}`);
+    }
+    // fund_evidence：有资金数据时必须引用给出的数字；无资金数据时只接受“无资金验证数据”类表述。
+    const fundEvOut: string[] = [];
+    const fundEvDropped: string[] = [];
+    for (const e of strArr(o.fund_evidence, 8)) {
+      if (fundEvidenceGrounded(e, fact)) fundEvOut.push(e);
+      else fundEvDropped.push(e);
+    }
+    if (fundEvDropped.length) {
+      dropped.evidence.push(...fundEvDropped);
+      violations.push(`${fundEvDropped.length} 条资金证据未引用本次给的资金/板块/市场数字，已剔除：${fundEvDropped.join("；")}`);
+    }
+    const hasFundData = (fact.fund_boards ?? []).length > 0 || (fact.fund_leaders ?? []).length > 0;
+    if (hasFundData && !fundEvOut.length) {
+      violations.push("本条有资金数据但未给出引用数字的资金证据（fund_evidence 为空或全被剔除）：方向判断没有数据支撑");
+    }
+    // 有资金数据时重点票必须给（按主力净流入取；即使全为负也要取最值得盯的并如实写金额）。
+    // 实测模型会把 focus_symbols 留空（只填 affected_symbols），导致“重点票”功能时有时无，故用校验强制。
+    if (hasFundData && !focusOut.length) {
+      violations.push("本条有资金数据但未给出重点票（focus_symbols 为空）：有资金数据时必须按主力净流入取最多 3 只龙头，重点是“盯”不是“推荐买”");
+    }
+    // counter_evidence：至少 1 条反证；reasoning：必须非空（只复述标题、没有数据推理的视为未理解）。
+    const counterOut = strArr(o.counter_evidence, 8).map(stripField).filter(Boolean);
+    if (!counterOut.length) violations.push("未给出反证（counter_evidence 为空）：必须写清什么情况说明这套判断错了");
+    const reasoning = stripField(oneLine(o.reasoning, 600));
+    if (!reasoning) violations.push("未给出推理过程（reasoning 为空）：只复述标题、没有资金/板块/市场数据推理的视为未理解");
+
     const titleEcho = oneLine(o.title);
     if (titleEcho && titleEcho !== fact.title) {
       violations.push("模型回传的 title 与库内原文不一致，已按库内原文保留（AI 不得改写事件）");
@@ -502,8 +733,12 @@ export function parseEventInterpretations(
       evidence: evidenceIn,
       unknowns: unknownsOut,
       follow_up_queries: followUpQueriesOut,
+      focus_symbols: focusOut,
+      fund_evidence: fundEvOut,
+      counter_evidence: counterOut,
+      reasoning,
     };
-    const status = interpretationStatusOf(core, violations);
+    const status = interpretationStatusOf({ ...core, hasFundData }, violations);
 
     items.push({
       // 事实：服务端按真实库行回填
@@ -537,15 +772,19 @@ export function parseEventInterpretations(
 /**
  * 单条解释自身的完成度：够不够称 INTERPRETED。
  * 判据只用结构事实（有没有摘要/证据/方向是未知/有没有违规），不引入新语义。
+ * P7-1：没有推理过程、没有反证、有资金数据却没有资金证据的，同样视为有瑕疵（PARTIAL）。
  */
 export function interpretationStatusOf(
-  core: Pick<EventInterpretation, "summary" | "evidence" | "impact_direction" | "affected_symbols">,
+  core: Pick<EventInterpretation, "summary" | "evidence" | "impact_direction" | "affected_symbols" | "reasoning" | "counter_evidence" | "fund_evidence"> & { hasFundData?: boolean },
   violations: string[],
 ): InterpretStatus {
   if (!core.summary) return "REJECTED";
   const weak =
     !core.evidence.length ||
     core.impact_direction === "未知" ||
+    !core.reasoning ||
+    !core.counter_evidence?.length ||
+    (core.hasFundData === true && !core.fund_evidence?.length) ||
     violations.length > 0;
   return weak ? "PARTIAL" : "INTERPRETED";
 }
@@ -580,6 +819,12 @@ export function renderInterpretationTrace(itp: EventInterpretation): string {
     `  行业/主题：${[...itp.industries, ...itp.themes].join("、") || "未给出"}`,
     `  影响方向 ${itp.impact_direction}｜范围 ${itp.impact_scope}｜重要性 ${itp.importance}${itp.importance_note ? `（${itp.importance_note}）` : ""}`,
     `  confidence=${conf}`,
+    itp.reasoning ? `【推理（资金/板块/市场数据支撑）】${itp.reasoning}` : "【推理】模型未给出数据推理过程：只复述标题的视为未理解",
+    itp.fund_evidence.length ? `【资金证据（引用本次给的数字）】${itp.fund_evidence.map((e) => `- ${e}`).join("\n")}` : "【资金证据】未给出引用数字的资金证据",
+    itp.focus_symbols.length
+      ? `【重点票（只能从资金数据里选）】${itp.focus_symbols.map((f) => `${f.name}${f.code ? `（${f.code}）` : ""}：${f.reason}`).join("；")}`
+      : "【重点票】无（本条资金数据里没有可关注的龙头，或模型未选）",
+    itp.counter_evidence.length ? `【反证（什么情况说明我错了）】${itp.counter_evidence.map((c) => `- ${c}`).join("\n")}` : "【反证】模型未给出反证",
     `【状态分层】${itp.interpretation_status}：${STATUS_TEXT[itp.interpretation_status]}｜整条属于 AI_INTERPRETATION，不是市场事实`,
     `【主题映射核对】与手工映射表重合 ${ma.matched.length ? ma.matched.join("、") : "无"}｜AI 另提 ${ma.ai_only.length ? ma.ai_only.join("、") : "无"}｜映射表另有 ${ma.map_only.length ? ma.map_only.join("、") : "无"}`,
     `  ${ma.note}`,
@@ -613,6 +858,10 @@ export function layerSplitOf(itp: EventInterpretation): { facts: string[]; ai: s
     `行业/主题 ${[...itp.industries, ...itp.themes].join("、") || "未给出"}`,
     `影响方向 ${itp.impact_direction}｜范围 ${itp.impact_scope}｜重要性 ${itp.importance}`,
     `confidence ${itp.confidence ?? "未给出"}（解释置信度，不是上涨概率）`,
+    `推理 ${itp.reasoning || "未给出"}`,
+    `资金证据 ${(itp.fund_evidence || []).length} 条`,
+    `重点票 ${(itp.focus_symbols || []).map((f) => f.name).join("、") || "无"}`,
+    `反证 ${(itp.counter_evidence || []).length} 条`,
     `待验证 ${(itp.unknowns || []).length} 条`,
   ];
   const derived = [

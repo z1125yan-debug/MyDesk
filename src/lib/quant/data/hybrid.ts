@@ -12,7 +12,12 @@ import type { BarsLike } from "../factors/fields.ts";
 import { classifyBarOutcome, type BarAttempt, type BarOutcome } from "./hybrid-core.ts";
 
 const TDX_MIN_BARS = 20;
-const CIRCUIT_FAILS = 8;
+// 2026-10-23 与本地修复对齐（本地 WorkBuddy 实证）：8 太敏感——网关 502 突发抖动连续 8 只
+// 就判死整批，剩余全市场掉到腾讯日K（无成交额）→ VWAP/成本族整列算空。改 24 + 单只重试
+// + 熔断后半开探测（见 fetchBarsHybridTracked）。
+const CIRCUIT_FAILS = 24;
+/** 熔断后每跳过这么多只，拿下一只当探针再试一次 TDX：通了整批拉回主通道 */
+const HALF_OPEN_EVERY = 250;
 /** 腾讯日K对北交所（.BJ）实测只返回 1 根 → 低于这个根数就再试新浪源 */
 const TC_MIN_BARS = 5;
 
@@ -41,23 +46,47 @@ export async function fetchBarsHybridTracked(
   const out = new Map<string, BarsLike[]>();
   // 全A 几千只逐只拉K线，串行循环（30~250ms/只）会把一次筛选拖到分钟级：
   // 改成固定并发池（TDX_GATEWAY 是本机网关，6 路实测无压力；腾讯兜底量在熔断正常时占比很小）。
-  // 熔断语义保持：连续 8 只 TDX 失败 → tdxDown=true，此后**尚未开始**的股票直接跳过 TDX 走腾讯。
+  // 熔断语义：连续 CIRCUIT_FAILS 只 TDX 失败（单只先重试一次）→ tdxDown=true，此后股票
+  // 直接走腾讯兜底；但每跳过 HALF_OPEN_EVERY 只半开探测一次，网关恢复就整批拉回主通道。
   const CONCURRENCY = 6;
   const outcomes: BarOutcome[] = new Array(symbols.length);
   let consecutiveFail = 0;
   let tdxDown = false;
+  let skippedSinceProbe = 0;
   let cursor = 0;
   const provider = await getProvider("em");
   const count = Math.min(800, Math.max(120, Math.ceil(lookback * 1.35)));
 
+  /** TDX 取数：失败/根数不足先重试一次再判死（502 抖动不直接记成「没K线」） */
+  const tryTdx = async (sym: string): Promise<TdxDailyBar[] | null> => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const b = await tdxDayBars(sym, count);
+        if (b && b.length >= TDX_MIN_BARS) return b;
+      } catch {
+        // 落到重试/判死逻辑
+      }
+    }
+    return null;
+  };
+
   const fetchOne = async (sym: string, idx: number): Promise<void> => {
     let bars: TdxDailyBar[] | null = null;
-    if (!tdxDown) {
-      try {
-        bars = await tdxDayBars(sym, count);
-        consecutiveFail = bars && bars.length >= TDX_MIN_BARS ? 0 : consecutiveFail + 1;
-        if (consecutiveFail >= CIRCUIT_FAILS) tdxDown = true;
-      } catch {
+    // 半开探测：熔断中每跳过 HALF_OPEN_EVERY 只，拿当前这只探一次；通了整批回主通道。
+    let probe = false;
+    if (tdxDown) {
+      skippedSinceProbe++;
+      if (skippedSinceProbe >= HALF_OPEN_EVERY) {
+        skippedSinceProbe = 0;
+        probe = true;
+      }
+    }
+    if (!tdxDown || probe) {
+      bars = await tryTdx(sym);
+      if (bars) {
+        consecutiveFail = 0;
+        tdxDown = false;
+      } else if (!tdxDown) {
         consecutiveFail++;
         if (consecutiveFail >= CIRCUIT_FAILS) tdxDown = true;
       }

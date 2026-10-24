@@ -111,6 +111,91 @@ export function parseTcOverseasRow(key: string, body: string): OverseasRow | nul
   };
 }
 
+// ---------- 新浪外盘（腾讯那条的备用路：2026-10-23 实测本机连不上 qt.gtimg.cn、hq.sinajs.cn 正常） ----------
+
+/** 新浪代码 → 本项目外盘键。gb_ 是新浪美股/ETF 的前缀，hkHSI 是港股指数 */
+export const SINA_OVERSEAS_CODES: Record<string, string> = {
+  gb_ixic: "usIXIC", gb_inx: "usINX", gb_dji: "usDJI", gb_smh: "usSMH", gb_nvda: "usNVDA", hkHSI: "hkHSI",
+};
+
+export function sinaOverseasUrl(): string {
+  return `https://hq.sinajs.cn/list=${Object.keys(SINA_OVERSEAS_CODES).join(",")}`;
+}
+
+/** 把 hq.sinajs.cn 的响应切成 `键 → 引号内正文`（`var hq_str_gb_ixic="..."`） */
+export function splitSinaVars(text: string): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!text) return out;
+  for (const line of text.split(";")) {
+    const m = /hq_str_([A-Za-z0-9_]+)="([^"]*)"/.exec(line);
+    if (m) out.set(m[1], m[2]);
+  }
+  return out;
+}
+
+/** 代码列（页面/留档用的上游代码字面，与腾讯那条的口径对齐） */
+const OVERSEAS_DISPLAY_CODES: Record<string, string> = {
+  usIXIC: ".IXIC", usINX: ".INX", usDJI: ".DJI", usSMH: "SMH", usNVDA: "NVDA", hkHSI: "HSI",
+};
+
+/**
+ * 新浪外盘单行 → 结构。字段位 2026-10-23 本机实测（与 Z 本地部署同刻读数交叉核对：恒指 +0.843%、SMH −5.99% 两边一致）：
+ *   gb_（美股指数/ETF）：0 名称、1 现价、2 涨跌幅%、3 行情时刻（**北京时间**，如 `2026-10-23 05:30:00` 是美东 10-22 收盘）、
+ *     4 涨跌额、5 今开、6 最高、7 最低。昨收不用尾部字段（位置会变），用「现价 − 涨跌额」自洽反推。
+ *   hkHSI：0 代码、1 名称、2 今开、3 昨收、4 最高、5 最低、6 现价、7 涨跌额、8 涨跌幅%、…、17 日期（`2026/10/23`）、18 时间。
+ * 现价拿不到（≤0）→ 整行不要，与腾讯那条同一纪律。
+ */
+export function parseSinaOverseasRow(key: string, sinaCode: string, body: string): OverseasRow | null {
+  if (!body) return null;
+  const f = body.split(",");
+  if (sinaCode === "hkHSI") {
+    if (f.length < 19) return null;
+    const price = num(f[6]);
+    if (price === null || price <= 0) return null;
+    const prev = num(f[3]);
+    const reported = num(f[8]);
+    const computed = prev && prev > 0 ? ((price - prev) / prev) * 100 : null;
+    const stamp = `${(f[17] ?? "").trim()} ${(f[18] ?? "").trim()}`.trim();
+    return {
+      key,
+      label: OVERSEAS_LABELS[key] ?? (f[1] ?? "").trim() ?? key,
+      upstreamName: (f[1] ?? "").trim(),
+      code: OVERSEAS_DISPLAY_CODES[key] ?? "",
+      price,
+      prevClose: prev,
+      change: num(f[7]),
+      changePct: reported ?? computed,
+      stamp,
+      stampDate: dateOfStamp(stamp),
+      tz: "北京",
+      pctCheck: reported !== null && computed !== null ? +(reported - computed).toFixed(3) : null,
+    };
+  }
+  if (f.length < 8) return null;
+  const price = num(f[1]);
+  if (price === null || price <= 0) return null;
+  const change = num(f[4]);
+  const reported = num(f[2]);
+  const prev = change !== null ? price - change : null;
+  const computed = prev && prev > 0 && change !== null ? (change / prev) * 100 : null;
+  const stamp = (f[3] ?? "").trim();
+  return {
+    key,
+    label: OVERSEAS_LABELS[key] ?? (f[0] ?? "").trim() ?? key,
+    upstreamName: (f[0] ?? "").trim(),
+    code: OVERSEAS_DISPLAY_CODES[key] ?? "",
+    price,
+    prevClose: prev,
+    change,
+    changePct: reported ?? computed,
+    stamp,
+    stampDate: dateOfStamp(stamp),
+    // 新浪 gb_ 的时刻已经是北京时间（上游自己折算过），不能再标「美东」
+    tz: "北京",
+    pctCheck: reported !== null && computed !== null ? +(reported - computed).toFixed(3) : null,
+  };
+}
+
 // ---------- 新浪 A50 期货 ----------
 
 export const A50_CODE = "hf_CHA50CFD";
@@ -196,24 +281,51 @@ export function buildOverseasSnapshot(args: {
   today: string;
   tcError?: string;
   a50Error?: string;
+  /** 新浪备用路（gb_/hkHSI）：腾讯缺哪条补哪条；不传 = 行为与加备用路之前完全一致 */
+  sinaText?: string | null;
+  sinaError?: string;
 }): OverseasSnapshot {
   const missing: string[] = [];
-  const rows: OverseasRow[] = [];
+  const byKey = new Map<string, OverseasRow>();
+  // 腾讯那条的逐条缺报先攒着：新浪备用路补上的就不报了（补完还报「没回」会跟屏上的数打架）
+  const tcMissing = new Map<string, string>();
   if (args.tcText) {
     const vars = splitTcVars(args.tcText);
     for (const code of OVERSEAS_CODES) {
       const body = vars.get(code);
-      if (!body) { missing.push(`外盘 ${code}：腾讯这次没回这一行（未覆盖或代码变了）`); continue; }
+      if (!body) { tcMissing.set(code, `外盘 ${code}：腾讯这次没回这一行（未覆盖或代码变了）`); continue; }
       const row = parseTcOverseasRow(code, body);
-      if (!row) { missing.push(`外盘 ${code}：腾讯回了但现价为空/≤0（未开盘或停牌），不按 0 处理`); continue; }
+      if (!row) { tcMissing.set(code, `外盘 ${code}：腾讯回了但现价为空/≤0（未开盘或停牌），不按 0 处理`); continue; }
       if (row.pctCheck !== null && Math.abs(row.pctCheck) > 0.05) {
         missing.push(`外盘 ${row.label}：上游涨跌幅与「现价/昨收」自算差 ${row.pctCheck} 个点，字段位置可能变了，数先照上游显示`);
       }
-      rows.push(row);
+      byKey.set(code, row);
     }
-  } else {
-    missing.push(`外盘（腾讯）未取到：${args.tcError || "无返回"}`);
   }
+  // 新浪备用路补缺：只补腾讯没有的键，不覆盖主路读数
+  let sinaFilled = 0;
+  if (args.sinaText) {
+    const vars = splitSinaVars(args.sinaText);
+    for (const [sinaCode, key] of Object.entries(SINA_OVERSEAS_CODES)) {
+      if (byKey.has(key)) continue;
+      const body = vars.get(sinaCode);
+      if (!body) continue;
+      const row = parseSinaOverseasRow(key, sinaCode, body);
+      if (!row) continue;
+      byKey.set(key, row);
+      sinaFilled += 1;
+    }
+  }
+  if (!args.tcText) {
+    missing.push(sinaFilled > 0
+      ? `外盘主路（腾讯）未取到：${args.tcError || "无返回"}；已由新浪备用路补 ${sinaFilled} 条`
+      : `外盘（腾讯）未取到：${args.tcError || "无返回"}`);
+  }
+  for (const code of OVERSEAS_CODES) {
+    const note = tcMissing.get(code);
+    if (note && !byKey.has(code)) missing.push(note);
+  }
+  const rows = OVERSEAS_CODES.map((c) => byKey.get(c)).filter((r): r is OverseasRow => !!r);
   const a50 = args.a50Text ? parseA50(args.a50Text) : null;
   if (!a50) missing.push(`A50 期货未取到：${args.a50Error || "返回形状不认（字段位变了？）"}`);
 
@@ -229,7 +341,7 @@ export function buildOverseasSnapshot(args: {
     today: args.today,
     us_age_days: usAge,
     missing,
-    basis: "腾讯 qt.gtimg.cn（美股/港股，行情时刻上游原样）+ 新浪 hf_CHA50CFD（A50 期货连续）· 免 key、探测时一口价",
+    basis: "外盘：腾讯 qt.gtimg.cn（主路，美股/港股）+ 新浪 hq.sinajs.cn gb_/hkHSI（备用路，腾讯缺哪条补哪条）；A50：新浪 hf_CHA50CFD · 免 key、探测时一口价",
   };
 }
 

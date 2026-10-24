@@ -52,6 +52,30 @@ export function nextTradingDay(from: string): string | null {
   return upcomingTradingDays(from, 1)[0] ?? null;
 }
 
+/**
+ * from 之后的 n 个交易日（严格 > from，跳周末/法定节假日）。
+ * 日历覆盖不到时返回已找到的（可能少于 n 个），绝不猜。
+ * 用途：卖出日 = 决策日 D 之后的第 2 个交易日（D+2）。
+ */
+export function tradingDaysAfter(from: string, n: number): string[] {
+  const s = days();
+  if (!s.size || n <= 0) return [];
+  const out: string[] = [];
+  //  bounded search：最多往后查 120 个自然日，日历覆盖不到就停
+  const d0 = Date.parse(`${from}T00:00:00Z`);
+  if (!Number.isFinite(d0)) return [];
+  for (let i = 1; i <= 120 && out.length < n; i++) {
+    const d = new Date(d0 + i * 86_400_000).toISOString().slice(0, 10);
+    if (s.has(d)) out.push(d);
+  }
+  return out;
+}
+
+/** from 之后的第 n 个交易日（严格 > from）；日历覆盖不到时返回 null，绝不猜 */
+export function nthTradingDayAfter(from: string, n: number): string | null {
+  return tradingDaysAfter(from, n)[n - 1] ?? null;
+}
+
 /** 未来 horizon 天内、连续 >= minLen 天的休市段（法定节假日 / 周末连休） */
 export function upcomingHolidayWindows(
   from: string,

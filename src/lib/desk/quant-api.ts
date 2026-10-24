@@ -324,6 +324,8 @@ export async function aiChatTools(
     sessionSymbol?: string | null; prevScene?: string | null;
     /** 持仓条件（标的/成本/仓位/建仓日期），与流式请求体同一份顶层 hold 键 */
     hold?: import("./hold-core").HoldCtx | null;
+    /** LLM 分流：当前市场（A/HK/US），随请求体顶层 market 带给 /api/ai/chat */
+    market?: string | null;
   },
 ): Promise<{ content: string; trace: AiChatTrace[]; steps?: StepInfo[]; intent?: IntentBadge; warning?: string }> {
   const res = await fetch("/api/ai/chat", {
@@ -343,6 +345,7 @@ export async function aiChatTools(
       ...(opts?.contextWindow ? { contextWindow: opts.contextWindow } : {}),
       ...(opts?.watchlist?.length ? { watchlist: opts.watchlist } : {}),
       ...(opts?.hold && Object.keys(opts.hold).length ? { hold: opts.hold } : {}),
+      ...(opts?.market ? { market: opts.market } : {}),
     }),
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 120_000),
   });
@@ -759,11 +762,12 @@ export interface InterpretStoreClient {
   layering: string; basis: string; interpretation_status?: string;
 }
 
-export async function fetchInterpretPrompt(params: { date?: string; ids?: string[]; limit?: number } = {}): Promise<InterpretPromptClient> {
+export async function fetchInterpretPrompt(params: { date?: string; ids?: string[]; limit?: number; market?: string | null } = {}): Promise<InterpretPromptClient> {
   const u = new URLSearchParams();
   if (params.date) u.set("date", params.date);
   if (params.ids?.length) u.set("ids", params.ids.join(","));
   if (params.limit) u.set("limit", String(params.limit));
+  if (params.market) u.set("market", params.market);
   const qs = u.toString();
   const res = await fetch(`/api/events/interpret/prompt${qs ? `?${qs}` : ""}`);
   const j = await res.json();

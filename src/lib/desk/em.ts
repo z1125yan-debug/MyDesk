@@ -9,12 +9,14 @@ import { marketSessionHolidayAware, todayIsTradingDaySync } from "./session-serv
 import { klineDiskUsable } from "./kline-disk-core";
 import { tdxQuotes, tdxKlines, tdxNameOf, type TdxQuote } from "./tdx";
 import { parseTcBoardRankList } from "@/lib/quant/data/tc-snapshot-core";
+import { clistDiffRows } from "@/lib/quant/data/em-clist-core";
 import { parseSinaFundFlow, sinaFundFlowUrl } from "@/lib/quant/data/sina-flow-core";
 import {
   NEWS_MAX_PAGES, NEWS_MAX_PAGES_MULTI, NEWS_PAGE_SIZE, lastCursor, pickNewsDays, pickNewsWindow,
   shouldFetchMore, shouldFetchMoreUntil,
   type NewsLiteRow, type NewsRawRow,
 } from "@/lib/quant/screener/news-window-core";
+import { fetchClsDayWindow } from "@/lib/desk/cls-telegraph";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -340,14 +342,26 @@ const BOARD_FS: Record<string, string> = {
 
 // push2 主站可能对个别 IP 限流，delay 镜像（约延迟一刻钟）作为首选兜底；
 // fflow 历史明细只在 push2his 上提供完整区间，单独用一组主机。
-const EM_HOSTS = ["https://push2delay.eastmoney.com", "https://push2.eastmoney.com"];
+// 2026-10-20 晚间实测：push2 与 push2delay 会同时 502（当日下午/晚间各一次），
+// 而 push2his 同一时刻仍可出 clist 同口径数据（板块榜 200、数值与收盘核对一致），
+// 故 clist 主机链末位加 push2his 兜底——双子星同灭时板块榜不再整榜断供。
+const EM_HOSTS = ["https://push2delay.eastmoney.com", "https://push2.eastmoney.com", "https://push2his.eastmoney.com"];
 const EM_HIS_HOSTS = ["https://push2his.eastmoney.com", "https://push2delay.eastmoney.com"];
 
-async function emGet<T>(path: string, timeoutMs = 5000, hosts: string[] = EM_HOSTS): Promise<T> {
+async function emGet<T>(
+  path: string,
+  timeoutMs = 5000,
+  hosts: string[] = EM_HOSTS,
+  accept?: (j: T) => boolean,
+): Promise<T> {
   let lastErr: unknown = new Error("no host");
   for (const host of hosts) {
     try {
-      return await fetchJson<T>(host + path, timeoutMs);
+      const j = await fetchJson<T>(host + path, timeoutMs);
+      // 形状校验：HTTP 200 + JSON 可解析 ≠ 数据可用（见 clistDiffRows）。形状不对
+      // 视同该主机失败、继续换下一台，而不是把坏形状交回调用方误判整源断供。
+      if (accept && !accept(j)) throw new Error("unexpected payload shape");
+      return j;
     } catch (e) {
       lastErr = e;
     }
@@ -410,9 +424,9 @@ export async function fetchBoardReal(
   const path = `/api/qt/clist/get?pn=1&pz=${size}&po=${po}&np=1&fltt=2&invt=2&fid=f62&fs=${encodeURIComponent(fs)}&fields=f12,f13,f14,f2,f3,f62,f66,f72,f100,f128,f184`;
   try {
     const j = await cached<{ data?: { diff?: Record<string, unknown>[] } }>("board", `${kind}:${dir}`, () =>
-      emGet(path),
+      emGet(path, 5000, EM_HOSTS, (r) => clistDiffRows(r) !== null),
     );
-    const rows = j?.data?.diff ?? [];
+    const rows = clistDiffRows(j) ?? [];
     const out: BoardRow[] = [];
     for (const d of rows) {
       const main = num(d.f62);
@@ -437,6 +451,93 @@ export async function fetchBoardReal(
     if (kind === "industry") return fetchTcIndustryBoard(dir, size);
     return null;
   }
+}
+
+/**
+ * 行业全榜极值合并（日报分支细分用，2026-10-20）：clist 单页上限 100 行，
+ * 按主力净额排序的流入/流出各取前 2 页（共 400 行极值）按 code 合并成“全榜极值集”。
+ * 分支（BK13xx）Top5 与父→子下钻所需的行必然在极值里。必须走本文件的 UA/Referer
+ * （裸 fetch 会被东财 502）。腾讯兜底榜没有资金口径，这里不用——全失败返回 []，
+ * 调用方如实报“没取到”，不拿涨幅榜冒充资金榜。
+ */
+export async function fetchIndustryBoardUniverse(): Promise<BoardRow[]> {
+  return cached<BoardRow[]>("board", "universe", async () => {
+    const byCode = new Map<string, BoardRow>();
+    // 方向完整性闸：某一方向整向断源时整榜作废——否则“没有分支流入”会把
+    // “没取到”说成“没有”，违反数据纪律（2026-10-20 实测到过单向 502）。
+    const okPages: Record<number, number> = { 1: 0, 0: 0 };
+    for (const po of [1, 0] as const) {
+      for (let pn = 1; pn <= 2; pn++) {
+        const path = `/api/qt/clist/get?pn=${pn}&pz=100&po=${po}&np=1&fltt=2&invt=2&fid=f62&fs=${encodeURIComponent(BOARD_FS.industry)}&fields=f12,f14,f3,f62`;
+        try {
+          const j = await emGet<{ data?: { diff?: Record<string, unknown>[] } }>(
+            path,
+            8000,
+            EM_HOSTS,
+            (r) => clistDiffRows(r) !== null,
+          );
+          okPages[po]++;
+          for (const d of clistDiffRows(j) ?? []) {
+            const main = num(d.f62);
+            if (main === null) continue;
+            const mainYi = main / 1e8;
+            if (po === 1 ? mainYi <= 0 : mainYi >= 0) continue;
+            const code = String(d.f12 ?? "");
+            if (!code) continue;
+            byCode.set(code, {
+              code,
+              secid: `90.${code}`,
+              name: String(d.f14 ?? ""),
+              changePct: num(d.f3) ?? 0,
+              main: mainYi,
+              ratio: 0,
+              superBig: 0,
+              big: 0,
+              leader: "",
+            });
+          }
+        } catch {
+          // 单页断源不拖垮整榜（Top5 极值几乎都在第 1 页）；整向断源在下方作废
+        }
+      }
+    }
+    if (okPages[1] === 0 || okPages[0] === 0) return [];
+    return [...byCode.values()];
+  });
+}
+
+export interface BoardDayFlow {
+  /** 东财返回的板块名（与代码同源，用于核对映射名字） */
+  name: string;
+  days: { date: string; mainYi: number; changePct: number | null }[];
+}
+
+/**
+ * 板块日度资金流（东财 fflow daykline，push2his）：末行 = 最近一个交易日
+ * （盘中为当日实时累计，盘前为上一交易日收盘）。日报分支下钻专用——clist 板块榜
+ * 被限流/502 时这条还活着，且数值与 clist 收盘口径一致（2026-10-20 实测：
+ * BK1326 半导体设备 -26.26 亿、BK1036 半导体 -19.29 亿，与已核对数分毫不差）。
+ * 取不到 → null，调用方如实报缺，不编。
+ */
+export async function fetchBoardDayFlow(secid: string): Promise<BoardDayFlow | null> {
+  return cached<BoardDayFlow | null>("detail", `bd:${secid}`, async () => {
+    const path = `/api/qt/stock/fflow/daykline/get?lmt=14&klt=101&secid=${secid}&fields1=f1,f2,f3,f7&fields2=f51,f52,f63`;
+    try {
+      const j = await emGet<{ data?: { name?: string; klines?: string[] } }>(path, 8000, EM_HIS_HOSTS);
+      const days = (j?.data?.klines ?? [])
+        .map((s) => {
+          const p = s.split(",");
+          const main = parseFloat(p[1]);
+          const chg = parseFloat(p[2]);
+          return { date: p[0], mainYi: main / 1e8, changePct: isFinite(chg) ? chg : null };
+        })
+        .filter((d) => d.date && isFinite(d.mainYi));
+      if (!days.length) return null;
+      return { name: String(j?.data?.name ?? ""), days };
+    } catch {
+      return null;
+    }
+  });
 }
 
 // ---------- 明细：近 14 日主力净额（东财 fflow，断源时新浪 MoneyFlow 备胎） ----------
@@ -498,7 +599,7 @@ export async function fetchSparkReal(symbol: string): Promise<number[] | null> {
   }
 }
 
-// ---------- 财经快讯（东财 7x24 优先，新浪财经直播兜底） ----------
+// ---------- 财经快讯（财联社电报优先，东财 7x24 / 新浪财经直播兜底） ----------
 
 export interface NewsItem {
   time: string;
@@ -548,7 +649,7 @@ export async function fetchNewsReal(limit = 12): Promise<NewsItem[] | null> {
 export interface NewsWindow {
   tradeDate: string;
   items: NewsLiteRow[];
-  source: "东财7x24" | "新浪直播";
+  source: "财联社电报" | "东财7x24" | "新浪直播";
   /** 翻页实际拉到的原始行数（含越界与丢弃），用于说明「这一轮看了多少条快讯」 */
   fetchedRows: number;
   offDay: number;
@@ -640,9 +741,40 @@ async function buildNewsWindow(tradeDate: string, getPage: NewsPageFn, source: N
   };
 }
 
-/** 当日快讯全量窗口：东财 7x24 优先，失败/为空换新浪直播；两源都空返回 null（调用方据此报错，不当成「今天没事件」） */
+/**
+ * 财联社电报窗口：拉决策日全天电报（fetchClsDayWindow：last_time 游标往前分页翻到当日 00:00 之前，
+ * 不是只取最新 20 条）。实时，不缓存；断源/无当日条目时由调用方换东财备胎。
+ * capped=true = 翻到 80 页上限仍未翻到当日之前，全天窗口可能不完整，调用方须如实说明。
+ * 事件雷达（scanGlobalEvents / archiveRadarScan）与事件扫描（archiveEventScan）都走这里，
+ * 所以改这里即同时覆盖两者；日报按板块页本身不拉财联社电报，不在此改。
+ */
+async function buildClsNewsWindow(tradeDate: string): Promise<NewsWindow | null> {
+  const w = await fetchClsDayWindow(tradeDate);
+  if (!w.items.length) return null;
+  const items: NewsLiteRow[] = w.items.map((it) => ({ time: it.time.slice(11, 16), title: it.title }));
+  return {
+    tradeDate,
+    items,
+    source: "财联社电报",
+    fetchedRows: w.fetchedRows,
+    offDay: w.offDay,
+    duplicated: w.duplicated,
+    dropped: w.dropped,
+    spanFrom: items[0]?.time ?? "",
+    spanTo: items[items.length - 1]?.time ?? "",
+    capped: w.capped,
+  };
+}
+
+/** 当日快讯窗口：财联社电报优先（实时、不缓存，决策日全天分页），失败/无当日条目换东财 7x24，再换新浪直播；三源都空返回 null（调用方据此报错，不当成「今天没事件」） */
 export async function fetchNewsWindowForDate(tradeDate: string): Promise<NewsWindow | null> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(tradeDate)) return null;
+  try {
+    const cls = await buildClsNewsWindow(tradeDate);
+    if (cls) return cls;
+  } catch {
+    // 财联社断源 → 东财备胎
+  }
   return cached("news", `day:${tradeDate}`, async () => {
     try {
       const em = await buildNewsWindow(tradeDate, emNewsPage, "东财7x24");

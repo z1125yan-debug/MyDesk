@@ -72,6 +72,8 @@ interface DeskState {
   page: PageKey;
   sidebarCollapsed: boolean;
   focusSymbol: string;         // 分析页当前品种
+  /** 行情市场选项卡：A股 | 港股 | 美股（四行情页共用，持久化，默认 A股） */
+  marketTab: "A" | "HK" | "US";
   watchlist: WatchItem[];
   /**
    * P14：自选分组（对齐稳智 watchlist groups）。只存 {id,name}——成员关系挂在
@@ -147,6 +149,8 @@ interface DeskState {
   go: (p: PageKey) => void;
   toggleSidebar: () => void;
   setFocusSymbol: (s: string) => void;
+  /** 行情市场选项卡切换（A股 | 港股 | 美股） */
+  setMarketTab: (m: "A" | "HK" | "US") => void;
   /** 请板块榜页展开某个板块（跳页联动用），读完即清 */
   setFocusSector: (code: string | null) => void;
   takeFocusSector: () => string | null;
@@ -256,6 +260,7 @@ export const useDesk = create<DeskState>()(
       page: "market",
       sidebarCollapsed: false,
       focusSymbol: "000001.SH",
+      marketTab: "A",
       watchlist: [
         { symbol: "000001.SH", name: "上证指数", kind: "watch" },
         { symbol: "000300.SH", name: "沪深300", kind: "watch" },
@@ -297,6 +302,7 @@ export const useDesk = create<DeskState>()(
       go: (p) => set({ page: resolveRoute(p) }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setFocusSymbol: (sym) => set({ focusSymbol: sym }),
+      setMarketTab: (m) => set({ marketTab: m }),
       setFocusSector: (code) => set({ focusSector: code }),
       takeFocusSector: () => {
         const code = get().focusSector;
@@ -486,6 +492,7 @@ export const useDesk = create<DeskState>()(
           : "market",
         sidebarCollapsed: s.sidebarCollapsed,
         focusSymbol: s.focusSymbol,
+        marketTab: s.marketTab === "HK" || s.marketTab === "US" ? s.marketTab : "A",
         watchlist: s.watchlist,
         watchlistGroups: s.watchlistGroups,
         tracker: s.tracker,

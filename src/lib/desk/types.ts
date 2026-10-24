@@ -5,6 +5,7 @@ export type PageKey =
   | "aiscan"       // AI 实时选股（全A扫描漏斗）——R3c 起为路由别名：导航收口到 quant 门户（nav-core ROUTE_REDIRECTS）
   | "trackrecord"  // 战绩（P36-C）：哪天推了哪几只票、次日各自涨跌、跟单净值 vs 全A中位
   | "aiscreener"   // 量化选股工作台（稳智 /screener 复刻：条件卡片组 + 筛选 + AI 优选 + 策略）
+  | "newsfilter"   // 新闻筛选（催化分流器规则版 v1：电报按 9 口子分流展示，仅展示）
   | "pool"         // 候选池（冻结 + 次日验证）
   | "screener"     // 因子选股器
   | "profile"      // 个股资金画像
@@ -29,6 +30,7 @@ export type PageKey =
   | "themeoverview" // P15-R4 主题血缘总览：选一个主题，右栏按血缘读完整条故事（市场环境→…→分层结论）
   | "radar"        // P2-4 AI 主动发现
   | "events"       // P2-5 全球事件雷达
+  | "dailyreport"  // 日报按板块整理分类（2026-10-16：半导体日报等按板块放一块，点进看详情）
   | "research"     // P6-C AI 市场环境研究（七分区研究报告 + 服务端台账）
   | "agent"        // P6-D Agent 自主工具调用（步骤时间线 + 台账 + 血缘 + 预算）
   | "extension"    // 扩展
@@ -181,6 +183,7 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   aiscan: "AI 实时选股",
   aiscreener: "量化选股",
   trackrecord: "战绩",
+  newsfilter: "新闻筛选",
   pool: "候选池",
   screener: "因子选股器",
   profile: "个股资金画像",
@@ -205,6 +208,7 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   themeoverview: "主题血缘总览",
   radar: "AI 主动发现",
   events: "全球事件雷达",
+  dailyreport: "日报",
   research: "AI 市场研究",
   agent: "Agent 自主研究",
   extension: "扩展",

@@ -158,7 +158,7 @@ export interface TechLike {
   rangePos: number | null;
   rangeLow: number | null;
   rangeHigh: number | null;
-  source: "real" | "demo";
+  source: "real" | "demo" | "missing";
 }
 
 /**

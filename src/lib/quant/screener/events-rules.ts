@@ -47,7 +47,7 @@ export function classifyNewsTitle(title: string, time: string, themes: ThemeMapI
   };
 }
 
-export type FundStage = "主题早期" | "扩散阶段" | "已充分反应" | "无资金验证";
+export type FundStage = "主题早期" | "扩散阶段" | "已充分反应" | "无资金验证" | "资金验证通过" | "资金未验证";
 
 export function fundStage(opts: {
   boardHits: { name: string; changePct: number; mainYi: number; rank: number }[];

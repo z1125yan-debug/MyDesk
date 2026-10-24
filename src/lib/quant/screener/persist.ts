@@ -200,7 +200,7 @@ export async function archiveEventScan(opts: ArchiveOpts = {}): Promise<ArchiveR
   const mode = decideMode({ force: opts.force, mode: opts.mode, cursor, tradeDate, cursorTradeDate });
   const rulesFp = themeMapFingerprint();
   // 当日快讯全量窗口（P15-R18：翻页到跨出目标交易日为止）：取不到就抛错，不静默当成「今天没有事件」
-  const { news, capped: windowCapped, detail: windowDetail } = await collectNewsWindow(tradeDate);
+  const { news, capped: windowCapped, detail: windowDetail, source: windowSource } = await collectNewsWindow(tradeDate);
   const watermark = newsWatermark(news);
   let delta: DeltaStats;
   let unmatched: number;
@@ -209,7 +209,7 @@ export async function archiveEventScan(opts: ArchiveOpts = {}): Promise<ArchiveR
   let unmatchedKeys: string[];
 
   if (mode === "full") {
-    const scan = await scanGlobalEvents({ news });
+    const scan = await scanGlobalEvents({ news, newsSource: windowSource });
     const candidates = scan.items.map(eventCandidate);
     const byKey = new Map(candidates.map((c) => [c.dedupeKey, c] as const));
     await db.globalEvent.deleteMany({ where: { asOf: tradeDate } });
@@ -243,7 +243,7 @@ export async function archiveEventScan(opts: ArchiveOpts = {}): Promise<ArchiveR
     if (fresh.length) {
       // 复用同一个 scanGlobalEvents（只传本次新增的快讯 + 一起取到的板块榜）：映射与资金验证只有一份实现
       const boards = await fetchBoardContext();
-      const scan = await scanGlobalEvents({ news: fresh, boards });
+      const scan = await scanGlobalEvents({ news: fresh, boards, newsSource: windowSource });
       const d = planEventDelta(scan.items.map(eventCandidate), snap.rows);
       const st = await applyEventDelta(tradeDate, d);
       unmatchedKeys = unmatchedOf(fresh, scan.items, rulesFp);

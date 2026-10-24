@@ -17,6 +17,7 @@
 //  - 完整性校验与补充轮计划来自 agent-loop-core：首轮取完，若「必读项」有洞，就原参数补一轮，
 //    补完仍缺的如实留在未取到清单——这就是「不是单轮直调大模型」的那一环。
 import { backtestWhitelist, findTool, phaseOfTool, BACKTEST_READY, type ToolCtx } from "./chat-tools";
+import { A_SHARE_ONLY_TOOLS, type MarketScope } from "./market-scope-core";
 import { industryNames } from "@/lib/quant/data/industry-constituents";
 
 /**
@@ -130,6 +131,12 @@ export async function prefetchForScene(opts: {
   emit?: (ev: StreamEvent) => void;
   isCancelled?: () => boolean;
   stepStart?: number;
+  /**
+   * 当前市场（LLM 分流）：HK/US 时过滤掉 A_SHARE_ONLY_TOOLS 的预取调用——
+   * 那些工具只覆盖 A 股，在美股/港股轮次里跑它们拿到的也是 A 股的数，
+   * 注入进提示词就成了「美股页面说 A 股数据」。不传 = 未声明市场，维持旧行为（不拦截）。
+   */
+  market?: MarketScope | null;
 }): Promise<PrefetchResult> {
   const { calls, skipped } = planDispatch({
     intent: opts.intent,
@@ -139,6 +146,16 @@ export async function prefetchForScene(opts: {
     // 「半导体设备」命中时不能退回「半导体」）。sector_breadth 的 gate 与入参靠它。
     knownIndustryHit: industryHitOf(opts.intent.question ?? "") ?? undefined,
   });
+  // LLM 分流：非 A 股轮次里 A 股专属工具的调用整条拿掉（不执行、不注入、不进步骤），
+  // 并在 skipped 里留痕——模型看到的是「本轮没取」，而不是「取到了 A 股数」。
+  const market = opts.market ?? null;
+  const keptCalls = market && market !== "A"
+    ? calls.filter((c) => !A_SHARE_ONLY_TOOLS.has(c.tool))
+    : calls;
+  if (keptCalls.length !== calls.length) {
+    const dropped = [...new Set(calls.map((c) => c.tool))].filter((t) => A_SHARE_ONLY_TOOLS.has(t));
+    skipped.push(`当前市场为${market === "HK" ? "港股" : "美股"}：A 股专属工具（${dropped.join(" / ")}）本轮未取，不可用其数据回答`);
+  }
   const stepStart = opts.stepStart ?? 0;
   // P8-①：新鲜度判的是结构里的日期（「最近5日」最后一根的日期），注入块截断过、不能当判据，
   // 所以在 execute 这一层顺手留一份序列化前的原始结果。未注册的工具不算「取到了」，不入列。
@@ -153,7 +170,7 @@ export async function prefetchForScene(opts: {
     return out;
   };
   const result = await runDispatchPlan({
-    calls,
+    calls: keptCalls,
     stepStart,
     isCancelled: opts.isCancelled,
     onStep: (s) => opts.emit?.({ type: "step", data: s }),
@@ -176,7 +193,9 @@ export async function prefetchForScene(opts: {
   const followTrace: typeof result.trace = [];
   const followNotRun: string[] = [];
   for (let round = 0; round < 2; round++) {
-    const followUps = planChainFollowUps(raws, opts.intent.question);
+    // 链研究补数棒同样受分流约束：顺榜首板块追成分 / 追代表个股时，A 股专属工具在非 A 股轮次里不跑。
+    const followUps = planChainFollowUps(raws, opts.intent.question)
+      .filter((c) => !(market && market !== "A" && A_SHARE_ONLY_TOOLS.has(c.tool)));
     if (!followUps.length) break;
     const r = await runDispatchPlan({
       calls: followUps,
@@ -210,8 +229,8 @@ export async function prefetchForScene(opts: {
   }
   let stepNo = stepStart + steps.length;
   const required = SKILLS.requiredToolsForScene(opts.intent.scene);
-  if (required.size && calls.length) {
-    const gaps = findRequiredGaps({ calls, rows, missing, required });
+  if (required.size && keptCalls.length) {
+    const gaps = findRequiredGaps({ calls: keptCalls, rows, missing, required });
     const verdict = completenessVerdict(gaps, required.size);
     // 校验本身要在时间线上看得见：⑤ 的 Debug 面板要靠步骤重放整条链路，看不见校验=看不见闭环
     const checkStep: StepInfo = {
@@ -227,7 +246,7 @@ export async function prefetchForScene(opts: {
     steps.push(checkStep);
     opts.emit?.({ type: "step", data: checkStep });
     if (gaps.length && !opts.isCancelled?.()) {
-      const supplement = planSupplementRound(gaps, calls);
+      const supplement = planSupplementRound(gaps, keptCalls);
       const r2 = await runDispatchPlan({
         calls: supplement,
         stepStart: stepNo,
@@ -344,6 +363,8 @@ export async function prepareSceneTurn(opts: {
   emit?: (ev: StreamEvent) => void;
   isCancelled?: () => boolean;
   stepStart?: number;
+  /** 当前市场（LLM 分流）：透传给 prefetchForScene 做 A 股专属工具过滤；非 A 股时结论卡与 A 股交易日历也不跑 */
+  market?: MarketScope | null;
 }): Promise<SceneTurn> {
   // 客户端会把当前图表的实时快照拼在提问后面（带 SNAPSHOT_MARK）。
   // 判场景只看用户原话：快照里的「涨停」「成交额」这些字眼会把一句闲聊判成大盘情绪。
@@ -401,14 +422,22 @@ export async function prepareSceneTurn(opts: {
     emit: opts.emit,
     isCancelled: opts.isCancelled,
     stepStart: opts.stepStart,
+    market: opts.market ?? null,
   });
 
   // ---------- P8-①/②：取完数之后的新鲜度核对与结论契约（接线在这，判定全在纯核） ----------
+  // LLM 分流：结论卡（v3 引擎）与交易日历（000001.SH 日K）都是 A 股口径——
+  // 非 A 股轮次里不构建结论卡、不拿 A 股日历核对新鲜度，否则美股/港股回答里会混进 A 股结论与 A 股交易日。
+  const market = opts.market ?? null;
+  const isAShareTurn = !market || market === "A";
   const today = opts.today ?? shanghaiDate();
   const klineRaws = prefetched.raws.filter((r) => r.tool === "stock_kline_summary");
   // 风险点 3 的闸：只有个股研判场景有「决策结果」可言，纯行情查询走不到这条路。
-  const wantDecision = shouldBuildDecisionContract(intent.scene) && !!intent.symbol && !opts.isCancelled?.();
+  const wantDecision = isAShareTurn && shouldBuildDecisionContract(intent.scene) && !!intent.symbol && !opts.isCancelled?.();
   const skipped = [...prefetched.skipped];
+  if (!isAShareTurn && shouldBuildDecisionContract(intent.scene) && intent.symbol) {
+    skipped.push(`结论卡未构建：结论卡引擎只覆盖 A 股，本轮市场为${market === "HK" ? "港股" : "美股"}，不注入 A 股结论`);
+  }
   if (shouldBuildDecisionContract(intent.scene) && !intent.symbol) {
     skipped.push("未构建结论契约：本轮研判没有落到具体标的，没有可锁死的决策结果");
   }
@@ -417,8 +446,9 @@ export async function prepareSceneTurn(opts: {
 
   // 交易日历与行情页交易日选择器同源（000001.SH 日K 真实日期，见 /api/quant/screener/trade-dates）。
   // 拿不到日历不装作查过：能核对的读数会全部落 unknown，并如实上屏（风险点 1：unknown ≠ 新鲜）。
+  // 非 A 股轮次不取 A 股日历（见上方分流闸）：美股/港股的交易日与 A 股不同，拿上证日历核对就是错的。
   let calendarDates: string[] = [];
-  if (klineRaws.length || decisionPromise) {
+  if (isAShareTurn && (klineRaws.length || decisionPromise)) {
     try {
       const r = await fetchBarsHybridTracked(["000001.SH"], today, CALENDAR_LOOKBACK);
       calendarDates = (r.bars.get("000001.SH") ?? []).map((b) => b.date).filter(Boolean);

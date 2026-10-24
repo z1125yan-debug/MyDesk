@@ -70,7 +70,7 @@ export const INTERPRET_TIMEOUT_MS = 300_000;
  */
 export async function runEventInterpretation(
   ai: AiSettings,
-  opts: { date?: string; ids?: string[]; limit?: number; chunkSize?: number; onProgress?: (p: InterpretProgress) => void } = {},
+  opts: { date?: string; ids?: string[]; limit?: number; chunkSize?: number; onProgress?: (p: InterpretProgress) => void; market?: "A" | "HK" | "US" | null } = {},
 ): Promise<RunResult> {
   const base: RunResult = {
     ok: false, status: NOT_RUN_STATUSES.ai_unconfigured, message: "", model: ai.model || "未配置",
@@ -85,9 +85,11 @@ export async function runEventInterpretation(
   }
 
   // 1) 先取一次：拿到本批真实事件清单 + system + date（服务端组装，客户端不挑数据）
+  // LLM 分流：market 随取提示词与调模型两处一起带——服务端按它在提示词里声明当前市场，
+  // 解释时只按该市场归属解读事件（A 股事件不得说成美股/港股事件；本批无该市场相关事件时如实说明）。
   let head: InterpretPromptClient;
   try {
-    head = await fetchInterpretPrompt({ date: opts.date, ids: opts.ids, limit: opts.limit });
+    head = await fetchInterpretPrompt({ date: opts.date, ids: opts.ids, limit: opts.limit, market: opts.market ?? undefined });
   } catch (e) {
     return { ...base, status: NOT_RUN_STATUSES.no_events, message: String((e as Error).message || e) };
   }
@@ -112,7 +114,7 @@ export async function runEventInterpretation(
     try {
       // 单批时复用首次取回的提示词；多批时按该批 id 现取（提示词仍由服务端组装）。
       // 只有显式指定了日期（历史归档）才带 date；「今天」这条不带 → 服务端用「最近事件窗口」（跨日补足）。
-      const p = chunks.length === 1 ? head : await fetchInterpretPrompt({ ...(opts.date ? { date: opts.date } : {}), ids: chunkIds });
+      const p = chunks.length === 1 ? head : await fetchInterpretPrompt({ ...(opts.date ? { date: opts.date } : {}), ids: chunkIds, market: opts.market ?? undefined });
       if (!p.ok || !p.prompt) {
         failed++;
         batchErrors.push(`第 ${ci + 1}/${chunks.length} 批没有可理解的真实事件`);
@@ -120,7 +122,7 @@ export async function runEventInterpretation(
         const raw = await aiChat(ai, [
           { role: "system", content: p.system },
           { role: "user", content: p.prompt },
-        ], { timeoutMs: INTERPRET_TIMEOUT_MS, maxTokens: INTERPRET_MAX_TOKENS });
+        ], { timeoutMs: INTERPRET_TIMEOUT_MS, maxTokens: INTERPRET_MAX_TOKENS, market: opts.market ?? null });
         if (raw.trim()) raws.push(raw);
         else { failed++; batchErrors.push(`第 ${ci + 1}/${chunks.length} 批模型返回空内容`); }
       }

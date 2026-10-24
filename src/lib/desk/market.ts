@@ -127,7 +127,7 @@ export async function fetchCandlesFor(
   symbol: string,
   tf: string,
   fq: "qfq" | "hfq" | "none" = "qfq",
-): Promise<{ candles: Candle[]; source: "real" | "demo"; macd?: MacdSeries | null }> {
+): Promise<{ candles: Candle[]; source: "real" | "demo" | "missing"; macd?: MacdSeries | null }> {
   if (!isDemoSymbol(symbol)) {
     try {
       const r = await fetch(
@@ -138,8 +138,14 @@ export async function fetchCandlesFor(
         return { candles: j.candles, source: "real", macd: j.macd ?? null };
       }
     } catch {
-      // 回退演示
+      // 取不到就是取不到：下面返回 missing，绝不拿演示线顶包
     }
+    // 真实 A 股票取不到 K 线 → 显式 missing + 空数组（与 fetchBoardRows/fetchDetailFor
+    // 的 P15-R16 纪律一致）。此前这里静默回退 buildCandles 演示线，页面只查 candles.length
+    // 不查 source，于是把种子合成的价格带（20~220）画成真图、通道线还画在假数据上——
+    // 2026-10-23 Z 截图实证（002463 画出 124~133 的蜡烛，真价 106.96）。
+    // 演示回退只保留给 isDemoSymbol 的非 A 股旧自选品种。
+    return { candles: [], source: "missing", macd: null };
   }
   return { candles: buildCandles(symbol, tf), source: "demo" };
 }
@@ -249,7 +255,7 @@ export interface TechSnapshot {
   rangeHigh: number | null;
   rangeLow: number | null;
   rangePos: number | null; // 0-100，现价处于近半年区间位置
-  source: "real" | "demo";
+  source: "real" | "demo" | "missing";
 }
 
 function computeRsi(closes: number[], period = 14): number | null {

@@ -1,10 +1,15 @@
 // Quant Research Lab — ModelScope china-stock-mcp 接入（streamable HTTP MCP 客户端，仅服务端）
 // 协议：JSON-RPC over HTTP POST；会话经 Mcp-Session-Id 头维持；响应为 JSON（非 SSE）。
 // 不修改现有 mcp-manager.ts（stdio 管理器）——这是 Quant Lab 私有的第二传输通道。
+//
+// 2026-10-16：增加可选 Bearer 鉴权（authToken），供长桥 MCP（OAuth 2.1，
+// mcp.longbridge.cn）使用。china-stock-mcp 不传 authToken，行为不变。
 export interface McpHttpOptions {
   url: string;
   timeoutMs?: number;
   clientName?: string;
+  /** 可选：OAuth Bearer token（字符串或返回 token 的函数）。传了则每个请求带 Authorization 头。 */
+  authToken?: string | (() => string | null);
 }
 
 interface JsonRpcResponse {
@@ -28,6 +33,13 @@ export class McpHttpClient {
 
   constructor(private opts: McpHttpOptions) {}
 
+  /** 解析 Bearer token（字符串或函数返回值）；无 token 返回 null（不带 Authorization 头）。 */
+  private authHeader(): string | null {
+    const t = typeof this.opts.authToken === "function" ? this.opts.authToken() : this.opts.authToken;
+    const token = typeof t === "string" ? t.trim() : "";
+    return token ? `Bearer ${token}` : null;
+  }
+
   private async raw(body: Record<string, unknown>): Promise<{ json?: JsonRpcResponse; sessionId: string | null }> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.opts.timeoutMs ?? 60000);
@@ -38,6 +50,7 @@ export class McpHttpClient {
           "Content-Type": "application/json",
           Accept: "application/json, text/event-stream",
           ...(this.sessionId ? { "Mcp-Session-Id": this.sessionId } : {}),
+          ...(this.authHeader() ? { Authorization: this.authHeader() as string } : {}),
         },
         body: JSON.stringify(body),
         signal: ctrl.signal,

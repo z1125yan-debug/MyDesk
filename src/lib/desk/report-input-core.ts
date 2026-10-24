@@ -85,7 +85,7 @@ export const METRIC_DEFS_ZH = [
   "- 微盘 / 中盘 / 大盘站上5日均线占比：按市值分层的同一口径（微盘=最小一档），是**个股站线比例**，不是成交额占比。",
   "- 下跌家数 / 跌破MA5家数 / 跌破MA3家数：全市场家数计数。",
   "- 最高连板：当日最高连续涨停板数，衡量题材接力强度。",
-  "- 3日资金（亿元）：该主题近三个交易日主力净流入，正数=流入、负数=流出。",
+  "- 当日资金（亿元）：该主题当日主力净流入（本地板块口径），正数=流入、负数=流出。",
 ];
 
 interface ReviewRowLike {
@@ -129,14 +129,14 @@ export function localVerdictZh(th: VerdictLike | null | undefined): string {
   return `本地量化引擎判读（写「市场阶段」时必须与之一致，或明写分歧点）：${head}。依据：${reason ? reason.slice(0, 700) : "（未给出）"}`;
 }
 
-/** 主题热度 + 3日资金 → 中文行 */
+/** 主题热度 + 当日资金 → 中文行（本地口径 f=当日主力净额，与页面 fundLabel 的非种子口径一致） */
 export function themeFlowsZh(
   industries: { n: string; h: number; f: number }[] | null | undefined,
   concepts: { n: string; h: number; f: number }[] | null | undefined,
   conceptLimit = 8,
 ): string[] {
   const one = (x: { n: string; h: number; f: number }) =>
-    `${x.n}(热度${x.h}，3日资金${num(x.f)?.toFixed(2) ?? "数据不足"}亿)`;
+    `${x.n}(热度${x.h}，当日资金${num(x.f)?.toFixed(2) ?? "数据不足"}亿)`;
   const out: string[] = [];
   const ind = industries ?? [];
   const con = (concepts ?? []).slice(0, conceptLimit);

@@ -9,7 +9,11 @@
 // pickfill（P36-C）：收盘后把「推荐过的具体票」按 T+1/T+2 真实行情回填，攒战绩证据链
 // dailybars（P36-C）：收盘后先把粮仓更新到当天；它是 picksym/pickfill 的数据前提，
 // 缺了这一段，后两个任务收盘后就是空转（粮仓没当天K线 → 算不出命中的票 → 没东西回填）。
-export type TaskKind = "radar" | "events" | "breadth" | "review" | "roster" | "sectorsnap" | "dailysnap" | "dailybars" | "picksym" | "pickfill" | "aipick";
+// weekly（周报 2026-10-16）：周日晚上 20:00 生成本周总结 + 下周看什么；
+//   不走收盘后窗口（周日本来就不开盘），也不走交易日确证（总结的是过去一周）。
+// bigevent（大事件触发 2026-10-16）：交易时段每 15 分钟检查一次，命中即提醒，不等日报；
+//   去重在提醒级别（同日同类同主体只发一次），任务本身可重复跑，不套收盘后幂等。
+export type TaskKind = "radar" | "events" | "breadth" | "review" | "roster" | "sectorsnap" | "dailysnap" | "dailybars" | "picksym" | "pickfill" | "aipick" | "weekly" | "bigevent";
 
 export interface SchedulerConfig {
   /** 收盘时刻（北京时间当日分钟数，15:00 = 900） */
@@ -146,6 +150,42 @@ export type TradingDayVerdict =
   | { isTradingDay: true; basis: string }
   | { isTradingDay: false; basis: string }
   | { isTradingDay: null; basis: string }; // 不可确证：不猜测
+
+// ── 周报（周日晚上）+ 大事件触发（交易时段） ──
+
+/** 周报时刻：周日北京时间 20:00（分钟数 1200） */
+export const WEEKLY_SLOT_MINUTE = 20 * 60;
+/** 大事件检查间隔：交易时段内每 15 分钟检查一次（不是每 tick 都查，避免打满上游） */
+export const BIG_EVENT_MIN_INTERVAL_MS = 15 * 60_000;
+/** 大事件检查窗口：交易日 09:30–15:30（北京时间分钟数） */
+export const BIG_EVENT_WINDOW = { startMinute: 9 * 60 + 30, endMinute: 15 * 60 + 30 };
+
+/** 某日的周报触发时刻；不是周日 → null（只在周日发） */
+export function weeklySlotForDate(date: string, minuteOfDay: number = WEEKLY_SLOT_MINUTE): Date | null {
+  if (weekdayOf(date) !== 0) return null;
+  return beijingInstant(date, minuteOfDay);
+}
+
+/** 当前是否已进入本周周报窗口：周日且已过 20:00 */
+export function isWeeklyDue(now: Date): { due: boolean; sunday: string; slotAt: Date | null } {
+  const p = beijingParts(now);
+  const at = weeklySlotForDate(p.date);
+  if (!at) return { due: false, sunday: p.date, slotAt: null };
+  return { due: now.getTime() >= at.getTime(), sunday: p.date, slotAt: at };
+}
+
+/** 当前是否在大事件检查窗口：工作日（周一～周五）9:30–15:30；周末/节假日不查（节假日由调用方用交易日确证挡，本层只挡周末） */
+export function isBigEventWindow(now: Date): boolean {
+  const p = beijingParts(now);
+  if (p.weekday === 0 || p.weekday === 6) return false;
+  return p.minuteOfDay >= BIG_EVENT_WINDOW.startMinute && p.minuteOfDay <= BIG_EVENT_WINDOW.endMinute;
+}
+
+/** 大事件检查是否到点了：窗口内且距上次检查 ≥ 15 分钟；上次没查过（lastCheckMs=0）→ 到点 */
+export function isBigEventDue(now: Date, lastCheckMs: number): boolean {
+  if (!isBigEventWindow(now)) return false;
+  return now.getTime() - lastCheckMs >= BIG_EVENT_MIN_INTERVAL_MS;
+}
 
 /**
  * 交易日判定：只认「真实指数日线的最后一根日期」，不用静态日历、不补假日期。

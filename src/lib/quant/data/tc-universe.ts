@@ -21,9 +21,9 @@ const CONC = 12;
 const REQ_TIMEOUT_MS = 8000;
 
 // 模块实例可能因说明符不同被打包成两份（见 data/index.ts 的 globalThis 教训），标记必须放全局
-const G = globalThis as typeof globalThis & { __quantUniverseSource?: "em" | "tc" };
+const G = globalThis as typeof globalThis & { __quantUniverseSource?: "em" | "tc" | "tdx" };
 
-export type UniverseSourceId = "em" | "tc";
+export type UniverseSourceId = "em" | "tc" | "tdx";
 
 export function universeSource(): UniverseSourceId {
   return G.__quantUniverseSource ?? "em";

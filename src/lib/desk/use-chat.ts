@@ -17,6 +17,7 @@ import { stepsFromTrace, type StreamEvent } from "./chat-stream-core";
 import type { AiSettings } from "./types";
 import type { ChatHorizon, ChatMode } from "./modes";
 import type { HoldCtx } from "./hold-core";
+import type { MarketScope } from "./market-scope-core";
 
 export interface SnapshotResult {
   /** 注入模型的行情上下文（含来源分层），没有数据就返回空串 */
@@ -49,8 +50,9 @@ export interface ChatEndpointCfg {
    */
   systemPrompt?: (context: string) => string;
   /** 端点专属参数（mode / focusSymbol；追问沿用的 sessionSymbol / prevScene 由本 hook 补，页面不用各写一份）
-   *  hold：composer 上填的持仓条件（标的/成本/仓位/建仓日期），与 mode/horizon 同批随请求带出 */
-  extra?: () => { mode?: ChatMode; focusSymbol?: string; horizon?: ChatHorizon | null; hold?: HoldCtx | null };
+   *  hold：composer 上填的持仓条件（标的/成本/仓位/建仓日期），与 mode/horizon 同批随请求带出
+   *  market：LLM 分流的当前市场（A/HK/US），页面取 store.marketTab 在发送那一刻现读 */
+  extra?: () => { mode?: ChatMode; focusSymbol?: string; horizon?: ChatHorizon | null; hold?: HoldCtx | null; market?: MarketScope | null };
   /** 每轮提问前取实时快照；不取则不注入 */
   snapshot?: (session: ChatSession, question: string) => Promise<SnapshotResult | null>;
   /**
@@ -87,7 +89,7 @@ export { TASK_TTL_MS, isRunRefExpired };
  * P8-⑥ run：本轮流式的留底 id（浏览器生成；服务端拒挂底就按无 run 正常跑，逐字等同 A/B 轮）。
  * P8-⑤ debug：只有调试面板打开才带 true —— 面板关着时请求体与线上字节一致。
  */
-function requestExtras(cfgExtra?: { mode?: ChatMode; horizon?: ChatHorizon | null; focusSymbol?: string; sessionSymbol?: string | null; prevScene?: string | null; run?: string; debug?: boolean; images?: string[]; hold?: HoldCtx | null }) {
+function requestExtras(cfgExtra?: { mode?: ChatMode; horizon?: ChatHorizon | null; focusSymbol?: string; sessionSymbol?: string | null; prevScene?: string | null; run?: string; debug?: boolean; images?: string[]; hold?: HoldCtx | null; market?: MarketScope | null }) {
   return {
     contextWindow: DEFAULT_MAX_TURNS,
     watchlist: watchlistPayload(),
@@ -123,12 +125,12 @@ async function defaultFallback(
     const r = await aiChatTools(ai, messages, {
       mode: extras.mode, horizon: extras.horizon, focusSymbol: extras.focusSymbol, contextWindow: extras.contextWindow,
       watchlist: extras.watchlist, sessionSymbol: extras.sessionSymbol, prevScene: extras.prevScene, timeoutMs: TURN_TIMEOUT_MS,
-      hold: extras.hold,
+      hold: extras.hold, market: extras.market ?? null,
     });
     // 非流式返回的是 trace：归一成与流式 step 事件同一种步骤，时间线才不会两种形状
     return { text: r.content, steps: r.steps ?? stepsFromTrace(r.trace), intent: r.intent, warning: r.warning };
   }
-  const r = await aiChatPlain(ai, messages, { timeoutMs: TURN_TIMEOUT_MS, watchlist: extras.watchlist, scene, mode: extras.mode, horizon: extras.horizon, hold: extras.hold });
+  const r = await aiChatPlain(ai, messages, { timeoutMs: TURN_TIMEOUT_MS, watchlist: extras.watchlist, scene, mode: extras.mode, horizon: extras.horizon, hold: extras.hold, market: extras.market ?? null });
   return { text: r.text, steps: r.steps, intent: r.intent, wzDecision: r.wzDecision, warning: r.warning };
 }
 

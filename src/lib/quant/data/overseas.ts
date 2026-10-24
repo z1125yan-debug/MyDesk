@@ -4,7 +4,7 @@
 // 路由与页面因此不可能各自长出第二套拆法。
 // 两条路上任一条挂掉都不拖垮另一条（各抓各的，missing 各说各的）。
 import {
-  A50_CODE, a50Url, buildOverseasSnapshot, OVERSEAS_CODES, tcOverseasUrl,
+  A50_CODE, a50Url, buildOverseasSnapshot, OVERSEAS_CODES, sinaOverseasUrl, tcOverseasUrl,
   type OverseasSnapshot,
 } from "./overseas-core.ts";
 
@@ -37,15 +37,15 @@ function beijingToday(now: Date): string {
  * （这条要摆在市场页上，为一路外盘失败把整页打红是本末倒置）。
  */
 export async function fetchOverseas(now = new Date()): Promise<OverseasSnapshot> {
-  const [tc, a50] = await Promise.all([
-    fetchGbkText(tcOverseasUrl(OVERSEAS_CODES), null, 10_000).then(
-      (t): { text: string | null; error: string } => (t ? { text: t, error: "" } : { text: null, error: "返回空 body" }),
-      (e): { text: null; error: string } => ({ text: null, error: (e as Error).message || String(e) }),
-    ),
-    fetchGbkText(a50Url(A50_CODE), "https://finance.sina.com.cn", 10_000).then(
-      (t): { text: string | null; error: string } => (t ? { text: t, error: "" } : { text: null, error: "返回空 body" }),
-      (e): { text: null; error: string } => ({ text: null, error: (e as Error).message || String(e) }),
-    ),
+  const wrap = (p: Promise<string>) => p.then(
+    (t): { text: string | null; error: string } => (t ? { text: t, error: "" } : { text: null, error: "返回空 body" }),
+    (e): { text: null; error: string } => ({ text: null, error: (e as Error).message || String(e) }),
+  );
+  const [tc, a50, sina] = await Promise.all([
+    wrap(fetchGbkText(tcOverseasUrl(OVERSEAS_CODES), null, 10_000)),
+    wrap(fetchGbkText(a50Url(A50_CODE), "https://finance.sina.com.cn", 10_000)),
+    // 新浪备用路（2026-10-23 加）：本机连不上 qt.gtimg.cn 时靠它把恒指/纳指/半导体补齐
+    wrap(fetchGbkText(sinaOverseasUrl(), "https://finance.sina.com.cn", 10_000)),
   ]);
   return buildOverseasSnapshot({
     tcText: tc.text,
@@ -53,5 +53,7 @@ export async function fetchOverseas(now = new Date()): Promise<OverseasSnapshot>
     today: beijingToday(now),
     tcError: tc.error,
     a50Error: a50.error,
+    sinaText: sina.text,
+    sinaError: sina.error,
   });
 }

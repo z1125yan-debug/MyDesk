@@ -8,6 +8,8 @@
 //   cuid 每次重扫都变，只有自然键能让解释在重扫后仍然挂在同一条事件上。
 //
 // 口径：这张表里的东西永远是 AI_INTERPRETATION。事件事实只有 global_event 一份，这里不复制、不改写。
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { db } from "@/lib/db";
 import { shanghaiDate, shanghaiStamp } from "@/lib/desk/session";
 import { recentEventWindow } from "./event-window.ts";
@@ -39,6 +41,46 @@ function fundNoteOf(raw: string, broken: string[]): string {
   }
 }
 
+/** fundCheck 里的结构化板块资金：[{name, changePct, mainYi, rank, leader}]（P7-1 提示词上下文）。 */
+function fundBoardsOf(raw: string, broken: string[]): { name: string; change_pct: number | null; main_yi: number | null; leader: string }[] {
+  try {
+    const v = JSON.parse(raw || "{}") as { boards?: unknown };
+    if (!Array.isArray(v.boards)) return [];
+    const out: { name: string; change_pct: number | null; main_yi: number | null; leader: string }[] = [];
+    for (const b of v.boards) {
+      const o = (b ?? {}) as Record<string, unknown>;
+      const name = String(o.name ?? "").trim();
+      if (!name) continue;
+      const num = (x: unknown): number | null => (typeof x === "number" && isFinite(x) ? x : null);
+      out.push({ name, change_pct: num(o.changePct), main_yi: num(o.mainYi), leader: String(o.leader ?? "").trim() });
+    }
+    return out;
+  } catch {
+    broken.push("fundCheck.boards");
+    return [];
+  }
+}
+
+/** fundCheck 里的龙头主力净额：[{name, code, mainNetYi, superNetYi, bigNetYi}]（P7-1 重点票出处）。 */
+function fundLeadersOf(raw: string, broken: string[]): { name: string; code: string; main_net_yi: number | null }[] {
+  try {
+    const v = JSON.parse(raw || "{}") as { stockFunds?: unknown };
+    if (!Array.isArray(v.stockFunds)) return [];
+    const out: { name: string; code: string; main_net_yi: number | null }[] = [];
+    for (const s of v.stockFunds) {
+      const o = (s ?? {}) as Record<string, unknown>;
+      const name = String(o.name ?? "").trim();
+      if (!name) continue;
+      const main = typeof o.mainNetYi === "number" && isFinite(o.mainNetYi) ? o.mainNetYi : null;
+      out.push({ name, code: String(o.code ?? "").trim(), main_net_yi: main });
+    }
+    return out;
+  } catch {
+    broken.push("fundCheck.stockFunds");
+    return [];
+  }
+}
+
 type EventRow = {
   id: string; dedupeKey: string; contentHash: string; asOf: string; title: string; time: string;
   level: string; category: string; mappedSectors: string; relatedStocks: string; fundCheck: string;
@@ -65,6 +107,8 @@ export function factOfRow(row: EventRow): { fact: EventFact; issue: RowIssue } {
       fund_note: fundNoteOf(row.fundCheck, broken),
       stage: row.stage,
       trade_date: row.asOf,
+      fund_boards: fundBoardsOf(row.fundCheck, broken),
+      fund_leaders: fundLeadersOf(row.fundCheck, broken),
     },
     issue: { key: row.dedupeKey || row.id, broken },
   };
@@ -86,7 +130,52 @@ export interface FactBundle {
  * 读某一天的真实事件行（只读）。没有行就返回空 facts，由调用方按「无事件」处理，不猜别的日子。
  * ids 可以是自然键（event_id），也可以是页面表格里拿到的行 id —— 两种都认，但都只做「圈定范围」，
  * 不参与构造事实：事实字段一律从库里现取的值来。
+ *
+ * P7-1：同时给每条事实补市场宽度（market_daily_stats，事件日）与板块近期走势
+ * （data/sector-daily-snapshots.json，事件日快照里的 5/20/60 日涨跌幅）。快照文件 7.8MB，
+ * 模块级懒加载缓存一次；读不到/对不上板块名时该项留空，不编。
  */
+let snapshotsCache: Record<string, { industries?: { name?: string; medianChange?: number; prevChange5?: number; prevChange20?: number; prevChange60?: number }[] }> | null = null;
+let snapshotsTried = false;
+function loadSectorSnapshots(): Record<string, { industries?: { name?: string; medianChange?: number; prevChange5?: number; prevChange20?: number; prevChange60?: number }[] }> {
+  if (snapshotsTried) return snapshotsCache ?? {};
+  snapshotsTried = true;
+  try {
+    const raw = readFileSync(join(process.cwd(), "data", "sector-daily-snapshots.json"), "utf8");
+    const parsed = JSON.parse(raw) as { days?: Record<string, unknown> };
+    snapshotsCache = (parsed.days ?? {}) as Record<string, { industries?: { name?: string; medianChange?: number; prevChange5?: number; prevChange20?: number; prevChange60?: number }[] }>;
+  } catch {
+    snapshotsCache = {};
+  }
+  return snapshotsCache ?? {};
+}
+
+function sectorHistoryFor(date: string, sectors: string[]): { as_of: string; sector: string; day_change: number | null; change_5d: number | null; change_20d: number | null; change_60d: number | null }[] {
+  const snaps = loadSectorSnapshots();
+  // 快照文件可能滞后于事件日（例如文件只到 09-29，事件是 10-16）：取该日前最近一个有快照的交易日，
+  // 并把真实快照日期带回去（as_of），提示词里标出，不拿旧快照冒充当日。
+  const snapDate = Object.keys(snaps).filter((d) => d <= date).sort().at(-1);
+  if (!snapDate) return [];
+  const day = snaps[snapDate];
+  const industries = Array.isArray(day?.industries) ? day!.industries! : [];
+  if (!industries.length) return [];
+  const out: { as_of: string; sector: string; day_change: number | null; change_5d: number | null; change_20d: number | null; change_60d: number | null }[] = [];
+  for (const s of sectors) {
+    const hit = industries.find((x) => x?.name === s)
+      ?? industries.find((x) => x?.name && (x.name.includes(s) || s.includes(x.name)));
+    if (!hit) continue;
+    const num = (x: unknown): number | null => (typeof x === "number" && isFinite(x) ? x : null);
+    out.push({
+      as_of: snapDate,
+      sector: s,
+      day_change: num(hit.medianChange),
+      change_5d: num(hit.prevChange5),
+      change_20d: num(hit.prevChange20),
+      change_60d: num(hit.prevChange60),
+    });
+  }
+  return out;
+}
 export async function loadEventFacts(opts: { date?: string; ids?: string[]; limit?: number } = {}): Promise<FactBundle> {
   const explicit = (opts.date ?? "").trim();
   let date: string;
@@ -112,6 +201,30 @@ export async function loadEventFacts(opts: { date?: string; ids?: string[]; limi
   const limited = limit > 0 && picked.length > limit;
   if (limited) picked = picked.slice(0, limit);
   const byKey = new Map(all.map((r) => [r.dedupeKey || r.id, r] as const));
+  // P7-1：给每条事实补市场宽度与板块近期走势。宽度来自 market_daily_stats；
+  // 事件日当天未收盘（宽度表还没有该日）时取该日前最近一个交易日的宽度，并带真实日期
+  // （fund 数据本身也是上一收盘的冻结值，两者口径一致；提示词里 trade_date 就是真实日期，不冒充当日）。
+  // 板块走势同理：快照文件滞后时取该日前最近快照，带真实快照日期。
+  const dates = [...new Set(picked.map((m) => m.fact.trade_date ?? ""))].filter(Boolean);
+  let allStats: { tradeDate: string; limit_up: number | null; limit_down: number | null; decliners: number | null; above_ma5_pct: number | null }[] = [];
+  try {
+    const stats = await db.marketDailyStats.findMany({ orderBy: { tradeDate: "desc" } });
+    allStats = stats.map((s) => ({
+      tradeDate: s.tradeDate,
+      limit_up: s.limitUp ?? null,
+      limit_down: s.limitDown ?? null,
+      decliners: s.decliners ?? null,
+      above_ma5_pct: s.aboveMa5Pct ?? null,
+    }));
+  } catch {
+    allStats = [];
+  }
+  for (const m of picked) {
+    const td = m.fact.trade_date ?? "";
+    const hit = allStats.find((s) => s.tradeDate <= td);
+    m.fact.market = hit ? { trade_date: hit.tradeDate, limit_up: hit.limit_up, limit_down: hit.limit_down, decliners: hit.decliners, above_ma5_pct: hit.above_ma5_pct } : null;
+    m.fact.sector_history = sectorHistoryFor(td, m.fact.mapped_sectors);
+  }
   return {
     date,
     facts: picked.map((m) => m.fact),

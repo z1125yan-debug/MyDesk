@@ -84,6 +84,19 @@ export async function latestTradeDate(now = new Date()): Promise<string> {
   return (await resolveTradeDate(now)).date;
 }
 
+/**
+ * 早报专用：签发日（issueDate）的「上一交易日」。
+ * 不能用 resolveTradeDate(now)：它给的是「最近已收盘交易日」，开盘后就翻成今天本身，
+ * 早报若在开盘后生成/补生成，dataDate 会变成当天、把今天标成「昨天」
+ * （2026-10-16 早报实测：dataDate=2026-10-16，正文写「昨天（2026-10-16）复盘」）。
+ * 把时钟拨回签发日 08:00（未开盘）再解析：cutoff 自动退到签发日前一天，
+ * 行情源给出 ≤ cutoff 的最近一根已收盘 K，即上一交易日，与实际生成时刻无关。
+ */
+export async function morningDataDate(issueDate: string): Promise<string> {
+  const preOpen = new Date(`${issueDate}T08:00:00+08:00`);
+  return (await resolveTradeDate(preOpen)).date;
+}
+
 // 带来源的解析：调用方需要知道日期从哪来（P63 研报页的口径诚实化）。
 // 两条行情源都不认"晚于本机今天"的返回值：源异常或时钟漂移时宁退回日历兜底。
 export async function resolveTradeDate(now = new Date()): Promise<TradeDateInfo> {

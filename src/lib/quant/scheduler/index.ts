@@ -37,7 +37,7 @@ import { syncPickSymbols } from "@/lib/quant/strategy/pick-symbol-collect";
 import { ingestDailyBars } from "@/lib/quant/data/daily-bar-collect";
 import { shanghaiDate } from "@/lib/desk/session";
 import {
-  DEFAULT_SCHEDULER_CONFIG, SKIP_REASON_TEXT, decideRun, isDueWindow, judgeTradingDay, nextSlot, slotAtForDate,
+  DEFAULT_SCHEDULER_CONFIG, SKIP_REASON_TEXT, decideRun, isBigEventDue, isDueWindow, isWeeklyDue, judgeTradingDay, nextSlot, slotAtForDate,
   type SchedulerConfig, type TaskKind,
 } from "./rules";
 
@@ -50,7 +50,7 @@ const KINDS: TaskKind[] = ["radar", "events", "breadth", "review", "roster", "se
  * 没有「增量游标」概念的任务：幂等落在写库层的唯一键上，不是游标上。
  * R20 加 roster 时一并把这段从三元表达式里抽出来——三个 kind 挤一条三元已经读不动了。
  */
-const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster", "sectorsnap", "dailysnap", "dailybars", "picksym", "pickfill", "aipick"]);
+const NO_CURSOR_KINDS = new Set<TaskKind>(["breadth", "review", "roster", "sectorsnap", "dailysnap", "dailybars", "picksym", "pickfill", "aipick", "weekly", "bigevent"]);
 /** 有游标的那两类：写成守卫而不是在调用点 cast —— 以后再加 kind 会在类型层提醒我们分流没更新 */
 const isCursorKind = (k: TaskKind): k is ScanKind => k === "radar" || k === "events";
 const NO_CURSOR_BASIS: Partial<Record<TaskKind, string>> = {
@@ -59,6 +59,8 @@ const NO_CURSOR_BASIS: Partial<Record<TaskKind, string>> = {
   roster: "涨停名单不设增量游标：口径是「按（票 × 交易日）唯一键 upsert，同日重跑以最后一次为准」",
   sectorsnap: "行业快照不设增量游标：口径是「按交易日 upsert（盘中多次抓刷新同日），见顶引擎/回测读这份 JSON」",
   dailysnap: "每日留档不设增量游标：口径是「按交易日唯一键 upsert，同日重跑以最后一次为准」",
+  weekly: "周报不设增量游标：口径是「按（weekly, 本周日）唯一 success 幂等，同周重跑跳过」",
+  bigevent: "大事件不设增量游标：去重在提醒级别（dedupeKey：同日同类同主体只发一次），任务本身可重复跑",
 };
 const UNCONFIRMED_PROBE_MS = 15 * 60_000; // 确证不了交易日时，最多每 15 分钟再问一次数据源
 
@@ -80,6 +82,8 @@ interface SchedulerState {
   lastOutcome: string;
   /** key = `${kind}:${tradeDate}`，值 = 上次因「交易日无法确证」而探测数据源的时刻 */
   lastProbe: Map<string, number>;
+  /** 上次大事件检查时刻（ms）：交易时段内每 15 分钟查一次，不是每 tick 都查 */
+  lastBigEventCheckAt: number;
 }
 
 // 单例挂在 globalThis：dev 热重载与多次 import 都复用同一份，避免重复注册定时器
@@ -98,6 +102,7 @@ function state(): SchedulerState {
       lastTickAt: 0,
       lastOutcome: "",
       lastProbe: new Map(),
+      lastBigEventCheckAt: 0,
     };
   }
   return G.__mydeskScheduler;
@@ -360,18 +365,42 @@ export async function tick(now = new Date()): Promise<string> {
   const s = state();
   s.lastTickAt = now.getTime();
   if (!s.enabled) { s.lastOutcome = "调度器已禁用（DESK_SCHEDULER=0）"; return s.lastOutcome; }
-  const win = isDueWindow(now, s.cfg);
-  if (!win.due || !win.slotAt) {
-    // 未到窗口也要留痕：状态接口能据此回答「定时器确实在跑，只是没到执行时刻」
-    s.lastOutcome = `未到执行窗口（${win.tradeDate}${win.slotAt ? `，窗口 ${win.slotAt.toISOString()}` : "，当日不排班"}）`;
-    return s.lastOutcome;
-  }
   const outcomes: string[] = [];
-  for (const kind of KINDS) {
-    const r = await runTask(kind, "schedule");
-    outcomes.push(`${kind}:${r.status}${r.reason ? `(${r.reason})` : ""}${r.results !== undefined ? `×${r.results}` : ""}${r.mode ? `[${r.mode}]` : ""}`);
+  // 1) 收盘后窗口：原有 KINDS（交易日 15:20 后顺序跑）
+  const win = isDueWindow(now, s.cfg);
+  if (win.due && win.slotAt) {
+    for (const kind of KINDS) {
+      const r = await runTask(kind, "schedule");
+      outcomes.push(`${kind}:${r.status}${r.reason ? `(${r.reason})` : ""}${r.results !== undefined ? `×${r.results}` : ""}${r.mode ? `[${r.mode}]` : ""}`);
+    }
   }
-  s.lastOutcome = outcomes.join(" / ");
+  // 2) 周报：周日 20:00 后（只在周日发；幂等在 runWeeklyReportTask 里：本周已有 success 即跳过）
+  //    不走收盘后窗口（周日本来就不开盘），也不走交易日确证（总结的是过去一周）。
+  const weekly = isWeeklyDue(now);
+  if (weekly.due) {
+    try {
+      const { runWeeklyReportTask } = await import("@/lib/desk/weekly-report");
+      const r = await runWeeklyReportTask({ sunday: weekly.sunday, trigger: "schedule" });
+      outcomes.push(`weekly:${r.status}${r.reason ? `(${r.reason})` : ""}`);
+    } catch (e) {
+      outcomes.push(`weekly:failure(${(e as Error).message})`);
+    }
+  }
+  // 3) 大事件：交易时段（工作日 9:30–15:30）内每 15 分钟检查一次，命中即提醒，不等日报；
+  //    去重在提醒级别（dedupeKey），重复检查不重复发。先记检查时刻，避免一次检查跑超时导致连续 tick 重复查。
+  if (isBigEventDue(now, s.lastBigEventCheckAt)) {
+    s.lastBigEventCheckAt = now.getTime();
+    try {
+      const { runBigEventCheck } = await import("@/lib/desk/weekly-report");
+      const r = await runBigEventCheck({ trigger: "schedule" });
+      outcomes.push(r.newAlerts.length ? `bigevent:success 新增${r.newAlerts.length}条提醒` : "bigevent:checked 无新增");
+    } catch (e) {
+      outcomes.push(`bigevent:failure(${(e as Error).message})`);
+    }
+  }
+  s.lastOutcome = outcomes.length
+    ? outcomes.join(" / ")
+    : `未到执行窗口（${win.tradeDate}${win.slotAt ? `，窗口 ${win.slotAt.toISOString()}` : "，当日不排班"}；周报仅周日 20:00；大事件仅工作日 9:30–15:30 每 15 分钟）`;
   return s.lastOutcome;
 }
 
@@ -383,6 +412,10 @@ export function startScheduler(): void {
   }
   if (s.timer) return; // 幂等：重复注册（HMR / 多次 import）不再加定时器
   quantBootstrap();
+  // 三份日报定时（早报 08:30 / 午报 12:00 / 晚报 16:00，仅交易日）：独立 tick，与收盘后扫描共用进程
+  void import("./daily-reports").then((m) => m.startDailyReportScheduler()).catch((e) => {
+    console.error("[scheduler] 三份日报调度器启动失败:", (e as Error).message);
+  });
   s.timer = setInterval(() => {
     void tick().catch((e) => {
       s.lastOutcome = `tick 异常：${(e as Error).message}`;
@@ -398,7 +431,7 @@ export function startScheduler(): void {
   const next = nextSlot(new Date(), s.cfg);
   const atMinute = s.cfg.closeMinute + s.cfg.delayMinutes;
   const hhmm = `${String(Math.floor(atMinute / 60) % 24).padStart(2, "0")}:${String(atMinute % 60).padStart(2, "0")}`;
-  console.log(`[scheduler] 已启动：每 ${TICK_MS / 1000}s 检查；执行窗口=交易日北京 ${hhmm}；下次 ${next.date} ${hhmm}（${next.at.toISOString()}）；任务 ${KINDS.join("、")}；禁用用 DESK_SCHEDULER=0`);
+  console.log(`[scheduler] 已启动：每 ${TICK_MS / 1000}s 检查；执行窗口=交易日北京 ${hhmm}；下次 ${next.date} ${hhmm}（${next.at.toISOString()}）；任务 ${KINDS.join("、")}；周报=周日 20:00（weekly）；大事件=工作日 9:30–15:30 每 15 分钟（bigevent）；禁用用 DESK_SCHEDULER=0`);
 }
 
 export function stopScheduler(): void {
@@ -426,7 +459,8 @@ export async function schedulerStatus() {
     error: r.error, basis: r.basis, note: r.note,
   });
   const slotMs = slotMsFor(today, s.cfg);
-  const todaySummary = await Promise.all(KINDS.map(async (kind) => {
+  // today_summary：收盘后 KINDS + 周报 weekly + 大事件 bigevent（后两者不走收盘窗口，单独列出才看得到状态）
+  const todaySummary = await Promise.all(([...KINDS, "weekly", "bigevent"] as TaskKind[]).map(async (kind) => {
     const rows = todays.filter((r) => r.kind === kind);
     // settled 必须与调度器的幂等口径同一条规则：只看窗口之后完成的成功行，否则页面会说谎。
     // 它只回答「调度器今天还会不会再跑」，不回答「是谁跑的」——后者看 last_trigger。
@@ -467,6 +501,8 @@ export async function schedulerStatus() {
     today_summary: todaySummary,
     today_runs: todays.map(shape),
     recent_runs: recent.map(shape),
+    // 三份日报（早报 08:30 / 午报 12:00 / 晚报 16:00，仅交易日）：当日各份是否已生成
+    daily_reports: await (await import("./daily-reports")).dailyReportStatus(),
     boundary: "任务随服务端进程运行：网页可关闭，但服务未启动时不会执行；每条执行结果都落 task_run",
   };
 }

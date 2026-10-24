@@ -1,5 +1,5 @@
 // Quant Research Lab — 数据源配置（服务端）
-// 读取 data/quant-config.json（优先）或环境变量 QUANT_MCP_URL
+// 读取环境变量 CHINA_STOCK_MCP_URL（优先）→ QUANT_MCP_URL → data/quant-config.json
 // 结构：{ "mcp": { "url": "https://..." } }
 import fs from "fs";
 import path from "path";
@@ -23,5 +23,5 @@ export function loadQuantConfig(): QuantConfig {
 }
 
 export function mcpUrl(): string {
-  return process.env.QUANT_MCP_URL || loadQuantConfig().mcp?.url || "";
+  return process.env.CHINA_STOCK_MCP_URL || process.env.QUANT_MCP_URL || loadQuantConfig().mcp?.url || "";
 }
