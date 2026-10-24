@@ -58,5 +58,5 @@
   <rect x="210" y="486" width="970" height="114" rx="12" fill="#161b22"/>
   <text x="230" y="514" font-family="sans-serif" font-size="15" font-weight="700" fill="#e6edf3">怎么用？三步：</text>
   <text x="230" y="544" font-family="sans-serif" font-size="15" fill="#8b949e">1. 双击「启动.bat」　2. 等浏览器自动打开 localhost:3000　3. 先看总览，再进选股 / AI 优选</text>
-  <text x="230" y="574" font-family="sans-serif" font-size="13" fill="#8b949e">仅供个人学习与技术研究，不构成任何投资建议。</text>
+  <text x="230" y="574" font-family="sans-serif" font-size="13" fill="#8b949e">战绩四档 T+1 / T+3 / T+5 / T+20 · 大数据库不进仓库，用通达信网关自己拉 · 仅供学习，不构成投资建议。</text>
 </svg>
