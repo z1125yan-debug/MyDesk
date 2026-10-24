@@ -48,6 +48,8 @@ import { PLAIN_AND_BALANCED_NOTE } from "@/lib/desk/plain-talk";
 import { getServerLlm } from "@/lib/llm/model-config";
 import { renderAnalysisFrames } from "@/lib/llm/analysis-frames";
 import { runWzIntentClassifier } from "@/lib/desk/intent-llm-fetch";
+// LLM 分流：当前市场（A/HK/US）由客户端随请求带上；服务端按它注入分流块、过滤 A 股预取。
+import { asMarketScope, marketScopePrompt, type MarketScope } from "@/lib/desk/market-scope-core";
 
 export const dynamic = "force-dynamic";
 // 2026-09-26：工具环改成「10 轮取数 + 1 轮强制收口」，复杂问题（七维框架等）单轮耗时可能上百秒。
@@ -106,6 +108,8 @@ function systemPrompt(
   hold?: { line?: string; note?: string } | null,
   trade?: { tradeDate: string; sessionLabel: string; fromMarketData: boolean } | null,
   chainResearch = false,
+  // LLM 分流：当前市场。不传 = 未声明市场，维持旧行为（不注入分流块、不改数据时效口径）。
+  market?: MarketScope | null,
 ): string {
   // 服务端日期只走 shanghaiDate()：new Date() 直接格式化在跨时区机器上会把今天算错一天
   const today = shanghaiDate();
@@ -113,7 +117,13 @@ function systemPrompt(
   // 模型只能拿工具返回的 trade_date，而盘中/盘前那根是「今天」的未完成占位，于是把 09-28 收盘
   // 数据标成了「截至 2026-09-29」。这里把「行情最新交易日 + 今天什么时段」显式交给模型，
   // 让它开头先说清「数据截至 X」（稳智同款），不许把「今天」当成已有数据。
-  const dataNote = trade
+  //
+  // LLM 分流：trade/calendar 都是 A 股口径（A 股交易日 + A 股法定节假日年历）。
+  // 非 A 股轮次里不下发它们——美股/港股的交易日、节假日与 A 股不同，下发就是让模型
+  // 用 A 股日历说美股/港股的数据时间；改由分流块要求「数据时间以各工具返回的行情时刻为准」。
+  const dataNote = market && market !== "A"
+    ? ""
+    : trade
     ? `【数据时效·必须遵守】现在是 ${today}，当前时段：${trade.sessionLabel}——⚠️ 这个时段词形容的是**现在这一刻**，不是数据日；` +
       `行情/情绪等市场数据是 ${trade.tradeDate} 的**收盘值（该日已收盘）**` +
       `${trade.fromMarketData ? "（行情源给的最近交易日）" : "（日历推算，未经行情源确认）"}。` +
@@ -124,7 +134,8 @@ function systemPrompt(
     : "";
   // 交易日历：真实年历（data/trade-calendar.json，源 akshare/新浪，含法定节假日）。
   // 稳智那种「下周只有 28/29/30 三个交易日，10/1–7 休市，10/8 复市」只能靠它——按「去掉周末」猜必错（中秋/国庆）。
-  const calNoteRaw = tradeCalendarNote(today);
+  // LLM 分流：这是 A 股年历，非 A 股轮次不下发（见上方 dataNote 的分流注释）。
+  const calNoteRaw = market && market !== "A" ? "" : tradeCalendarNote(today);
   const calendarNote = calNoteRaw
     ? `【交易日历·真实年历，非推断】${calNoteRaw}。凡涉及「下周/节后/接下来几天/哪天开盘」的问题，` +
       `必须按这一句说清交易日与休市安排，并按此判断时间窗口——不许按「去掉周末」自己推算；` +
@@ -138,6 +149,9 @@ function systemPrompt(
   const modeNote = modeNoteFor(mode, chainResearch);
   return [
     `你是 MyDesk 的 AI 交易员分析引擎。今天是 ${today}。${modeNote}`,
+    // LLM 分流块放最前（身份句之后、数据时效之前）：模型先知道本轮是哪个市场，
+    // 再读后面的 A 股口径数据时效 / 骨架，才不会把 A 股读数当成当前市场的数据。
+    market ? marketScopePrompt(market) : "",
     dataNote,
     calendarNote,
     // 大盘研判骨架（照稳智大盘报告逆向）：只在用户问市场级问题时生效，个股问题仍走四档模式骨架。
@@ -269,6 +283,11 @@ interface ChatBody {
   mode?: string;
   /** P11：持仓周期（浏览器带来，过 asHorizon 白名单；认不出/没带＝未选，不注入周期口径） */
   horizon?: string;
+  /**
+   * LLM 分流：当前市场（A/HK/US，客户端取 store.marketTab 随请求带上）。
+   * 过 asMarketScope 白名单；认不出/没带＝未声明市场，服务端维持旧行为（不注入分流块）。
+   */
+  market?: string;
   focusSymbol?: string;
   /** 本会话上一轮用到的标的（客户端从上一条助手消息的场景徽章里取，不新增会话字段） */
   sessionSymbol?: string | null;
@@ -651,6 +670,8 @@ export async function POST(req: NextRequest) {
   const mode = asChatMode(body?.mode);
   // P11：周期同 mode 一样先过白名单（外部输入不查表就进提示词是事故）；null＝用户没选，不注入
   const horizon = asHorizon(body?.horizon);
+  // LLM 分流：市场同样先过白名单；认不出/没带 = 未声明市场（null），不注入分流块、不改旧行为
+  const market = asMarketScope(body?.market);
   // P8-⑥：仅带 run 的轮次换 cancel 源（grace=跑到自然结束或显式停止，细则 §5-3 拍板项）；
   // 不带 run 的请求保持「断连即停」旧语义逐字不变（P7 口径）。
   const isCancelled = () => (runId ? RUNS.cancelled(runId) : req.signal.aborted);
@@ -684,6 +705,8 @@ export async function POST(req: NextRequest) {
     CHAIN_RESEARCH_SKELETON,
     // 持仓那一句同属「服务端注入的口径件」：模型把它抄回正文时用这段语料认出来并剥掉
     holdNote?.line ?? "",
+    // LLM 分流块同属服务端注入的口径件：模型把它抄回正文时同样要能认出来剥掉
+    market ? marketScopePrompt(market) : "",
     // P59 明确不加 FOLLOWUP_NOTE：护栏是按「整行被语料包含 / 半窗覆盖」判回显的，
     // 而收尾纪律里带着标记样例——真推荐行（【追问推荐】A|B|C）与它同形，加进语料等于让护栏
     // 把刚刚剥出来要画芯片的那一行提前吃掉。芯片行的消失是确定损失，指令被整句复述是偶发噪声。
@@ -691,7 +714,7 @@ export async function POST(req: NextRequest) {
   // 场景层自己出错时用它把原因带到响应里：这轮照样要回答，但不能让用户以为「只是没取到数据」
   let sceneFailure: string | null = null;
 
-  const baseMessages: ContextMsg[] = [{ role: "system", content: systemPrompt(mode, horizon, body?.focusSymbol, holdNote, tradeMeta ? { tradeDate: tradeMeta.date, sessionLabel: sessionMeta.label, fromMarketData: tradeMeta.fromMarketData } : null, chainResearch) }, ...history];
+  const baseMessages: ContextMsg[] = [{ role: "system", content: systemPrompt(mode, horizon, body?.focusSymbol, holdNote, tradeMeta ? { tradeDate: tradeMeta.date, sessionLabel: sessionMeta.label, fromMarketData: tradeMeta.fromMarketData } : null, chainResearch, market) }, ...history];
   // 交给工具调用环时换成 Record 形状：它还要往同一批消息里追加 tool_calls / tool_call_id
   const buildMessages = (turn: SceneTurn | null): Record<string, unknown>[] =>
     injectSceneContext(baseMessages, turn ?? {}, (role, content) => ({ role, content })).map((m) => ({ ...m }));
@@ -752,6 +775,7 @@ export async function POST(req: NextRequest) {
         prevScene: body?.prevScene,
         today: shanghaiDate(),
         isCancelled,
+        market,
       });
     } catch (e) {
       // 场景层出问题不能让整轮问答挂掉：按「本轮没有场景提示词、也没有自动取数」继续，并如实留痕
@@ -811,6 +835,7 @@ export async function POST(req: NextRequest) {
         today: shanghaiDate(),
         emit,
         isCancelled,
+        market,
       });
     } catch (e) {
       turn = null;

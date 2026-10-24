@@ -60,6 +60,7 @@ async function getHandler() {
     if (!promoRes.ok) promotion_error = promoRes.err.message;
     else promotion = promoRes.promotion;
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       ...sent,
       missing: [

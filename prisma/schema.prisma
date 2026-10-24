@@ -226,6 +226,24 @@ model GlobalEvent {
   @@map("global_event")
 }
 
+// 财联社公开电报落库（只用公开电报，不碰 VIP 付费内容）。
+// 由 scripts/cls-ingest.ts 写入（最新页增量 + 按 last_time 游标回补），INSERT OR IGNORE 按电报 id 去重。
+// 消费方：隔夜突发复核等需要按时间窗回查电报原文的链路；与 global_event（东财/新浪精编事件）是两条独立的线，互不覆盖。
+model ClsTelegraph {
+  id        String @id // 财联社电报编号
+  ctime     Int // Unix 秒（UTC）
+  shTime    String @map("sh_time") // 上海时区 "YYYY-MM-DD HH:MM:SS"（ctime+8h，与 A 股交易日对齐）
+  title     String @default("")
+  content   String @default("")
+  subjects  String @default("[]") // JSON：subject_name 数组
+  stockList String @default("[]") @map("stock_list") // JSON：接口原样 stock_list
+  createdAt String @default("") @map("created_at") // 落库时刻（上海时间字符串）
+
+  @@index([ctime])
+  @@index([shTime])
+  @@map("cls_telegraph")
+}
+
 // P6-B AI 事件理解：对「已经落库的真实事件」加一层解释。事件只有一份，仍在 global_event；
 // 这张表存的不是事实，是 AI 对某一条事实事件的解释（data_status 永远是 AI_INTERPRETATION）。
 // 自然键用事件行的 dedupeKey（时间+标题指纹）而不是 cuid：全量扫描是「当日先删后插」，
@@ -715,6 +733,13 @@ model StrategyPick {
   nextDayBasis    String? // 口径说明：T+1/T+2 是哪天、数据源、剔除规则
   /** 逐票明细 JSON：[{symbol,name,net,reason}]——页面要能展开看「哪只赚了哪只亏了」，只有汇总数就是黑箱 */
   nextDaySymDetail String?
+  // 影子版（source="shadow"，2026-10-24 规格书）：持有期分档回填，与正式版 T+1 口径分开存。
+  // 每档 JSON：{mean,median,winRate,count,benchMean,sellDate}（% 口径，bench=上证同期涨跌幅，不扣费）；到期未到 = null，不许拿旧数顶替。
+  h1Stat  String?
+  h5Stat  String?
+  h20Stat String?
+  /** 影子版逐票分档明细 JSON：[{symbol,net1,net5,net20}]，缺哪档哪档为 null */
+  shadowDetail String?
   symBackfilledAt DateTime?
   // 次日回填（T+1 才知道）：靶=全市场中位个股收盘涨跌幅（与 daily_snapshot.nextDayMktChg 同源）
   nextDayMktChg Float?

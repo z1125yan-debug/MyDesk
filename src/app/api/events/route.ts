@@ -41,6 +41,7 @@ async function getHandler() {
     const asOf = dates[0] ?? shanghaiDate();
     const items = win.rows.map((r) => ({ ...rowToItem(r), date: r.asOf }));
     return NextResponse.json({
+      market: "global", market_label: "全球快讯", market_note: "东财7x24/新浪全球快讯，非仅 A股新闻",
       ok: true,
       as_of: asOf,
       window_dates: dates,
@@ -63,6 +64,7 @@ export async function POST() {
     }
     invalidateServerCache("events"); // 扫描写库成功 → 让 GET 的 30s 短缓存失效，页面立刻能看到新行
     return NextResponse.json({
+      market: "global", market_label: "全球快讯", market_note: "东财7x24/新浪全球快讯，非仅 A股新闻",
       ok: true,
       as_of: result.as_of,
       trade_date: result.trade_date,

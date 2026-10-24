@@ -19,6 +19,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: "stock-sdk 未返回该股票快照" }, { status: 502 });
     }
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       symbol,
       data: result.get(symbol)!,
@@ -33,6 +34,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "stock-sdk batch.cn 未返回数据（上游故障）", source: result.source }, { status: 502 });
   }
   return NextResponse.json({
+    market: "A", market_label: "A股",
     ok: true,
     source: result.source,
     count: result.count,

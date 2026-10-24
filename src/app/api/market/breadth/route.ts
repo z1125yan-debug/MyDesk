@@ -52,6 +52,7 @@ async function getHandler(req: Request) {
     }
 
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       as_of: shanghaiStamp(),
       window: { from, to: today },

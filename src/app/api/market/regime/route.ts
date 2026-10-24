@@ -91,6 +91,7 @@ async function handler(picked: RegimeMode): Promise<NextResponse> {
   const condsById = new Map<number, NameCond[]>();
   for (const s of strategyLibrary()) condsById.set(s.id, (s.conds as NameCond[] | undefined) ?? []);
   return NextResponse.json({
+    market: "A", market_label: "A股",
     today: snap,
     picked,
     regime: shown,

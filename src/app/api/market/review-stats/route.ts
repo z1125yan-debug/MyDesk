@@ -8,7 +8,11 @@
 //   同日两者都有时**以种子为准**——种子的 09-24 涨停是 51 家、本地口径是 55 家，
 //   同一天摆两个数就是跳变，宁可让自产行只留档不覆盖，这样图是连续的、口径是可核对的。
 import { NextResponse } from "next/server";
+import fs from "node:fs";
+import path from "node:path";
 import { ttlCache, DEFAULT_TTL_MS } from "@/lib/quant/server-cache";
+import { fetchBoardRowsRescuedV2 } from "@/lib/desk/board-rescue";
+import { inferMarketEnv } from "@/lib/quant/review/market-inference";
 import seed from "@/lib/quant/review/review-stats-seed.json";
 import idxSeed from "@/lib/quant/review/index-changes-seed.json";
 import themeSeed from "@/lib/quant/review/theme-heat-seed.json";
@@ -27,6 +31,107 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** 种子的覆盖终点：自产只补这个日期之后的新交易日（含终点当天也不覆盖） */
 export const SEED_END = ROWS.length ? String(ROWS[ROWS.length - 1].date) : "";
+
+/** 上海时区今天（YYYY-MM-DD） */
+function shanghaiToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+type HeatItem = { n: string; h: number; pct: number; f: number };
+
+/** 与 theme-heat 路由同款公式：涨幅贡献50(封顶5%) + 主力资金贡献30(封顶20亿) + RPS贡献20；f=当日主力净流入（亿元） */
+async function computeHeatLive(kind: "industry" | "concept"): Promise<HeatItem[]> {
+  const [inRes, outRes] = await Promise.all([
+    fetchBoardRowsRescuedV2(kind, "in", 200),
+    fetchBoardRowsRescuedV2(kind, "out", 200),
+  ]);
+  const merged = new Map<string, { name?: string; changePct?: number; main?: number; rps?: number }>();
+  for (const r of [...(inRes.rows ?? []), ...(outRes.rows ?? [])]) {
+    if (r.code && !merged.has(r.code)) merged.set(r.code, r);
+  }
+  return [...merged.values()].map((b) => {
+    const pct = typeof b.changePct === "number" ? b.changePct : 0;
+    const main = typeof b.main === "number" ? b.main : 0;
+    const rps = typeof b.rps === "number" ? b.rps : 0;
+    const h = Math.round(50 * Math.min(Math.max(pct, 0) / 5, 1) + 30 * Math.min(Math.max(main, 0) / 20, 1) + 20 * Math.min(rps, 100) / 100);
+    return { n: b.name ?? "", h, pct, f: main };
+  }).sort((a, b) => b.h - a.h);
+}
+
+/** 本地板块快照（data/sector-snapshots.json）算某日热度：涨幅50+资金30，RPS 历史缺省不计 */
+function snapshotHeatFor(date: string): { industries: HeatItem[]; concepts: HeatItem[] } | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(process.cwd(), "data", "sector-snapshots.json"), "utf8")) as {
+      days?: Record<string, { rows?: { name?: string; changePct?: number | null; main?: number | null }[] }>;
+    };
+    const days = raw.days ?? {};
+    const pick = (kind: "industry" | "concept"): HeatItem[] | null => {
+      const entry = days[`${date}|${kind}`];
+      if (!entry?.rows?.length) return null;
+      return entry.rows.map((r) => {
+        const pct = typeof r.changePct === "number" ? r.changePct : 0;
+        const main = typeof r.main === "number" ? r.main : 0;
+        const h = Math.round(50 * Math.min(Math.max(pct, 0) / 5, 1) + 30 * Math.min(Math.max(main, 0) / 20, 1));
+        return { n: r.name ?? "", h, pct, f: main };
+      }).sort((a, b) => b.h - a.h);
+    };
+    const industries = pick("industry"), concepts = pick("concept");
+    if (!industries && !concepts) return null;
+    return { industries: industries ?? [], concepts: concepts ?? [] };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * themeHeat 现算（2026-10-23 查清并修复）：此前本路由把 themeHeat 写死为种子文件
+ * （2026-09-24 抓取），导致 09-24 之后所有研报的主线热度/资金/市场判读都是一
+ * 个月前的存货，与同响应里逐日续写的复盘行脱节。改为按目标日现算：市场判读走
+ * market_daily_stats 自产行推理（inferMarketEnv）；热度今天走实时板块、历史日
+ * 走本地板块快照；取不到就给空表（下游如实写「数据不足」），绝不回退种子冒充
+ * 新鲜。例外：目标日 ≤ 种子终点时种子就是该时期的真数据，照旧返回。
+ */
+async function buildThemeHeat(targetDate: string): Promise<unknown> {
+  if (!targetDate || (SEED_END && targetDate <= SEED_END)) return themeSeed;
+  let inference: ReturnType<typeof inferMarketEnv> = null;
+  try {
+    const dbRows = await db.marketDailyStats.findMany({
+      where: { tradeDate: { lte: targetDate } },
+      orderBy: { tradeDate: "desc" },
+      take: 30,
+    });
+    const asc = dbRows.reverse();
+    inference = inferMarketEnv(targetDate, asc.map((m) => ({
+      date: m.tradeDate, limitUp: m.limitUp ?? 0, limitDown: m.limitDown ?? 0,
+      t3: m.t3 ?? 0, t4: m.t4 ?? 0, t5: m.t5 ?? 0, maxBoards: m.maxBoards ?? 0,
+      decliners: m.decliners ?? 0, belowMa5: m.belowMa5 ?? 0, belowMa3: m.belowMa3 ?? 0,
+      aboveMa5Pct: m.aboveMa5Pct ?? null,
+    })));
+  } catch {
+    inference = null;
+  }
+  if (!inference) {
+    try { inference = inferMarketEnv(targetDate); } catch { inference = null; }
+  }
+  let industries: HeatItem[] = [], concepts: HeatItem[] = [];
+  try {
+    if (targetDate === shanghaiToday()) {
+      [industries, concepts] = await Promise.all([computeHeatLive("industry"), computeHeatLive("concept")]);
+    } else {
+      const snap = snapshotHeatFor(targetDate);
+      if (snap) { industries = snap.industries; concepts = snap.concepts; }
+    }
+  } catch {
+    industries = []; concepts = [];
+  }
+  return {
+    as_of_news_date: targetDate,
+    market_env: inference ? { as_of_trade_date: inference.as_of_date, label: inference.market_bucket } : undefined,
+    inference,
+    industries,
+    concepts,
+  };
+}
 
 /**
  * 库里的一行 → 纯核吃的自产行（字段名对齐，null 原样透传）。
@@ -74,10 +179,11 @@ async function getHandler(req: Request) {
     const all = dbRows.map(toSelfRow);
     const merged = mergeReviewRows(rows, all, SEED_END).filter((r) =>
       (!DATE_RE.test(from) || r.date >= from) && (!DATE_RE.test(to) || r.date <= to));
+    const themeHeat = await buildThemeHeat(merged[merged.length - 1]?.date ?? "");
     return NextResponse.json({
       ok: true,
       rows: merged,
-      themeHeat: themeSeed,
+      themeHeat,
       indexChanges,
       range: { from: merged[0]?.date ?? null, to: merged[merged.length - 1]?.date ?? null },
       seedEnd: SEED_END,
@@ -94,6 +200,7 @@ async function getHandler(req: Request) {
   }
 
   return NextResponse.json({
+    market: "A", market_label: "A股",
     ok: true,
     rows,
     themeHeat: themeSeed,

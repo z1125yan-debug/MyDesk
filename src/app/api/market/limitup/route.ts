@@ -24,7 +24,7 @@ async function getHandler(req: Request) {
   quantBootstrap();
   const force = new URL(req.url).searchParams.get("force") === "1";
   if (!force && cache && Date.now() - cache.at < TTL_MS) {
-    return NextResponse.json({ ok: true, ...(cache.data as object) }, {
+    return NextResponse.json({ ok: true, ...(cache.data as object), market: "A", market_label: "A股", }, {
       headers: { "Cache-Control": "public, max-age=60" },
     });
   }
@@ -38,7 +38,7 @@ async function getHandler(req: Request) {
   }
   try {
     const data = await inflight;
-    return NextResponse.json({ ok: true, ...(data as object) }, {
+    return NextResponse.json({ ok: true, ...(data as object), market: "A", market_label: "A股", }, {
       headers: { "Cache-Control": "public, max-age=60" },
     });
   } catch (e) {

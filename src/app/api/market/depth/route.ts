@@ -7,12 +7,13 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const symbol = new URL(req.url).searchParams.get("symbol")?.trim() ?? "";
-  if (!symbol) return NextResponse.json({ depth: null });
+  if (!symbol) return NextResponse.json({ market: "A", market_label: "A股", depth: null });
   try {
     const depth = (await tdxDepth([symbol]).catch(() => null))?.get(symbol) ?? null;
-    return NextResponse.json({ depth, source: depth ? "tdx" : null });
+    return NextResponse.json({ market: "A", market_label: "A股", depth, source: depth ? "tdx" : null });
   } catch {
     return NextResponse.json({
+      market: "A", market_label: "A股",
       depth: null,
       error: "五档盘口暂不可用：本机 eltdx 行情网关（127.0.0.1:8756）未开启，或当前网关版本不带五档（quotes.get_depth）能力。启动方式：eltdx-http --host 127.0.0.1 --port 8756；启动后本提示自动消失，不造数",
     });

@@ -39,6 +39,8 @@ import { getServerLlm } from "@/lib/llm/model-config";
 import { createHeadGuard } from "@/lib/desk/head-guard-core";
 import { stripScaffoldEcho, SCAFFOLD_ONLY_NOTICE } from "@/lib/desk/answer-guard-core";
 import { detectRepetition, degenWarning, type DegenVerdict } from "@/lib/desk/degen-core";
+// LLM 分流：当前市场（A/HK/US）由客户端随请求带上；服务端按它注入分流块、过滤 A 股预取。
+import { asMarketScope, marketScopePrompt } from "@/lib/desk/market-scope-core";
 
 export const dynamic = "force-dynamic";
 // 长报告流式生成可能跑 3-5 分钟（产业链研报 ~6000 字）；自托管 Node 不强制这个值，
@@ -65,6 +67,11 @@ interface SceneReq {
   focusSymbol?: string | null;
   sessionSymbol?: string | null;
   prevScene?: string | null;
+  /**
+   * LLM 分流：当前市场（A/HK/US）。对话轮经 chatRequestBody 走顶层 body.market，
+   * 这里同时认 scene.market（兼容显式写进 scene 的调用方），以 scene 里的为准。
+   */
+  market?: string;
 }
 
 interface ProxyBody {
@@ -97,6 +104,12 @@ interface ProxyBody {
   run?: string;
   /** P8-⑤：调试开关（只认布尔 true，"true"/1 一概忽略——与网关 enable_kairo_engine 同一严格度） */
   debug?: boolean;
+  /**
+   * LLM 分流：当前市场（A/HK/US，客户端取 store.marketTab 随请求带上）。
+   * 过 asMarketScope 白名单；认不出/没带＝未声明市场，服务端不注入分流块（一次一问的调用方
+   * 若自己在 prompt 里写清市场，同样不受影响）。
+   */
+  market?: string;
 }
 
 // ---------- 代理解析 ----------
@@ -431,6 +444,8 @@ export async function POST(req: NextRequest) {
     const streamTimeoutMs = clampUpstreamTimeoutMs(rawTimeoutMs, 120_000);
     const nonStreamTimeoutMs = clampUpstreamTimeoutMs(rawTimeoutMs, 45_000);
     const messages = body?.messages ?? [];
+    // LLM 分流：市场过白名单（scene.market 优先于顶层 market）；认不出/没带 = 未声明市场，不注入分流块。
+    const market = asMarketScope(body?.scene?.market ?? (body as { market?: unknown } | null)?.market);
     // P55：本轮用户原话（含注入的快照后缀——客户端把行情快照/快讯拼在最后一条 user 件里），
     // 交给护栏做「回显行」比对：上游把注入的快讯行/周期口径/行情快照抄回正文时按回显剥掉。
     const lastUserEcho = (() => {
@@ -443,6 +458,8 @@ export async function POST(req: NextRequest) {
         if (md?.trim()) base.push(md);
         if (hz) base.push(HORIZON_NOTES[hz]);
       }
+      // LLM 分流块同属服务端注入的口径件：模型把它抄回正文时用这段语料认出来剥掉
+      if (market) base.push(marketScopePrompt(market));
       return base;
     })();
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -487,6 +504,8 @@ export async function POST(req: NextRequest) {
         // 所以必须显式按「未接入」说，否则提示词会让模型去调一个它根本调不动的工具。
         backtestReady: false,
         emit,
+        // LLM 分流：把当前市场递给场景预取（非 A 股轮次过滤 A 股专属工具，见 scene-dispatch）
+        market,
         // P8-⑥：仅带 run 的轮次换 cancel 源（grace=跑到自然结束或显式停止，细则 §5-3 拍板项）；
         // 不带 run 的请求保持 req.signal.aborted 逐字不变——断连即 notRun 的旧语义原样。
         isCancelled: () => (runId ? RUNS.cancelled(runId) : req.signal.aborted),
@@ -603,7 +622,12 @@ export async function POST(req: NextRequest) {
       // P17-①：稳智决策信号块跟在 styleNote 之后、身份卡之后——先立身份、再讲风格/周期、
       // 然后摆"参考口径"，最后是场景提示词与数据块。顺序稳定，模型能一眼看到参考结论。
       const wzNote: MsgIn[] = wzDecisionBlock.block.length ? [{ role: "system" as const, content: wzDecisionBlock.block.join("\n") }] : [];
-      const out: MsgIn[] = [...brief, ...(styleNote ? [{ role: "system" as const, content: styleNote }] : []), ...wzNote, ...merged];
+      // LLM 分流块：跟在身份卡之后、风格件之前——先立「本轮是哪个市场」，再讲风格/周期。
+      // 不只认带 scene 的对话轮：一次一问的调用（AI 分析 / 事件理解 / 研报）同样经这里发往上游，
+      // 它们的 prompt 是调用方拼的，服务端不在这里改 prompt，只能靠这块声明市场口径；
+      // 没带 market 的调用一个字都不多插（旧行为逐字不变）。
+      const scopeMsg: MsgIn[] = market ? [{ role: "system" as const, content: marketScopePrompt(market) }] : [];
+      const out: MsgIn[] = [...brief, ...scopeMsg, ...(styleNote ? [{ role: "system" as const, content: styleNote }] : []), ...wzNote, ...merged];
       // R14 协议卡紧跟身份卡：先立「你没有工具」的身份，再讲唯一例外怎么走——
       // 只在文本环开着的轮次附加，环没接线的轮次一个字都不多插（那张卡说了也不成立）。
       return gatewayLoop ? [out[0], { role: "system" as const, content: gatewayFetchLoopBrief(fetchCatalog) }, ...out.slice(1)] : out;

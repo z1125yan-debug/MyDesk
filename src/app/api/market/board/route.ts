@@ -108,6 +108,7 @@ async function getHandler(req: Request) {
         }));
         if (rows.length) {
           return NextResponse.json({
+            market: "A", market_label: "A股",
             rows, source: "frozen", asOf, tradeDate,
             frozenNote: `盘后冻结：${tradeDate} 15:20 留档的全天总量（治「一会多一会少」的双源摆动）；盘中才走实时源`,
           });
@@ -118,7 +119,7 @@ async function getHandler(req: Request) {
   try {
     const rows = await fetchBoardReal(kind, dir);
     if (rows?.length && !rows.every((r) => r.fundsMissing)) {
-      return NextResponse.json({ rows, source: "em", asOf, tradeDate });
+      return NextResponse.json({ market: "A", market_label: "A股", rows, source: "em", asOf, tradeDate });
     }
     // 东财这条路没有可用读数：按榜的种类往下递棒，递不到就如实 null
     const needThs = kind === "industry" || kind === "concept"; // 地域仍无对等榜——缺就是缺
@@ -129,7 +130,7 @@ async function getHandler(req: Request) {
         : ths.filter((r) => r.netYi < 0).sort((a, b) => a.netYi - b.netYi)
       ).slice(0, 30);
       if (picked.length) {
-        return NextResponse.json({ rows: picked.map(thsToRankRow), source: "ths", asOf, tradeDate });
+        return NextResponse.json({ market: "A", market_label: "A股", rows: picked.map(thsToRankRow), source: "ths", asOf, tradeDate });
       }
     }
     if (kind === "stock") {
@@ -149,13 +150,13 @@ async function getHandler(req: Request) {
           return src?.flow ? [tdxToRankRow(src, i + 1, src.flow)] : [];
         });
         if (out.length) {
-          return NextResponse.json({ rows: out, source: "tdx", asOf, tradeDate, quoteTime: univ.asOf || null });
+          return NextResponse.json({ market: "A", market_label: "A股", rows: out, source: "tdx", asOf, tradeDate, quoteTime: univ.asOf || null });
         }
       }
     }
     // 递棒到底没有可用来源： rows 原样带回（可能是东财给的腾讯涨幅占位榜），由页面显式声明缺失
-    return NextResponse.json({ rows: rows ?? null, source: null, asOf, tradeDate });
+    return NextResponse.json({ market: "A", market_label: "A股", rows: rows ?? null, source: null, asOf, tradeDate });
   } catch {
-    return NextResponse.json({ rows: null, error: "数据源暂不可用", asOf, tradeDate });
+    return NextResponse.json({ market: "A", market_label: "A股", rows: null, error: "数据源暂不可用", asOf, tradeDate });
   }
 }

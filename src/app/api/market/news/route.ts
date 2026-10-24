@@ -29,10 +29,10 @@ export async function GET(request: Request) {
   if (!dates.length) {
     try {
       const news = await fetchNewsReal();
-      return NextResponse.json({ news });
+      return NextResponse.json({ market: "global", market_label: "全球快讯", market_note: "东财7x24/新浪全球快讯，非仅 A股新闻", news });
     } catch (e) {
       // P67 体检 #20：失败不能与「没新闻」同形——带上 error，前端分得清「没抓到」和「抓取失败」
-      return NextResponse.json({ news: null, error: `快讯抓取失败：${(e as Error).message || e}` });
+      return NextResponse.json({ market: "global", market_label: "全球快讯", market_note: "东财7x24/新浪全球快讯，非仅 A股新闻", news: null, error: `快讯抓取失败：${(e as Error).message || e}` });
     }
   }
 
@@ -50,6 +50,7 @@ export async function GET(request: Request) {
     const news = perDay.flatMap((p) => p.items.map((it) => ({ ...it, date: p.date })));
     const cappedList = limit ? news.slice(0, limit) : news;
     return NextResponse.json({
+      market: "global", market_label: "全球快讯", market_note: "东财7x24/新浪全球快讯，非仅 A股新闻",
       ok: true,
       news: cappedList,
       perDay: perDay.map((p) => ({ date: p.date, count: p.items.length })),

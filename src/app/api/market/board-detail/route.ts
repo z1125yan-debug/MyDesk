@@ -14,11 +14,11 @@ export async function GET(req: Request) {
 }
 async function getHandler(req: Request) {
   const secid = new URL(req.url).searchParams.get("secid")?.trim() ?? "";
-  if (!secid) return NextResponse.json({ detail: null });
+  if (!secid) return NextResponse.json({ market: "A", market_label: "A股", detail: null });
   try {
     const detail = await fetchDetailReal(secid);
-    return NextResponse.json({ detail });
+    return NextResponse.json({ market: "A", market_label: "A股", detail });
   } catch {
-    return NextResponse.json({ detail: null, error: "数据源暂不可用" });
+    return NextResponse.json({ market: "A", market_label: "A股", detail: null, error: "数据源暂不可用" });
   }
 }

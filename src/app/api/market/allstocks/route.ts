@@ -73,6 +73,7 @@ async function getHandler(request: Request) {
       st: !!m.st, suspended: !!m.suspended,
     }));
     return NextResponse.json({
+      market: "A", market_label: "A股",
       ok: true,
       list,
       total: sorted.length,
@@ -81,9 +82,11 @@ async function getHandler(request: Request) {
       trade_date: tradeDate,
       source: {
         provider:
-          universeSource() === "tc"
-            ? "腾讯批量快照（本快照不含行业/上市日/主力净额列，这几列显「—」）"
-            : "东财榜单接口（全A快照）",
+          universeSource() === "tdx"
+            ? "通达信网关 + 本地库（TDX实时快照 + DB收盘价；市盈率/市值/主力净额标缺）"
+            : universeSource() === "tc"
+              ? "腾讯批量快照（本快照不含行业/上市日/主力净额列，这几列显「—」）"
+              : "东财榜单接口（全A快照）",
       },
     });
   } catch (e) {
