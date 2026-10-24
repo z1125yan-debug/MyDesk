@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-21",
+  "slot": "1030",
+  "label": "10:30",
+  "capturedAt": "2026-10-21 10:30:07",
+  "rows": [
+    {
+      "symbol": "000001.SH",
+      "name": "上证指数",
+      "price": 3729.63,
+      "prevClose": 3735.37,
+      "changePct": -0.15366616961639093
+    },
+    {
+      "symbol": "399001.SZ",
+      "name": "深证成指",
+      "price": 11792.63,
+      "prevClose": 11801.29,
+      "changePct": -0.07338180825995863
+    },
+    {
+      "symbol": "399006.SZ",
+      "name": "创业板指",
+      "price": 2720.28,
+      "prevClose": 2739.19,
+      "changePct": -0.6903500669906014
+    },
+    {
+      "symbol": "000300.SH",
+      "name": "沪深300",
+      "price": 4132.92,
+      "prevClose": 4152.11,
+      "changePct": -0.4621746533690004
+    },
+    {
+      "symbol": "600131.SH",
+      "name": "国网信通",
+      "price": 15.06,
+      "prevClose": 15.36,
+      "changePct": -1.9531249999999931
+    },
+    {
+      "symbol": "600893.SH",
+      "name": "航发动力",
+      "price": 40.34,
+      "prevClose": 39.91,
+      "changePct": 1.0774242044600524
+    },
+    {
+      "symbol": "000738.SZ",
+      "name": "航发控制",
+      "price": 19.17,
+      "prevClose": 19.14,
+      "changePct": 0.15673981191223163
+    },
+    {
+      "symbol": "600372.SH",
+      "name": "中航机载",
+      "price": 11.42,
+      "prevClose": 11.42,
+      "changePct": 0
+    },
+    {
+      "symbol": "002332.SZ",
+      "name": "仙琚制药",
+      "price": 8.81,
+      "prevClose": 8.75,
+      "changePct": 0.6857142857142914
+    },
+    {
+      "symbol": "600016.SH",
+      "name": "民生银行",
+      "price": 3.48,
+      "prevClose": 3.49,
+      "changePct": -0.28653295128940487
+    },
+    {
+      "symbol": "601825.SH",
+      "name": "XD沪农商",
+      "price": 8.62,
+      "prevClose": 8.64,
+      "changePct": -0.23148148148149708
+    }
+  ],
+  "missingSymbols": []
+}

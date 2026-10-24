@@ -105,6 +105,19 @@ npx next dev -p 3000 --webpack
 | `.env.example` | 环境变量示例：只写名字不写真实 Key，照着填你自己的 |
 | `README.md` | 就是你现在看的这篇：先讲能干什么、怎么启动 |
 
+## 战绩四档台账
+
+正式版 AI 优选除了战绩页的 T+1，还有一个四档台账脚本，记每批每只的 T+1 / T+3 / T+5 / T+20：
+
+```bash
+python3 scripts/build_pick_horizons.py
+# 输出 data/pick-horizon-returns.jsonl，买入 = 决策日次日开盘，卖出 = 买入后第 N 个交易日收盘，每档扣 0.41%
+# 前置：prisma/prisma/db/custom.db（不进仓库，体积超 GitHub 单文件限制）+ data/ai-pick-versions/（已进仓库）
+# 想写到别处：PICK_HORIZON_OUT=你的路径 python3 scripts/build_pick_horizons.py
+```
+
+影子版的 h1 / h5 / h20 在 `src/lib/quant/strategy/shadow-core.ts` 和战绩页第三层，主考核 h20。
+
 ## 两件先说清楚的事
 
 **1. 选股页里因子前面的 ⚠ 不是坏了。**

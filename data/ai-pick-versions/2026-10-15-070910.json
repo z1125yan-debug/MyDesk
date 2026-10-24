@@ -1,0 +1,43 @@
+{
+  "tradeDate": "2026-10-15",
+  "runAt": "2026-10-16 07:09:10",
+  "picks": [
+    {
+      "symbol": "600276.SH",
+      "name": "恒瑞医药",
+      "changePct": 2.44
+    },
+    {
+      "symbol": "605258.SH",
+      "name": "协和电子",
+      "changePct": 2.46
+    },
+    {
+      "symbol": "300771.SZ",
+      "name": "智莱科技",
+      "changePct": 5.49
+    },
+    {
+      "symbol": "603198.SH",
+      "name": "迎驾贡酒",
+      "changePct": 0.29
+    },
+    {
+      "symbol": "605299.SH",
+      "name": "舒华体育",
+      "changePct": 3.67
+    },
+    {
+      "symbol": "603919.SH",
+      "name": "金徽酒",
+      "changePct": 3.25
+    },
+    {
+      "symbol": "601001.SH",
+      "name": "晋控煤业",
+      "changePct": -1.39
+    }
+  ],
+  "source": "backfill",
+  "note": "早版 7 只，从 data/ai-pick-1015-original-note-backup.txt 恢复；runAt 取 StrategyPick 行的 pickedAt（该行创建时间，更新时保留）；涨跌幅用 DB 日K现算（10-15 收盘 vs 10-14 收盘），与备份一致。"
+}

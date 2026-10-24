@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-23",
+  "slot": "1130",
+  "label": "11:30 休盘",
+  "capturedAt": "2026-10-23 11:25:47",
+  "rows": [
+    {
+      "symbol": "000001.SH",
+      "name": "上证指数",
+      "price": 3616.72,
+      "prevClose": 3658.03,
+      "changePct": -1.1292963699040304
+    },
+    {
+      "symbol": "399001.SZ",
+      "name": "深证成指",
+      "price": 11167.77,
+      "prevClose": 11357.32,
+      "changePct": -1.6689676789946861
+    },
+    {
+      "symbol": "399006.SZ",
+      "name": "创业板指",
+      "price": 2518.79,
+      "prevClose": 2576.9,
+      "changePct": -2.255035119717495
+    },
+    {
+      "symbol": "000300.SH",
+      "name": "沪深300",
+      "price": 4016.79,
+      "prevClose": 4036.3,
+      "changePct": -0.4833634764512107
+    },
+    {
+      "symbol": "688099.SH",
+      "name": "晶晨股份",
+      "price": 91.89,
+      "prevClose": 94.42,
+      "changePct": -2.679517051472147
+    },
+    {
+      "symbol": "002639.SZ",
+      "name": "雪人集团",
+      "price": 14.15,
+      "prevClose": 15,
+      "changePct": -5.666666666666664
+    },
+    {
+      "symbol": "600785.SH",
+      "name": "新华百货",
+      "price": 12.4,
+      "prevClose": 11.42,
+      "changePct": 8.581436077057797
+    },
+    {
+      "symbol": "601566.SH",
+      "name": "九牧王",
+      "price": 8.63,
+      "prevClose": 9.59,
+      "changePct": -10.010427528675695
+    },
+    {
+      "symbol": "301185.SZ",
+      "name": "鸥玛软件",
+      "price": 15.6,
+      "prevClose": 16.52,
+      "changePct": -5.569007263922518
+    }
+  ],
+  "missingSymbols": []
+}

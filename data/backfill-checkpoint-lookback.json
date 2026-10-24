@@ -1,0 +1,13 @@
+{
+  "script": "backfill-tdx-lookback.py",
+  "next_index": 5600,
+  "counts": {
+    "inserted_close": 1006404,
+    "inserted_bar": 1006394
+  },
+  "failed": [
+    "920305.BJ",
+    "920680.BJ"
+  ],
+  "updatedAt": "2026-10-17T00:40:11.278922+08:00"
+}

@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-22",
+  "slot": "close",
+  "label": "15:00 收盘",
+  "capturedAt": "2026-10-22 15:05:18",
+  "rows": [
+    {
+      "symbol": "000001.SH",
+      "name": "上证指数",
+      "price": 3658.026,
+      "prevClose": 3713.03,
+      "changePct": -1.4813777427061015
+    },
+    {
+      "symbol": "399001.SZ",
+      "name": "深证成指",
+      "price": 11357.319,
+      "prevClose": 11816.79,
+      "changePct": -3.888289459320182
+    },
+    {
+      "symbol": "399006.SZ",
+      "name": "创业板指",
+      "price": 2576.901,
+      "prevClose": 2694.71,
+      "changePct": -4.371861907218224
+    },
+    {
+      "symbol": "000300.SH",
+      "name": "沪深300",
+      "price": 4036.297,
+      "prevClose": 4111.93,
+      "changePct": -1.8393552419423544
+    },
+    {
+      "symbol": "603341.SH",
+      "name": "龙旗科技",
+      "price": 40.13,
+      "prevClose": 40.31,
+      "changePct": -0.4465393202679228
+    },
+    {
+      "symbol": "600629.SH",
+      "name": "华建集团",
+      "price": 17.6,
+      "prevClose": 18.29,
+      "changePct": -3.772553307818468
+    },
+    {
+      "symbol": "603366.SH",
+      "name": "日出东方",
+      "price": 7.51,
+      "prevClose": 7.87,
+      "changePct": -4.574332909783994
+    },
+    {
+      "symbol": "301550.SZ",
+      "name": "斯菱智驱",
+      "price": 110.99,
+      "prevClose": 111.64,
+      "changePct": -0.582228591902549
+    },
+    {
+      "symbol": "688360.SH",
+      "name": "德马科技",
+      "price": 18.38,
+      "prevClose": 18.05,
+      "changePct": 1.82825484764542
+    },
+    {
+      "symbol": "300825.SZ",
+      "name": "阿尔特",
+      "price": 10.92,
+      "prevClose": 11.8,
+      "changePct": -7.457627118644074
+    },
+    {
+      "symbol": "300550.SZ",
+      "name": "和仁科技",
+      "price": 13.3,
+      "prevClose": 14.3,
+      "changePct": -6.9930069930069925
+    }
+  ],
+  "missingSymbols": []
+}

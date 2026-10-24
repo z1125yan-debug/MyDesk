@@ -95,9 +95,5 @@ prisma/db/*.db
 db/*.db
 prisma/prisma/db/*.db
 data/*.db
-# 运行时产物（2026-10-24 同步时明确排除，不进 GitHub）：AI 优选版本、价格快照、K 线缓存、日报 JSON
-data/ai-pick-versions/
-data/price-snapshots/
-data/kline-cache/
-data/daily-reports/
+# 运行时产物（不进 GitHub）：数据库二进制（体积超 GitHub 单文件限制，见 README 说明）
 data/*.db

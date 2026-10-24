@@ -1,0 +1,28 @@
+{
+  "tradeDate": "2026-10-15",
+  "runAt": "2026-10-16 12:32:55",
+  "picks": [
+    {
+      "symbol": "600276.SH",
+      "name": "恒瑞医药",
+      "changePct": 2.44
+    },
+    {
+      "symbol": "603919.SH",
+      "name": "金徽酒",
+      "changePct": 3.25
+    },
+    {
+      "symbol": "605258.SH",
+      "name": "协和电子",
+      "changePct": 2.46
+    },
+    {
+      "symbol": "603198.SH",
+      "name": "迎驾贡酒",
+      "changePct": 0.29
+    }
+  ],
+  "source": "backfill",
+  "note": "午版 4 只，从当前 StrategyPick 行（source=ai_pick，tradeDate=2026-10-15）恢复；runAt 取该版重生成的完成记录时间（2026-10-16 12:32:55 CST）；涨跌幅用 DB 日K现算。"
+}

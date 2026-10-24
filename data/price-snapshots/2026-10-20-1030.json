@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-20",
+  "slot": "1030",
+  "label": "10:30",
+  "capturedAt": "2026-10-20 10:25:23",
+  "rows": [
+    {
+      "symbol": "000001.SH",
+      "name": "上证指数",
+      "price": 3730.77,
+      "prevClose": 3730.92,
+      "changePct": -0.004020456080540214
+    },
+    {
+      "symbol": "399001.SZ",
+      "name": "深证成指",
+      "price": 11849.86,
+      "prevClose": 11817.42,
+      "changePct": 0.27451000302943035
+    },
+    {
+      "symbol": "399006.SZ",
+      "name": "创业板指",
+      "price": 2759.16,
+      "prevClose": 2746.29,
+      "changePct": 0.4686322274777934
+    },
+    {
+      "symbol": "000300.SH",
+      "name": "沪深300",
+      "price": 4160.5,
+      "prevClose": 4174.53,
+      "changePct": -0.33608573899336563
+    },
+    {
+      "symbol": "688543.SH",
+      "name": "国科军工",
+      "price": 48,
+      "prevClose": 48.59,
+      "changePct": -1.2142416135007272
+    },
+    {
+      "symbol": "600038.SH",
+      "name": "中直股份",
+      "price": 27.2,
+      "prevClose": 28.04,
+      "changePct": -2.995720399429386
+    },
+    {
+      "symbol": "600893.SH",
+      "name": "航发动力",
+      "price": 39.57,
+      "prevClose": 40.11,
+      "changePct": -1.3462976813762133
+    },
+    {
+      "symbol": "300747.SZ",
+      "name": "锐科激光",
+      "price": 43.1,
+      "prevClose": 42.25,
+      "changePct": 2.011834319526631
+    },
+    {
+      "symbol": "600435.SH",
+      "name": "北方导航",
+      "price": 12.61,
+      "prevClose": 12.88,
+      "changePct": -2.096273291925476
+    },
+    {
+      "symbol": "603707.SH",
+      "name": "健友股份",
+      "price": 8.07,
+      "prevClose": 8.08,
+      "changePct": -0.12376237623762112
+    },
+    {
+      "symbol": "600761.SH",
+      "name": "安徽合力",
+      "price": 15.21,
+      "prevClose": 14.96,
+      "changePct": 1.6711229946524062
+    }
+  ],
+  "missingSymbols": []
+}

@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-16",
+  "slot": "1030",
+  "label": "10:30",
+  "capturedAt": "2026-10-16 10:58:19",
+  "rows": [
+    {
+      "symbol": "000001.SH",
+      "name": "上证指数",
+      "price": 3735.53,
+      "prevClose": 3707.48,
+      "changePct": 0.7565785924671253
+    },
+    {
+      "symbol": "399001.SZ",
+      "name": "深证成指",
+      "price": 11887.92,
+      "prevClose": 11816.79,
+      "changePct": 0.601940120794219
+    },
+    {
+      "symbol": "399006.SZ",
+      "name": "创业板指",
+      "price": 2789.77,
+      "prevClose": 2783.17,
+      "changePct": 0.23713966448330173
+    },
+    {
+      "symbol": "000300.SH",
+      "name": "沪深300",
+      "price": 4190.98,
+      "prevClose": 4166.01,
+      "changePct": 0.5993744614151033
+    },
+    {
+      "symbol": "600276.SH",
+      "name": "恒瑞医药",
+      "price": 46.9,
+      "prevClose": 46.6,
+      "changePct": 0.6437768240343286
+    },
+    {
+      "symbol": "605258.SH",
+      "name": "协和电子",
+      "price": 39.5,
+      "prevClose": 42.42,
+      "changePct": -6.883545497406887
+    },
+    {
+      "symbol": "300771.SZ",
+      "name": "智莱科技",
+      "price": 11.6,
+      "prevClose": 11.73,
+      "changePct": -1.1082693947144142
+    },
+    {
+      "symbol": "603198.SH",
+      "name": "迎驾贡酒",
+      "price": 40,
+      "prevClose": 38.6,
+      "changePct": 3.626943005181343
+    },
+    {
+      "symbol": "605299.SH",
+      "name": "舒华体育",
+      "price": 12.62,
+      "prevClose": 12.98,
+      "changePct": -2.773497688751935
+    },
+    {
+      "symbol": "603919.SH",
+      "name": "金徽酒",
+      "price": 16.66,
+      "prevClose": 16.82,
+      "changePct": -0.9512485136741982
+    },
+    {
+      "symbol": "601001.SH",
+      "name": "晋控煤业",
+      "price": 17.91,
+      "prevClose": 17.75,
+      "changePct": 0.9014084507042261
+    }
+  ],
+  "missingSymbols": []
+}
